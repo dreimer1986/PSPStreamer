@@ -1,60 +1,60 @@
 # PSP Streamer
 
-PSP Streamer macht eine lokale oder über DynDNS erreichbare Videosammlung auf einer PSP-2000/3000 mit Custom Firmware nutzbar. Der Python-Server durchsucht freigegebene Ordner und transkodiert mit FFmpeg. Die native PSP-App empfängt einen kleinen H.264-Baseline-Videostream und einen separaten MP3-Audiostream; die PSP dekodiert beides lokal.
+PSP Streamer makes a local or DynDNS-reachable video library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. The native PSP app receives a compact H.264 Baseline video stream and a separate MP3 audio stream, both decoded locally by the PSP.
 
-Der erprobte Zielpfad ist 480×272, H.264 Baseline bei 20 fps und 44,1-kHz-MP3. Eingebrannte Textuntertitel, Audiospurwahl, ein wach gehaltener Bildschirm sowie große Verzeichnislisten werden unterstützt.
+The proven target profile is 480×272, H.264 Baseline at 20 fps, and 44.1 kHz MP3. Burned-in text subtitles, audio-track selection, a kept-awake display, and large directory listings are supported.
 
-## Voraussetzungen
+## Requirements
 
-- Python 3.11 oder neuer
-- FFmpeg mit `libx264`, `libmp3lame` und `libass`
-- Für Untertitel: Fontconfig und DejaVu-Fonts (im Docker-Image enthalten)
-- Eine PSP mit funktionierendem Infrastruktur-WLAN und CFW für die Homebrew-App
+- Python 3.11 or later
+- FFmpeg with `libx264`, `libmp3lame`, and `libass`
+- For subtitles: Fontconfig and DejaVu fonts (included in the Docker image)
+- A PSP with working infrastructure Wi-Fi and CFW for the homebrew app
 
-## Server direkt starten
+## Run the server directly
 
-`MEDIA_ROOTS` ist eine durch Doppelpunkte getrennte Liste erlaubter Medienwurzeln. Der Server folgt keinen Pfaden außerhalb dieser Wurzeln.
+`MEDIA_ROOTS` is a colon-separated list of allowed media roots. The server never follows paths outside these roots.
 
 ```bash
 MEDIA_ROOTS='/srv/media/Serien:/srv/media/Filme' PORT=8091 \
   python3 -m psp_streamer.server
 ```
 
-Danach ist die Testoberfläche unter `http://SERVER:8091` verfügbar. Sie eignet sich zum Durchsuchen und Prüfen der Transkodierung; die stabile Wiedergabe erfolgt in der PSP-App.
+The test interface is then available at `http://SERVER:8091`. It is useful for browsing and checking transcoding; reliable playback happens in the PSP app.
 
-| Variable | Standard | Zweck |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `MEDIA_ROOTS` | `/media` | Erlaubte Videoordner, durch `:` getrennt |
+| `MEDIA_ROOTS` | `/media` | Allowed video directories, separated by `:` |
 | `PORT` | `8091` | HTTP-Port |
-| `MAX_TRANSCODES` | `2` | Gleichzeitige FFmpeg-Prozesse; eine PSP-Wiedergabe benötigt zwei |
+| `MAX_TRANSCODES` | `2` | Concurrent FFmpeg processes; one PSP playback needs two |
 | `FFMPEG_PRESET` | `veryfast` | x264-Preset |
-| `FFMPEG_FONTS_DIR` | DejaVu-Systemordner | Font-Ordner für eingebrannte Textuntertitel |
+| `FFMPEG_FONTS_DIR` | DejaVu system directory | Font directory for burned-in text subtitles |
 
 ## Docker
 
-Der SMB-/NFS-Mount gehört auf den Docker-Host. Er wird ausschließlich lesbar eingebunden.
+The SMB/NFS mount belongs on the Docker host. Mount it read-only only.
 
 ```bash
 MEDIA_ROOT_PATH=/srv/media PSP_STREAMER_PORT=8091 docker compose up -d --build
 ```
 
-Keine SMB-Zugangsdaten in `compose.yaml` eintragen.
+Do not put SMB credentials in `compose.yaml`.
 
-## PSP installieren und konfigurieren
+## Install and configure the PSP app
 
-Die Release-Datei liegt nach einem Build unter `psp-client/release/PSPStreamer/EBOOT.PBP`. Sie und `cooleyesBridge.prx` kommen nach:
+After a build, the release file is at `psp-client/release/PSPStreamer/EBOOT.PBP`. Copy it and `cooleyesBridge.prx` to:
 
 ```
 ms0:/PSP/GAME/PSPStreamer/
 ```
 
-Beim ersten Speichern einer Wiedergabeoption legt die App diese Datei an:
+The first time a playback option is saved, the app creates this file:
 
 ```
 ms0:/PSP/SYSTEM/PSPStreamer.cfg
 ```
 
-Der Server ist ohne Neuübersetzen konfigurierbar. Die Datei kann am PC editiert werden:
+The server is configurable without recompiling. Edit the file on a PC:
 
 ```ini
 server=streamer.example.net
@@ -64,19 +64,19 @@ subtitle=-1
 quality=2
 ```
 
-`server` akzeptiert eine IPv4-Adresse oder einen DNS-/DynDNS-Namen; `http://` darf ebenfalls vorangestellt werden. Die PSP löst den Namen bei jeder neuen Verbindung auf. `quality` bedeutet `0=96k`, `1=128k`, `2=160k` MP3.
+`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `quality` means `0=96k`, `1=128k`, `2=160k` MP3.
 
-Steuerung: Kreuz öffnet Ordner bzw. Wiedergabeoptionen, Kreis kehrt aus dem Optionenmenü zurück, Links geht in den Elternordner, L/R blättert seitenweise, Quadrat lädt neu und Start beendet die App.
+Controls: Cross opens a folder or playback options; Circle exits the options screen; Left goes to the parent folder; L/R pages through the list; Square reloads; Start exits the app.
 
-## Untertitel und Grenzen
+## Subtitles and limitations
 
-ASS/SSA, SRT und andere textbasierte Untertitel werden mit libass eingebrannt. Bildbasierte PGS/VobSub/DVB-Untertitel benötigen einen anderen FFmpeg-Overlay-Pfad und sind noch nicht implementiert. Ein aktivierter Untertitel kann beim ersten Start etwas länger benötigen, weil FFmpeg Schriftarten vorbereitet.
+ASS/SSA, SRT, and other text subtitles are burned in with libass. PGS subtitles use FFmpeg's bitmap-overlay path. Other bitmap formats such as VobSub/DVB may need a separate handling path. Starting with subtitles enabled can take longer while FFmpeg prepares fonts or subtitle data.
 
-Video-Out und eine eigene 480p-Ausgabe sind bewusst noch nicht Teil dieses Stands.
+Video output and a dedicated 480p mode are deliberately not part of this release yet.
 
-## PSP-Client bauen
+## Build the PSP client
 
-Ein PSP-SDK sowie eine für PSP gebaute OpenH264-Bibliothek werden benötigt. Der Bibliothekspfad ist absichtlich kein persönlicher Hardcode:
+A PSP SDK and an OpenH264 library built for PSP are required. The library path is deliberately not hard-coded to a personal location:
 
 ```bash
 cd psp-client
@@ -84,7 +84,7 @@ make OPENH264_DIR=/pfad/zu/openh264
 cp EBOOT.PBP release/PSPStreamer/EBOOT.PBP
 ```
 
-Die Bibliothek muss `libopenh264_dec_psp.a` und die zugehörigen Header bereitstellen.
+The library must provide `libopenh264_dec_psp.a` and its headers.
 
 ## Tests
 
@@ -92,6 +92,6 @@ Die Bibliothek muss `libopenh264_dec_psp.a` und die zugehörigen Header bereitst
 python3 -m unittest discover -s tests -v
 ```
 
-## Sicherheit
+## Security
 
-Der Server hat keine Anmeldung. Nicht direkt ins öffentliche Internet stellen; DynDNS-Zugriff sollte über VPN, eine vertrauenswürdige Firewall-Regel oder ein separates Heimnetz erfolgen.
+The server has no authentication. Do not expose it directly to the public internet; DynDNS access should use a VPN, a trusted firewall rule, or a separate home network.

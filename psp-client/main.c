@@ -75,7 +75,7 @@ static char current_path[ID_SIZE];
 static int network_ready;
 static int http_ready;
 static int active_network_profile;
-static const char *failure_step = "Netzwerk";
+static const char *failure_step = "Network";
 static const char *video_step = "Start";
 static volatile int audio_running;
 static volatile int audio_start;
@@ -90,7 +90,7 @@ static int video_modules_ready;
 static int hardware_decoder_frames;
 static int hardware_runtime_result = -9999;
 static int performance_result = -9999;
-static const char *hardware_runtime_step = "nicht geladen";
+static const char *hardware_runtime_step = "not loaded";
 /* This is intentionally shown on screen on a load failure: on real PSPs the
  * GAME folder name is user-defined, so it is the fastest way to diagnose a
  * PRX copied beside a different EBOOT. */
@@ -120,7 +120,7 @@ static int load_hardware_avc_runtime(void) {
     hardware_runtime_path[sizeof(hardware_runtime_path) - 1] = '\0';
     /* ARK's kuKernelLoadModule performs the privileged load while this
      * EBOOT remains user-mode.  The bridge exports the ABI mpeg_vsh needs. */
-    hardware_runtime_step = "Bridge laden";
+    hardware_runtime_step = "Loading bridge";
     module_id = kuKernelLoadModule(bridge_path, 0, NULL);
     /* Some launchers leave cwd at ms0:/ instead of the GAME directory.  Only
      * retry when the primary path genuinely does not exist; a real PRX load
@@ -136,24 +136,24 @@ static int load_hardware_avc_runtime(void) {
         }
     }
     if (module_id < 0) return module_id;
-    hardware_runtime_step = "Bridge starten";
+    hardware_runtime_step = "Starting bridge";
     result = sceKernelStartModule(module_id, 0, NULL, &status, NULL);
     if (result < 0) return result;
     /* mpeg_vsh is not standalone: its imports are supplied by the official
      * AV codec module.  Loading it through the user-mode utility is supported
      * on 6.61 and avoids the missing-library error from sceKernelStartModule. */
-    hardware_runtime_step = "AVCodec laden";
+    hardware_runtime_step = "Loading AVCodec";
     result = sceUtilityLoadAvModule(PSP_AV_MODULE_AVCODEC);
     if (result < 0) return result;
     /* This is the user's own 6.61 firmware module, not a bundled PRX. */
-    hardware_runtime_step = "mpeg_vsh laden";
+    hardware_runtime_step = "Loading mpeg_vsh";
     module_id = kuKernelLoadModule("flash0:/kd/mpeg_vsh.prx", 0, NULL);
     if (module_id < 0) return module_id;
-    hardware_runtime_step = "mpeg_vsh starten";
+    hardware_runtime_step = "Starting mpeg_vsh";
     result = sceKernelStartModule(module_id, 0, NULL, &status, NULL);
     if (result < 0) return result;
     /* A positive module UID from StartModule is also successful. */
-    hardware_runtime_step = "bereit";
+    hardware_runtime_step = "ready";
     return 0;
 }
 static char audio_media_id[ID_SIZE];
@@ -178,7 +178,7 @@ static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((ali
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
-static char status[128] = "Starte Netzwerk ...";
+static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
@@ -326,10 +326,10 @@ static int wait_for_network(void) {
     int elapsed;
     int result;
     int profile;
-    failure_step = "Netzwerk Common";
+    failure_step = "Network Common";
     result = sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON);
     if (result < 0) return result;
-    failure_step = "Netzwerk INET";
+    failure_step = "Network INET";
     result = sceUtilityLoadNetModule(PSP_NET_MODULE_INET);
     if (result < 0) return result;
     failure_step = "sceNetInit";
@@ -351,7 +351,7 @@ static int wait_for_network(void) {
         if (profile > 100) return -4;
     }
     active_network_profile = profile;
-    failure_step = "WLAN-Verbindung";
+    failure_step = "Wi-Fi connection";
     result = sceNetApctlConnect(profile);
     if (result < 0) return result;
     for (elapsed = 0; elapsed < 150; elapsed++) {
@@ -421,10 +421,10 @@ static int load_video_modules(void) {
      * Re-requesting MPEGBASE on some ARK/6.61 combinations returns 800200D9
      * even though the already-loaded module is usable. */
     if (video_modules_ready) return 0;
-    video_step = "AVCODEC-Modul";
+    video_step = "AVCODEC module";
     result = sceUtilityLoadModule(PSP_MODULE_AV_AVCODEC);
     if (result < 0 && result != (int)SCE_ERROR_MODULE_ALREADY_LOADED && result != SCE_ERROR_LIBRARY_ALREADY_EXISTS) return result;
-    video_step = "MPEGBASE-Modul";
+    video_step = "MPEGBASE module";
     result = sceUtilityLoadModule(PSP_MODULE_AV_MPEGBASE);
     if (result < 0 && result != (int)SCE_ERROR_MODULE_ALREADY_LOADED && result != SCE_ERROR_LIBRARY_ALREADY_EXISTS) return result;
     video_modules_ready = 1;
@@ -543,7 +543,7 @@ static int play_mjpeg(const char *media_id) {
 
     result = load_video_modules();
     if (result < 0) return result;
-    video_step = "TCP-Verbindung";
+    video_step = "TCP connection";
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mjpeg HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return socket_fd;
@@ -562,7 +562,7 @@ static int play_mjpeg(const char *media_id) {
         body = strstr(header, "\r\n\r\n");
         if (body) break;
     }
-    if (!body || !strstr(header, " 200 ")) { video_step = "HTTP-Antwort"; sceNetInetClose(socket_fd); return -1204; }
+    if (!body || !strstr(header, " 200 ")) { video_step = "HTTP response"; sceNetInetClose(socket_fd); return -1204; }
     video_step = "JPEG-Decoder";
     result = sceJpegInitMJpeg();
     if (result < 0) { sceNetInetClose(socket_fd); return result; }
@@ -609,7 +609,7 @@ static int play_mjpeg(const char *media_id) {
     sceJpegDeleteMJpeg();
     sceJpegFinishMJpeg();
     sceNetInetClose(socket_fd);
-    if (!frames) video_step = "keine JPEG-Frames";
+    if (!frames) video_step = "no JPEG frames";
     return frames ? frames : -1205;
 }
 
@@ -770,7 +770,7 @@ static int play_h264(const char *media_id) {
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
     else { audio_running = 0; audio_state = audio_thread_id; }
-    video_step = "TCP-Verbindung";
+    video_step = "TCP connection";
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, PSP_STREAMER_PROFILE, selected_audio_track, selected_subtitle_track, stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { h264_hw_shutdown(); return socket_fd; }
@@ -789,7 +789,7 @@ static int play_h264(const char *media_id) {
         if (body) break;
     }
     if (!body || !strstr(header, " 200 ")) {
-        video_step = "HTTP-Antwort"; sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1304;
+        video_step = "HTTP response"; sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1304;
     }
     received = header_size - (int)(body + 4 - header);
     if (received > 0) memcpy(receive_buffer, body + 4, received);
@@ -893,7 +893,7 @@ static int play_h264(const char *media_id) {
     h264_hw_shutdown();
     sceNetInetClose(socket_fd);
     if (result < 0) return result;
-    if (!frames) video_step = "keine H264-Frames";
+    if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;
 }
 
@@ -952,10 +952,10 @@ static void load_media_metadata(const char *media_id) {
 static void show_metadata_loading(void) {
     pspDebugScreenClear();
     pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenPrintf("Wiedergabeoptionen\n\n");
+    pspDebugScreenPrintf("Playback options\n\n");
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("Lade Tonspuren und Untertitel ...\n");
-    pspDebugScreenPrintf("Bitte kurz warten.\n");
+    pspDebugScreenPrintf("Loading audio tracks and subtitles ...\n");
+    pspDebugScreenPrintf("Please wait.\n");
 }
 
 static void parse_library(void) {
@@ -1020,21 +1020,21 @@ static void refresh_library(void) {
     char encoded_path[ID_SIZE * 3 + 1];
     char api_path[ID_SIZE * 3 + 32];
     if (!network_ready || !http_ready) {
-        strcpy(status, "WLAN/HTTP noch nicht bereit");
+        strcpy(status, "Wi-Fi/HTTP not ready yet");
         return;
     }
-    strcpy(status, "Lade Mediathek ...");
+    strcpy(status, "Loading library ...");
     url_encode(current_path, encoded_path, sizeof(encoded_path));
     snprintf(api_path, sizeof(api_path), "/api/library?path=%s", encoded_path);
     result = http_get(api_path, response, sizeof(response));
     if (result < 0) {
-        snprintf(status, sizeof(status), "Serverfehler: %08X", result);
+        snprintf(status, sizeof(status), "Server error: %08X", result);
         /* A just-restored hotspot often has IP before DNS.  Keep the useful
          * browser state visible so Square can simply be tried again. */
         return;
     }
     parse_library();
-    snprintf(status, sizeof(status), "%d Eintraege  [X: Oeffnen]", item_count);
+    snprintf(status, sizeof(status), "%d entries  [X: Open]", item_count);
 }
 
 static void show(int selected) {
@@ -1043,17 +1043,17 @@ static void show(int selected) {
     if (last > item_count) last = item_count;
     pspDebugScreenClear();
     pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenPrintf("PSP Streamer  |  %.32s:%d  Profil %d\n\n", server_host, server_port, active_network_profile);
+    pspDebugScreenPrintf("PSP Streamer  |  %.32s:%d  Profile %d\n\n", server_host, server_port, active_network_profile);
     pspDebugScreenSetTextColor(0x00FFFFFF);
     pspDebugScreenPrintf("%s\n\n", status);
     if (hardware_runtime_result == 0)
-        pspDebugScreenPrintf("Media Engine: Hardware-AVC bereit\n");
+        pspDebugScreenPrintf("Media Engine: Hardware AVC ready\n");
     else if (hardware_runtime_result != -9999)
         pspDebugScreenPrintf("Media Engine: %s: %08X\nBridge: %.57s\n", hardware_runtime_step, hardware_runtime_result, hardware_runtime_path);
     pspDebugScreenPrintf("\n");
-    pspDebugScreenPrintf("Pfad: %.52s\n\n", current_path[0] ? current_path : "/");
+    pspDebugScreenPrintf("Path: %.52s\n\n", current_path[0] ? current_path : "/");
     if (!item_count) {
-        pspDebugScreenPrintf("Keine Eintraege. Quadrat: erneut laden\n");
+        pspDebugScreenPrintf("No entries. Square: reload\n");
     } else {
         for (i = first; i < last; i++) {
             pspDebugScreenSetTextColor(i == selected ? 0x00D8E8FF : 0x00FFFFFF);
@@ -1061,7 +1061,7 @@ static void show(int selected) {
         }
     }
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("\nSteuerung: HOCH/RUNTER waehlt, X oeffnet, LINKS zurueck,\nQuadrat aktualisiert, START beendet.\n");
+    pspDebugScreenPrintf("\nControls: UP/DOWN select, X opens, LEFT goes back,\nSquare reloads, START exits.\n");
 }
 
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
@@ -1080,14 +1080,14 @@ static int playback_options(void) {
     while (1) {
         pspDebugScreenClear();
         pspDebugScreenSetTextColor(0x00D8E8FF);
-        pspDebugScreenPrintf("Wiedergabeoptionen\n\n");
+        pspDebugScreenPrintf("Playback options\n\n");
         pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenPrintf("%c Tonspur:       %s\n", row == 0 ? '>' : ' ',
-                             audio_track_count ? audio_tracks[selected_audio_track].language : "nicht erkannt");
-        pspDebugScreenPrintf("%c Untertitel:    %s\n", row == 1 ? '>' : ' ',
-                             selected_subtitle_track < 0 ? "Aus" : subtitle_tracks[selected_subtitle_track].language);
-        pspDebugScreenPrintf("%c Audioqualitaet %s\n\n", row == 2 ? '>' : ' ', audio_quality_name());
-        pspDebugScreenPrintf("HOCH/RUNTER: Zeile  LINKS/RECHTS: aendern\nX: Starten   O: Zurueck\n");
+        pspDebugScreenPrintf("%c Audio track:   %s\n", row == 0 ? '>' : ' ',
+                             audio_track_count ? audio_tracks[selected_audio_track].language : "not detected");
+        pspDebugScreenPrintf("%c Subtitles:     %s\n", row == 1 ? '>' : ' ',
+                             selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language);
+        pspDebugScreenPrintf("%c Audio quality: %s\n\n", row == 2 ? '>' : ' ', audio_quality_name());
+        pspDebugScreenPrintf("UP/DOWN: row  LEFT/RIGHT: change\nX: Start   O: Back\n");
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
@@ -1128,7 +1128,7 @@ int main(void) {
     performance_result = 0;
     result = wait_for_network();
     if (result < 0) {
-        snprintf(status, sizeof(status), "%s fehlgeschlagen: %08X", failure_step, result);
+        snprintf(status, sizeof(status), "%s failed: %08X", failure_step, result);
     } else {
         network_ready = 1;
         http_ready = 1;
@@ -1166,10 +1166,10 @@ int main(void) {
             dirty = 1;
         } else if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && !items[selected].is_folder) {
             if (resume_pending && !strcmp(resume_media_id, items[selected].value)) {
-                snprintf(status, sizeof(status), "Setze bei %d s fort ...", stream_start_seconds);
+                snprintf(status, sizeof(status), "Resuming at %d s ...", stream_start_seconds);
                 show(selected);
                 if (wait_for_network_restore() < 0) {
-                    strcpy(status, "WLAN noch nicht bereit - bitte erneut X");
+                    strcpy(status, "Wi-Fi not ready - press X again");
                     dirty = 1;
                     old_buttons = pad.Buttons;
                     continue;
@@ -1185,7 +1185,7 @@ int main(void) {
             }
             do {
                 int next;
-                snprintf(status, sizeof(status), "Starte H264-Video (20 FPS) ...");
+                snprintf(status, sizeof(status), "Starting H.264 video (20 FPS) ...");
                 show(selected);
                 result = play_h264(items[selected].value);
                 pspDebugScreenInit();
@@ -1202,19 +1202,19 @@ int main(void) {
                         sceKernelDelayThread(250000);
                         continue;
                     }
-                    snprintf(status, sizeof(status), "WLAN unterbrochen. WLAN herstellen, X zum Fortsetzen.");
+                    snprintf(status, sizeof(status), "Wi-Fi interrupted. Reconnect Wi-Fi, press X to resume.");
                     break;
                 }
                 resume_pending = 0;
                 next = playback_reached_end ? next_video_index(selected) : -1;
                 if (next < 0) {
-                    snprintf(status, sizeof(status), "Video beendet: %d Frames | Audio %d", result, audio_state);
+                    snprintf(status, sizeof(status), "Video ended: %d frames | Audio %d", result, audio_state);
                     break;
                 }
                 selected = next;
                 resume_pending = 0;
                 stream_start_seconds = 0;
-                snprintf(status, sizeof(status), "Naechste Episode: %.58s", items[selected].title);
+                snprintf(status, sizeof(status), "Next episode: %.58s", items[selected].title);
                 show(selected);
                 sceKernelDelayThread(500000);
                 load_media_metadata(items[selected].value);

@@ -1,11 +1,11 @@
 # PSP-Client
 
-Dieser Ordner enthält die native PSP-Anwendung: H.264-Baseline-Video über die Media Engine, MP3-Audio über den PSP-DAC, Untertitel-/Audiospurwahl und die Bridge für den AVC-Pfad.
+This directory contains the native PSP application: H.264 Baseline video through the Media Engine, MP3 audio through the PSP DAC, subtitle/audio-track selection, and the bridge for the AVC path.
 
-Die Installation, Konfigurationsdatei `ms0:/PSP/SYSTEM/PSPStreamer.cfg` und der Build-Aufruf sind im [Projekt-README](../README.md) beschrieben.
+Installation, the `ms0:/PSP/SYSTEM/PSPStreamer.cfg` configuration file, and the build command are described in the [project README](../README.md).
 
-Für einen lokalen Build muss `OPENH264_DIR` auf die PSP-kompilierte OpenH264-Bibliothek zeigen:
+For a local build, `OPENH264_DIR` must point to the PSP-compiled OpenH264 library:
 
 ```bash
-make OPENH264_DIR=/pfad/zu/openh264
+make OPENH264_DIR=/path/to/openh264
 ```
