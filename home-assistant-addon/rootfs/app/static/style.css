@@ -1,0 +1,9 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10131c; color: #f4f7ff; }
+main { max-width: 780px; margin: 2rem auto; padding: 0 1rem; }
+h1 { color: #9ad2ff; } nav { margin-bottom: 1rem; }
+button, select { font: inherit; padding: .65rem .8rem; border: 0; border-radius: .35rem; }
+button { background: #26364e; color: inherit; cursor: pointer; text-align: left; }
+button:hover { background: #345275; }
+#library { display: grid; gap: .45rem; } .folder { background: #202c3b; } .video small { color: #b9c5d8; float: right; }
+#player { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #3b4a60; } #player label { display: block; margin-bottom: .75rem; } #player select { margin-left: .5rem; }
+#player #start { display: block; margin-bottom: 1rem; background: #1976b9; } video { width: 100%; background: #000; max-height: 440px; } .hint { color: #b9c5d8; font-size: .9rem; }

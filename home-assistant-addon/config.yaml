@@ -1,0 +1,16 @@
+name: PSP Streamer
+slug: psp_streamer
+version: "0.1.0"
+description: Transcodes a Home Assistant media library for PSP Streamer.
+url: https://github.com/dreimer/PSPStreamer
+arch: [aarch64, amd64, armv7]
+startup: services
+boot: auto
+init: false
+ports: {8091/tcp: 8091}
+ports_description: {8091/tcp: PSP Streamer HTTP server}
+map:
+  - type: media
+    read_only: true
+options: {port: 8091, max_transcodes: 4}
+schema: {port: port, max_transcodes: int(2,8)}

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PSP Streamer</title>
+<link rel="stylesheet" href="/style.css">
+<main>
+  <h1>PSP Streamer</h1>
+  <p id="location">Mediathek wird geladen …</p>
+  <nav id="roots"></nav>
+  <section id="library"></section>
+  <section id="player" hidden>
+    <h2 id="title"></h2>
+    <label>Audiospur <select id="audio"></select></label>
+    <label>Untertitel <select id="subtitle"></select></label>
+    <button id="start">Transkodierung starten</button>
+    <video id="video" controls playsinline></video>
+    <p class="hint">Der Browser-Player ist zum Prüfen von Quelle und Transkodierung gedacht. Die optimierte H.264/MP3-Wiedergabe erfolgt in der PSP-App.</p>
+  </section>
+</main>
+<script src="/app.js"></script>
+</html>
