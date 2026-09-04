@@ -1,0 +1,4 @@
+# Keine lokalen Python-Artefakte in das Add-on-Image übernehmen.
+**/__pycache__/
+**/*.py[cod]
+**/.git/
