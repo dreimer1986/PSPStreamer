@@ -26,6 +26,10 @@ int cooleyesAudioSetFrequency(int devkit_version, int frequency) {
 int module_start(SceSize args, void *argp) {
     (void)args;
     (void)argp;
+    /* Keep the regular PCM output on the exact rate produced by the MP3
+     * stream.  This must happen in the kernel bridge: the public User-Mode
+     * audio import does not expose a frequency setter on 6.61. */
+    cooleyesAudioSetFrequency(sceKernelDevkitVersion(), 44100);
     /* mpeg_vsh invokes the exported boot function too; booting here makes
      * loading deterministic and the firmware call is idempotent. */
     return cooleyesMeBootStart(sceKernelDevkitVersion(), 1);
