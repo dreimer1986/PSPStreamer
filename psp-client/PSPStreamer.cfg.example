@@ -1,0 +1,7 @@
+# Copy as ms0:/PSP/SYSTEM/PSPStreamer.cfg and change the endpoint.
+# A DNS/DynDNS name or an IPv4 address is accepted.
+server=http://streamer.example.net:8091
+port=8091
+audio=0
+subtitle=-1
+quality=2

@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# PSP build output and personal release copies
+*.o
+*.elf
+*.prx
+*.PBP
+PARAM.SFO
+psp-client/release/
+
+# Local toolchains and vendored build dependencies
+.toolchain/
+psp-client/third_party/
+
+# Local configuration
+.env

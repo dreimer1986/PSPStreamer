@@ -1,0 +1,12 @@
+services:
+  psp-streamer:
+    build: .
+    ports:
+      - "${PSP_STREAMER_PORT:-8091}:8091"
+    environment:
+      MEDIA_ROOTS: /media
+      MAX_TRANSCODES: "4"
+    volumes:
+      # SMB mount on the host; exposed read-only inside the container.
+      - ${MEDIA_ROOT_PATH:-/media}:/media:ro
+    restart: unless-stopped
