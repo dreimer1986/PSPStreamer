@@ -622,6 +622,11 @@ static int audio_output_thread(SceSize args, void *argp) {
      * PSP the SRC path leaves a small, periodic seam between DMA blocks that
      * is especially audible in speech as a "tok-tok" artefact. */
     sceAudioSRCChRelease();
+    /* The standard PCM channel inherits the system output frequency.  Do not
+     * rely on the XMB or the previously closed game having left it at 44.1
+     * kHz: our MP3 decoder always produces exactly 44,100 samples per second,
+     * so an inherited rate makes audio drift against the video clock. */
+    sceAudioSetFrequency(44100);
     channel = sceAudioChReserve(PSP_AUDIO_NEXT_CHANNEL, AUDIO_BLOCK_SAMPLES, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
     while (audio_running || audio_queue_count > 0) {
