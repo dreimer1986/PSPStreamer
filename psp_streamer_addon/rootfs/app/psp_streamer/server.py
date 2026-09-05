@@ -192,10 +192,10 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # Annex-B is the native input expected by the PSP OpenH264 playback
         # path. AUD makes access-unit boundaries unambiguous on a raw socket;
         # repeated headers let a client recover at each IDR.
-        # LCD playback retains its validated 20.1-fps cadence.  Component
-        # output uses its independently measured 19.573-fps source clock.
+        # LCD playback retains its validated 20.1-fps cadence.  Native
+        # component output retains its original 20.2-fps source clock.
         target_width, target_height = (720, 480) if tv_output else (480, 272)
-        frame_rate = "19573/1000" if tv_output else "201/10"
+        frame_rate = "101/5" if tv_output else "201/10"
         video_filter = (f"fps={frame_rate},scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
                         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
@@ -277,7 +277,7 @@ def calibration_command(duration: int, container: str, tv_output: bool) -> list[
                 "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", "-write_xing", "0",
                 "-id3v2_version", "0", "-f", "mp3", "pipe:1"]
     width, height = (720, 480) if tv_output else (480, 272)
-    fps = "19573/1000" if tv_output else "201/10"
+    fps = "101/5" if tv_output else "201/10"
     source = f"color=c=black:s={width}x{height}:r={fps}:d={duration}"
     flash = ",".join("drawbox=x=0:y=0:w=iw:h=ih:color=%s:t=fill:enable='between(t,%.2f,%.2f)'" %
                      (colour, second, second + .35) for second, colour, _frequency in markers)
@@ -447,7 +447,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
         """Return a compact cue list without involving the video transcode."""
-        fps = 19.573 if tv_profile else PSP_SUBTITLE_FPS
+        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
         cache_key = (token, track, fps)
         with self.server.subtitle_cache_lock:
             cached = self.server.subtitle_cache.get(cache_key)
@@ -508,7 +508,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
         cues = self.pgs_cues(token, track)
-        fps = 19.573 if tv_profile else PSP_SUBTITLE_FPS
+        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
         payload = {"t": "pgs", "c": [[round(cue.start * fps), round(cue.end * fps),
                                          cue.x, cue.y, cue.width, cue.height, cue.canvas_width, cue.canvas_height]
                                        for cue in cues]}
