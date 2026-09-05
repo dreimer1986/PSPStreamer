@@ -844,6 +844,32 @@ static void playback_hud(int frames, int paused) {
     }
 }
 
+/* The native TV frame has a 768-pixel pitch and cannot share the LCD HUD's
+ * 512-pixel drawing helpers.  Keep this first overlay deliberately tiny: it
+ * is redrawn after CSC on every frame and therefore has no extra buffer or
+ * timing cost. */
+static void tvout_playback_hud(int frames, int paused) {
+    u32 *vram = (u32 *)0x44000000;
+    int x, y, filled = 0;
+    if (current_duration_seconds > 0.0f)
+        filled = (int)(720 * (frames + stream_start_seconds * 20.1f) /
+                       (current_duration_seconds * 20.1f));
+    if (filled < 0) filled = 0;
+    if (filled > 720) filled = 720;
+    for (x = 0; x < 720; x++) {
+        vram[474 * TVOUT_STRIDE + x] = x < filled ? 0x00D8E8FF : 0x00202020;
+        vram[475 * TVOUT_STRIDE + x] = x < filled ? 0x00D8E8FF : 0x00202020;
+    }
+    if (paused) {
+        for (y = 20; y < 62; y++) for (x = 660; x < 710; x++) {
+            if ((x >= 670 && x < 682) || (x >= 690 && x < 702))
+                vram[y * TVOUT_STRIDE + x] = 0x00FFFFFF;
+            else if (x == 660 || x == 709 || y == 20 || y == 61)
+                vram[y * TVOUT_STRIDE + x] = 0x00000000;
+        }
+    }
+}
+
 static void gui_rect(u32 *vram, int left, int top, int width, int height, u32 color) {
     int x, y;
     if (left < 0) { width += left; left = 0; }
@@ -1204,7 +1230,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
                 bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
                 if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
                 else receiver_hud(hardware_decoder_frames);
-            }
+            } else tvout_playback_hud(hardware_decoder_frames, playback_paused);
             sceDisplaySetFrameBuf((void *)0x04000000,
                                   tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                                   PSP_DISPLAY_PIXEL_FORMAT_8888,
@@ -1685,7 +1711,8 @@ static int play_h264(const char *media_id) {
             paused = !paused;
             playback_paused = paused;
             audio_start = paused ? 0 : 1;
-            if (!tvout_video_active) playback_hud(hardware_decoder_frames, paused);
+            if (tvout_video_active) tvout_playback_hud(hardware_decoder_frames, paused);
+            else playback_hud(hardware_decoder_frames, paused);
             sceDisplaySetFrameBuf((void *)0x04000000,
                                   tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                                   PSP_DISPLAY_PIXEL_FORMAT_8888,
