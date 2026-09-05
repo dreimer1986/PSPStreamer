@@ -376,9 +376,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 token = command.get("id")
                 if not isinstance(token, str) or len(token) > 1024:
                     raise ValueError("Invalid media id")
-                _, source = self.server.library.decode(token)
+                source = None if token in CALIBRATION_MEDIA else self.server.library.decode(token)[1]
                 clean["id"] = token
-                clean["kind"] = "audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video"
+                clean["kind"] = "video" if source is None else ("audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video")
                 clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
                 clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
                 clean["start"] = max(0, min(86400, int(command.get("start", 0))))
