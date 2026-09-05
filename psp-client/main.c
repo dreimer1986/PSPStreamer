@@ -479,7 +479,11 @@ static int prepare_client_subtitles(const char *media_id) {
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
         if (!bitmap_cues) return 0;
         bitmap_cue_count = 0; bitmap_loaded_cue = -1; bitmap_client_side = 1;
-        cursor = strstr(response, "\"c\":["); if (!cursor) return 0; cursor++;
+        /* Skip the outer cue array.  Starting the parser at its '[' makes
+         * sscanf see "[[..." and reject every PGS cue. */
+        cursor = strstr(response, "\"c\":["); if (!cursor) return 0;
+        cursor = strchr(cursor, '['); if (!cursor) return 0;
+        cursor++;
         while (bitmap_cue_count < 960) {
             BitmapCue *cue = &bitmap_cues[bitmap_cue_count]; int used = 0; char *entry = strchr(cursor, '[');
             if (!entry || sscanf(entry, "[%d,%d,%d,%d,%d,%d,%d,%d]%n", &cue->start, &cue->end, &cue->x, &cue->y, &cue->width, &cue->height, &cue->canvas_width, &cue->canvas_height, &used) != 8) break;
