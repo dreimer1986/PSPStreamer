@@ -199,6 +199,10 @@ static short audio_samples[AUDIO_BLOCK_SAMPLES * 2 * AUDIO_QUEUE_BLOCKS] __attri
 /* Direct firmware codec input and its required work area.  Unlike sceMp3,
  * this path has no fake file offsets or opaque streaming ring. */
 static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((aligned(64)));
+/* Keep the Media Engine's decode target separate from DAC-owned ring slots.
+ * PMPlayer Advance uses this exact staging arrangement; it prevents a late
+ * ME cache/DMA write from ever touching a buffer being recycled by audio. */
+static short mp3_decode_pcm[MP3_DECODE_SAMPLES * 2] __attribute__((aligned(64)));
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write;
@@ -1384,17 +1388,15 @@ static int audio_thread(SceSize args, void *argp) {
         if (!audio_running) break;
         mp3_codec[6] = (unsigned long)mp3_input_buffer;
         mp3_codec[7] = mp3_codec[10] = frame_size;
-        mp3_codec[8] = (unsigned long)(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 +
-                                        frames_in_block * MP3_DECODE_SAMPLES * 2);
+        mp3_codec[8] = (unsigned long)mp3_decode_pcm;
         mp3_codec[9] = decoded_bytes;
         sceKernelDcacheWritebackRange(mp3_input_buffer, frame_size);
-        /* This slot has previously been handed to the DAC.  Evict every
-         * cache line before the firmware decoder writes fresh PCM into it;
-         * otherwise an occasional stale line can become an audible click at
-         * the ring-buffer boundary. */
-        sceKernelDcacheWritebackInvalidateRange((void *)mp3_codec[8], decoded_bytes);
+        sceKernelDcacheWritebackInvalidateRange(mp3_decode_pcm, decoded_bytes);
         result = sceAudiocodecDecode(mp3_codec, PSP_CODEC_MP3);
         if (result < 0) { audio_state = -24; audio_running = 0; break; }
+        sceKernelDcacheInvalidateRange(mp3_decode_pcm, decoded_bytes);
+        memcpy(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 +
+               frames_in_block * MP3_DECODE_SAMPLES * 2, mp3_decode_pcm, decoded_bytes);
         memmove(mp3_input_buffer, mp3_input_buffer + frame_size, have - frame_size);
         have -= frame_size;
         frames_in_block++;
