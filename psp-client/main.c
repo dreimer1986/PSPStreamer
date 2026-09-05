@@ -503,7 +503,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         }
         /* TCP delivers H.264 in bursts.  Drawing every received access unit
          * immediately was the visible catch-up effect.  Never present faster
-         * than the server's 20 fps, with the audio DAC as master clock. */
+         * than the server's 20.1 fps, with the audio DAC as master clock. */
         {
             unsigned long long now = sceKernelGetSystemTimeWide();
             if (*next_frame_tick == 0 || now > *next_frame_tick + 100000ULL)

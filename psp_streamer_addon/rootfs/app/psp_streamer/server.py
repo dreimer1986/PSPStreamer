@@ -113,8 +113,8 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # Annex-B is the native input expected by the PSP OpenH264 playback
         # path. AUD makes access-unit boundaries unambiguous on a raw socket;
         # repeated headers let a client recover at each IDR.
-        # Test profile: 20.1 fps matches the PSP presentation clock used by
-        # the accompanying 20.1-fps client build.
+        # The 20.1-fps output rate matches the validated PSP presentation
+        # clock and prevents a cumulative audio lag on real hardware.
         video_filter = "fps=201/10,scale=480:272:force_original_aspect_ratio=decrease,pad=480:272:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
         bitmap_filter = None
         if subtitle_track >= 0 and bitmap_subtitle:
@@ -138,7 +138,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             # resumes the normal real-time rate.
             "ffmpeg", "-hide_banner", "-loglevel", "error", *( ["-ss", f"{start_seconds:.3f}"] if start_seconds else [] ), "-re", "-readrate_initial_burst", "2", "-i", str(source),
             "-map", "[v]" if bitmap_filter else "0:v:0",
-            # With audio active, 20 fps is the reliable real-time ceiling
+            # With audio active, 20.1 fps is the validated real-time ceiling
             # for software H.264 decoding plus YUV-to-RGBA conversion on a
             # PSP-3000.  It prevents video falling behind the audio clock.
             "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",

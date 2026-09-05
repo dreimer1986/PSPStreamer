@@ -46,6 +46,7 @@ class LibraryTests(unittest.TestCase):
         self.assertIn("-re", command)
         self.assertIn("aud=1:repeat-headers=1:keyint=64", " ".join(command))
         self.assertIn("-an", command)
+        self.assertIn("fps=201/10", " ".join(command))
 
     def test_h264_subtitle_filter_can_use_a_safe_alias(self):
         command = ffmpeg_command(
