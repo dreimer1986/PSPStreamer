@@ -79,10 +79,11 @@ audio=0
 subtitle=-1
 quality=2
 volume=24
+shuffle=0
 language=en
 ```
 
-`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k` MP3; and `volume` ranges from `0` to `30`.
+`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
 
 `language` selects the PSP interface language: `en` (default) or `de`. The PSP's bundled Latin-1 font supports direct German `ä`, `ö`, `ü`, and `ß` characters.
 

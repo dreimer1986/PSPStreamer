@@ -211,6 +211,7 @@ static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
+static int audio_shuffle;
 /* 0..30 maps cleanly to the 30 LED detents in the receiver UI. */
 static int playback_volume = 24;
 static StreamTrack audio_tracks[8], subtitle_tracks[8];
@@ -278,12 +279,14 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
+            else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
     if (selected_subtitle_track < -1 || selected_subtitle_track > 7) selected_subtitle_track = -1;
     if (selected_audio_quality < 0 || selected_audio_quality > 2) selected_audio_quality = 2;
+    audio_shuffle = audio_shuffle != 0;
     if (playback_volume < 0 || playback_volume > 30) playback_volume = 24;
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
     if (!server_host[0]) strcpy(server_host, PSP_STREAMER_HOST);
@@ -292,8 +295,8 @@ static void load_playback_settings(void) {
 static void save_playback_settings(void) {
     SceUID file;
     char data[192];
-    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nlanguage=%s\n",
-                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, language_code());
+    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\n",
+                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code());
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1769,7 +1772,19 @@ static void parent_path(void) {
 /* Continue within the same kind of media.  A music album must never spill
  * into a video merely because both happen to share a folder. */
 static int next_media_index(int selected, int is_audio) {
-    int index;
+    int index, candidates = 0, wanted;
+    static unsigned int shuffle_state;
+    if (is_audio && audio_shuffle) {
+        for (index = 0; index < item_count; index++)
+            if (index != selected && !items[index].is_folder && items[index].is_audio) candidates++;
+        if (!candidates) return -1;
+        if (!shuffle_state) shuffle_state = (unsigned int)sceKernelGetSystemTimeWide() | 1U;
+        shuffle_state = shuffle_state * 1103515245U + 12345U;
+        wanted = (shuffle_state >> 8) % candidates;
+        for (index = 0; index < item_count; index++)
+            if (index != selected && !items[index].is_folder && items[index].is_audio && wanted-- == 0) return index;
+        return -1;
+    }
     for (index = selected + 1; index < item_count; index++)
         if (!items[index].is_folder && items[index].is_audio == is_audio) return index;
     return -1;
@@ -1932,8 +1947,10 @@ static int playback_options(int audio_only) {
         gui_library_shell(tr(TXT_STREAM_OPTIONS));
         gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
         if (audio_only) {
-            gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+            gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
             gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
             gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
             gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
@@ -1961,11 +1978,14 @@ static int playback_options(int audio_only) {
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
+        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
+        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
         if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
         if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
-            if (audio_only) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
+            if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
+            else if (audio_only) audio_shuffle = !audio_shuffle;
             else if (row == 0 && audio_track_count)
                 selected_audio_track = (selected_audio_track + delta + audio_track_count) % audio_track_count;
             else if (row == 1) {
