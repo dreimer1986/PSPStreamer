@@ -11,7 +11,7 @@ CFLAGS = -O2 -G0 -Wall -Wextra
 # Linking either a second time produces non-contiguous import tables on PSP.
 ## Point this at the PSP-built OpenH264 headers and libopenh264_dec_psp.a.
 OPENH264_DIR ?= third_party/openh264
-LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg mpeg_extra.o -lpspmpegbase
+LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpspmp3 -lpsppower -lpspkubridge -lpspmpeg mpeg_extra.o -lpspmpegbase
 
 EXTRA_TARGETS = EBOOT.PBP
 PSPSDK := $(shell psp-config --pspsdk-path)
