@@ -212,6 +212,15 @@ static int tvout_toggle_gui(void) {
     return 0;
 }
 
+/* All browser views still render with the inexpensive 480x272 primitives.
+ * In component-GUI mode they must subsequently take the same staging/scaling
+ * route as the library itself.  Leaving a modal screen on the 512-pixel
+ * framebuffer while the display controller scans 768 pixels produces three
+ * torn copies in the top of the TV image. */
+static void gui_present(void) {
+    if (tvout_gui_active) tvout_present_gui();
+}
+
 static int load_hardware_avc_runtime(void) {
     char bridge_path[256], cwd[192];
     const char *fallback_dirs[] = {
@@ -1629,8 +1638,13 @@ static int play_audio(const char *media_id, const char *title) {
         }
         if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
         else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
-        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-        sceDisplayWaitVblankStart();
+        if (tvout_gui_active) gui_present();
+        else {
+            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                                  PSP_DISPLAY_PIXEL_FORMAT_8888,
+                                  PSP_DISPLAY_SETBUF_NEXTVSYNC);
+            sceDisplayWaitVblankStart();
+        }
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -2047,6 +2061,7 @@ static void show_metadata_loading(void) {
     gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_NO_VIDEO));
     gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_STREAM_HAS));
     gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STARTED));
+    gui_present();
 }
 
 static void parse_library(void) {
@@ -2223,7 +2238,7 @@ static void show(int selected) {
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
-    tvout_present_gui();
+    gui_present();
 }
 
 /* A real media-information screen rather than a second copy of the browser.
@@ -2256,6 +2271,7 @@ static void media_info(int selected) {
         for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
             gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
         gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
+        gui_present();
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
             !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
@@ -2310,6 +2326,7 @@ static int playback_options(int audio_only) {
             gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
             gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
         }
+        gui_present();
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
