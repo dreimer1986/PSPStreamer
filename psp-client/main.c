@@ -29,7 +29,6 @@
 #include <unistd.h>
 
 #include "config.h"
-#include "h264_decoder.h"
 #include "h264_hw.h"
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
@@ -41,7 +40,6 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
  * 24 entries. */
 #define MAX_ITEMS 1024
 #define LIST_ROWS 20
-#define JPEG_BUFFER_BYTES (512 * 1024)
 #define H264_BUFFER_BYTES (768 * 1024)
 #define VIDEO_WIDTH 480
 #define VIDEO_HEIGHT 272
@@ -60,6 +58,7 @@ typedef struct {
 typedef struct {
     int number;
     char language[16];
+    char title[48];
 } StreamTrack;
 
 /* Subtitle times are server-normalised to the same 20.1-fps presentation
@@ -79,11 +78,7 @@ typedef struct { int start, end, x, y, width, height, canvas_width, canvas_heigh
 
 static char response[RESPONSE_SIZE];
 /* 512 pixels is the required power-of-two display stride. */
-static unsigned char jpeg_buffer[JPEG_BUFFER_BYTES] __attribute__((aligned(64)));
 static unsigned char h264_buffer[H264_BUFFER_BYTES] __attribute__((aligned(64)));
-/* sceJpeg writes tightly packed RGBA rows. The LCD, however, reads a 512-pixel
- * stride from VRAM. Keep those layouts separate and copy line by line. */
-static unsigned char decoded_frame[VIDEO_WIDTH * VIDEO_HEIGHT * 4] __attribute__((aligned(64)));
 static LibraryItem items[MAX_ITEMS];
 static int item_count;
 static char current_path[ID_SIZE];
@@ -207,6 +202,7 @@ static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1, bitmap_
 static int subtitle_client_side;
 static float current_duration_seconds;
 static int playback_reached_end;
+static volatile int playback_paused;
 static int stream_start_seconds;
 static int resume_pending;
 static char resume_media_id[ID_SIZE];
@@ -394,10 +390,10 @@ static int wait_for_network_restore(void) {
     return -1;
 }
 
-static int http_get(const char *path, char *buffer, int buffer_size) {
+static int http_get_wait(const char *path, char *buffer, int buffer_size, int idle_timeout_ms) {
     struct sockaddr_in server;
     char request[2048], *body;
-    int socket_fd, received = 0, read_size, content_length = -1, header_length = -1;
+    int socket_fd, received = 0, read_size, content_length = -1, header_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return socket_fd;
     if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); return -1004; }
@@ -409,8 +405,15 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
     snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, server_host);
     if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1002; }
     while (received < buffer_size - 1) {
-        read_size = (int)sceNetInetRecv(socket_fd, buffer + received, buffer_size - 1 - received, 0);
+        read_size = stream_recv(socket_fd, buffer + received, buffer_size - 1 - received, 250);
+        if (read_size == -2) {
+            idle_ms += 250;
+            if (idle_ms < idle_timeout_ms) continue;
+            sceNetInetClose(socket_fd);
+            return -1005;
+        }
         if (read_size <= 0) break;
+        idle_ms = 0;
         received += read_size;
         buffer[received] = '\0';
         /* The server supplies Content-Length for library/metadata replies.
@@ -433,25 +436,41 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
     return (int)strlen(buffer);
 }
 
+static int http_get(const char *path, char *buffer, int buffer_size) {
+    /* Browsing and metadata must never strand the UI after a Wi-Fi dropout. */
+    return http_get_wait(path, buffer, buffer_size, 20000);
+}
+
 static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body;
-    int socket_fd, received = 0, header_size = 0, body_size;
+    int socket_fd, received = 0, header_size = 0, body_size, content_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0 || prepare_server(&server) < 0) return -1;
     if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { sceNetInetClose(socket_fd); return -1; }
     snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, server_host);
     if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1; }
     while (header_size < (int)sizeof(header) - 1) {
-        int got = sceNetInetRecv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
+        int got = stream_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 250);
+        if (got == -2) { if ((idle_ms += 250) < 20000) continue; sceNetInetClose(socket_fd); return -1; }
         if (got <= 0) { sceNetInetClose(socket_fd); return -1; }
+        idle_ms = 0;
         header_size += got; header[header_size] = 0; body = strstr(header, "\r\n\r\n"); if (body) break;
     }
     if (!body || !strstr(header, " 200 ")) { sceNetInetClose(socket_fd); return -1; }
+    { char *length_header = strstr(header, "Content-Length:"); if (length_header) content_length = atoi(length_header + 15); }
     body += 4; body_size = header_size - (int)(body - header);
     if (body_size > buffer_size) { sceNetInetClose(socket_fd); return -1; }
     memcpy(buffer, body, body_size); received = body_size;
-    while (received < buffer_size) { int got = sceNetInetRecv(socket_fd, buffer + received, buffer_size - received, 0); if (got <= 0) break; received += got; }
+    while (received < buffer_size && (content_length < 0 || received < content_length)) {
+        int wanted = buffer_size - received;
+        int got;
+        if (content_length >= 0 && wanted > content_length - received) wanted = content_length - received;
+        got = stream_recv(socket_fd, buffer + received, wanted, 250);
+        if (got == -2) { if ((idle_ms += 250) < 20000) continue; sceNetInetClose(socket_fd); return -1; }
+        if (got <= 0) break;
+        idle_ms = 0; received += got;
+    }
     sceNetInetClose(socket_fd); return received;
 }
 
@@ -474,7 +493,7 @@ static int prepare_client_subtitles(const char *media_id) {
     if (strstr(response, "\"t\":\"bitmap\"")) {
         char path[ID_SIZE + 64], *cursor;
         snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d", media_id, selected_subtitle_track);
-        if (http_get(path, response, sizeof(response)) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
+        if (http_get_wait(path, response, sizeof(response), 180000) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
         if (bitmap_cues) free(bitmap_cues);
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
         if (!bitmap_cues) return 0;
@@ -675,6 +694,27 @@ static void subtitle_present(int absolute_frame) {
     }
 }
 
+/* A deliberately tiny playback HUD: it costs a few VRAM writes, not a second
+ * framebuffer or font renderer.  It makes pause state and progress visible
+ * while retaining the proven direct Media-Engine presentation path. */
+static void playback_hud(int frames, int paused) {
+    u32 *vram = (u32 *)0x44000000;
+    int x, y = VIDEO_HEIGHT - 5, filled = 0;
+    if (current_duration_seconds > 0.0f)
+        filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * 20.1f) / (current_duration_seconds * 20.1f));
+    if (filled < 0) filled = 0;
+    if (filled > VIDEO_WIDTH) filled = VIDEO_WIDTH;
+    for (x = 0; x < VIDEO_WIDTH; x++)
+        vram[y * VIDEO_STRIDE + x] = x < filled ? 0x00D8E8FF : 0x00202020;
+    if (paused) {
+        for (y = 8; y < 30; y++) for (x = 444; x < 472; x++)
+            if ((x >= 448 && x < 456) || (x >= 462 && x < 470))
+                vram[y * VIDEO_STRIDE + x] = 0x00FFFFFF;
+            else if (x == 444 || x == 471 || y == 8 || y == 29)
+                vram[y * VIDEO_STRIDE + x] = 0x00000000;
+    }
+}
+
 /* The JPEG entry points are visible in user mode, but their AV backend is
  * normally not resident for a homebrew game. Use the firmware Utility API;
  * direct flash-PRX loading is not permitted in user mode. */
@@ -694,6 +734,9 @@ static int load_video_modules(void) {
     return 0;
 }
 
+/* Superseded software/YUV path.  Firmware AVC writes straight to VRAM, so
+ * compiling this code would only reserve a large staging framebuffer. */
+#if 0
 static void present_decoded_frame(void) {
     unsigned char *vram = (unsigned char *)0x44000000; /* uncached VRAM alias */
     int row;
@@ -734,6 +777,7 @@ static void present_yuv420(const unsigned char *y, const unsigned char *u,
     sceKernelDcacheWritebackInvalidateAll();
     present_decoded_frame();
 }
+#endif
 
 static int find_aud(const unsigned char *data, int size, int from) {
     int i;
@@ -780,6 +824,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         if (result > 0) {
             subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
             bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
+            playback_hud(hardware_decoder_frames, playback_paused);
             sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
@@ -801,6 +846,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
  * intentionally an initial video-only transport: it establishes actual
  * moving pictures before adding the considerably more complex H.264/AAC
  * demux and A/V clock path. */
+#if 0
 static int play_mjpeg(const char *media_id) {
     struct sockaddr_in server;
     char request[2048], header[4096], receive_buffer[4096], *body;
@@ -878,6 +924,7 @@ static int play_mjpeg(const char *media_id) {
     if (!frames) video_step = "no JPEG frames";
     return frames ? frames : -1205;
 }
+#endif
 
 static int audio_output_thread(SceSize args, void *argp) {
     int channel, block;
@@ -1017,6 +1064,7 @@ static int play_h264(const char *media_id) {
     unsigned int previous_buttons = 0;
     int paused = 0;
     playback_reached_end = 0;
+    playback_paused = 0;
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
      * retain the established server burn-in path rather than losing subtitles. */
@@ -1071,7 +1119,11 @@ static int play_h264(const char *media_id) {
         if (pad.Buttons & PSP_CTRL_START) { result = frames; break; }
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(previous_buttons & PSP_CTRL_SELECT)) {
             paused = !paused;
+            playback_paused = paused;
             audio_start = paused ? 0 : 1;
+            playback_hud(hardware_decoder_frames, paused);
+            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
+                                  PSP_DISPLAY_SETBUF_NEXTVSYNC);
         }
         if (!paused && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) &&
             !(previous_buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
@@ -1196,6 +1248,8 @@ static void parse_stream_tracks(const char *array_key, StreamTrack *tracks, int 
         if (!object || strchr(cursor, ']') < object) break;
         if (!json_value(object, "n", number, sizeof(number)) ||
             !json_value(object, "l", tracks[*count].language, sizeof(tracks[*count].language))) break;
+        if (!json_value(object, "t", tracks[*count].title, sizeof(tracks[*count].title)))
+            tracks[*count].title[0] = '\0';
         tracks[*count].number = atoi(number);
         (*count)++;
         cursor = strchr(object, '}');
@@ -1359,10 +1413,14 @@ static int playback_options(void) {
         pspDebugScreenSetTextColor(0x00D8E8FF);
         pspDebugScreenPrintf("Playback options\n\n");
         pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenPrintf("%c Audio track:   %s\n", row == 0 ? '>' : ' ',
-                             audio_track_count ? audio_tracks[selected_audio_track].language : "not detected");
-        pspDebugScreenPrintf("%c Subtitles:     %s\n", row == 1 ? '>' : ' ',
-                             selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language);
+        pspDebugScreenPrintf("%c Audio track:   %s%s%s\n", row == 0 ? '>' : ' ',
+                             audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
+                             audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
+                             audio_track_count ? audio_tracks[selected_audio_track].title : "");
+        pspDebugScreenPrintf("%c Subtitles:     %s%s%s\n", row == 1 ? '>' : ' ',
+                             selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
+                             selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
+                             selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
         pspDebugScreenPrintf("%c Audio quality: %s\n\n", row == 2 ? '>' : ' ', audio_quality_name());
         pspDebugScreenPrintf("UP/DOWN: row  LEFT/RIGHT: change\nX: Start   O: Back\n");
         sceCtrlReadBufferPositive(&pad, 1);

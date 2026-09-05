@@ -26,8 +26,9 @@ async function choose(id, name) {
   const data = await api(`/api/metadata/${id}`);
   const audio = data.a || [];
   const subtitles = data.s || [];
-  $('#audio').innerHTML = audio.map((stream, index) => `<option value="${stream.n}">Track ${index + 1} (${esc(stream.l || 'und')})</option>`).join('') || '<option value="0">Default</option>';
-  $('#subtitle').innerHTML = '<option value="-1">Off</option>' + subtitles.map((stream, index) => `<option value="${stream.n}">Subtitle ${index + 1} (${esc(stream.l || 'und')})</option>`).join('');
+  const label = (stream) => `${stream.l || 'und'}${stream.t ? ` — ${esc(stream.t)}` : ''}`;
+  $('#audio').innerHTML = audio.map((stream, index) => `<option value="${stream.n}">Track ${index + 1} (${label(stream)})</option>`).join('') || '<option value="0">Default</option>';
+  $('#subtitle').innerHTML = '<option value="-1">Off</option>' + subtitles.map((stream, index) => `<option value="${stream.n}">Subtitle ${index + 1} (${label(stream)})</option>`).join('');
   $('#player').scrollIntoView({behavior: 'smooth'});
 }
 $('#start').onclick = () => {

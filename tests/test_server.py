@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from psp_streamer.server import Library, MediaItem, ffmpeg_command, load_roots, parse_srt_cues, psp_subtitle_text
+from psp_streamer.server import Library, MediaItem, ffmpeg_command, load_roots, natural_name_key, parse_srt_cues, psp_subtitle_text, track_label
 
 
 class LibraryTests(unittest.TestCase):
@@ -84,6 +84,10 @@ Hallo <i>Welt</i>!\\N{\\an8}Oben
 """)
         self.assertEqual(cues, [[20, 50, "Hallo Welt!|Oben"]])
         self.assertEqual(psp_subtitle_text("Grüße \"PSP\""), "Grüße 'PSP'")
+
+    def test_track_labels_and_episode_sorting_are_psp_friendly(self):
+        self.assertEqual(track_label('German "Forced"'), "German 'Forced'")
+        self.assertLess(natural_name_key("Episode 2.mkv"), natural_name_key("Episode 10.mkv"))
 
 
 if __name__ == "__main__":

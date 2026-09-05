@@ -2,7 +2,7 @@
 
 PSP Streamer makes a local or DynDNS-reachable video library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. The native PSP app receives a compact H.264 Baseline video stream and a separate MP3 audio stream, both decoded locally by the PSP.
 
-The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles are extracted as timed cues and rendered as a native PSP overlay; PGS and other bitmap subtitles retain the server-overlay fallback. Audio-track selection, a kept-awake display, and large directory listings are supported.
+The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles and PGS bitmap subtitles are rendered as native PSP overlays. Audio-track selection, a kept-awake display, seeking, and large directory listings are supported.
 
 ## Requirements
 
@@ -25,7 +25,8 @@ The test interface is then available at `http://SERVER:8091`. It is useful for b
 | --- | --- | --- |
 | `MEDIA_ROOTS` | `/media` | Allowed video directories, separated by `:` |
 | `PORT` | `8091` | HTTP-Port |
-| `MAX_TRANSCODES` | `2` | Concurrent FFmpeg processes; one PSP playback needs two |
+| `MAX_TRANSCODES` | `4` | Concurrent FFmpeg processes; one PSP playback needs two |
+| `PGS_CACHE_TRACKS` | `1` | Number of decoded PGS tracks retained in host RAM |
 | `FFMPEG_PRESET` | `veryfast` | x264-Preset |
 
 ## Docker
@@ -64,11 +65,13 @@ quality=2
 
 `server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `quality` means `0=96k`, `1=128k`, `2=160k` MP3.
 
-Controls: Cross opens a folder or playback options; Circle exits the options screen; Left goes to the parent folder; L/R pages through the list; Square reloads; Start exits the app.
+Browser controls: Cross opens a folder or playback options; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
+
+Playback controls: Select pauses/resumes, L/R seek ±10 seconds, and Start returns to the browser. Track titles such as `Forced` or `Full` appear beside language labels when the source provides them.
 
 ## Subtitles and limitations
 
-ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP overlays a compact outlined DejaVu Sans bitmap locally, so enabling a text track does not delay the H.264 transcode. PGS, VobSub/DVDSUB, DVB, and XSUB currently use FFmpeg's established bitmap-overlay fallback. A native sprite transport for those formats is the next extension point.
+ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP overlays a compact outlined DejaVu Sans bitmap locally. HDMV PGS subtitles use native palette-indexed sprites, preserving their original colour and outline without burning them into video. Other bitmap formats (VobSub/DVDSUB, DVB, XSUB) continue to use the server fallback.
 
 Copy `subtitle_font.raw` beside `EBOOT.PBP` and `cooleyesBridge.prx`. It is a compact DejaVu Sans Latin-1 atlas loaded only after the AVC decoder is ready; if it is missing, video playback remains safe and text subtitles are simply not drawn.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from collections import OrderedDict
 import hashlib
 import json
 import mimetypes
@@ -26,6 +27,19 @@ TEXT_SUBTITLE_CODECS = {"ass", "mov_text", "srt", "ssa", "subrip", "text", "webv
 BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "xsub"}
 PSP_SUBTITLE_FPS = 20.1
 MAX_SUBTITLE_CUES = 1800
+PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
+
+
+def track_label(value: object) -> str:
+    """Keep optional MKV track titles safe for the PSP's tiny JSON parser."""
+    text = str(value or "").replace('"', "'").replace("\\", "/")
+    text = " ".join(text.split())
+    return text[:40]
+
+
+def natural_name_key(value: str) -> list[object]:
+    """Sort episode names naturally: E02 precedes E10."""
+    return [int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", value)]
 
 
 def psp_subtitle_text(value: str) -> str:
@@ -125,7 +139,7 @@ class Library:
             raise ValueError("Folder is unavailable")
 
         folders, videos = [], []
-        for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), path.name.casefold())):
+        for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), natural_name_key(path.name))):
             if entry.name.startswith("."):
                 continue
             child_relative = entry.relative_to(root).as_posix()
@@ -337,11 +351,13 @@ class AppHandler(BaseHTTPRequestHandler):
         streams = json.loads(result.stdout).get("streams", [])
         audio, subtitles = [], []
         for stream in streams:
-            language = stream.get("tags", {}).get("language", "und")
+            tags = stream.get("tags", {})
+            language = str(tags.get("language", "und"))[:15]
+            title = track_label(tags.get("title"))
             if stream.get("codec_type") == "audio":
-                audio.append({"n": str(len(audio)), "l": language})
+                audio.append({"n": str(len(audio)), "l": language, "t": title})
             elif stream.get("codec_type") == "subtitle":
-                subtitles.append({"n": str(len(subtitles)), "l": language})
+                subtitles.append({"n": str(len(subtitles)), "l": language, "t": title})
         duration = json.loads(result.stdout).get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
         # ffprobe can take a few seconds when an SMB share or its disk has
@@ -391,7 +407,9 @@ class AppHandler(BaseHTTPRequestHandler):
     def pgs_cues(self, token: str, track: int) -> list[PgsCue]:
         cache_key = (token, track)
         with self.server.pgs_cache_lock:
-            cached = self.server.pgs_cache.get(cache_key)
+            cached = self.server.pgs_cache.pop(cache_key, None)
+            if cached is not None:
+                self.server.pgs_cache[cache_key] = cached
         if cached is not None:
             return cached
         _, source = self.server.library.decode(token)
@@ -411,6 +429,8 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = parse_pgs(sup.read_bytes())
         with self.server.pgs_cache_lock:
             self.server.pgs_cache[cache_key] = parsed
+            while len(self.server.pgs_cache) > PGS_CACHE_TRACKS:
+                self.server.pgs_cache.popitem(last=False)
         return parsed
 
     def bitmap_subtitles(self, token: str, track: int) -> None:
@@ -515,7 +535,9 @@ class AppServer(ThreadingHTTPServer):
         self.metadata_cache: dict[str, object] = {}
         self.subtitle_cache: dict[tuple[str, int], object] = {}
         self.subtitle_cache_lock = threading.Lock()
-        self.pgs_cache: dict[tuple[str, int], list[PgsCue]] = {}
+        # PGS tracks contain every decoded bitmap of an episode.  Retaining
+        # them indefinitely makes a long browsing session consume host RAM.
+        self.pgs_cache: OrderedDict[tuple[str, int], list[PgsCue]] = OrderedDict()
         self.pgs_cache_lock = threading.Lock()
         # Video and the separate low-bandwidth PCM track each own one FFmpeg
         # process while a PSP is playing.
