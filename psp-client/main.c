@@ -126,19 +126,11 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
 
 static int tvout_module_id = -1;
 static int tvout_video_active;
-static int tvout_gui_active;
 static volatile int remote_control_running;
 static volatile int remote_control_action;
 static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
 #define TVOUT_STRIDE 768
-
-/* In component GUI mode, never draw the 512-pixel UI into the surface that
- * the DVE is scanning.  Extra RAM is a complete 480x272 work surface; the
- * scaler copies it to EDRAM only after a view has been fully rendered. */
-static u32 *gui_framebuffer(void) {
-    return tvout_gui_active ? (u32 *)0x0a000000 : (u32 *)0x44000000;
-}
 
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
@@ -153,24 +145,51 @@ static int tvout_load_manager(void) {
     return sceKernelStartModule(tvout_module_id, 0, NULL, &status, NULL);
 }
 
+/* Isolated component-480p calibration.  This intentionally uses the PSP's
+ * real 2 MiB EDRAM (the same address space that sceDisplaySetFrameBuf scans)
+ * rather than the 0x0A extra-RAM window.  The latter silently fell back to
+ * the old 512-pixel LCD scanout on this ARK-5 PSP-3000. */
+static int tvout_component_test(void) {
+    SceCtrlData pad;
+    unsigned int old = 0;
+    u32 *vram;
+    int cable, x, y, result;
+    result = tvout_load_manager();
+    if (result < 0) return result;
+    cable = pspDveMgrCheckVideoOut();
+    if (cable != 2) return cable ? -2 : -1;
+    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+    if (result < 0) return result;
+    vram = (u32 *)0x44000000;
+    for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
+        u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
+        if ((y / 24) & 1) color >>= 1;
+        vram[y * TVOUT_STRIDE + x] = color;
+    }
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    while (1) {
+        keep_awake();
+        sceCtrlReadBufferPositive(&pad, 1);
+        if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
+            (old & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) break;
+        old = pad.Buttons;
+        sceKernelDelayThread(20000);
+    }
+    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    return 0;
+}
+
 /* Video uses the exact EDRAM layout proven by the calibration card.  It is
  * intentionally independent of the browser: the normal 480x272 UI remains
  * untouched until a film is actually started. */
-static int tvout_begin_video(int component_session_active) {
+static int tvout_begin_video(void) {
     int result;
-    /* The GUI already owns a confirmed component session.  Some firmware
-     * revisions report a transient non-2 state from CheckVideoOut while the
-     * DVE is actively scanning it; that used to select the 480x272 decoder
-     * path while the TV was still in 720x480 mode, yielding a black screen. */
-    if (component_session_active) {
-        result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
-        if (result < 0) return result;
-        sceDisplayWaitVblankStart();
-        sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
-                              PSP_DISPLAY_PIXEL_FORMAT_8888,
-                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
-        return 0;
-    }
     result = tvout_load_manager();
     if (result < 0 || pspDveMgrCheckVideoOut() != 2) return -1;
     result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
@@ -182,60 +201,10 @@ static int tvout_begin_video(int component_session_active) {
 }
 
 static void tvout_end_video(void) {
-    if (tvout_gui_active) return;
     pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
     sceDisplayWaitVblankStart();
     sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
                           PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-}
-
-/* The display controller only scans EDRAM in component mode.  Use the
- * otherwise-unused extra-RAM aperture as a staging copy, then expand the
- * existing receiver UI into the proven 720x480/768-pitch EDRAM surface.
- * This runs only on a browser redraw, never per video frame. */
-static void tvout_present_gui(void) {
-    u32 *staging = (u32 *)0x0a000000;
-    u32 *output = (u32 *)0x44000000;
-    int x, y;
-    if (!tvout_gui_active) return;
-    sceKernelDcacheWritebackInvalidateRange(staging,
-                                             VIDEO_HEIGHT * VIDEO_STRIDE * sizeof(u32));
-    for (y = 0; y < 480; y++) {
-        const u32 *row = staging + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
-        u32 *destination = output + y * TVOUT_STRIDE;
-        for (x = 0; x < 720; x++) destination[x] = row[x * VIDEO_WIDTH / 720];
-        for (x = 720; x < TVOUT_STRIDE; x++) destination[x] = 0;
-    }
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
-                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-}
-
-static int tvout_toggle_gui(void) {
-    int result;
-    if (tvout_gui_active) {
-        tvout_gui_active = 0;
-        pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
-        sceDisplayWaitVblankStart();
-        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                              PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-        return 0;
-    }
-    result = tvout_load_manager();
-    if (result < 0 || pspDveMgrCheckVideoOut() != 2) return result < 0 ? result : -1;
-    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
-    if (result < 0) return result;
-    tvout_gui_active = 1;
-    return 0;
-}
-
-/* All browser views still render with the inexpensive 480x272 primitives.
- * In component-GUI mode they must subsequently take the same staging/scaling
- * route as the library itself.  Leaving a modal screen on the 512-pixel
- * framebuffer while the display controller scans 768 pixels produces three
- * torn copies in the top of the TV image. */
-static void gui_present(void) {
-    if (tvout_gui_active) tvout_present_gui();
 }
 
 static int load_hardware_avc_runtime(void) {
@@ -890,7 +859,7 @@ static void tvout_subtitle_present(int absolute_frame) {
  * framebuffer or font renderer.  It makes pause state and progress visible
  * while retaining the proven direct Media-Engine presentation path. */
 static void playback_hud(int frames, int paused) {
-    u32 *vram = gui_framebuffer();
+    u32 *vram = (u32 *)0x44000000;
     int x, y = VIDEO_HEIGHT - 5, filled = 0;
     if (current_duration_seconds > 0.0f)
         filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * 20.1f) / (current_duration_seconds * 20.1f));
@@ -995,7 +964,7 @@ static void gui_text(int left, int top, u32 color, const char *format, ...) {
     const char *cursor;
     va_list arguments;
     int glyph, index = 0;
-    u32 *vram = gui_framebuffer();
+    u32 *vram = (u32 *)0x44000000;
     va_start(arguments, format);
     vsnprintf(line, sizeof(line), format, arguments);
     va_end(arguments);
@@ -1139,7 +1108,7 @@ static void gui_audio_fullscreen_receiver(u32 *vram) {
 /* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
  * deliberately uses primitives, so there is no additional texture memory. */
 static void receiver_hud(int frames) {
-    u32 *vram = gui_framebuffer();
+    u32 *vram = (u32 *)0x44000000;
     int x, meter_left, meter_right, level, pointer_x, pointer_y;
     static const signed char knob_x[] = {0,2,3,4,6,7,8,10,10,10,9,8,6,4,2,0,-2,-4,-5,-6,-8,-9,-9,-10,-10,-10,-9,-8,-8,-6,-5};
     static const signed char knob_y[] = {-10,-10,-10,-9,-8,-7,-5,-3,-1,2,4,6,8,9,10,10,10,9,9,8,6,5,4,2,0,-2,-4,-5,-6,-8,-9};
@@ -1635,8 +1604,8 @@ static int play_audio(const char *media_id, const char *title) {
             gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
             gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
         } else {
-            gui_rect(gui_framebuffer(), 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
-            gui_rect(gui_framebuffer(), 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
+            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
             gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
         }
         /* Actual PCM frequency bins, not a decorative level animation. */
@@ -1650,18 +1619,13 @@ static int play_audio(const char *media_id, const char *title) {
                 spectrum_display[x] -= 3;
             else spectrum_display[x] = 0;
             height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
-            gui_rect(gui_framebuffer(), fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
+            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
                      fullscreen ? 25 : 15, height, color);
         }
-        if (fullscreen) gui_audio_fullscreen_receiver(gui_framebuffer());
+        if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
         else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
-        if (tvout_gui_active) gui_present();
-        else {
-            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                                  PSP_DISPLAY_PIXEL_FORMAT_8888,
-                                  PSP_DISPLAY_SETBUF_NEXTVSYNC);
-            sceDisplayWaitVblankStart();
-        }
+        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+        sceDisplayWaitVblankStart();
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -1716,18 +1680,12 @@ static int play_h264(const char *media_id) {
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
-    int component_gui_session = tvout_gui_active;
     playback_reached_end = 0;
     playback_paused = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
      * retain the established server burn-in path rather than losing subtitles. */
-    /* The component browser uses extra RAM as its off-screen canvas.  AVC
-     * also allocates from that RAM on a PSP-3000, so relinquish it before any
-     * decoder/MP3 allocation.  Keep the already-established DVE session via
-     * the explicit flag below; no mode probe is needed during the hand-off. */
-    tvout_gui_active = 0;
     prepare_client_subtitles(media_id);
     result = load_video_modules();
     if (result < 0) return result;
@@ -1735,7 +1693,7 @@ static int play_h264(const char *media_id) {
     video_step = "Hardware-AVC";
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
-    tvout_video_active = tvout_begin_video(component_gui_session) == 0;
+    tvout_video_active = tvout_begin_video() == 0;
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
      * clock in native TV mode.  Let FFmpeg composite them before the stream
@@ -2084,7 +2042,6 @@ static void show_metadata_loading(void) {
     gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_NO_VIDEO));
     gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_STREAM_HAS));
     gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STARTED));
-    gui_present();
 }
 
 static void parse_library(void) {
@@ -2185,7 +2142,7 @@ static void refresh_library(void) {
  * primitives as the receiver strip.  It replaces the old diagnostic-console
  * landing page.  No video decoder buffers or textures are involved here. */
 static void gui_library_shell(const char *section) {
-    u32 *vram = gui_framebuffer();
+    u32 *vram = (u32 *)0x44000000;
     int x, lit_left = vu_left / 10, lit_right = vu_right / 10;
     int y;
     menu_skin_load();
@@ -2243,7 +2200,7 @@ static void show(int selected) {
     } else {
         for (i = first; i < last; i++) {
             int row = i - first;
-            if (i == selected) gui_rect(gui_framebuffer(), 36, 64 + row * 8, 310, 8, 0x004A5A32);
+            if (i == selected) gui_rect((u32 *)0x44000000, 36, 64 + row * 8, 310, 8, 0x004A5A32);
             gui_text(38, 64 + row * 8, i == selected ? 0x00FFFFFF : 0x00D8E8FF,
                      "%c %.38s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
         }
@@ -2261,7 +2218,6 @@ static void show(int selected) {
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
-    gui_present();
 }
 
 /* A real media-information screen rather than a second copy of the browser.
@@ -2273,32 +2229,27 @@ static void media_info(int selected) {
     unsigned int old = 0;
     int i, minutes = (int)current_duration_seconds / 60;
     int seconds = (int)current_duration_seconds % 60;
-    int redraw = 1;
     do {
         sceCtrlReadBufferPositive(&pad, 1);
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_TRIANGLE);
     while (1) {
-        if (redraw) {
-            gui_library_shell(tr(TXT_FILE_DETAILS));
-            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
-            gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
-            gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
-            if (current_duration_seconds > 0.0f)
-                gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
-            else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
-            gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
-            gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
-            gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
-            if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
-            for (i = 0; i < audio_track_count && i < 6; i++)
-                gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
-            for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
-                gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
-            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
-            gui_present();
-            redraw = 0;
-        }
+        gui_library_shell(tr(TXT_FILE_DETAILS));
+        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
+        gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
+        gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
+        if (current_duration_seconds > 0.0f)
+            gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
+        else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
+        gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
+        gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+        gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
+        if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
+        for (i = 0; i < audio_track_count && i < 6; i++)
+            gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
+        for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
+            gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
+        gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
             !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
@@ -2315,7 +2266,6 @@ static int playback_options(int audio_only) {
     SceCtrlData pad;
     unsigned int old = 0;
     int row = 0;
-    int redraw = 1;
     /* The dialog is opened with X.  Consume that press first, otherwise the
      * first controller poll treats the still-held button as "Start". */
     do {
@@ -2323,12 +2273,11 @@ static int playback_options(int audio_only) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
-        if (redraw) {
         gui_library_shell(tr(TXT_STREAM_OPTIONS));
         gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
         if (audio_only) {
-            if (row == 0) gui_rect(gui_framebuffer(), 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect(gui_framebuffer(), 36, 84, 310, 9, 0x004A5A32);
+            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
             gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
             gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
@@ -2337,9 +2286,9 @@ static int playback_options(int audio_only) {
             gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
             gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
         } else {
-            if (row == 0) gui_rect(gui_framebuffer(), 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect(gui_framebuffer(), 36, 84, 310, 9, 0x004A5A32);
-            if (row == 2) gui_rect(gui_framebuffer(), 36, 104, 310, 9, 0x004A5A32);
+            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+            if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
                                  audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                                  audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
@@ -2355,16 +2304,13 @@ static int playback_options(int audio_only) {
             gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
             gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
         }
-        gui_present();
-        redraw = 0;
-        }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
-        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) { row = (row + 1) % 2; redraw = 1; }
-        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) { row = (row + 1) % 2; redraw = 1; }
-        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) { row = (row + 2) % 3; redraw = 1; }
-        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) { row = (row + 1) % 3; redraw = 1; }
+        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
+        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
             if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
@@ -2379,7 +2325,6 @@ static int playback_options(int audio_only) {
                 }
             } else selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
             save_playback_settings();
-            redraw = 1;
         }
         old = pad.Buttons;
         sceKernelDelayThread(75000);
@@ -2449,10 +2394,8 @@ int main(void) {
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
             (old_buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) {
-            result = tvout_toggle_gui();
-            snprintf(status, sizeof(status), result == 0 ?
-                     (tvout_gui_active ? "TV UI active" : "TV UI off") :
-                     "TV-out: %08X", result);
+            result = tvout_component_test();
+            snprintf(status, sizeof(status), result == 0 ? "480p test complete" : "TV-out test: %08X", result);
             dirty = 1;
             old_buttons = pad.Buttons;
             continue;
