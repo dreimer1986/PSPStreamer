@@ -846,10 +846,12 @@ static void menu_skin_load(void) {
 static void gui_skin_receiver(u32 *vram) {
     int x;
     /* Marker follows the visible inner rim of the photorealistic knob, not
-     * a tiny circle near its centre.  Position 7 is the 50% bottom detent. */
-    static const signed char knob_x[] = {0, 10, 18, 23, 23, 18, 10, 0, -10, -18, -23, -23, -18, -10};
-    static const signed char knob_y[] = {-25, -23, -18, -10, 0, 10, 18, 25, 23, 18, 10, 0, -10, -18};
-    int pointer = (playback_volume * 13 + 15) / 30;
+     * a tiny circle near its centre.  Every one of the 31 volume values has
+     * a physical detent, so neighbouring values cannot jump between coarse
+     * positions on the dial. */
+    static const signed char knob_x[] = {0,4,8,11,15,18,21,24,25,25,23,20,16,11,6,0,-4,-9,-13,-16,-19,-22,-23,-25,-25,-25,-23,-22,-19,-16,-13};
+    static const signed char knob_y[] = {-25,-25,-24,-22,-20,-18,-13,-8,-2,4,10,15,19,22,24,25,25,23,22,19,16,13,9,4,0,-4,-9,-13,-16,-19,-22};
+    int pointer = playback_volume;
     static const signed char needle_x[] = {-25,-24,-22,-20,-18,-15,-12,-9,-6,-3,0,3,6,9,12,15,18,20,22,24,25};
     static const signed char needle_y[] = {-4,-7,-10,-12,-14,-16,-18,-19,-20,-21,-21,-21,-20,-19,-18,-16,-14,-12,-10,-7,-4};
     int needle, needle_right;
@@ -894,8 +896,8 @@ static void gui_audio_fullscreen_receiver(u32 *vram) {
 static void receiver_hud(int frames) {
     u32 *vram = (u32 *)0x44000000;
     int x, meter_left, meter_right, level, pointer_x, pointer_y;
-    static const signed char knob_x[] = {0, 4, 7, 9, 9, 7, 4, 0, -4, -7, -9, -9, -7, -4};
-    static const signed char knob_y[] = {-10, -9, -7, -4, 0, 4, 7, 10, 9, 7, 4, 0, -4, -7};
+    static const signed char knob_x[] = {0,2,3,4,6,7,8,10,10,10,9,8,6,4,2,0,-2,-4,-5,-6,-8,-9,-9,-10,-10,-10,-9,-8,-8,-6,-5};
+    static const signed char knob_y[] = {-10,-10,-10,-9,-8,-7,-5,-3,-1,2,4,6,8,9,10,10,10,9,9,8,6,5,4,2,0,-2,-4,-5,-6,-8,-9};
     gui_rect(vram, 0, 220, VIDEO_WIDTH, 52, 0x0010151B);
     gui_rect(vram, 0, 220, VIDEO_WIDTH, 1, 0x00D8E8FF);
     /* Two compact stereo VU meters. */
@@ -918,11 +920,11 @@ static void receiver_hud(int frames) {
         gui_rect(vram, 132 + x * 38, 234, 31, 27, color);
         gui_rect(vram, 134 + x * 38, 236, 27, 23, 0x001B222A);
     }
-    /* Volume knob with a real positional marker across 14 detents. */
+    /* Volume knob with one positional marker for every volume detent. */
     gui_rect(vram, 353, 228, 49, 38, 0x00252C33);
     gui_rect(vram, 358, 233, 39, 28, 0x005A6268);
-    pointer_x = 377 + knob_x[(playback_volume * 13 + 15) / 30];
-    pointer_y = 247 + knob_y[(playback_volume * 13 + 15) / 30];
+    pointer_x = 377 + knob_x[playback_volume];
+    pointer_y = 247 + knob_y[playback_volume];
     gui_rect(vram, pointer_x - 1, pointer_y - 1, 3, 3, 0x00FFB000);
     for (x = 0; x < 30; x++)
         gui_rect(vram, 414 + x * 2, 258 - (x < playback_volume ? 10 : 4), 1,
@@ -1291,6 +1293,7 @@ cleanup:
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0;
     unsigned int old = 0;
+    unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_queue_count = audio_played_blocks = 0;
@@ -1332,8 +1335,18 @@ static int play_audio(const char *media_id, const char *title) {
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) break;
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(old & PSP_CTRL_SELECT)) { paused = !paused; audio_start = !paused; }
-        if ((pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP) && playback_volume < 30) { playback_volume++; save_playback_settings(); }
-        if ((pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN) && playback_volume > 0) { playback_volume--; save_playback_settings(); }
+        if (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN)) {
+            unsigned int direction = (pad.Buttons & PSP_CTRL_UP) ? PSP_CTRL_UP : PSP_CTRL_DOWN;
+            unsigned long long now = sceKernelGetSystemTimeWide();
+            if (!(old & direction) || now >= next_volume_repeat_tick) {
+                if (direction == PSP_CTRL_UP && playback_volume < 30) playback_volume++;
+                if (direction == PSP_CTRL_DOWN && playback_volume > 0) playback_volume--;
+                save_playback_settings();
+                /* First step is immediate; held input then moves at a calm
+                 * five-and-a-half detents per second. */
+                next_volume_repeat_tick = now + 180000;
+            }
+        } else next_volume_repeat_tick = 0;
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         old = pad.Buttons;
@@ -1353,6 +1366,7 @@ static int play_h264(const char *media_id) {
     int audio_thread_id = -1;
     unsigned long long next_frame_tick = 0;
     unsigned long long last_packet_tick;
+    unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
     playback_reached_end = 0;
@@ -1427,12 +1441,17 @@ static int play_h264(const char *media_id) {
             receiver_visible = !receiver_visible;
             receiver_flash_button = PSP_CTRL_CIRCLE;
         }
-        if ((pad.Buttons & PSP_CTRL_UP) && !(previous_buttons & PSP_CTRL_UP) && playback_volume < 30) {
-            playback_volume++; receiver_flash_button = PSP_CTRL_UP; save_playback_settings();
-        }
-        if ((pad.Buttons & PSP_CTRL_DOWN) && !(previous_buttons & PSP_CTRL_DOWN) && playback_volume > 0) {
-            playback_volume--; receiver_flash_button = PSP_CTRL_DOWN; save_playback_settings();
-        }
+        if (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN)) {
+            unsigned int direction = (pad.Buttons & PSP_CTRL_UP) ? PSP_CTRL_UP : PSP_CTRL_DOWN;
+            unsigned long long now = sceKernelGetSystemTimeWide();
+            if (!(previous_buttons & direction) || now >= next_volume_repeat_tick) {
+                if (direction == PSP_CTRL_UP && playback_volume < 30) playback_volume++;
+                if (direction == PSP_CTRL_DOWN && playback_volume > 0) playback_volume--;
+                receiver_flash_button = direction;
+                save_playback_settings();
+                next_volume_repeat_tick = now + 180000;
+            }
+        } else next_volume_repeat_tick = 0;
         if (!paused && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) &&
             !(previous_buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
             int delta = (pad.Buttons & PSP_CTRL_RTRIGGER) ? 10 : -10;
