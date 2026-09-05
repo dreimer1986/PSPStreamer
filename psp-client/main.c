@@ -185,6 +185,7 @@ static char audio_media_id[ID_SIZE];
  * hand-offs by a quarter; those hand-offs were the remaining faint ticks. */
 #define AUDIO_PREFILL_BLOCKS 2
 #define AUDIO_QUEUE_BLOCKS 8
+#define SPECTRUM_BANDS 12
 #define MP3_INPUT_BUFFER_BYTES 4096
 #define MP3_MAX_FRAME_BYTES 576
 /* Producer/consumer queue: network jitter is absorbed here while the output
@@ -200,6 +201,10 @@ static volatile int audio_played_blocks;
 static volatile int vu_left, vu_right;
 /* Separate displayed needles from the instantaneous PCM peaks. */
 static int vu_display_left, vu_display_right;
+/* A compact real frequency view.  The DAC worker measures the PCM it is
+ * about to play; the GUI merely smooths and draws these values. */
+static volatile unsigned char spectrum_levels[SPECTRUM_BANDS];
+static unsigned char spectrum_display[SPECTRUM_BANDS];
 static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
@@ -830,6 +835,47 @@ static void vu_ballistics_step(void) {
     if (delta) vu_display_right += delta > 0 ? (delta + 3) / 4 : (delta - 3) / 4;
 }
 
+/* Integer square root keeps the spectrum independent of libm and is cheap
+ * beside one 104 ms audio DMA block. */
+static int spectrum_root(unsigned long long value) {
+    unsigned long long bit = 1ULL << 62, root = 0;
+    while (bit > value) bit >>= 2;
+    while (bit) {
+        if (value >= root + bit) {
+            value -= root + bit;
+            root = (root >> 1) + bit;
+        } else root >>= 1;
+        bit >>= 2;
+    }
+    return root > 32767 ? 32767 : (int)root;
+}
+
+/* Twelve Goertzel bins over 64 stereo frames: this is a genuine frequency
+ * measurement, from low/mid content at the left to treble on the right.
+ * Values are deliberately gain-biased for a lively PSP-sized display. */
+static void spectrum_measure(const short *pcm) {
+    static const short coefficient[SPECTRUM_BANDS] = {
+        8151, 8035, 7839, 7568, 7225, 6811,
+        5793, 4551, 2381, 0, -3134, -6332
+    };
+    int band, sample;
+    for (band = 0; band < SPECTRUM_BANDS; band++) {
+        long long previous = 0, before_previous = 0, current;
+        unsigned long long energy;
+        int level;
+        for (sample = 0; sample < 64; sample++) {
+            int mono = (pcm[sample * 2] + pcm[sample * 2 + 1]) >> 7;
+            current = mono + ((long long)coefficient[band] * previous >> 12) - before_previous;
+            before_previous = previous;
+            previous = current;
+        }
+        energy = (unsigned long long)(previous * previous + before_previous * before_previous -
+                 ((long long)coefficient[band] * previous * before_previous >> 12));
+        level = spectrum_root(energy) / 30;
+        spectrum_levels[band] = level > 100 ? 100 : level;
+    }
+}
+
 static void menu_skin_load(void) {
     char cwd[192], path[256];
     SceUID file;
@@ -1195,6 +1241,7 @@ static int audio_output_thread(SceSize args, void *argp) {
             }
             vu_left = left_peak * 100 / 32767;
             vu_right = right_peak * 100 / 32767;
+            spectrum_measure(pcm);
         }
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
         /* The producer cannot reuse this slot until OutputBlocking returns:
@@ -1321,6 +1368,8 @@ static int play_audio(const char *media_id, const char *title) {
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_queue_count = audio_played_blocks = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
+    memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
+    memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
@@ -1328,10 +1377,9 @@ static int play_audio(const char *media_id, const char *title) {
     sceKernelStartThread(audio_thread_id, 0, NULL);
     while (audio_running) {
         SceCtrlData pad;
-        int x, bars;
+        int x;
         keep_awake();
         if (fullscreen) vu_ballistics_step();
-        bars = (vu_display_left + vu_display_right) / 2;
         if (!fullscreen) {
             gui_library_shell("NOW PLAYING");
             gui_text(38, 40, 0x0000D8FF, "MUSIC STREAM");
@@ -1342,14 +1390,19 @@ static int play_audio(const char *media_id, const char *title) {
             gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
             gui_text(18, 12, 0x00D8E8FF, "MUSIC // %.48s", title);
         }
-        /* MilkDrop-inspired, deliberately light-weight spectrum motion. */
-        for (x = 0; x < 36; x++) {
-            int height = (bars * (12 + ((x * 17 + audio_played_blocks) % 18))) / 300;
-            int baseline = fullscreen ? 194 : 150;
-            if (height > (fullscreen ? 130 : 72)) height = fullscreen ? 130 : 72;
-            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 12 : 42 + x * 8, baseline - height,
-                     fullscreen ? 8 : 5, height,
-                     x > 28 ? 0x00FFB000 : 0x0000D8FF);
+        /* Actual PCM frequency bins, not a decorative level animation. */
+        for (x = 0; x < SPECTRUM_BANDS; x++) {
+            int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
+            int height, baseline = fullscreen ? 194 : 150;
+            u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
+            if (target > spectrum_display[x])
+                spectrum_display[x] += (target - spectrum_display[x] + 1) / 2;
+            else if (spectrum_display[x] > 3)
+                spectrum_display[x] -= 3;
+            else spectrum_display[x] = 0;
+            height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
+            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
+                     fullscreen ? 25 : 15, height, color);
         }
         if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
         else gui_text(38, 177, 0x00FFFFFF, "SELECT PAUSE  UP/DN VOL  X+TRI FULLSCREEN  START EXIT");
