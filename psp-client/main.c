@@ -16,7 +16,6 @@
 #include <psputility_modules.h>
 #include <psputility_avmodules.h>
 #include <pspiofilemgr.h>
-#include <tinyfont.h>
 #include <kubridge.h>
 
 #include <stdio.h>
@@ -66,8 +65,8 @@ typedef struct {
 /* Subtitle times are server-normalised to the same 20.1-fps presentation
  * clock as the raw H.264 stream.  Keeping them in frames avoids a second,
  * drifting millisecond clock on the PSP. */
-#define MAX_SUBTITLE_CUES 1800
-#define SUBTITLE_TEXT_SIZE 192
+#define MAX_SUBTITLE_CUES 960
+#define SUBTITLE_TEXT_SIZE 160
 typedef struct {
     int start_frame;
     int end_frame;
@@ -196,12 +195,8 @@ static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static StreamTrack audio_tracks[8], subtitle_tracks[8];
 static int audio_track_count, subtitle_track_count;
-static SubtitleCue subtitle_cues[MAX_SUBTITLE_CUES];
+static SubtitleCue *subtitle_cues;
 static int subtitle_cue_count;
-/* 240x32 source pixels are scaled 2x when placed in the 480-wide video
- * framebuffer.  It is rebuilt only when the cue changes, not per frame. */
-static u32 subtitle_glyph_cache[256 * 32] __attribute__((aligned(64)));
-static int subtitle_cached_cue = -2;
 static int subtitle_client_side;
 static float current_duration_seconds;
 static int playback_reached_end;
@@ -436,11 +431,11 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
  * been normalised by the server, so a narrow parser is both safer and much
  * smaller than adding a general JSON library to the playback binary. */
 static int prepare_client_subtitles(const char *media_id) {
-    char path[ID_SIZE + 64], *cursor;
+    char path[ID_SIZE + 64];
     int result;
     subtitle_cue_count = 0;
-    subtitle_cached_cue = -2;
     subtitle_client_side = 0;
+    if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
     if (selected_subtitle_track < 0) return 0;
     snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d", media_id, selected_subtitle_track);
     result = http_get(path, response, sizeof(response));
@@ -448,10 +443,22 @@ static int prepare_client_subtitles(const char *media_id) {
     /* Bitmap tracks keep the existing server-overlay fallback until the
      * sprite transport is available.  Never silently lose a requested PGS. */
     if (!strstr(response, "\"t\":\"text\"")) return 0;
+    subtitle_client_side = 1;
+    return 0;
+}
+
+/* Do not reserve the cue table in the EBOOT's permanent BSS.  sceMpegInit
+ * requires a substantial contiguous allocation on 6.61; allocating text
+ * data only after AVC is live preserves the previously proven start budget. */
+static void subtitle_parse_prepared_response(void) {
+    char *cursor;
+    if (!subtitle_client_side || subtitle_cues) return;
     cursor = strstr(response, "\"c\":[");
-    if (!cursor) return -1310;
+    if (!cursor) { subtitle_client_side = 0; return; }
     cursor = strchr(cursor, '[');
-    if (!cursor) return -1310;
+    if (!cursor) { subtitle_client_side = 0; return; }
+    subtitle_cues = memalign(64, MAX_SUBTITLE_CUES * sizeof(*subtitle_cues));
+    if (!subtitle_cues) { subtitle_client_side = 0; return; }
     cursor++;
     while (subtitle_cue_count < MAX_SUBTITLE_CUES) {
         SubtitleCue *cue = &subtitle_cues[subtitle_cue_count];
@@ -463,63 +470,51 @@ static int prepare_client_subtitles(const char *media_id) {
         if (cue->end_frame > cue->start_frame) subtitle_cue_count++;
         cursor = entry + consumed;
     }
-    subtitle_client_side = 1;
-    return 0;
 }
 
-static void subtitle_cache_line(const char *text, int y) {
-    char line[31];
+static void subtitle_release(void) {
+    if (subtitle_cues) free(subtitle_cues);
+    subtitle_cues = NULL;
+    subtitle_cue_count = 0;
+}
+
+static void subtitle_draw_line(const char *text, int y) {
+    char line[59];
     int length = 0;
-    while (*text && *text != '|' && length < 30) line[length++] = *text++;
+    int index, x, dx, dy;
+    while (*text && *text != '|' && length < 58) line[length++] = *text++;
     line[length] = '\0';
-    if (length)
-        tinyFontPrintTextBuffer(subtitle_glyph_cache, 240, 32, 256, msx,
-                                (240 - length * 8) / 2, y, line, 0x00FFFFFF, NULL);
-}
-
-static void subtitle_rebuild_cache(int cue_index) {
-    const char *text;
-    int line = 0;
-    memset(subtitle_glyph_cache, 0, sizeof(subtitle_glyph_cache));
-    subtitle_cached_cue = cue_index;
-    if (cue_index < 0) return;
-    text = subtitle_cues[cue_index].text;
-    /* A concise server-side payload can contain explicit pipes.  Long lines
-     * are clipped here rather than allocating or parsing during rendering. */
-    while (*text && line < 3) {
-        subtitle_cache_line(text, line * 8);
-        while (*text && *text != '|') text++;
-        if (*text == '|') text++;
-        line++;
+    if (!length) return;
+    x = (VIDEO_WIDTH - length * 8) / 2;
+    for (index = 0; index < length; index++) {
+        /* pspDebug's built-in font was already part of the stable binary.
+         * Use it directly rather than linking another font library into the
+         * memory-sensitive AVC process. */
+        for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++)
+            if (dx || dy) pspDebugScreenPutChar(x + index * 8 + dx, y + dy, 0x00000000, (u8)line[index]);
+        pspDebugScreenPutChar(x + index * 8, y, 0x00FFFFFF, (u8)line[index]);
     }
 }
 
 static void subtitle_present(int absolute_frame) {
-    int index = -1, cue_index, x, y;
+    int index = -1, cue_index, y;
     u32 *vram;
-    if (!subtitle_client_side) return;
+    if (!subtitle_client_side || !subtitle_cues) return;
     for (cue_index = 0; cue_index < subtitle_cue_count; cue_index++) {
         if (absolute_frame >= subtitle_cues[cue_index].start_frame &&
             absolute_frame < subtitle_cues[cue_index].end_frame) { index = cue_index; break; }
         if (subtitle_cues[cue_index].start_frame > absolute_frame) break;
     }
-    if (index != subtitle_cached_cue) subtitle_rebuild_cache(index);
     if (index < 0) return;
     vram = (u32 *)0x44000000;
-    /* The cached 8-pixel glyphs are enlarged to a legible 16 px.  A small
-     * opaque outline is cheap and remains readable on bright anime frames. */
-    for (y = 0; y < 24; y++) for (x = 0; x < 240; x++) {
-        if (subtitle_glyph_cache[y * 256 + x]) {
-            int dx, dy, px = x * 2, py = 224 + y * 2;
-            for (dy = -1; dy <= 2; dy++) for (dx = -1; dx <= 2; dx++) {
-                int sx = px + dx, sy = py + dy;
-                if (sx >= 0 && sx < VIDEO_WIDTH && sy >= 0 && sy < VIDEO_HEIGHT)
-                    vram[sy * VIDEO_STRIDE + sx] = 0x00000000;
-            }
-            vram[py * VIDEO_STRIDE + px] = 0x00FFFFFF;
-            vram[py * VIDEO_STRIDE + px + 1] = 0x00FFFFFF;
-            vram[(py + 1) * VIDEO_STRIDE + px] = 0x00FFFFFF;
-            vram[(py + 1) * VIDEO_STRIDE + px + 1] = 0x00FFFFFF;
+    pspDebugScreenSetBase(vram);
+    pspDebugScreenEnableBackColor(0);
+    {
+        const char *text = subtitle_cues[index].text;
+        for (y = 0; *text && y < 3; y++) {
+            subtitle_draw_line(text, 236 + y * 10);
+            while (*text && *text != '|') text++;
+            if (*text == '|') text++;
         }
     }
 }
@@ -612,6 +607,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             }
             if (result < 0) { video_step = h264_hw_last_step(); return result; }
             hardware_decoder_ready = 1;
+            subtitle_parse_prepared_response();
         }
         /* TCP delivers H.264 in bursts.  Drawing every received access unit
          * immediately was the visible catch-up effect.  Never present faster
@@ -1008,6 +1004,7 @@ static int play_h264(const char *media_id) {
         audio_output_thread_id = -1;
     }
     h264_hw_shutdown();
+    subtitle_release();
     sceNetInetClose(socket_fd);
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";

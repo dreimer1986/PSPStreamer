@@ -68,7 +68,7 @@ Controls: Cross opens a folder or playback options; Circle exits the options scr
 
 ## Subtitles and limitations
 
-ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP caches a bitmap-font rendition and overlays it locally, so enabling a text track does not delay the H.264 transcode. PGS, VobSub/DVDSUB, DVB, and XSUB currently use FFmpeg's established bitmap-overlay fallback. A native sprite transport for those formats is the next extension point.
+ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP overlays its built-in outlined bitmap font locally, so enabling a text track does not delay the H.264 transcode. PGS, VobSub/DVDSUB, DVB, and XSUB currently use FFmpeg's established bitmap-overlay fallback. A native sprite transport for those formats is the next extension point.
 
 Video output and a dedicated 480p mode are deliberately not part of this release yet.
 

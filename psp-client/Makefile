@@ -12,7 +12,7 @@ CFLAGS = -O2 -G0 -Wall -Wextra
 ## Point this at the PSP-built OpenH264 headers and libopenh264_dec_psp.a.
 OPENH264_DIR ?= third_party/openh264
 CXXFLAGS = -O2 -G0 -Wall -Wextra -fno-exceptions -fno-rtti -I$(OPENH264_DIR)
-LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg -lpspmpegbase -ltinyfont -L$(OPENH264_DIR) -lopenh264_dec_psp -lstdc++ -lpthread
+LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg -lpspmpegbase -L$(OPENH264_DIR) -lopenh264_dec_psp -lstdc++ -lpthread
 
 EXTRA_TARGETS = EBOOT.PBP
 PSPSDK := $(shell psp-config --pspsdk-path)
