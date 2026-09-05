@@ -31,7 +31,7 @@ PSP_SUBTITLE_FPS = 20.1
 MAX_SUBTITLE_CUES = 1800
 PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
 CALIBRATION_MEDIA = {
-    "__psp_calibration_10s__": ("A/V Calibration — 10 seconds", 10),
+    "__psp_calibration_10s__": ("A/V Calibration — short (18 seconds)", 18),
     "__psp_calibration_5m__": ("A/V Calibration — 5 minutes", 300),
 }
 
@@ -266,16 +266,21 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
 
 
 def calibration_command(duration: int, container: str, tv_output: bool) -> list[str]:
-    """Generate second-aligned white flashes and 1-kHz audio clicks."""
+    """Generate unique colour/tone pairs for unambiguous A/V measurement."""
+    markers = ((7, "red", 440), (11, "green", 880), (15, "blue", 1320)) if duration < 60 else \
+              ((10, "red", 440), (150, "green", 880), (290, "blue", 1320))
     if container == "mp3":
-        pulse = "aevalsrc=if(lt(mod(t\\,1)\\,0.04)\\,0.75*sin(2*PI*1000*t)\\,0):s=44100:d=%d" % duration
+        terms = "+".join("if(between(t\\,%d\\,%.2f)\\,0.75*sin(2*PI*%d*t)\\,0)" % (second, second + .35, frequency)
+                         for second, _colour, frequency in markers)
+        pulse = "aevalsrc=%s:s=44100:d=%d" % (terms, duration)
         return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", pulse,
                 "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", "-write_xing", "0",
                 "-id3v2_version", "0", "-f", "mp3", "pipe:1"]
     width, height = (720, 480) if tv_output else (480, 272)
     fps = "101/5" if tv_output else "201/10"
     source = f"color=c=black:s={width}x{height}:r={fps}:d={duration}"
-    flash = "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='lt(mod(t,1),0.04)'"
+    flash = ",".join("drawbox=x=0:y=0:w=iw:h=ih:color=%s:t=fill:enable='between(t,%.2f,%.2f)'" %
+                     (colour, second, second + .35) for second, colour, _frequency in markers)
     return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
             "-vf", flash, "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"), "-tune", "zerolatency",
