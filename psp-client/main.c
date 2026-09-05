@@ -8,7 +8,7 @@
 #include <pspjpeg.h>
 #include <pspaudio.h>
 #include <pspaudiocodec.h>
-#include <pspmp3.h>
+#include <pspmp3.h> /* retained while the experimental helper is compiled out */
 #include <psppower.h>
 #include <psputils.h>
 #include <psputility.h>
@@ -53,6 +53,8 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 /* IDs encode the complete relative path and can be long for episode files. */
 #define ID_SIZE 512
 #define SCE_ERROR_LIBRARY_ALREADY_EXISTS ((int)0x8002013B)
+/* sceUtilityLoadModule reports this when AV_MP3 is already resident. */
+#define SCE_ERROR_UTILITY_MODULE_LOADED ((int)0x80111102)
 
 typedef struct {
     char title[TITLE_SIZE];
@@ -207,7 +209,6 @@ static volatile int audio_played_blocks;
 /* Video keeps its proven two-block lead.  Stand-alone music can afford a
  * deeper runway before the DAC starts, absorbing Wi-Fi/FFmpeg jitter. */
 static volatile int audio_prefill_target = AUDIO_PREFILL_BLOCKS;
-static volatile int audio_music_mode;
 static volatile int vu_left, vu_right;
 /* Separate displayed needles from the instantaneous PCM peaks. */
 static int vu_display_left, vu_display_right;
@@ -1291,7 +1292,8 @@ static int music_mp3_thread(SceSize args, void *argp) {
     module_result = sceUtilityLoadModule(PSP_MODULE_AV_MP3);
     /* AV_MP3 can already be resident after a previous title or an XMB media
      * service.  The subsequent sceMp3 calls are the authoritative check. */
-    if (module_result < 0 && module_result != SCE_ERROR_LIBRARY_ALREADY_EXISTS) { audio_state = module_result; goto cleanup; }
+    if (module_result < 0 && module_result != SCE_ERROR_LIBRARY_ALREADY_EXISTS &&
+        module_result != SCE_ERROR_UTILITY_MODULE_LOADED) { audio_state = module_result; goto cleanup; }
     video_step = "MP3 init";
     module_result = sceMp3InitResource();
     if (module_result < 0) { audio_state = module_result; goto cleanup; }
@@ -1383,7 +1385,6 @@ static int audio_thread(SceSize args, void *argp) {
     const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
     const int decoded_bytes = MP3_DECODE_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
-    if (audio_music_mode) return music_mp3_thread(args, argp);
     audio_state = 10;
     memset(mp3_codec, 0, sizeof(mp3_codec));
     if (sceAudiocodecCheckNeedMem(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -21; audio_running = 0; return 0; }
@@ -1484,7 +1485,6 @@ static int play_audio(const char *media_id, const char *title) {
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
     audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
-    audio_music_mode = 1;
     playback_reached_end = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
@@ -1599,7 +1599,6 @@ static int play_h264(const char *media_id) {
     audio_running = 1;
     audio_state = 0;
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
-    audio_music_mode = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
