@@ -124,6 +124,36 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
                                 int x, int y, int flags);
 
 static int tvout_module_id = -1;
+/* PMPlayer Advance keeps its TV framebuffer in the PSP-3000 extra-RAM
+ * window.  The LCD UI continues to be drawn in ordinary VRAM, then this
+ * small bridge expands it once whenever the browser changes.  Without this
+ * bridge the DVE still scans a 720-pixel line from the 512-pixel LCD buffer,
+ * which is precisely the repeated 1.5-image artefact seen on the OSSC. */
+static int tvout_active;
+
+static void tvout_present_lcd_ui(void) {
+    const u32 *source = (const u32 *)0x44000000;
+    u32 *destination = (u32 *)0x0a000000;
+    int x, y;
+    if (!tvout_active) {
+        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                              PSP_DISPLAY_PIXEL_FORMAT_8888,
+                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
+        return;
+    }
+    /* 480:720 and 272:480 nearest-neighbour expansion.  It is deliberately
+     * used for the static/browser UI only; H.264 presentation will receive
+     * its own native 720x480 decoder target in the next stage. */
+    for (y = 0; y < 480; y++) {
+        const u32 *row = source + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
+        u32 *output = destination + y * 768;
+        for (x = 0; x < 720; x++) output[x] = row[x * VIDEO_WIDTH / 720];
+    }
+    sceKernelDcacheWritebackInvalidateRange(destination, 768 * 480 * 4);
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf(destination, 768, PSP_DISPLAY_PIXEL_FORMAT_8888,
+                          PSP_DISPLAY_SETBUF_IMMEDIATE);
+}
 
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
@@ -138,10 +168,10 @@ static int tvout_load_manager(void) {
     return sceKernelStartModule(tvout_module_id, 0, NULL, &status, NULL);
 }
 
-/* This is deliberately a calibration-only first stage.  It proves cable
- * detection, DVE switching and the 768-pixel external framebuffer before the
- * validated 480x272 AVC path is made resolution-dynamic.  Exit with the same
- * chord used to enter: SELECT+L+R. */
+/* This first stage proves cable detection, DVE switching and the 768-pixel
+ * external framebuffer before the validated 480x272 AVC path is made
+ * resolution-dynamic.  Leaving the colour-card keeps 480p active, so the
+ * surrounding application can be inspected on the external display too. */
 static int tvout_component_test(void) {
     SceCtrlData pad;
     unsigned int old = 0;
@@ -174,8 +204,7 @@ static int tvout_component_test(void) {
         old = pad.Buttons;
         sceKernelDelayThread(20000);
     }
-    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
-    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    tvout_active = 1;
     return 0;
 }
 
@@ -2027,6 +2056,7 @@ static void show(int selected) {
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
+    tvout_present_lcd_ui();
 }
 
 /* A real media-information screen rather than a second copy of the browser.
