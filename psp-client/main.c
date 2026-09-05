@@ -118,6 +118,7 @@ static const char *hardware_runtime_step = "not loaded";
  * PRX copied beside a different EBOOT. */
 static char hardware_runtime_path[256] = "-";
 static void keep_awake(void);
+static int remote_control_thread(SceSize args, void *argp);
 
 extern int pspDveMgrCheckVideoOut(void);
 extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
@@ -126,6 +127,10 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
 static int tvout_module_id = -1;
 static int tvout_video_active;
 static int tvout_gui_active;
+static volatile int remote_control_running;
+static volatile int remote_control_action;
+static volatile int remote_control_seek_seconds = -1;
+static int remote_control_thread_id = -1;
 #define TVOUT_STRIDE 768
 
 static int tvout_load_manager(void) {
@@ -1724,6 +1729,11 @@ static int play_h264(const char *media_id) {
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
     else { audio_running = 0; audio_state = audio_thread_id; }
+    remote_control_action = 0;
+    remote_control_seek_seconds = -1;
+    remote_control_running = 1;
+    remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, 0x20, 0x3000, 0, NULL);
+    if (remote_control_thread_id >= 0) sceKernelStartThread(remote_control_thread_id, 0, NULL);
     video_step = "TCP connection";
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
@@ -1752,6 +1762,25 @@ static int play_h264(const char *media_id) {
         SceCtrlData pad;
         keep_awake();
         sceCtrlPeekBufferPositive(&pad, 1);
+        if (remote_control_action) {
+            int action = remote_control_action;
+            remote_control_action = 0;
+            if (action == 1 || action == 2) {
+                paused = action == 1;
+                playback_paused = paused;
+                audio_start = paused ? 0 : 1;
+            } else if (action == 3) { result = frames; break; }
+        }
+        if (remote_control_seek_seconds >= 0) {
+            stream_start_seconds = remote_control_seek_seconds;
+            remote_control_seek_seconds = -1;
+            strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
+            resume_media_id[sizeof(resume_media_id) - 1] = '\0';
+            resume_pending = 1;
+            seek_requested = 1;
+            result = frames;
+            break;
+        }
         if (pad.Buttons & PSP_CTRL_START) { result = frames; break; }
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(previous_buttons & PSP_CTRL_SELECT)) {
             paused = !paused;
@@ -1859,6 +1888,12 @@ static int play_h264(const char *media_id) {
         received = 0;
     }
     audio_running = 0;
+    remote_control_running = 0;
+    if (remote_control_thread_id >= 0) {
+        sceKernelWaitThreadEnd(remote_control_thread_id, NULL);
+        sceKernelDeleteThread(remote_control_thread_id);
+        remote_control_thread_id = -1;
+    }
     audio_start = 1;
     /* Wake a blocking receive before returning to the browser.  Otherwise
      * it retains the firmware MP3 handle and the next film is silent. */
@@ -1975,6 +2010,27 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     *subtitle = json_integer(response, "subtitle", -1);
     *is_audio = json_value(response, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
     return 1;
+}
+
+static int remote_control_thread(SceSize args, void *argp) {
+    int sequence = 0;
+    (void)args; (void)argp;
+    while (remote_control_running) {
+        char path[64], reply[1024], action[16];
+        char *field;
+        snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
+        if (http_get_wait(path, reply, sizeof(reply), 500) >= 0 &&
+            json_value(reply, "action", action, sizeof(action))) {
+            field = strstr(reply, "\"seq\":");
+            if (field) sequence = atoi(field + 6);
+            if (!strcmp(action, "pause")) remote_control_action = 1;
+            else if (!strcmp(action, "resume")) remote_control_action = 2;
+            else if (!strcmp(action, "stop")) remote_control_action = 3;
+            else if (!strcmp(action, "seek")) remote_control_seek_seconds = json_integer(reply, "seconds", -1);
+        }
+        sceKernelDelayThread(500000);
+    }
+    return 0;
 }
 
 static void gui_library_shell(const char *section);
