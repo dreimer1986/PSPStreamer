@@ -44,6 +44,8 @@ static unsigned char *hw_avcc;
 static unsigned char hw_sps[256], hw_pps[256];
 static int hw_sps_size, hw_pps_size, hw_ready;
 static int hw_first_access_unit;
+static int hw_output_stride = 512;
+static int hw_output_height = 272;
 static const char *hw_step = "Hardware-AVC";
 
 static int start_code_size(const unsigned char *data, int size, int at) {
@@ -134,7 +136,7 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     result = sceMpegGetAvcNalAu(&hw_mpeg, &input, &hw_au);
     if (result < 0) return result;
     hw_step = "AVC: Decode";
-    result = sceMpegAvcDecode(&hw_mpeg, &hw_au, 512, NULL, &pictures);
+    result = sceMpegAvcDecode(&hw_mpeg, &hw_au, hw_output_stride, NULL, &pictures);
     if (result < 0 || pictures <= 0) return result;
     hw_first_access_unit = 0;
     hw_step = "AVC: Detail";
@@ -145,10 +147,20 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     csc.width_blocks = (detail->picture->width + 15) >> 4;
     memcpy(csc.plane, detail->yuv->plane, sizeof(csc.plane));
     hw_step = "AVC: Hardware-CSC";
-    result = sceMpegBaseCscAvc(framebuffer, 0, 512, &csc);
+    result = sceMpegBaseCscAvc(framebuffer, 0, hw_output_stride, &csc);
     if (result < 0) return result;
-    sceKernelDcacheWritebackInvalidateRange(framebuffer, 512 * 272 * 4);
+    sceKernelDcacheWritebackInvalidateRange(framebuffer, hw_output_stride * hw_output_height * 4);
     return pictures;
+}
+
+void h264_hw_set_output_layout(int stride, int height) {
+    /* Firmware AVC needs a 16-pixel aligned destination pitch.  Never accept
+     * a caller-provided layout after the decoder exists: changing it mid-AU
+     * is one of the reliable ways to deadlock sceMpeg on 6.61. */
+    if (!hw_ready && stride >= 512 && !(stride & 15) && height >= 272) {
+        hw_output_stride = stride;
+        hw_output_height = height;
+    }
 }
 
 void h264_hw_shutdown(void) {
@@ -159,6 +171,8 @@ void h264_hw_shutdown(void) {
     if (hw_workspace) free(hw_workspace);
     hw_state = hw_avcc = hw_workspace = NULL;
     hw_sps_size = hw_pps_size = 0;
+    hw_output_stride = 512;
+    hw_output_height = 272;
     hw_first_access_unit = 0;
     hw_step = "Hardware-AVC";
 }

@@ -5,6 +5,8 @@
  * sceMpeg; it is intentionally separate from the OpenH264 fallback. */
 int h264_hw_init_from_annexb(const unsigned char *access_unit, int size);
 int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *framebuffer);
+/* Set before init.  768x480 is the native component-TV framebuffer pitch. */
+void h264_hw_set_output_layout(int stride, int height);
 void h264_hw_shutdown(void);
 const char *h264_hw_last_step(void);
 
