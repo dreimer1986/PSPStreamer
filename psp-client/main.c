@@ -186,6 +186,7 @@ static char audio_media_id[ID_SIZE];
 /* Two 104-ms blocks retain the previous ~0.2 s runway while reducing DAC
  * hand-offs by a quarter; those hand-offs were the remaining faint ticks. */
 #define AUDIO_PREFILL_BLOCKS 2
+#define AUDIO_MUSIC_PREFILL_BLOCKS 4
 #define AUDIO_QUEUE_BLOCKS 8
 #define SPECTRUM_BANDS 12
 #define MP3_INPUT_BUFFER_BYTES 4096
@@ -200,6 +201,9 @@ static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
 static volatile int audio_played_blocks;
+/* Video keeps its proven two-block lead.  Stand-alone music can afford a
+ * deeper runway before the DAC starts, absorbing Wi-Fi/FFmpeg jitter. */
+static volatile int audio_prefill_target = AUDIO_PREFILL_BLOCKS;
 static volatile int vu_left, vu_right;
 /* Separate displayed needles from the instantaneous PCM peaks. */
 static int vu_display_left, vu_display_right;
@@ -1203,7 +1207,7 @@ static int play_mjpeg(const char *media_id) {
 #endif
 
 static int audio_output_thread(SceSize args, void *argp) {
-    int channel, block;
+    int channel, block, primed = 0;
     const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     /* MP3 is decoded natively at 44.1 kHz.  Use the regular DAC channel at
@@ -1214,11 +1218,13 @@ static int audio_output_thread(SceSize args, void *argp) {
     channel = sceAudioChReserve(PSP_AUDIO_NEXT_CHANNEL, AUDIO_BLOCK_SAMPLES, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
     while (audio_running || audio_queue_count > 0) {
-        while ((audio_running && !audio_start) || audio_queue_count <= 0) {
+        while ((audio_running && (!audio_start || (!primed && audio_queue_count < audio_prefill_target))) ||
+               (!audio_running && audio_queue_count <= 0)) {
             if (!audio_running && audio_queue_count <= 0) break;
             sceKernelDelayThread(1000);
         }
         if (!audio_start || audio_queue_count <= 0) continue;
+        primed = 1;
         if (!audio_clock_started) audio_clock_started = 1;
         block = audio_queue_read;
         /* Meter the same PCM that goes to the DAC. Sampling every 32nd
@@ -1330,6 +1336,11 @@ static int audio_thread(SceSize args, void *argp) {
                                         frames_in_block * MP3_DECODE_SAMPLES * 2);
         mp3_codec[9] = decoded_bytes;
         sceKernelDcacheWritebackRange(mp3_input_buffer, frame_size);
+        /* This slot has previously been handed to the DAC.  Evict every
+         * cache line before the firmware decoder writes fresh PCM into it;
+         * otherwise an occasional stale line can become an audible click at
+         * the ring-buffer boundary. */
+        sceKernelDcacheWritebackInvalidateRange((void *)mp3_codec[8], decoded_bytes);
         result = sceAudiocodecDecode(mp3_codec, PSP_CODEC_MP3);
         if (result < 0) { audio_state = -24; audio_running = 0; break; }
         memmove(mp3_input_buffer, mp3_input_buffer + frame_size, have - frame_size);
@@ -1341,7 +1352,7 @@ static int audio_thread(SceSize args, void *argp) {
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
             audio_queue_count++;
             frames_in_block = 0;
-            if (audio_queue_count >= AUDIO_PREFILL_BLOCKS) audio_state = 15;
+            if (audio_queue_count >= audio_prefill_target) audio_state = 15;
         }
     }
 cleanup:
@@ -1366,6 +1377,7 @@ static int play_audio(const char *media_id, const char *title) {
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
+    audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
     playback_reached_end = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
@@ -1479,6 +1491,7 @@ static int play_h264(const char *media_id) {
      * screen, which gives them a common practical start point. */
     audio_running = 1;
     audio_state = 0;
+    audio_prefill_target = AUDIO_PREFILL_BLOCKS;
     audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
