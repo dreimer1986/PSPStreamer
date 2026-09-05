@@ -816,6 +816,10 @@ static void gui_text(int left, int top, u32 color, const char *format, ...) {
 static void vu_ballistics_step(void) {
     int target_left = vu_left, target_right = vu_right;
     int delta;
+    /* A frozen last PCM peak is misleading once the DAC is paused, a stream
+     * ends, or it drops out.  Preserve the analogue decay, but let it decay
+     * towards an actual zero signal in all three cases. */
+    if (!audio_running || !audio_start) target_left = target_right = 0;
     if (target_left < 0) target_left = 0;
     if (target_left > 100) target_left = 100;
     if (target_right < 0) target_right = 0;
@@ -845,6 +849,10 @@ static void menu_skin_load(void) {
 
 static void gui_skin_receiver(u32 *vram) {
     int x;
+    static const u32 indicator_colors[] = {
+        0x0000D8FF, 0x00FFB000, 0x00B070FF, 0x0000FFD0,
+        0x00D000FF, 0x00FF9040
+    };
     /* Marker follows the visible inner rim of the photorealistic knob, not
      * a tiny circle near its centre.  Every one of the 31 volume values has
      * a physical detent, so neighbouring values cannot jump between coarse
@@ -868,9 +876,18 @@ static void gui_skin_receiver(u32 *vram) {
     gui_rect(vram, 67, 236, 3, 3, 0x0000B0FF);
     gui_rect(vram, 161, 236, 3, 3, 0x0000B0FF);
     for (x = 0; x < 5; x++) {
+        unsigned int state = (unsigned int)(sceKernelGetSystemTimeWide() / 600000ULL) ^ (unsigned int)(x * 0x45d9f3bU);
+        u32 color;
         unsigned int mask = x == 0 ? PSP_CTRL_LTRIGGER : x == 1 ? PSP_CTRL_SELECT : x == 2 ? PSP_CTRL_RTRIGGER : 0;
-        if (mask && (receiver_flash_button & mask))
-            gui_rect(vram, 221 + x * 31, 238, 22, 3, 0x0000D8FF);
+        state ^= state >> 16;
+        state *= 0x45d9f3bU;
+        state ^= state >> 16;
+        color = indicator_colors[state % (sizeof(indicator_colors) / sizeof(indicator_colors[0]))];
+        /* These unused receiver indicators become slowly changing coloured
+         * light bars.  A pressed mapped transport control still flashes
+         * white over its own bar for immediate feedback. */
+        if (mask && (receiver_flash_button & mask)) color = 0x00FFFFFF;
+        gui_rect(vram, 221 + x * 31, 238, 22, 3, color);
     }
     /* Amber is the volume marker travelling around the knob's inner rim. */
     /* Rounded 5x5 LED: full centre, with the four corner pixels omitted. */
