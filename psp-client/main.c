@@ -1288,7 +1288,9 @@ static int audio_thread(SceSize args, void *argp) {
     if (!mp3_codec_work) { audio_state = -22; audio_running = 0; return 0; }
     mp3_codec[3] = (unsigned long)mp3_codec_work;
     if (sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -23; goto cleanup; }
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, selected_audio_track, audio_quality_name(), stream_start_seconds, server_host);
+    /* Stand-alone music has no meaningful language/subtitle selection.  Its
+     * first (and normally only) audio stream is always the source. */
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
@@ -1914,7 +1916,7 @@ static void media_info(int selected) {
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
  * stream order; a later metadata pass can attach language labels without
  * changing the streaming protocol. */
-static int playback_options(void) {
+static int playback_options(int audio_only) {
     SceCtrlData pad;
     unsigned int old = 0;
     int row = 0;
@@ -1927,30 +1929,40 @@ static int playback_options(void) {
     while (1) {
         gui_library_shell("PLAYBACK SETUP");
         gui_text(38, 40, 0x0000D8FF, "STREAM OPTIONS");
-        if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-        if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-        if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
-        gui_text(38, 64, 0x00FFFFFF, "AUDIO: %s%s%s",
-                             audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
-                             audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
-                             audio_track_count ? audio_tracks[selected_audio_track].title : "");
-        gui_text(38, 84, 0x00FFFFFF, "SUBS:  %s%s%s",
-                             selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
-                             selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
-                             selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-        gui_text(38, 104, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
-        gui_text(376, 47, 0x00FFB000, "AUDIO / SUB");
-        gui_text(376, 76, 0x008A9BAA, "Saved for next");
-        gui_text(376, 87, 0x008A9BAA, "playback.");
-        gui_text(38, 177, 0x00FFFFFF, "UP/DN ROW  L/R CHANGE  X START  O BACK");
+        if (audio_only) {
+            gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            gui_text(38, 64, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
+            gui_text(376, 47, 0x00FFB000, "MUSIC QUALITY");
+            gui_text(376, 76, 0x008A9BAA, "Saved for next");
+            gui_text(376, 87, 0x008A9BAA, "music stream.");
+            gui_text(38, 177, 0x00FFFFFF, "L/R QUALITY  X START  O BACK");
+        } else {
+            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+            if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
+            gui_text(38, 64, 0x00FFFFFF, "AUDIO: %s%s%s",
+                                 audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
+                                 audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
+                                 audio_track_count ? audio_tracks[selected_audio_track].title : "");
+            gui_text(38, 84, 0x00FFFFFF, "SUBS:  %s%s%s",
+                                 selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
+                                 selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
+                                 selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
+            gui_text(38, 104, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
+            gui_text(376, 47, 0x00FFB000, "AUDIO / SUB");
+            gui_text(376, 76, 0x008A9BAA, "Saved for next");
+            gui_text(376, 87, 0x008A9BAA, "playback.");
+            gui_text(38, 177, 0x00FFFFFF, "UP/DN ROW  L/R CHANGE  X START  O BACK");
+        }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
-        if ((pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
-        if ((pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
-            if (row == 0 && audio_track_count)
+            if (audio_only) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
+            else if (row == 0 && audio_track_count)
                 selected_audio_track = (selected_audio_track + delta + audio_track_count) % audio_track_count;
             else if (row == 1) {
                 if (subtitle_track_count) {
@@ -2057,7 +2069,7 @@ int main(void) {
                 stream_start_seconds = 0;
                 show_metadata_loading();
                 load_media_metadata(items[selected].value);
-                if (!playback_options()) { dirty = 1; old_buttons = pad.Buttons; continue; }
+                if (!playback_options(items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
             }
             do {
                 int next;
