@@ -40,6 +40,7 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
  * 24 entries. */
 #define MAX_ITEMS 1024
 #define LIST_ROWS 20
+#define GUI_LIST_ROWS 16
 #define H264_BUFFER_BYTES (768 * 1024)
 #define VIDEO_WIDTH 480
 #define VIDEO_HEIGHT 272
@@ -1424,13 +1425,19 @@ static void load_media_metadata(const char *media_id) {
      * the user has actually committed to starting the video. */
 }
 
+static void gui_library_shell(const char *section);
+
 static void show_metadata_loading(void) {
-    pspDebugScreenClear();
+    gui_library_shell("PREPARING MEDIA");
     pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenPrintf("Playback options\n\n");
+    pspDebugScreenSetXY(3, 6); pspDebugScreenPrintf("READING MEDIA INFORMATION");
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("Loading audio tracks and subtitles ...\n");
-    pspDebugScreenPrintf("Please wait.\n");
+    pspDebugScreenSetXY(3, 9); pspDebugScreenPrintf("Loading audio tracks and subtitles...");
+    pspDebugScreenSetTextColor(0x008A9BAA);
+    pspDebugScreenSetXY(3, 11); pspDebugScreenPrintf("The source may be waking over SMB.");
+    pspDebugScreenSetXY(40, 7); pspDebugScreenPrintf("PLEASE WAIT");
+    pspDebugScreenSetXY(40, 10); pspDebugScreenPrintf("No video stream has");
+    pspDebugScreenSetXY(40, 11); pspDebugScreenPrintf("started yet.");
 }
 
 static void parse_library(void) {
@@ -1513,31 +1520,90 @@ static void refresh_library(void) {
     snprintf(status, sizeof(status), "%d entries  [X: Open]", item_count);
 }
 
-static void show(int selected) {
-    int i, first = (selected / LIST_ROWS) * LIST_ROWS;
-    int last = first + LIST_ROWS;
-    if (last > item_count) last = item_count;
-    pspDebugScreenClear();
+/* The library is intentionally drawn with the same inexpensive VRAM
+ * primitives as the receiver strip.  It replaces the old diagnostic-console
+ * landing page while keeping pspDebugScreen solely as a small, reliable text
+ * rasteriser.  No video decoder buffers or textures are involved here. */
+static void gui_library_shell(const char *section) {
+    u32 *vram = (u32 *)0x44000000;
+    int x, lit_left = vu_left / 10, lit_right = vu_right / 10;
+    gui_rect(vram, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+    gui_rect(vram, 0, 0, VIDEO_WIDTH, 27, 0x00141C25);
+    gui_rect(vram, 0, 26, VIDEO_WIDTH, 1, 0x00D8E8FF);
+    gui_rect(vram, 8, 37, 298, 174, 0x00131A22);
+    gui_rect(vram, 8, 37, 298, 1, 0x004B5B68);
+    gui_rect(vram, 8, 37, 1, 174, 0x004B5B68);
+    gui_rect(vram, 315, 37, 157, 174, 0x0010161D);
+    gui_rect(vram, 315, 37, 157, 1, 0x004B5B68);
+    gui_rect(vram, 315, 37, 1, 174, 0x004B5B68);
+    /* Always-visible miniature receiver: it makes the application feel like
+     * a media appliance before the first file is selected. */
+    gui_rect(vram, 8, 220, 464, 44, 0x0010151B);
+    gui_rect(vram, 8, 220, 464, 1, 0x00D8E8FF);
+    for (x = 0; x < 10; x++) {
+        gui_rect(vram, 23 + x * 5, 252 - x * 2, 3, x * 2 + 2,
+                 x < lit_left ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
+        gui_rect(vram, 78 + x * 5, 252 - x * 2, 3, x * 2 + 2,
+                 x < lit_right ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
+    }
+    for (x = 0; x < 5; x++) {
+        gui_rect(vram, 150 + x * 35, 233, 28, 21, 0x00313A43);
+        gui_rect(vram, 152 + x * 35, 235, 24, 17, 0x001B222A);
+    }
+    gui_rect(vram, 353, 229, 43, 29, 0x005A6268);
+    gui_rect(vram, 357, 233, 35, 21, 0x00252C33);
+    gui_rect(vram, 373 + (playback_volume * 13 / 30), 237, 2, 13, 0x00FFB000);
+    for (x = 0; x < 20; x++)
+        gui_rect(vram, 414 + x * 2, 252 - (x < playback_volume * 2 / 3 ? 8 : 3), 1,
+                 x < playback_volume * 2 / 3 ? 8 : 3,
+                 x < playback_volume * 2 / 3 ? 0x00FFB000 : 0x002B343C);
     pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenPrintf("PSP Streamer  |  %.32s:%d  Profile %d\n\n", server_host, server_port, active_network_profile);
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("%s\n\n", status);
-    if (hardware_runtime_result == 0)
-        pspDebugScreenPrintf("Media Engine: Hardware AVC ready\n");
-    else if (hardware_runtime_result != -9999)
-        pspDebugScreenPrintf("Media Engine: %s: %08X\nBridge: %.57s\n", hardware_runtime_step, hardware_runtime_result, hardware_runtime_path);
-    pspDebugScreenPrintf("\n");
-    pspDebugScreenPrintf("Path: %.52s\n\n", current_path[0] ? current_path : "/");
+    pspDebugScreenSetXY(2, 1);
+    pspDebugScreenPrintf("PSP STREAMER   //   %s", section);
+}
+
+static void show(int selected) {
+    int i, first, last;
+    if (selected < 0 || selected >= item_count) selected = 0;
+    first = item_count ? (selected / GUI_LIST_ROWS) * GUI_LIST_ROWS : 0;
+    last = first + GUI_LIST_ROWS;
+    if (last > item_count) last = item_count;
+    gui_library_shell("MEDIA LIBRARY");
+    pspDebugScreenSetTextColor(0x00D8E8FF);
+    pspDebugScreenSetXY(2, 5); pspDebugScreenPrintf("LIBRARY");
+    pspDebugScreenSetTextColor(0x008A9BAA);
+    pspDebugScreenSetXY(2, 6); pspDebugScreenPrintf("%.34s", current_path[0] ? current_path : "/");
     if (!item_count) {
-        pspDebugScreenPrintf("No entries. Square: reload\n");
+        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenSetXY(3, 10); pspDebugScreenPrintf("No entries -- [] reload");
     } else {
         for (i = first; i < last; i++) {
+            int row = i - first;
+            if (i == selected) gui_rect((u32 *)0x44000000, 16, 58 + row * 9, 279, 8, 0x00314C61);
             pspDebugScreenSetTextColor(i == selected ? 0x00D8E8FF : 0x00FFFFFF);
-            pspDebugScreenPrintf("%c %c %.50s\n", i == selected ? '>' : ' ', items[i].is_folder ? '+' : '*', items[i].title);
+            pspDebugScreenSetXY(3, 7 + row);
+            pspDebugScreenPrintf("%c %.31s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
         }
     }
+    pspDebugScreenSetTextColor(0x00D8E8FF);
+    pspDebugScreenSetXY(40, 5); pspDebugScreenPrintf("NOW SELECTED");
     pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenPrintf("\nControls: UP/DOWN select, X opens, LEFT goes back,\nSquare reloads, START exits.\n");
+    pspDebugScreenSetXY(40, 7);
+    if (item_count) pspDebugScreenPrintf("%.18s", items[selected].title);
+    else pspDebugScreenPrintf("Waiting for library");
+    pspDebugScreenSetTextColor(0x008A9BAA);
+    pspDebugScreenSetXY(40, 10);
+    if (item_count) pspDebugScreenPrintf("%s", items[selected].is_folder ? "FOLDER" : (items[selected].is_audio ? "MUSIC" : "H.264 VIDEO"));
+    pspDebugScreenSetXY(40, 12); pspDebugScreenPrintf("%d entries", item_count);
+    pspDebugScreenSetXY(40, 14); pspDebugScreenPrintf("Profile %d", active_network_profile);
+    pspDebugScreenSetXY(40, 16);
+    if (hardware_runtime_result == 0) pspDebugScreenPrintf("AVC READY");
+    else if (hardware_runtime_result != -9999) pspDebugScreenPrintf("AVC ERROR");
+    pspDebugScreenSetTextColor(0x00FFFFFF);
+    pspDebugScreenSetXY(40, 19); pspDebugScreenPrintf("%.18s", status);
+    pspDebugScreenSetTextColor(0x00FFFFFF);
+    pspDebugScreenSetXY(3, 28); pspDebugScreenPrintf("UP/DOWN SELECT   X OPEN   LEFT BACK");
+    pspDebugScreenSetXY(3, 30); pspDebugScreenPrintf("L/R PAGE   [] RELOAD   START EXIT");
 }
 
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
@@ -1554,20 +1620,29 @@ static int playback_options(void) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
-        pspDebugScreenClear();
+        gui_library_shell("PLAYBACK SETUP");
         pspDebugScreenSetTextColor(0x00D8E8FF);
-        pspDebugScreenPrintf("Playback options\n\n");
+        pspDebugScreenSetXY(3, 5); pspDebugScreenPrintf("STREAM OPTIONS");
         pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenPrintf("%c Audio track:   %s%s%s\n", row == 0 ? '>' : ' ',
+        if (row == 0) gui_rect((u32 *)0x44000000, 16, 66, 279, 9, 0x00314C61);
+        if (row == 1) gui_rect((u32 *)0x44000000, 16, 82, 279, 9, 0x00314C61);
+        if (row == 2) gui_rect((u32 *)0x44000000, 16, 98, 279, 9, 0x00314C61);
+        pspDebugScreenSetXY(3, 8); pspDebugScreenPrintf("AUDIO: %s%s%s",
                              audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
                              audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
                              audio_track_count ? audio_tracks[selected_audio_track].title : "");
-        pspDebugScreenPrintf("%c Subtitles:     %s%s%s\n", row == 1 ? '>' : ' ',
+        pspDebugScreenSetXY(3, 10); pspDebugScreenPrintf("SUBS:  %s%s%s",
                              selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
                              selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                              selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-        pspDebugScreenPrintf("%c Audio quality: %s\n\n", row == 2 ? '>' : ' ', audio_quality_name());
-        pspDebugScreenPrintf("UP/DOWN: row  LEFT/RIGHT: change\nX: Start   O: Back\n");
+        pspDebugScreenSetXY(3, 12); pspDebugScreenPrintf("QUALITY: %s", audio_quality_name());
+        pspDebugScreenSetTextColor(0x008A9BAA);
+        pspDebugScreenSetXY(40, 7); pspDebugScreenPrintf("AUDIO / SUBTITLE");
+        pspDebugScreenSetXY(40, 10); pspDebugScreenPrintf("Preferences save");
+        pspDebugScreenSetXY(40, 11); pspDebugScreenPrintf("for the next video.");
+        pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenSetXY(3, 28); pspDebugScreenPrintf("UP/DOWN ROW   LEFT/RIGHT CHANGE");
+        pspDebugScreenSetXY(3, 30); pspDebugScreenPrintf("X START   O BACK");
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
@@ -1604,9 +1679,14 @@ int main(void) {
     pspDebugScreenInit();
     pspDebugScreenSetXY(0, 0);
     /* ARK-5's true overclock is managed by its own runlevel setting.  The
-     * legacy systemctrl speed API tops out at the Sony 333-MHz range, so do
-     * not call it here and accidentally undo a Homebrew overclock. */
+    * legacy systemctrl speed API tops out at the Sony 333-MHz range, so do
+    * not call it here and accidentally undo a Homebrew overclock. */
     performance_result = 0;
+    strcpy(status, "Connecting to Wi-Fi...");
+    /* Present the media appliance immediately.  Network association can take
+     * several seconds on a PSP; leaving the old blank debug screen there made
+     * the application appear to start only after a file was chosen. */
+    show(0);
     result = wait_for_network();
     if (result < 0) {
         snprintf(status, sizeof(status), "%s failed: %08X", failure_step, result);
@@ -1636,8 +1716,8 @@ int main(void) {
             unsigned long long now = sceKernelGetSystemTimeWide();
             unsigned int trigger = pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER);
             if (!(old_buttons & trigger) || now >= next_page_repeat_tick) {
-                if (trigger & PSP_CTRL_RTRIGGER) selected = (selected + LIST_ROWS) % item_count;
-                else selected = (selected + item_count - (LIST_ROWS % item_count)) % item_count;
+                if (trigger & PSP_CTRL_RTRIGGER) selected = (selected + GUI_LIST_ROWS) % item_count;
+                else selected = (selected + item_count - (GUI_LIST_ROWS % item_count)) % item_count;
                 next_page_repeat_tick = now + 150000ULL;
                 dirty = 1;
             }
