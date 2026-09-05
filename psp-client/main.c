@@ -130,10 +130,14 @@ static int tvout_module_id = -1;
  * bridge the DVE still scans a 720-pixel line from the 512-pixel LCD buffer,
  * which is precisely the repeated 1.5-image artefact seen on the OSSC. */
 static int tvout_active;
+static int tvout_display_buffer;
+
+#define TVOUT_STRIDE 768
+#define TVOUT_BUFFER_BYTES (1572864)
 
 static void tvout_present_lcd_ui(void) {
     const u32 *source = (const u32 *)0x44000000;
-    u32 *destination = (u32 *)0x0a000000;
+    u32 *destination;
     int x, y;
     if (!tvout_active) {
         sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
@@ -141,18 +145,25 @@ static void tvout_present_lcd_ui(void) {
                               PSP_DISPLAY_SETBUF_NEXTVSYNC);
         return;
     }
+    /* This is the same double-buffer layout PMPlayer Advance uses: each
+     * 768x480x4 surface is 1.5 MiB in the extra-RAM aperture.  On hardware
+     * the DVE may still be scanning the previous surface while we compose
+     * the next one, so a single static surface causes repeat/tear artefacts. */
+    destination = (u32 *)(0x0a000000 + tvout_display_buffer * TVOUT_BUFFER_BYTES);
     /* 480:720 and 272:480 nearest-neighbour expansion.  It is deliberately
      * used for the static/browser UI only; H.264 presentation will receive
      * its own native 720x480 decoder target in the next stage. */
     for (y = 0; y < 480; y++) {
         const u32 *row = source + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
-        u32 *output = destination + y * 768;
+        u32 *output = destination + y * TVOUT_STRIDE;
         for (x = 0; x < 720; x++) output[x] = row[x * VIDEO_WIDTH / 720];
+        for (x = 720; x < TVOUT_STRIDE; x++) output[x] = 0;
     }
-    sceKernelDcacheWritebackInvalidateRange(destination, 768 * 480 * 4);
+    sceKernelDcacheWritebackInvalidateRange(destination, TVOUT_BUFFER_BYTES);
     sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf(destination, 768, PSP_DISPLAY_PIXEL_FORMAT_8888,
+    sceDisplaySetFrameBuf(destination, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
                           PSP_DISPLAY_SETBUF_IMMEDIATE);
+    tvout_display_buffer ^= 1;
 }
 
 static int tvout_load_manager(void) {
@@ -186,14 +197,17 @@ static int tvout_component_test(void) {
     /* The display engine's progressive-TV path reads from the PSP-3000's
      * extra RAM window, not the 2 MiB LCD VRAM.  This is PMPlayer Advance's
      * 0x0A000000 TV framebuffer arrangement. */
-    vram = (u32 *)0x0a000000;
+    tvout_display_buffer = 0;
+    vram = (u32 *)(0x0a000000 + tvout_display_buffer * TVOUT_BUFFER_BYTES);
     for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
         u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
         if ((y / 24) & 1) color >>= 1;
-        vram[y * 768 + x] = color;
+        vram[y * TVOUT_STRIDE + x] = color;
     }
-    sceKernelDcacheWritebackInvalidateRange(vram, 768 * 480 * 4);
-    sceDisplaySetFrameBuf(vram, 768, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+    sceKernelDcacheWritebackInvalidateRange(vram, TVOUT_BUFFER_BYTES);
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+    tvout_display_buffer = 1;
     while (1) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
