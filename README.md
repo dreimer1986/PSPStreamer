@@ -39,6 +39,23 @@ MEDIA_ROOT_PATH=/srv/media PSP_STREAMER_PORT=8091 docker compose up -d --build
 
 Do not put SMB credentials in `compose.yaml`.
 
+## Home Assistant add-on
+
+PSP Streamer can run as a Home Assistant add-on, keeping FFmpeg and the media
+server off the desktop PC. In Home Assistant, open **Settings → Add-ons → Add-on
+Store**, open the menu, choose **Repositories**, and add:
+
+```
+https://github.com/dreimer1986/PSPStreamer
+```
+
+Refresh the store, select **PSP Streamer**, and install it. The add-on exposes
+Home Assistant's `/media` directory read-only at port `8091`; mount the SMB/NFS
+library into that directory on the Home Assistant host. Configure `port` (default
+`8091`) and `max_transcodes` (default `4`) in the add-on configuration, then
+start it. Point the PSP configuration at the Home Assistant host or its DynDNS
+name with `server=…` and `port=8091`.
+
 ## Install and configure the PSP app
 
 After a build, install the complete contents of `psp-client/release/PSPStreamer/` to:
