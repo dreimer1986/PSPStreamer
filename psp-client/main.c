@@ -755,7 +755,8 @@ static int subtitle_utf8_char(const char **text) {
     return '?';
 }
 
-static void subtitle_draw_glyph(u32 *vram, int glyph, int left, int top) {
+static void subtitle_draw_glyph(u32 *vram, int glyph, int left, int top,
+                                int stride, int width, int height) {
     /* The atlas is 16 glyphs wide.  Cells are not contiguous in memory: a
      * glyph's next scanline starts one complete 256-pixel atlas row later. */
     const unsigned char *bitmap = subtitle_font +
@@ -770,30 +771,32 @@ static void subtitle_draw_glyph(u32 *vram, int glyph, int left, int top) {
             int px = left + x, py = top + y;
             if (!pass) {
                 for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++)
-                    if ((dx || dy) && px + dx >= 0 && px + dx < VIDEO_WIDTH && py + dy >= 0 && py + dy < VIDEO_HEIGHT)
-                        vram[(py + dy) * VIDEO_STRIDE + px + dx] = 0x00000000;
+                    if ((dx || dy) && px + dx >= 0 && px + dx < width && py + dy >= 0 && py + dy < height)
+                        vram[(py + dy) * stride + px + dx] = 0x00000000;
             } else {
-                vram[py * VIDEO_STRIDE + px] = 0x00ffffff;
+                if (px >= 0 && px < width && py >= 0 && py < height)
+                    vram[py * stride + px] = 0x00ffffff;
             }
         }
     }
 }
 
-static const char *subtitle_draw_line(const char *text, int y, u32 *vram) {
+static const char *subtitle_draw_line(const char *text, int y, u32 *vram,
+                                      int stride, int width, int height) {
     const char *cursor = text, *end = text, *last_space = NULL;
     int count = 0, glyph, index, left;
-    while (*end && *end != '|' && count < 42) {
+    while (*end && *end != '|' && count < (width / 11 - 1)) {
         const char *before = end;
         glyph = subtitle_utf8_char(&end);
         if (glyph == ' ') last_space = before;
         count++;
     }
     if (*end && *end != '|' && last_space) end = last_space;
-    left = (VIDEO_WIDTH - count * 11) / 2;
+    left = (width - count * 11) / 2;
     if (left < 4) left = 4;
     for (index = 0; cursor < end; index++) {
         glyph = subtitle_utf8_char(&cursor);
-        subtitle_draw_glyph(vram, glyph, left + index * 11, y);
+        subtitle_draw_glyph(vram, glyph, left + index * 11, y, stride, width, height);
     }
     while (*end == ' ') end++;
     if (*end == '|') end++;
@@ -816,7 +819,31 @@ static void subtitle_present(int absolute_frame) {
     {
         const char *text = subtitle_cues[index].text;
         for (y = 0; *text && y < 3; y++) {
-            const char *next = subtitle_draw_line(text, (video_fullscreen || !receiver_visible ? 210 : 12) + y * 20, vram);
+            const char *next = subtitle_draw_line(text, (video_fullscreen || !receiver_visible ? 210 : 12) + y * 20,
+                                                  vram, VIDEO_STRIDE, VIDEO_WIDTH, VIDEO_HEIGHT);
+            if (next == text) break;
+            text = next;
+        }
+    }
+}
+
+static void tvout_subtitle_present(int absolute_frame) {
+    int index = -1, cue_index, y;
+    u32 *vram = (u32 *)0x44000000;
+    if (!subtitle_client_side || !subtitle_cues) return;
+    for (cue_index = 0; cue_index < subtitle_cue_count; cue_index++) {
+        if (absolute_frame >= subtitle_cues[cue_index].start_frame &&
+            absolute_frame < subtitle_cues[cue_index].end_frame) { index = cue_index; break; }
+        if (subtitle_cues[cue_index].start_frame > absolute_frame) break;
+    }
+    if (index < 0) return;
+    if (!subtitle_font) subtitle_load_font();
+    if (!subtitle_font) return;
+    {
+        const char *text = subtitle_cues[index].text;
+        for (y = 0; *text && y < 3; y++) {
+            const char *next = subtitle_draw_line(text, 408 + y * 20, vram,
+                                                  TVOUT_STRIDE, 720, 480);
             if (next == text) break;
             text = next;
         }
@@ -1230,7 +1257,10 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
                 bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
                 if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
                 else receiver_hud(hardware_decoder_frames);
-            } else tvout_playback_hud(hardware_decoder_frames, playback_paused);
+            } else {
+                tvout_subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
+                tvout_playback_hud(hardware_decoder_frames, playback_paused);
+            }
             sceDisplaySetFrameBuf((void *)0x04000000,
                                   tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                                   PSP_DISPLAY_PIXEL_FORMAT_8888,
