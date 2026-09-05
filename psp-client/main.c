@@ -2250,28 +2250,32 @@ static void media_info(int selected) {
     unsigned int old = 0;
     int i, minutes = (int)current_duration_seconds / 60;
     int seconds = (int)current_duration_seconds % 60;
+    int redraw = 1;
     do {
         sceCtrlReadBufferPositive(&pad, 1);
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_TRIANGLE);
     while (1) {
-        gui_library_shell(tr(TXT_FILE_DETAILS));
-        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
-        gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
-        gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
-        if (current_duration_seconds > 0.0f)
-            gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
-        else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
-        gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
-        gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
-        gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
-        if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
-        for (i = 0; i < audio_track_count && i < 6; i++)
-            gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
-        for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
-            gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
-        gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
-        gui_present();
+        if (redraw) {
+            gui_library_shell(tr(TXT_FILE_DETAILS));
+            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
+            gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
+            gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
+            if (current_duration_seconds > 0.0f)
+                gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
+            else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
+            gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
+            gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+            gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
+            if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
+            for (i = 0; i < audio_track_count && i < 6; i++)
+                gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
+            for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
+                gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
+            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
+            gui_present();
+            redraw = 0;
+        }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
             !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
@@ -2288,6 +2292,7 @@ static int playback_options(int audio_only) {
     SceCtrlData pad;
     unsigned int old = 0;
     int row = 0;
+    int redraw = 1;
     /* The dialog is opened with X.  Consume that press first, otherwise the
      * first controller poll treats the still-held button as "Start". */
     do {
@@ -2295,6 +2300,7 @@ static int playback_options(int audio_only) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
+        if (redraw) {
         gui_library_shell(tr(TXT_STREAM_OPTIONS));
         gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
         if (audio_only) {
@@ -2327,13 +2333,15 @@ static int playback_options(int audio_only) {
             gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
         }
         gui_present();
+        redraw = 0;
+        }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
-        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
-        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
+        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) { row = (row + 1) % 2; redraw = 1; }
+        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) { row = (row + 1) % 2; redraw = 1; }
+        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) { row = (row + 2) % 3; redraw = 1; }
+        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) { row = (row + 1) % 3; redraw = 1; }
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
             if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
@@ -2348,6 +2356,7 @@ static int playback_options(int audio_only) {
                 }
             } else selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
             save_playback_settings();
+            redraw = 1;
         }
         old = pad.Buttons;
         sceKernelDelayThread(75000);
