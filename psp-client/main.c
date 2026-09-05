@@ -1359,6 +1359,7 @@ int main(void) {
     SceCtrlData pad;
     unsigned int old_buttons = 0;
     unsigned long long next_repeat_tick = 0;
+    unsigned long long next_page_repeat_tick = 0;
     int selected = 0;
     int dirty = 1;
     int result;
@@ -1395,12 +1396,16 @@ int main(void) {
                 dirty = 1;
             }
         } else next_repeat_tick = 0;
-        if (item_count && (pad.Buttons & PSP_CTRL_RTRIGGER) && !(old_buttons & PSP_CTRL_RTRIGGER)) {
-            selected = (selected + LIST_ROWS) % item_count; dirty = 1;
-        }
-        if (item_count && (pad.Buttons & PSP_CTRL_LTRIGGER) && !(old_buttons & PSP_CTRL_LTRIGGER)) {
-            selected = (selected + item_count - (LIST_ROWS % item_count)) % item_count; dirty = 1;
-        }
+        if (item_count && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
+            unsigned long long now = sceKernelGetSystemTimeWide();
+            unsigned int trigger = pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER);
+            if (!(old_buttons & trigger) || now >= next_page_repeat_tick) {
+                if (trigger & PSP_CTRL_RTRIGGER) selected = (selected + LIST_ROWS) % item_count;
+                else selected = (selected + item_count - (LIST_ROWS % item_count)) % item_count;
+                next_page_repeat_tick = now + 150000ULL;
+                dirty = 1;
+            }
+        } else next_page_repeat_tick = 0;
         if ((pad.Buttons & PSP_CTRL_LEFT) && !(old_buttons & PSP_CTRL_LEFT) && current_path[0]) { parent_path(); selected = 0; refresh_library(); dirty = 1; }
         if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder) {
             strncpy(current_path, items[selected].value, sizeof(current_path) - 1);
