@@ -1353,7 +1353,7 @@ cleanup:
 }
 
 static int play_audio(const char *media_id, const char *title) {
-    int audio_thread_id, paused = 0, fullscreen = 0;
+    int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1363,6 +1363,7 @@ static int play_audio(const char *media_id, const char *title) {
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
+    playback_reached_end = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     if (audio_thread_id < 0) { audio_running = 0; return audio_thread_id; }
@@ -1401,7 +1402,10 @@ static int play_audio(const char *media_id, const char *title) {
         sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
         sceDisplayWaitVblankStart();
         sceCtrlPeekBufferPositive(&pad, 1);
-        if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) break;
+        if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
+            stopped_by_user = 1;
+            break;
+        }
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(old & PSP_CTRL_SELECT)) { paused = !paused; audio_start = !paused; }
         if (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN)) {
             unsigned int direction = (pad.Buttons & PSP_CTRL_UP) ? PSP_CTRL_UP : PSP_CTRL_DOWN;
@@ -1430,6 +1434,13 @@ static int play_audio(const char *media_id, const char *title) {
         sceKernelDeleteThread(output_thread_id);
         audio_output_thread_id = -1;
     }
+    /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
+     * transient WLAN failures do not masquerade as decoder faults.  Compare
+     * the DAC clock to ffprobe's duration here to classify a genuine song
+     * end, just as video uses its rendered-frame clock. */
+    if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
+        (float)audio_played_blocks * (float)AUDIO_BLOCK_SAMPLES / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
+        playback_reached_end = 1;
     return audio_state < 0 ? audio_state : 0;
 }
 
@@ -1755,10 +1766,12 @@ static void parent_path(void) {
     if (last) *last = '\0'; else current_path[0] = '\0';
 }
 
-static int next_video_index(int selected) {
+/* Continue within the same kind of media.  A music album must never spill
+ * into a video merely because both happen to share a folder. */
+static int next_media_index(int selected, int is_audio) {
     int index;
     for (index = selected + 1; index < item_count; index++)
-        if (!items[index].is_folder) return index;
+        if (!items[index].is_folder && items[index].is_audio == is_audio) return index;
     return -1;
 }
 
@@ -2085,7 +2098,7 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                next = playback_reached_end ? next_video_index(selected) : -1;
+                next = playback_reached_end ? next_media_index(selected, items[selected].is_audio) : -1;
                 if (next < 0) {
                     if (items[selected].is_audio)
                         snprintf(status, sizeof(status), tr(TXT_MUSIC_ENDED), audio_state);
@@ -2096,7 +2109,7 @@ int main(void) {
                 selected = next;
                 resume_pending = 0;
                 stream_start_seconds = 0;
-                snprintf(status, sizeof(status), tr(TXT_NEXT_EPISODE), items[selected].title);
+                snprintf(status, sizeof(status), items[selected].is_audio ? tr(TXT_NEXT_TRACK) : tr(TXT_NEXT_EPISODE), items[selected].title);
                 show(selected);
                 sceKernelDelayThread(500000);
                 load_media_metadata(items[selected].value);

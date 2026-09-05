@@ -72,4 +72,5 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_INTERRUPTED] = "WLAN unterbrochen. WLAN verbinden, X zum Fortsetzen.",
     [TXT_MUSIC_ENDED] = "Musik beendet | Audio %d",
     [TXT_VIDEO_ENDED] = "Video beendet: %d Frames",
-    [TXT_NEXT_EPISODE] = "Nächste Episode: %.58s"};
+    [TXT_NEXT_EPISODE] = "Nächste Episode: %.58s",
+    [TXT_NEXT_TRACK] = "Nächster Titel: %.58s"};

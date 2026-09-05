@@ -65,4 +65,5 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_INTERRUPTED] = "Wi-Fi interrupted. Reconnect Wi-Fi, press X to resume.",
     [TXT_MUSIC_ENDED] = "Music ended | Audio %d",
     [TXT_VIDEO_ENDED] = "Video ended: %d frames",
-    [TXT_NEXT_EPISODE] = "Next episode: %.58s"};
+    [TXT_NEXT_EPISODE] = "Next episode: %.58s",
+    [TXT_NEXT_TRACK] = "Next track: %.58s"};
