@@ -209,6 +209,7 @@ static volatile int audio_played_blocks;
 /* Video keeps its proven two-block lead.  Stand-alone music can afford a
  * deeper runway before the DAC starts, absorbing Wi-Fi/FFmpeg jitter. */
 static volatile int audio_prefill_target = AUDIO_PREFILL_BLOCKS;
+static volatile int audio_dac_samples = AUDIO_BLOCK_SAMPLES;
 static volatile int vu_left, vu_right;
 /* Separate displayed needles from the instantaneous PCM peaks. */
 static int vu_display_left, vu_display_right;
@@ -1212,15 +1213,15 @@ static int play_mjpeg(const char *media_id) {
 #endif
 
 static int audio_output_thread(SceSize args, void *argp) {
-    int channel, block, primed = 0;
-    const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
+    int channel, block, primed = 0, dac_samples = audio_dac_samples;
+    const int block_bytes = dac_samples * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     /* MP3 is decoded natively at 44.1 kHz.  Use the regular DAC channel at
      * that exact rate instead of sending it through the SRC mixer.  On this
      * PSP the SRC path leaves a small, periodic seam between DMA blocks that
      * is especially audible in speech as a "tok-tok" artefact. */
     sceAudioSRCChRelease();
-    channel = sceAudioChReserve(PSP_AUDIO_NEXT_CHANNEL, AUDIO_BLOCK_SAMPLES, PSP_AUDIO_FORMAT_STEREO);
+    channel = sceAudioChReserve(PSP_AUDIO_NEXT_CHANNEL, dac_samples, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
     while (audio_running || audio_queue_count > 0) {
         while ((audio_running && (!audio_start || (!primed && audio_queue_count < audio_prefill_target))) ||
@@ -1237,7 +1238,7 @@ static int audio_output_thread(SceSize args, void *argp) {
         {
             short *pcm = audio_samples + block * AUDIO_BLOCK_SAMPLES * 2;
             int sample, left_peak = 0, right_peak = 0;
-            for (sample = 0; sample < AUDIO_BLOCK_SAMPLES * 2; sample += 64) {
+            for (sample = 0; sample < dac_samples * 2; sample += 64) {
                 int left = pcm[sample] < 0 ? -pcm[sample] : pcm[sample];
                 int right = pcm[sample + 1] < 0 ? -pcm[sample + 1] : pcm[sample + 1];
                 if (left > left_peak) left_peak = left;
@@ -1285,7 +1286,7 @@ static int music_mp3_thread(SceSize args, void *argp) {
     int mp3_resource = 0, module_result;
     char request[2048], header[4096], *body;
     int socket_fd = -1, header_size = 0, received, initial_size, frames_in_block = 0;
-    const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
+    const int block_bytes = audio_dac_samples * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     audio_state = 10;
     video_step = "MP3 mod";
@@ -1362,7 +1363,7 @@ static int music_mp3_thread(SceSize args, void *argp) {
         if (decoded != MP3_DECODE_SAMPLES * 2 * (int)sizeof(short)) { audio_state = -31; break; }
         memcpy(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 + frames_in_block * MP3_DECODE_SAMPLES * 2, pcm, decoded);
         frames_in_block++;
-        if (frames_in_block == MP3_FRAMES_PER_AUDIO_BLOCK) {
+        if (frames_in_block * MP3_DECODE_SAMPLES == audio_dac_samples) {
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
             audio_queue_count++; frames_in_block = 0;
@@ -1485,6 +1486,7 @@ static int play_audio(const char *media_id, const char *title) {
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
     audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
+    audio_dac_samples = MP3_DECODE_SAMPLES;
     playback_reached_end = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
@@ -1561,7 +1563,7 @@ static int play_audio(const char *media_id, const char *title) {
      * the DAC clock to ffprobe's duration here to classify a genuine song
      * end, just as video uses its rendered-frame clock. */
     if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
-        (float)audio_played_blocks * (float)AUDIO_BLOCK_SAMPLES / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
+        (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
     return audio_state < 0 ? audio_state : 0;
 }
@@ -1599,6 +1601,7 @@ static int play_h264(const char *media_id) {
     audio_running = 1;
     audio_state = 0;
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
+    audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
