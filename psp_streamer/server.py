@@ -113,7 +113,9 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # Annex-B is the native input expected by the PSP OpenH264 playback
         # path. AUD makes access-unit boundaries unambiguous on a raw socket;
         # repeated headers let a client recover at each IDR.
-        video_filter = "fps=20,scale=480:272:force_original_aspect_ratio=decrease,pad=480:272:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
+        # Test profile: 20.1 fps matches the PSP presentation clock used by
+        # the accompanying 20.1-fps client build.
+        video_filter = "fps=201/10,scale=480:272:force_original_aspect_ratio=decrease,pad=480:272:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
         bitmap_filter = None
         if subtitle_track >= 0 and bitmap_subtitle:
             bitmap_filter = f"[0:v:0][0:s:{subtitle_track}]overlay,{video_filter}[v]"

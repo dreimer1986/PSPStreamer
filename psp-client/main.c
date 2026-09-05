@@ -519,7 +519,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             sceDisplayWaitVblankStart();
             frames++;
             hardware_decoder_frames++;
-            *next_frame_tick += 50000ULL;
+            *next_frame_tick += 49751ULL;
         }
         memmove(h264_buffer, h264_buffer + next, *size - next);
         *size -= next;
@@ -1185,7 +1185,7 @@ int main(void) {
             }
             do {
                 int next;
-                snprintf(status, sizeof(status), "Starting H.264 video (20 FPS) ...");
+                snprintf(status, sizeof(status), "Starting H.264 video (20.1 FPS) ...");
                 show(selected);
                 result = play_h264(items[selected].value);
                 pspDebugScreenInit();
