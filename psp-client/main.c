@@ -1583,23 +1583,23 @@ static void gui_library_shell(const char *section) {
     gui_rect(vram, 315, 37, 1, 174, 0x004B5B68);
     /* Always-visible miniature receiver: it makes the application feel like
      * a media appliance before the first file is selected. */
-    gui_rect(vram, 8, 220, 464, 44, 0x0010151B);
-    gui_rect(vram, 8, 220, 464, 1, 0x00D8E8FF);
+    gui_rect(vram, 8, 226, 464, 38, 0x0010151B);
+    gui_rect(vram, 8, 226, 464, 1, 0x00D8E8FF);
     for (x = 0; x < 10; x++) {
-        gui_rect(vram, 23 + x * 5, 252 - x * 2, 3, x * 2 + 2,
+        gui_rect(vram, 23 + x * 5, 258 - x * 2, 3, x * 2 + 2,
                  x < lit_left ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
-        gui_rect(vram, 78 + x * 5, 252 - x * 2, 3, x * 2 + 2,
+        gui_rect(vram, 78 + x * 5, 258 - x * 2, 3, x * 2 + 2,
                  x < lit_right ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
     }
     for (x = 0; x < 5; x++) {
-        gui_rect(vram, 150 + x * 35, 233, 28, 21, 0x00313A43);
-        gui_rect(vram, 152 + x * 35, 235, 24, 17, 0x001B222A);
+        gui_rect(vram, 150 + x * 35, 238, 28, 21, 0x00313A43);
+        gui_rect(vram, 152 + x * 35, 240, 24, 17, 0x001B222A);
     }
-    gui_rect(vram, 353, 229, 43, 29, 0x005A6268);
-    gui_rect(vram, 357, 233, 35, 21, 0x00252C33);
-    gui_rect(vram, 373 + (playback_volume * 13 / 30), 237, 2, 13, 0x00FFB000);
+    gui_rect(vram, 353, 232, 43, 29, 0x005A6268);
+    gui_rect(vram, 357, 236, 35, 21, 0x00252C33);
+    gui_rect(vram, 373 + (playback_volume * 13 / 30), 240, 2, 13, 0x00FFB000);
     for (x = 0; x < 20; x++)
-        gui_rect(vram, 414 + x * 2, 252 - (x < playback_volume * 2 / 3 ? 8 : 3), 1,
+        gui_rect(vram, 414 + x * 2, 258 - (x < playback_volume * 2 / 3 ? 8 : 3), 1,
                  x < playback_volume * 2 / 3 ? 8 : 3,
                  x < playback_volume * 2 / 3 ? 0x00FFB000 : 0x002B343C);
     gui_text(18, 9, 0x00D8E8FF, "PSP STREAMER   //   %s", section);
@@ -1633,8 +1633,47 @@ static void show(int selected) {
     if (hardware_runtime_result == 0) gui_text(326, 148, 0x008A9BAA, "AVC READY");
     else if (hardware_runtime_result != -9999) gui_text(326, 148, 0x008A9BAA, "AVC ERROR");
     gui_text(326, 172, 0x00FFFFFF, "%.20s", status);
-    gui_text(20, 226, 0x00FFFFFF, "UP/DOWN SELECT    X OPEN    LEFT BACK");
-    gui_text(20, 240, 0x00FFFFFF, "L/R PAGE    [] RELOAD    START EXIT");
+    gui_text(20, 214, 0x00FFFFFF, "UP/DN NAV  X OPEN  TRI INFO  L/R PAGE  [] RELOAD  START EXIT");
+}
+
+/* A real media-information screen rather than a second copy of the browser.
+ * Metadata is deliberately the compact server response already used by the
+ * playback setup, so opening this page cannot start a subtitle conversion or
+ * disturb the proven H.264/MP3 pipeline. */
+static void media_info(int selected) {
+    SceCtrlData pad;
+    unsigned int old = 0;
+    int i, minutes = (int)current_duration_seconds / 60;
+    int seconds = (int)current_duration_seconds % 60;
+    do {
+        sceCtrlReadBufferPositive(&pad, 1);
+        sceKernelDelayThread(10000);
+    } while (pad.Buttons & PSP_CTRL_TRIANGLE);
+    while (1) {
+        gui_library_shell("MEDIA INFORMATION");
+        gui_text(18, 45, 0x00D8E8FF, "FILE DETAILS");
+        gui_text(18, 64, 0x00FFFFFF, "%.39s", items[selected].title);
+        gui_text(18, 91, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? "MUSIC STREAM" : "H.264 VIDEO");
+        if (current_duration_seconds > 0.0f)
+            gui_text(18, 110, 0x008A9BAA, "DURATION: %d:%02d", minutes, seconds);
+        else gui_text(18, 110, 0x008A9BAA, "DURATION: SERVER UNKNOWN");
+        gui_text(18, 129, 0x008A9BAA, "AUDIO TRACKS: %d", audio_track_count);
+        gui_text(18, 148, 0x008A9BAA, "SUBTITLE TRACKS: %d", subtitle_track_count);
+        gui_text(18, 177, 0x008A9BAA, "X opens playback setup.");
+        gui_text(326, 45, 0x00D8E8FF, "STREAMS");
+        if (!audio_track_count && !subtitle_track_count) gui_text(326, 66, 0x008A9BAA, "No tracks detected.");
+        for (i = 0; i < audio_track_count && i < 6; i++)
+            gui_text(326, 66 + i * 12, 0x00FFFFFF, "A%d %.15s", i + 1, audio_tracks[i].language);
+        for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
+            gui_text(326, 66 + (i + audio_track_count) * 12, 0x008A9BAA, "S%d %.15s", i + 1, subtitle_tracks[i].language);
+        gui_text(20, 214, 0x00FFFFFF, "O / TRIANGLE BACK     X RETURNS TO LIBRARY");
+        sceCtrlReadBufferPositive(&pad, 1);
+        if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
+            !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
+        if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return;
+        old = pad.Buttons;
+        sceKernelDelayThread(75000);
+    }
 }
 
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
@@ -1668,8 +1707,7 @@ static int playback_options(void) {
         gui_text(326, 57, 0x008A9BAA, "AUDIO / SUBTITLE");
         gui_text(326, 86, 0x008A9BAA, "Preferences save");
         gui_text(326, 97, 0x008A9BAA, "for the next video.");
-        gui_text(20, 226, 0x00FFFFFF, "UP/DOWN ROW    LEFT/RIGHT CHANGE");
-        gui_text(20, 240, 0x00FFFFFF, "X START    O BACK");
+        gui_text(20, 214, 0x00FFFFFF, "UP/DN ROW   LEFT/RIGHT CHANGE   X START   O BACK");
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
@@ -1750,6 +1788,17 @@ int main(void) {
             }
         } else next_page_repeat_tick = 0;
         if ((pad.Buttons & PSP_CTRL_LEFT) && !(old_buttons & PSP_CTRL_LEFT) && current_path[0]) { parent_path(); selected = 0; refresh_library(); dirty = 1; }
+        if (item_count && (pad.Buttons & PSP_CTRL_TRIANGLE) && !(old_buttons & PSP_CTRL_TRIANGLE) && !items[selected].is_folder) {
+            /* Triangle is deliberately information-only: it performs the
+             * same lightweight metadata request as X, but never begins a
+             * transcode or subtitle preparation. */
+            show_metadata_loading();
+            load_media_metadata(items[selected].value);
+            media_info(selected);
+            dirty = 1;
+            old_buttons = pad.Buttons;
+            continue;
+        }
         if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder) {
             strncpy(current_path, items[selected].value, sizeof(current_path) - 1);
             current_path[sizeof(current_path) - 1] = '\0';
