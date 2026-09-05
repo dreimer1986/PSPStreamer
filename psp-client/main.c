@@ -5,7 +5,6 @@
 #include <pspnet_apctl.h>
 #include <pspnet_inet.h>
 #include <pspdisplay.h>
-#include <pspgu.h>
 #include <pspjpeg.h>
 #include <pspaudio.h>
 #include <pspaudiocodec.h>
@@ -125,74 +124,7 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
                                 int x, int y, int flags);
 
 static int tvout_module_id = -1;
-/* PMPlayer Advance keeps its TV framebuffer in the PSP-3000 extra-RAM
- * window.  The LCD UI continues to be drawn in ordinary VRAM, then this
- * small bridge expands it once whenever the browser changes.  Without this
- * bridge the DVE still scans a 720-pixel line from the 512-pixel LCD buffer,
- * which is precisely the repeated 1.5-image artefact seen on the OSSC. */
-static int tvout_active;
-static int tvout_display_buffer;
-static int tvout_gu_ready;
-static unsigned int __attribute__((aligned(16))) tvout_gu_list[256];
-
 #define TVOUT_STRIDE 768
-#define TVOUT_BUFFER_BYTES (1572864)
-
-/* DVE alone selects the cable timing, but PMPlayer also gives the display
- * engine a 720x480 GU surface before handing it the extra-RAM buffers.  Some
- * 6.61 display drivers otherwise retain the LCD's 512-pixel scan geometry,
- * producing the characteristic complete image plus a partial second one. */
-static void tvout_setup_graphics(void) {
-    if (tvout_gu_ready) return;
-    sceGuInit();
-    sceGuStart(GU_DIRECT, tvout_gu_list);
-    sceGuDrawBuffer(GU_PSM_8888, 0, TVOUT_STRIDE);
-    sceGuDispBuffer(720, 480, 0, TVOUT_STRIDE);
-    sceGuOffset(2048 - 360, 2048 - 240);
-    sceGuViewport(2048, 2048, 720, 480);
-    sceGuScissor(0, 0, 720, 480);
-    sceGuEnable(GU_SCISSOR_TEST);
-    sceGuDisable(GU_CULL_FACE);
-    sceGuDisable(GU_DEPTH_TEST);
-    sceGuDepthMask(GU_TRUE);
-    sceGuDisable(GU_COLOR_TEST);
-    sceGuDisable(GU_ALPHA_TEST);
-    sceGuDisable(GU_LIGHTING);
-    sceGuFinish();
-    sceGuSync(0, 0);
-    tvout_gu_ready = 1;
-}
-
-static void tvout_present_lcd_ui(void) {
-    const u32 *source = (const u32 *)0x44000000;
-    u32 *destination;
-    int x, y;
-    if (!tvout_active) {
-        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                              PSP_DISPLAY_PIXEL_FORMAT_8888,
-                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
-        return;
-    }
-    /* This is the same double-buffer layout PMPlayer Advance uses: each
-     * 768x480x4 surface is 1.5 MiB in the extra-RAM aperture.  On hardware
-     * the DVE may still be scanning the previous surface while we compose
-     * the next one, so a single static surface causes repeat/tear artefacts. */
-    destination = (u32 *)(0x0a000000 + tvout_display_buffer * TVOUT_BUFFER_BYTES);
-    /* 480:720 and 272:480 nearest-neighbour expansion.  It is deliberately
-     * used for the static/browser UI only; H.264 presentation will receive
-     * its own native 720x480 decoder target in the next stage. */
-    for (y = 0; y < 480; y++) {
-        const u32 *row = source + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
-        u32 *output = destination + y * TVOUT_STRIDE;
-        for (x = 0; x < 720; x++) output[x] = row[x * VIDEO_WIDTH / 720];
-        for (x = 720; x < TVOUT_STRIDE; x++) output[x] = 0;
-    }
-    sceKernelDcacheWritebackInvalidateRange(destination, TVOUT_BUFFER_BYTES);
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf(destination, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
-                          PSP_DISPLAY_SETBUF_IMMEDIATE);
-    tvout_display_buffer ^= 1;
-}
 
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
@@ -207,10 +139,10 @@ static int tvout_load_manager(void) {
     return sceKernelStartModule(tvout_module_id, 0, NULL, &status, NULL);
 }
 
-/* This first stage proves cable detection, DVE switching and the 768-pixel
- * external framebuffer before the validated 480x272 AVC path is made
- * resolution-dynamic.  Leaving the colour-card keeps 480p active, so the
- * surrounding application can be inspected on the external display too. */
+/* Isolated component-480p calibration.  This intentionally uses the PSP's
+ * real 2 MiB EDRAM (the same address space that sceDisplaySetFrameBuf scans)
+ * rather than the 0x0A extra-RAM window.  The latter silently fell back to
+ * the old 512-pixel LCD scanout on this ARK-5 PSP-3000. */
 static int tvout_component_test(void) {
     SceCtrlData pad;
     unsigned int old = 0;
@@ -222,21 +154,14 @@ static int tvout_component_test(void) {
     if (cable != 2) return cable ? -2 : -1;
     result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
     if (result < 0) return result;
-    tvout_setup_graphics();
-    /* The display engine's progressive-TV path reads from the PSP-3000's
-     * extra RAM window, not the 2 MiB LCD VRAM.  This is PMPlayer Advance's
-     * 0x0A000000 TV framebuffer arrangement. */
-    tvout_display_buffer = 0;
-    vram = (u32 *)(0x0a000000 + tvout_display_buffer * TVOUT_BUFFER_BYTES);
+    vram = (u32 *)0x44000000;
     for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
         u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
         if ((y / 24) & 1) color >>= 1;
         vram[y * TVOUT_STRIDE + x] = color;
     }
-    sceKernelDcacheWritebackInvalidateRange(vram, TVOUT_BUFFER_BYTES);
     sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
-    tvout_display_buffer = 1;
+    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
     while (1) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
@@ -247,7 +172,10 @@ static int tvout_component_test(void) {
         old = pad.Buttons;
         sceKernelDelayThread(20000);
     }
-    tvout_active = 1;
+    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
     return 0;
 }
 
@@ -2099,7 +2027,6 @@ static void show(int selected) {
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
-    tvout_present_lcd_ui();
 }
 
 /* A real media-information screen rather than a second copy of the browser.
