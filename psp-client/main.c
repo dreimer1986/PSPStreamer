@@ -1225,6 +1225,14 @@ static void audio_measure_pcm(const short *pcm, int frames) {
     spectrum_measure(pcm);
 }
 
+static void audio_apply_volume(short *pcm, int frames) {
+    int sample;
+    int volume = playback_volume;
+    if (volume >= 30) return;
+    for (sample = 0; sample < frames * 2; sample++)
+        pcm[sample] = (short)((int)pcm[sample] * volume / 30);
+}
+
 static int audio_output_thread(SceSize args, void *argp) {
     int channel, block, primed = 0, dac_samples = audio_dac_samples;
     const int block_bytes = dac_samples * 2 * (int)sizeof(short);
@@ -1250,7 +1258,7 @@ static int audio_output_thread(SceSize args, void *argp) {
         /* The producer cannot reuse this slot until OutputBlocking returns:
          * count remains unchanged while the DSP owns the DMA buffer. */
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
-        if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
+        if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX,
                                    audio_samples + block * AUDIO_BLOCK_SAMPLES * 2) < 0) {
             audio_state = -20; audio_running = 0; break;
         }
@@ -1454,6 +1462,7 @@ static int audio_thread(SceSize args, void *argp) {
         frames_in_block++;
         if (frames_in_block * MP3_DECODE_SAMPLES == audio_dac_samples) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
+            audio_apply_volume(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_measure_pcm(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
