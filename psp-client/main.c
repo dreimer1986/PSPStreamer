@@ -1287,16 +1287,21 @@ static int music_mp3_thread(SceSize args, void *argp) {
     const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     audio_state = 10;
+    video_step = "MP3 mod";
     module_result = sceUtilityLoadModule(PSP_MODULE_AV_MP3);
-    if (module_result < 0 && module_result != SCE_ERROR_LIBRARY_ALREADY_EXISTS) { audio_state = -25; goto cleanup; }
-    if (sceMp3InitResource() < 0) { audio_state = -26; goto cleanup; }
+    /* AV_MP3 can already be resident after a previous title or an XMB media
+     * service.  The subsequent sceMp3 calls are the authoritative check. */
+    if (module_result < 0 && module_result != SCE_ERROR_LIBRARY_ALREADY_EXISTS) { audio_state = module_result; goto cleanup; }
+    video_step = "MP3 init";
+    module_result = sceMp3InitResource();
+    if (module_result < 0) { audio_state = module_result; goto cleanup; }
     mp3_resource = 1;
     memset(&init, 0, sizeof(init));
     init.mp3StreamStart = 0; init.mp3StreamEnd = 0x7fffffff;
     init.mp3Buf = mp3_library_input; init.mp3BufSize = sizeof(mp3_library_input);
     init.pcmBuf = mp3_library_pcm; init.pcmBufSize = sizeof(mp3_library_pcm);
     handle = sceMp3ReserveMp3Handle(&init);
-    if (handle < 0) { audio_state = -27; goto cleanup; }
+    if (handle < 0) { video_step = "MP3 handle"; audio_state = handle; goto cleanup; }
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
@@ -1317,7 +1322,9 @@ static int music_mp3_thread(SceSize args, void *argp) {
         memcpy(destination, body + 4, initial_size);
         if (sceMp3NotifyAddStreamData(handle, initial_size) < 0) { audio_state = -28; goto cleanup; }
     }
-    if (sceMp3Init(handle) < 0) { audio_state = -29; goto cleanup; }
+    video_step = "MP3 start";
+    module_result = sceMp3Init(handle);
+    if (module_result < 0) { audio_state = module_result; goto cleanup; }
     audio_queue_read = audio_queue_write = audio_queue_count = 0;
     output_thread_id = sceKernelCreateThread("PSPStreamerDAC", audio_output_thread, 0x10, 0x2000, 0, NULL);
     if (output_thread_id < 0) { audio_state = -16; goto cleanup; }
@@ -1336,7 +1343,7 @@ static int music_mp3_thread(SceSize args, void *argp) {
             if (sceMp3NotifyAddStreamData(handle, received) < 0) { audio_state = -28; break; }
         }
         decoded = sceMp3Decode(handle, &pcm);
-        if (decoded < 0) { audio_state = -30; break; }
+        if (decoded < 0) { video_step = "MP3 decode"; audio_state = decoded; break; }
         if (!decoded) { sceKernelDelayThread(1000); continue; }
         if (decoded != MP3_DECODE_SAMPLES * 2 * (int)sizeof(short)) { audio_state = -31; break; }
         memcpy(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 + frames_in_block * MP3_DECODE_SAMPLES * 2, pcm, decoded);
