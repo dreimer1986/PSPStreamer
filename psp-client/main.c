@@ -194,22 +194,6 @@ static void tvout_present_lcd_ui(void) {
     tvout_display_buffer ^= 1;
 }
 
-static void *video_output_framebuffer(void) {
-    return tvout_active ? (void *)0x0a000000 : (void *)0x44000000;
-}
-
-static void video_present_frame(void) {
-    if (tvout_active) {
-        sceDisplaySetFrameBuf((void *)0x0a000000, TVOUT_STRIDE,
-                              PSP_DISPLAY_PIXEL_FORMAT_8888,
-                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    } else {
-        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                              PSP_DISPLAY_PIXEL_FORMAT_8888,
-                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    }
-}
-
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
     int status;
@@ -1258,14 +1242,15 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             if (now < *next_frame_tick)
                 sceKernelDelayThread((unsigned int)(*next_frame_tick - now));
         }
-        result = h264_hw_decode_annexb(h264_buffer, next, video_output_framebuffer());
+        result = h264_hw_decode_annexb(h264_buffer, next, (void *)0x44000000);
         if (result < 0) { video_step = h264_hw_last_step(); return result; }
         if (result > 0) {
             subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
             bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
             if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
             else receiver_hud(hardware_decoder_frames);
-            video_present_frame();
+            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
+                                  PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
             frames++;
             hardware_decoder_frames++;
@@ -1689,8 +1674,6 @@ static int play_h264(const char *media_id) {
     video_step = "Hardware-AVC";
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
-    h264_hw_set_output_layout(tvout_active ? TVOUT_STRIDE : VIDEO_STRIDE,
-                              tvout_active ? 480 : VIDEO_HEIGHT);
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_start = 0;
@@ -1708,7 +1691,7 @@ static int play_h264(const char *media_id) {
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
     else { audio_running = 0; audio_state = audio_thread_id; }
     video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, tvout_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { h264_hw_shutdown(); return socket_fd; }
     if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1307; }
