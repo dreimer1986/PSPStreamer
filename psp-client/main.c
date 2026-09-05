@@ -1187,10 +1187,12 @@ static void load_media_metadata(const char *media_id) {
     if (audio_track_count && selected_audio_track >= audio_track_count) selected_audio_track = 0;
     if (!audio_track_count) selected_audio_track = 0;
     if (selected_subtitle_track >= subtitle_track_count) selected_subtitle_track = -1;
-    /* The usual preferred subtitle is fetched while the visible options
-     * screen is being prepared.  The server caches its finite extraction, so
-     * pressing X afterwards does not hold up the H.264 startup. */
-    if (selected_subtitle_track >= 0) prepare_client_subtitles(media_id);
+    /* Do not prefetch subtitle payloads here.  In particular, a first PGS
+     * selection may require mkvextract to build its persistent server cache,
+     * which is legitimate work but can take tens of seconds on an SMB disk.
+     * Keeping this phase metadata-only guarantees that the options dialog
+     * stays responsive; play_h264() prepares the selected overlay only once
+     * the user has actually committed to starting the video. */
 }
 
 static void show_metadata_loading(void) {
