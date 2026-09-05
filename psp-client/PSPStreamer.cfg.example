@@ -5,3 +5,4 @@ port=8091
 audio=0
 subtitle=-1
 quality=2
+volume=24

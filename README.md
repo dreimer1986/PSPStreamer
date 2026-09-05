@@ -2,7 +2,7 @@
 
 PSP Streamer makes a local or DynDNS-reachable video library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. The native PSP app receives a compact H.264 Baseline video stream and a separate MP3 audio stream, both decoded locally by the PSP.
 
-The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles and PGS bitmap subtitles are rendered as native PSP overlays. Audio-track selection, a kept-awake display, seeking, and large directory listings are supported.
+The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles and PGS bitmap subtitles are rendered as native PSP overlays. Video and common music formats stream through the same native MP3 DAC path; audio playback includes a receiver UI with live stereo VU meters and a lightweight visualizer.
 
 ## Requirements
 
@@ -68,6 +68,8 @@ quality=2
 Browser controls: Cross opens a folder or playback options; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
 
 Playback controls: Select pauses/resumes, L/R seek ±10 seconds, and Start returns to the browser. Track titles such as `Forced` or `Full` appear beside language labels when the source provides them.
+
+Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and stores volume, and Cross+Triangle toggles fullscreen. Fullscreen works for video and for the audio visualizer.
 
 ## Subtitles and limitations
 

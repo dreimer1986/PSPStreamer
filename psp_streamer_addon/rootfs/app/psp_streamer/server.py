@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, urlparse
 from .pgs import PgsCue, parse_pgs
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
+AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 TEXT_SUBTITLE_CODECS = {"ass", "mov_text", "srt", "ssa", "subrip", "text", "webvtt"}
 BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "xsub"}
 PSP_SUBTITLE_FPS = 20.1
@@ -120,7 +122,7 @@ class Library:
             target = (root / item.relative).resolve()
         except (ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
             raise ValueError("Invalid media identifier") from exc
-        if root not in target.parents or not target.is_file() or target.suffix.lower() not in VIDEO_EXTENSIONS:
+        if root not in target.parents or not target.is_file() or target.suffix.lower() not in MEDIA_EXTENSIONS:
             raise ValueError("Media item is unavailable")
         return item, target
 
@@ -141,9 +143,10 @@ class Library:
             child_relative = entry.relative_to(root).as_posix()
             if entry.is_dir():
                 folders.append({"name": entry.name, "path": child_relative})
-            elif entry.is_file() and entry.suffix.lower() in VIDEO_EXTENSIONS:
+            elif entry.is_file() and entry.suffix.lower() in MEDIA_EXTENSIONS:
                 item = MediaItem(root_index, child_relative)
-                videos.append({"name": entry.name, "id": self.encode(item), "bytes": entry.stat().st_size})
+                videos.append({"name": entry.name, "id": self.encode(item), "bytes": entry.stat().st_size,
+                               "kind": "audio" if entry.suffix.lower() in AUDIO_EXTENSIONS else "video"})
         parent = None if directory == root else directory.parent.relative_to(root).as_posix()
         return {"root": root_index, "path": relative, "parent": parent, "folders": folders, "videos": videos}
 

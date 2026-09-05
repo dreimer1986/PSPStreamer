@@ -53,6 +53,7 @@ typedef struct {
     char title[TITLE_SIZE];
     char value[ID_SIZE];
     int is_folder;
+    int is_audio;
 } LibraryItem;
 
 typedef struct {
@@ -188,6 +189,7 @@ static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((ali
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
+static volatile int audio_played_blocks;
 static volatile int vu_left, vu_right;
 static char status[128] = "Starting network ...";
 static int selected_audio_track;
@@ -1028,6 +1030,7 @@ static int audio_output_thread(SceSize args, void *argp) {
             audio_state = -20; audio_running = 0; break;
         }
         audio_queue_count--;
+        audio_played_blocks++;
         audio_state = 16;
     }
     sceAudioChRelease(channel);
@@ -1126,6 +1129,56 @@ cleanup:
     if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) sceNetInetClose(socket_fd); }
     if (mp3_codec_work) { free(mp3_codec_work); mp3_codec_work = NULL; }
     return 0;
+}
+
+static int play_audio(const char *media_id, const char *title) {
+    int audio_thread_id, paused = 0;
+    unsigned int old = 0;
+    strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
+    audio_media_id[sizeof(audio_media_id) - 1] = '\0';
+    audio_queue_read = audio_queue_write = audio_queue_count = audio_played_blocks = 0;
+    audio_output_thread_id = -1;
+    audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
+    audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
+    if (audio_thread_id < 0) { audio_running = 0; return audio_thread_id; }
+    sceKernelStartThread(audio_thread_id, 0, NULL);
+    while (audio_running) {
+        SceCtrlData pad;
+        int x, bars = (vu_left + vu_right) / 2;
+        keep_awake();
+        gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+        gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
+        pspDebugScreenSetXY(3, 2); pspDebugScreenSetTextColor(0x00D8E8FF);
+        pspDebugScreenPrintf("PSP STREAMER  /  MUSIC");
+        pspDebugScreenSetXY(3, 4); pspDebugScreenSetTextColor(0x00FFFFFF);
+        pspDebugScreenPrintf("%.52s", title);
+        pspDebugScreenSetXY(3, 6); pspDebugScreenSetTextColor(0x00A8B8C8);
+        pspDebugScreenPrintf("MP3 stream  |  %d%% volume  |  SELECT pause", playback_volume * 100 / 30);
+        /* MilkDrop-inspired, deliberately light-weight spectrum motion. */
+        for (x = 0; x < 36; x++) {
+            int height = (bars * (12 + ((x * 17 + audio_played_blocks) % 18))) / 300;
+            if (height > 78) height = 78;
+            gui_rect((u32 *)0x44000000, 24 + x * 12, 205 - height, 8, height,
+                     x > 28 ? 0x00FFB000 : 0x0000D8FF);
+        }
+        if (!video_fullscreen) receiver_hud((int)(audio_played_blocks * AUDIO_BLOCK_SAMPLES * 20.1f / 44100.0f));
+        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+        sceDisplayWaitVblankStart();
+        sceCtrlPeekBufferPositive(&pad, 1);
+        if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) break;
+        if ((pad.Buttons & PSP_CTRL_SELECT) && !(old & PSP_CTRL_SELECT)) { paused = !paused; audio_start = !paused; }
+        if ((pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP) && playback_volume < 30) { playback_volume++; save_playback_settings(); }
+        if ((pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN) && playback_volume > 0) { playback_volume--; save_playback_settings(); }
+        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
+            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) video_fullscreen = !video_fullscreen;
+        old = pad.Buttons;
+        sceKernelDelayThread(33000);
+    }
+    audio_running = 0; audio_start = 1; audio_queue_count = 0;
+    if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
+    sceKernelWaitThreadEnd(audio_thread_id, NULL);
+    if (audio_output_thread_id >= 0) { sceKernelWaitThreadEnd(audio_output_thread_id, NULL); audio_output_thread_id = -1; }
+    return audio_state < 0 ? audio_state : 0;
 }
 
 static int play_h264(const char *media_id) {
@@ -1402,6 +1455,7 @@ static void parse_library(void) {
         if (!object || !json_value(object, "name", items[item_count].title, TITLE_SIZE)) break;
         if (!json_value(object, "id", items[item_count].value, ID_SIZE)) break;
         items[item_count].is_folder = 0;
+        { char kind[12]; items[item_count].is_audio = json_value(object, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio"); }
         item_count++;
         cursor = strchr(object, '}');
         if (!cursor) break;
@@ -1616,9 +1670,9 @@ int main(void) {
             }
             do {
                 int next;
-                snprintf(status, sizeof(status), "Starting H.264 video (20.1 FPS) ...");
+                snprintf(status, sizeof(status), "%s ...", items[selected].is_audio ? "Starting music stream" : "Starting H.264 video (20.1 FPS)");
                 show(selected);
-                result = play_h264(items[selected].value);
+                result = items[selected].is_audio ? play_audio(items[selected].value, items[selected].title) : play_h264(items[selected].value);
                 pspDebugScreenInit();
                 if (result < 0) {
                     snprintf(status, sizeof(status), "%s: %08X", video_step, result);

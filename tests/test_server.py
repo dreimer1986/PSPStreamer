@@ -25,7 +25,13 @@ class LibraryTests(unittest.TestCase):
             library = Library([root])
             token = library.encode(MediaItem(0, "Film.mp4"))
             _, source = library.decode(token)
-            self.assertEqual(source, root / "Film.mp4")
+        self.assertEqual(source, root / "Film.mp4")
+
+    def test_library_marks_audio_files_as_audio_media(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Titel.mp3").touch()
+            self.assertEqual(Library([root]).browse(0)["videos"][0]["kind"], "audio")
 
     def test_command_has_psp_constraints(self):
         command = ffmpeg_command(Path("/media/test.mkv"), 1)
