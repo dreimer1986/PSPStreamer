@@ -36,13 +36,15 @@ def psp_subtitle_text(value: str) -> str:
     value = re.sub(r"<[^>]*>", "", value)
     value = re.sub(r"\{[^}]*\}", "", value)  # ASS styling tags
     value = value.replace("\\N", "|").replace("\\n", "|").replace("\n", "|")
-    value = value.translate(str.maketrans({
-        "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
-        "ß": "ss", "ẞ": "SS", "Æ": "AE", "æ": "ae", "Ø": "O", "ø": "o",
-    }))
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    # Preserve Latin-1 directly (notably German umlauts).  Characters beyond
+    # the compact client atlas degrade to an ASCII approximation instead of
+    # making the JSON cue parser carry an arbitrary Unicode font stack.
+    value = "".join(
+        character if ord(character) <= 255 else unicodedata.normalize("NFKD", character).encode("ascii", "ignore").decode("ascii")
+        for character in value
+    )
     value = value.replace('"', "'").replace("\\", "/")
-    value = re.sub(r"[^ -~|]", " ", value)
+    value = re.sub(r"[^ -ÿ|]", " ", value)
     value = re.sub(r"[ \t]+", " ", value).strip(" |")
     return value[:180]
 

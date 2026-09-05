@@ -67,6 +67,9 @@ typedef struct {
  * drifting millisecond clock on the PSP. */
 #define MAX_SUBTITLE_CUES 960
 #define SUBTITLE_TEXT_SIZE 160
+#define SUBTITLE_FONT_CELL_WIDTH 16
+#define SUBTITLE_FONT_CELL_HEIGHT 20
+#define SUBTITLE_FONT_BYTES (16 * 16 * SUBTITLE_FONT_CELL_WIDTH * SUBTITLE_FONT_CELL_HEIGHT)
 typedef struct {
     int start_frame;
     int end_frame;
@@ -197,6 +200,7 @@ static StreamTrack audio_tracks[8], subtitle_tracks[8];
 static int audio_track_count, subtitle_track_count;
 static SubtitleCue *subtitle_cues;
 static int subtitle_cue_count;
+static unsigned char *subtitle_font;
 static int subtitle_client_side;
 static float current_duration_seconds;
 static int playback_reached_end;
@@ -465,7 +469,7 @@ static void subtitle_parse_prepared_response(void) {
         int consumed = 0;
         char *entry = strchr(cursor, '[');
         if (!entry || !strchr(cursor, ']')) break;
-        if (sscanf(entry, "[%d,%d,\"%191[^\"]\"]%n", &cue->start_frame,
+        if (sscanf(entry, "[%d,%d,\"%159[^\"]\"]%n", &cue->start_frame,
                    &cue->end_frame, cue->text, &consumed) != 3 || consumed <= 0) break;
         if (cue->end_frame > cue->start_frame) subtitle_cue_count++;
         cursor = entry + consumed;
@@ -474,26 +478,71 @@ static void subtitle_parse_prepared_response(void) {
 
 static void subtitle_release(void) {
     if (subtitle_cues) free(subtitle_cues);
+    if (subtitle_font) free(subtitle_font);
     subtitle_cues = NULL;
+    subtitle_font = NULL;
     subtitle_cue_count = 0;
 }
 
-static void subtitle_draw_line(const char *text, int y) {
-    char line[59];
-    int length = 0;
-    int index, x, dx, dy;
-    while (*text && *text != '|' && length < 58) line[length++] = *text++;
-    line[length] = '\0';
-    if (!length) return;
-    x = (VIDEO_WIDTH - length * 8) / 2;
-    for (index = 0; index < length; index++) {
-        /* pspDebug's built-in font was already part of the stable binary.
-         * Use it directly rather than linking another font library into the
-         * memory-sensitive AVC process. */
-        for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++)
-            if (dx || dy) pspDebugScreenPutChar(x + index * 8 + dx, y + dy, 0x00000000, (u8)line[index]);
-        pspDebugScreenPutChar(x + index * 8, y, 0x00FFFFFF, (u8)line[index]);
+static void subtitle_load_font(void) {
+    char path[256], cwd[192];
+    SceUID file;
+    if (subtitle_font) return;
+    if (!getcwd(cwd, sizeof(cwd))) return;
+    snprintf(path, sizeof(path), "%s/subtitle_font.raw", cwd);
+    file = sceIoOpen(path, PSP_O_RDONLY, 0);
+    if (file < 0) return;
+    subtitle_font = memalign(64, SUBTITLE_FONT_BYTES);
+    if (!subtitle_font || sceIoRead(file, subtitle_font, SUBTITLE_FONT_BYTES) != SUBTITLE_FONT_BYTES) {
+        if (subtitle_font) free(subtitle_font);
+        subtitle_font = NULL;
     }
+    sceIoClose(file);
+}
+
+static int subtitle_utf8_char(const char **text) {
+    const unsigned char *source = (const unsigned char *)*text;
+    int value;
+    if (source[0] < 0x80) { (*text)++; return source[0]; }
+    if (source[0] == 0xc2 && source[1]) { value = source[1]; *text += 2; return value; }
+    if (source[0] == 0xc3 && source[1]) { value = 0xc0 + (source[1] & 0x3f); *text += 2; return value; }
+    (*text)++;
+    return '?';
+}
+
+static void subtitle_draw_glyph(u32 *vram, int glyph, int left, int top) {
+    const unsigned char *bitmap = subtitle_font + glyph * SUBTITLE_FONT_CELL_WIDTH * SUBTITLE_FONT_CELL_HEIGHT;
+    int x, y, dx, dy;
+    for (y = 0; y < SUBTITLE_FONT_CELL_HEIGHT; y++) for (x = 0; x < SUBTITLE_FONT_CELL_WIDTH; x++) {
+        if (bitmap[y * SUBTITLE_FONT_CELL_WIDTH + x] > 72) {
+            int px = left + x, py = top + y;
+            for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++)
+                if ((dx || dy) && px + dx >= 0 && px + dx < VIDEO_WIDTH && py + dy >= 0 && py + dy < VIDEO_HEIGHT)
+                    vram[(py + dy) * VIDEO_STRIDE + px + dx] = 0x00000000;
+            vram[py * VIDEO_STRIDE + px] = 0x00ffffff;
+        }
+    }
+}
+
+static const char *subtitle_draw_line(const char *text, int y, u32 *vram) {
+    const char *cursor = text, *end = text, *last_space = NULL;
+    int count = 0, glyph, index, left;
+    while (*end && *end != '|' && count < 42) {
+        const char *before = end;
+        glyph = subtitle_utf8_char(&end);
+        if (glyph == ' ') last_space = before;
+        count++;
+    }
+    if (*end && *end != '|' && last_space) end = last_space;
+    left = (VIDEO_WIDTH - count * 11) / 2;
+    if (left < 4) left = 4;
+    for (index = 0; cursor < end; index++) {
+        glyph = subtitle_utf8_char(&cursor);
+        subtitle_draw_glyph(vram, glyph, left + index * 11, y);
+    }
+    while (*end == ' ') end++;
+    if (*end == '|') end++;
+    return end;
 }
 
 static void subtitle_present(int absolute_frame) {
@@ -507,14 +556,14 @@ static void subtitle_present(int absolute_frame) {
     }
     if (index < 0) return;
     vram = (u32 *)0x44000000;
-    pspDebugScreenSetBase(vram);
-    pspDebugScreenEnableBackColor(0);
+    if (!subtitle_font) subtitle_load_font();
+    if (!subtitle_font) return; /* Never risk AVC for an optional font asset. */
     {
         const char *text = subtitle_cues[index].text;
         for (y = 0; *text && y < 3; y++) {
-            subtitle_draw_line(text, 236 + y * 10);
-            while (*text && *text != '|') text++;
-            if (*text == '|') text++;
+            const char *next = subtitle_draw_line(text, 210 + y * 20, vram);
+            if (next == text) break;
+            text = next;
         }
     }
 }

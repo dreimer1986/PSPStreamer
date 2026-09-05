@@ -83,7 +83,7 @@ class LibraryTests(unittest.TestCase):
 Hallo <i>Welt</i>!\\N{\\an8}Oben
 """)
         self.assertEqual(cues, [[20, 50, "Hallo Welt!|Oben"]])
-        self.assertEqual(psp_subtitle_text("Grüße \"PSP\""), "Gruesse 'PSP'")
+        self.assertEqual(psp_subtitle_text("Grüße \"PSP\""), "Grüße 'PSP'")
 
 
 if __name__ == "__main__":

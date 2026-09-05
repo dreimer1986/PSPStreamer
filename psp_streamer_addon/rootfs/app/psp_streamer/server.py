@@ -36,13 +36,12 @@ def psp_subtitle_text(value: str) -> str:
     value = re.sub(r"<[^>]*>", "", value)
     value = re.sub(r"\{[^}]*\}", "", value)
     value = value.replace("\\N", "|").replace("\\n", "|").replace("\n", "|")
-    value = value.translate(str.maketrans({
-        "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
-        "ß": "ss", "ẞ": "SS", "Æ": "AE", "æ": "ae", "Ø": "O", "ø": "o",
-    }))
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = "".join(
+        character if ord(character) <= 255 else unicodedata.normalize("NFKD", character).encode("ascii", "ignore").decode("ascii")
+        for character in value
+    )
     value = value.replace('"', "'").replace("\\", "/")
-    value = re.sub(r"[^ -~|]", " ", value)
+    value = re.sub(r"[^ -ÿ|]", " ", value)
     value = re.sub(r"[ \t]+", " ", value).strip(" |")
     return value[:180]
 
