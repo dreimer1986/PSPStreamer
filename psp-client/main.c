@@ -1383,7 +1383,7 @@ static int audio_thread(SceSize args, void *argp) {
     char request[2048], header[4096], *body;
     int socket_fd = -1, header_size = 0, received, output_thread_id = -1;
     int have = 0, frame_size, result, initial_size, frames_in_block = 0;
-    const int block_bytes = AUDIO_BLOCK_SAMPLES * 2 * (int)sizeof(short);
+    const int block_bytes = audio_dac_samples * 2 * (int)sizeof(short);
     const int decoded_bytes = MP3_DECODE_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     audio_state = 10;
@@ -1454,7 +1454,7 @@ static int audio_thread(SceSize args, void *argp) {
         memmove(mp3_input_buffer, mp3_input_buffer + frame_size, have - frame_size);
         have -= frame_size;
         frames_in_block++;
-        if (frames_in_block == MP3_FRAMES_PER_AUDIO_BLOCK) {
+        if (frames_in_block * MP3_DECODE_SAMPLES == audio_dac_samples) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
