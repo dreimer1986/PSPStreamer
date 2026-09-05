@@ -68,7 +68,7 @@ typedef struct {
     char title[48];
 } StreamTrack;
 
-/* Subtitle times are server-normalised to the same 20.1-fps presentation
+/* Subtitle times are server-normalised to the active presentation
  * clock as the raw H.264 stream.  Keeping them in frames avoids a second,
  * drifting millisecond clock on the PSP. */
 #define MAX_SUBTITLE_CUES 960
@@ -111,6 +111,7 @@ static int hardware_decoder_ready;
 static int video_modules_ready;
 static int hardware_decoder_frames;
 static int hardware_runtime_result = -9999;
+static float playback_fps = 20.1f;
 static int performance_result = -9999;
 static const char *hardware_runtime_step = "not loaded";
 /* This is intentionally shown on screen on a load failure: on real PSPs the
@@ -612,21 +613,21 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
  * {"t":"text","c":[[start,end,"ASCII text"],...]}.  Text has already
  * been normalised by the server, so a narrow parser is both safer and much
  * smaller than adding a general JSON library to the playback binary. */
-static int prepare_client_subtitles(const char *media_id) {
+static int prepare_client_subtitles(const char *media_id, int tv_profile) {
     char path[ID_SIZE + 64];
     int result;
     subtitle_cue_count = 0;
     subtitle_client_side = 0;
     if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
     if (selected_subtitle_track < 0) return 0;
-    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d", media_id, selected_subtitle_track);
+    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d", media_id, selected_subtitle_track, tv_profile);
     result = http_get(path, response, sizeof(response));
     if (result < 0) return result;
     /* Bitmap tracks keep the existing server-overlay fallback until the
      * sprite transport is available.  Never silently lose a requested PGS. */
     if (strstr(response, "\"t\":\"bitmap\"")) {
         char path[ID_SIZE + 64], *cursor;
-        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d", media_id, selected_subtitle_track);
+        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d", media_id, selected_subtitle_track, tv_profile);
         if (http_get_wait(path, response, sizeof(response), 180000) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
         if (bitmap_cues) free(bitmap_cues);
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
@@ -862,7 +863,7 @@ static void playback_hud(int frames, int paused) {
     u32 *vram = (u32 *)0x44000000;
     int x, y = VIDEO_HEIGHT - 5, filled = 0;
     if (current_duration_seconds > 0.0f)
-        filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * 20.1f) / (current_duration_seconds * 20.1f));
+        filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * playback_fps) / (current_duration_seconds * playback_fps));
     if (filled < 0) filled = 0;
     if (filled > VIDEO_WIDTH) filled = VIDEO_WIDTH;
     for (x = 0; x < VIDEO_WIDTH; x++)
@@ -884,8 +885,8 @@ static void tvout_playback_hud(int frames, int paused) {
     u32 *vram = (u32 *)0x44000000;
     int x, y, filled = 0;
     if (current_duration_seconds > 0.0f)
-        filled = (int)(720 * (frames + stream_start_seconds * 20.1f) /
-                       (current_duration_seconds * 20.1f));
+        filled = (int)(720 * (frames + stream_start_seconds * playback_fps) /
+                       (current_duration_seconds * playback_fps));
     if (filled < 0) filled = 0;
     if (filled > 720) filled = 720;
     for (x = 0; x < 720; x++) {
@@ -1243,7 +1244,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         }
         /* TCP delivers H.264 in bursts.  Drawing every received access unit
          * immediately was the visible catch-up effect.  Never present faster
-         * than the server's 20.1 fps, with the audio DAC as master clock. */
+         * than the server's active frame rate, with the audio DAC as master clock. */
         {
             unsigned long long now = sceKernelGetSystemTimeWide();
             if (*next_frame_tick == 0 || now > *next_frame_tick + 100000ULL)
@@ -1258,12 +1259,12 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
              * rows.  Do not let it corrupt a native 768-pixel TV frame; a
              * dedicated TV overlay follows once video presentation is proven. */
             if (!tvout_video_active) {
-                subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
-                bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
+                subtitle_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames);
+                bitmap_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames, audio_media_id);
                 if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
                 else receiver_hud(hardware_decoder_frames);
             } else {
-                tvout_subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
+                tvout_subtitle_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames);
                 tvout_playback_hud(hardware_decoder_frames, playback_paused);
             }
             sceDisplaySetFrameBuf((void *)0x04000000,
@@ -1273,7 +1274,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             sceDisplayWaitVblankStart();
             frames++;
             hardware_decoder_frames++;
-            *next_frame_tick += 49751ULL;
+            *next_frame_tick += tvout_video_active ? 49505ULL : 49751ULL;
         }
         memmove(h264_buffer, h264_buffer + next, *size - next);
         *size -= next;
@@ -1686,7 +1687,6 @@ static int play_h264(const char *media_id) {
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
      * retain the established server burn-in path rather than losing subtitles. */
-    prepare_client_subtitles(media_id);
     result = load_video_modules();
     if (result < 0) return result;
     if (hardware_runtime_result != 0) { video_step = "Media-Engine Bridge"; return hardware_runtime_result; }
@@ -1694,6 +1694,8 @@ static int play_h264(const char *media_id) {
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
     tvout_video_active = tvout_begin_video() == 0;
+    playback_fps = tvout_video_active ? 20.2f : 20.1f;
+    prepare_client_subtitles(media_id, tvout_video_active);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
      * clock in native TV mode.  Let FFmpeg composite them before the stream

@@ -67,7 +67,7 @@ def psp_subtitle_text(value: str) -> str:
     return value[:180]
 
 
-def parse_srt_cues(value: str) -> list[list[object]]:
+def parse_srt_cues(value: str, fps: float = PSP_SUBTITLE_FPS) -> list[list[object]]:
     """Convert FFmpeg's canonical SRT output into PSP presentation frames."""
     cues: list[list[object]] = []
     blocks = re.split(r"\r?\n\r?\n+", value.strip())
@@ -88,7 +88,7 @@ def parse_srt_cues(value: str) -> list[list[object]]:
         end = ((parts[4] * 60 + parts[5]) * 60 + parts[6]) * 1000 + parts[7]
         text = psp_subtitle_text("|".join(lines[line_index + 1:]))
         if text and end > start:
-            cues.append([round(start * PSP_SUBTITLE_FPS / 1000), round(end * PSP_SUBTITLE_FPS / 1000), text])
+            cues.append([round(start * fps / 1000), round(end * fps / 1000), text])
         if len(cues) >= MAX_SUBTITLE_CUES:
             break
     return cues
@@ -189,10 +189,11 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # Annex-B is the native input expected by the PSP OpenH264 playback
         # path. AUD makes access-unit boundaries unambiguous on a raw socket;
         # repeated headers let a client recover at each IDR.
-        # The 20.1-fps output rate matches the validated PSP presentation
-        # clock and prevents a cumulative audio lag on real hardware.
+        # LCD playback retains its validated 20.1-fps cadence.  Native
+        # component output alone uses the 20.2-fps calibration.
         target_width, target_height = (720, 480) if tv_output else (480, 272)
-        video_filter = (f"fps=201/10,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+        frame_rate = "101/5" if tv_output else "201/10"
+        video_filter = (f"fps={frame_rate},scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
                         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
         if subtitle_track >= 0 and bitmap_subtitle:
@@ -216,7 +217,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             # resumes the normal real-time rate.
             "ffmpeg", "-hide_banner", "-loglevel", "error", *( ["-ss", f"{start_seconds:.3f}"] if start_seconds else [] ), "-re", "-readrate_initial_burst", "2", "-i", str(source),
             "-map", "[v]" if bitmap_filter else "0:v:0",
-            # With audio active, 20.1 fps is the validated real-time ceiling
+            # The selected profile's calibrated frame rate is the real-time ceiling
             # for software H.264 decoding plus YUV-to-RGBA conversion on a
             # PSP-3000.  It prevents video falling behind the audio clock.
             "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
@@ -298,12 +299,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track)
+                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1")
             if parsed.path.startswith("/api/bitmap-subtitles/"):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track)
+                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1")
             if parsed.path.startswith("/api/bitmap-sprite/"):
                 track = int(query.get("track", ["-1"])[0])
                 cue = int(query.get("cue", ["-1"])[0])
@@ -410,7 +411,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.server.metadata_cache[token] = payload
         self.send_json(payload)
 
-    def subtitles(self, token: str, track: int) -> None:
+    def subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
         """Return a compact cue list without involving the video transcode.
 
         Text tracks are converted by FFmpeg to its canonical SRT form.  This
@@ -419,7 +420,8 @@ class AppHandler(BaseHTTPRequestHandler):
         deliberately report their kind now; the PSP client can retain the
         proven burn-in fallback until its sprite overlay transport lands.
         """
-        cache_key = (token, track)
+        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
+        cache_key = (token, track, fps)
         with self.server.subtitle_cache_lock:
             cached = self.server.subtitle_cache.get(cache_key)
         if cached is not None:
@@ -443,7 +445,7 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             if extracted.returncode:
                 raise ValueError("Could not extract subtitle track")
-            payload = {"t": "text", "c": parse_srt_cues(extracted.stdout)}
+            payload = {"t": "text", "c": parse_srt_cues(extracted.stdout, fps)}
         with self.server.subtitle_cache_lock:
             self.server.subtitle_cache[cache_key] = payload
         self.send_json(payload)
@@ -477,11 +479,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.pgs_cache.popitem(last=False)
         return parsed
 
-    def bitmap_subtitles(self, token: str, track: int) -> None:
+    def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
         cues = self.pgs_cues(token, track)
         # Frames share the video presentation clock; positions are scaled by
         # the client from the original PGS canvas into 480x272.
-        payload = {"t": "pgs", "c": [[round(cue.start * PSP_SUBTITLE_FPS), round(cue.end * PSP_SUBTITLE_FPS),
+        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
+        payload = {"t": "pgs", "c": [[round(cue.start * fps), round(cue.end * fps),
                                          cue.x, cue.y, cue.width, cue.height, cue.canvas_width, cue.canvas_height]
                                        for cue in cues]}
         self.send_json(payload)
