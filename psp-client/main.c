@@ -5,6 +5,7 @@
 #include <pspnet_apctl.h>
 #include <pspnet_inet.h>
 #include <pspdisplay.h>
+#include <pspgu.h>
 #include <pspjpeg.h>
 #include <pspaudio.h>
 #include <pspaudiocodec.h>
@@ -131,9 +132,36 @@ static int tvout_module_id = -1;
  * which is precisely the repeated 1.5-image artefact seen on the OSSC. */
 static int tvout_active;
 static int tvout_display_buffer;
+static int tvout_gu_ready;
+static unsigned int __attribute__((aligned(16))) tvout_gu_list[256];
 
 #define TVOUT_STRIDE 768
 #define TVOUT_BUFFER_BYTES (1572864)
+
+/* DVE alone selects the cable timing, but PMPlayer also gives the display
+ * engine a 720x480 GU surface before handing it the extra-RAM buffers.  Some
+ * 6.61 display drivers otherwise retain the LCD's 512-pixel scan geometry,
+ * producing the characteristic complete image plus a partial second one. */
+static void tvout_setup_graphics(void) {
+    if (tvout_gu_ready) return;
+    sceGuInit();
+    sceGuStart(GU_DIRECT, tvout_gu_list);
+    sceGuDrawBuffer(GU_PSM_8888, 0, TVOUT_STRIDE);
+    sceGuDispBuffer(720, 480, 0, TVOUT_STRIDE);
+    sceGuOffset(2048 - 360, 2048 - 240);
+    sceGuViewport(2048, 2048, 720, 480);
+    sceGuScissor(0, 0, 720, 480);
+    sceGuEnable(GU_SCISSOR_TEST);
+    sceGuDisable(GU_CULL_FACE);
+    sceGuDisable(GU_DEPTH_TEST);
+    sceGuDepthMask(GU_TRUE);
+    sceGuDisable(GU_COLOR_TEST);
+    sceGuDisable(GU_ALPHA_TEST);
+    sceGuDisable(GU_LIGHTING);
+    sceGuFinish();
+    sceGuSync(0, 0);
+    tvout_gu_ready = 1;
+}
 
 static void tvout_present_lcd_ui(void) {
     const u32 *source = (const u32 *)0x44000000;
@@ -194,6 +222,7 @@ static int tvout_component_test(void) {
     if (cable != 2) return cable ? -2 : -1;
     result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
     if (result < 0) return result;
+    tvout_setup_graphics();
     /* The display engine's progressive-TV path reads from the PSP-3000's
      * extra RAM window, not the 2 MiB LCD VRAM.  This is PMPlayer Advance's
      * 0x0A000000 TV framebuffer arrangement. */
