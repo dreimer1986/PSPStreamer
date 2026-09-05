@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
+#include <stdarg.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -736,6 +737,54 @@ static void gui_rect(u32 *vram, int left, int top, int width, int height, u32 co
         vram[y * VIDEO_STRIDE + x] = color;
 }
 
+/* The SDK's debug font is ideal for diagnostics, but its 8-pixel-wide bold
+ * glyphs make a 480-pixel media browser look like a terminal.  Reuse the
+ * already shipped Latin-1 atlas at a deliberately slim 6x8 size for UI text.
+ * This is direct VRAM drawing, just like subtitles, and is never used while
+ * the hardware AVC path is presenting frames. */
+static void gui_draw_small_glyph(u32 *vram, int glyph, int left, int top, u32 color) {
+    const unsigned char *bitmap;
+    int x, y;
+    if (!subtitle_font || glyph < 0 || glyph > 255) return;
+    bitmap = subtitle_font + (glyph >> 4) * SUBTITLE_FONT_CELL_HEIGHT * (SUBTITLE_FONT_CELL_WIDTH * 16) +
+             (glyph & 15) * SUBTITLE_FONT_CELL_WIDTH;
+    for (y = 0; y < 8; y++) for (x = 0; x < 6; x++) {
+        /* Nearest sampling retains the font's deliberately clean pixel
+         * contours instead of adding costly alpha blending to the browser. */
+        int alpha = bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2];
+        if (bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1] > alpha)
+            alpha = bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1];
+        if (bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2] > alpha)
+            alpha = bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2];
+        if (bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1] > alpha)
+            alpha = bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1];
+        if (alpha > 100) {
+            int px = left + x, py = top + y;
+            if (px >= 0 && px < VIDEO_WIDTH && py >= 0 && py < VIDEO_HEIGHT)
+                vram[py * VIDEO_STRIDE + px] = color;
+        }
+    }
+}
+
+static void gui_text(int left, int top, u32 color, const char *format, ...) {
+    char line[256];
+    const char *cursor;
+    va_list arguments;
+    int glyph, index = 0;
+    u32 *vram = (u32 *)0x44000000;
+    va_start(arguments, format);
+    vsnprintf(line, sizeof(line), format, arguments);
+    va_end(arguments);
+    if (!subtitle_font) subtitle_load_font();
+    if (!subtitle_font) return;
+    cursor = line;
+    while (*cursor && left + index * 7 < VIDEO_WIDTH - 6) {
+        glyph = subtitle_utf8_char(&cursor);
+        gui_draw_small_glyph(vram, glyph, left + index * 7, top, color);
+        index++;
+    }
+}
+
 /* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
  * deliberately uses primitives, so there is no additional texture memory. */
 static void receiver_hud(int frames) {
@@ -1429,15 +1478,12 @@ static void gui_library_shell(const char *section);
 
 static void show_metadata_loading(void) {
     gui_library_shell("PREPARING MEDIA");
-    pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenSetXY(3, 6); pspDebugScreenPrintf("READING MEDIA INFORMATION");
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenSetXY(3, 9); pspDebugScreenPrintf("Loading audio tracks and subtitles...");
-    pspDebugScreenSetTextColor(0x008A9BAA);
-    pspDebugScreenSetXY(3, 11); pspDebugScreenPrintf("The source may be waking over SMB.");
-    pspDebugScreenSetXY(40, 7); pspDebugScreenPrintf("PLEASE WAIT");
-    pspDebugScreenSetXY(40, 10); pspDebugScreenPrintf("No video stream has");
-    pspDebugScreenSetXY(40, 11); pspDebugScreenPrintf("started yet.");
+    gui_text(18, 47, 0x00D8E8FF, "READING MEDIA INFORMATION");
+    gui_text(18, 76, 0x00FFFFFF, "Loading audio tracks and subtitles...");
+    gui_text(18, 96, 0x008A9BAA, "The source may be waking over SMB.");
+    gui_text(326, 57, 0x008A9BAA, "PLEASE WAIT");
+    gui_text(326, 86, 0x008A9BAA, "No video stream has");
+    gui_text(326, 97, 0x008A9BAA, "started yet.");
 }
 
 static void parse_library(void) {
@@ -1522,8 +1568,7 @@ static void refresh_library(void) {
 
 /* The library is intentionally drawn with the same inexpensive VRAM
  * primitives as the receiver strip.  It replaces the old diagnostic-console
- * landing page while keeping pspDebugScreen solely as a small, reliable text
- * rasteriser.  No video decoder buffers or textures are involved here. */
+ * landing page.  No video decoder buffers or textures are involved here. */
 static void gui_library_shell(const char *section) {
     u32 *vram = (u32 *)0x44000000;
     int x, lit_left = vu_left / 10, lit_right = vu_right / 10;
@@ -1557,9 +1602,7 @@ static void gui_library_shell(const char *section) {
         gui_rect(vram, 414 + x * 2, 252 - (x < playback_volume * 2 / 3 ? 8 : 3), 1,
                  x < playback_volume * 2 / 3 ? 8 : 3,
                  x < playback_volume * 2 / 3 ? 0x00FFB000 : 0x002B343C);
-    pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenSetXY(2, 1);
-    pspDebugScreenPrintf("PSP STREAMER   //   %s", section);
+    gui_text(18, 9, 0x00D8E8FF, "PSP STREAMER   //   %s", section);
 }
 
 static void show(int selected) {
@@ -1569,41 +1612,29 @@ static void show(int selected) {
     last = first + GUI_LIST_ROWS;
     if (last > item_count) last = item_count;
     gui_library_shell("MEDIA LIBRARY");
-    pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenSetXY(2, 5); pspDebugScreenPrintf("LIBRARY");
-    pspDebugScreenSetTextColor(0x008A9BAA);
-    pspDebugScreenSetXY(2, 6); pspDebugScreenPrintf("%.34s", current_path[0] ? current_path : "/");
+    gui_text(18, 45, 0x00D8E8FF, "LIBRARY");
+    gui_text(18, 57, 0x008A9BAA, "%.39s", current_path[0] ? current_path : "/");
     if (!item_count) {
-        pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenSetXY(3, 10); pspDebugScreenPrintf("No entries -- [] reload");
+        gui_text(20, 85, 0x00FFFFFF, "No entries -- [] reload");
     } else {
         for (i = first; i < last; i++) {
             int row = i - first;
-            if (i == selected) gui_rect((u32 *)0x44000000, 16, 58 + row * 9, 279, 8, 0x00314C61);
-            pspDebugScreenSetTextColor(i == selected ? 0x00D8E8FF : 0x00FFFFFF);
-            pspDebugScreenSetXY(3, 7 + row);
-            pspDebugScreenPrintf("%c %.31s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
+            if (i == selected) gui_rect((u32 *)0x44000000, 16, 69 + row * 8, 279, 9, 0x00314C61);
+            gui_text(20, 69 + row * 8, i == selected ? 0x00D8E8FF : 0x00FFFFFF,
+                     "%c %.38s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
         }
     }
-    pspDebugScreenSetTextColor(0x00D8E8FF);
-    pspDebugScreenSetXY(40, 5); pspDebugScreenPrintf("NOW SELECTED");
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenSetXY(40, 7);
-    if (item_count) pspDebugScreenPrintf("%.18s", items[selected].title);
-    else pspDebugScreenPrintf("Waiting for library");
-    pspDebugScreenSetTextColor(0x008A9BAA);
-    pspDebugScreenSetXY(40, 10);
-    if (item_count) pspDebugScreenPrintf("%s", items[selected].is_folder ? "FOLDER" : (items[selected].is_audio ? "MUSIC" : "H.264 VIDEO"));
-    pspDebugScreenSetXY(40, 12); pspDebugScreenPrintf("%d entries", item_count);
-    pspDebugScreenSetXY(40, 14); pspDebugScreenPrintf("Profile %d", active_network_profile);
-    pspDebugScreenSetXY(40, 16);
-    if (hardware_runtime_result == 0) pspDebugScreenPrintf("AVC READY");
-    else if (hardware_runtime_result != -9999) pspDebugScreenPrintf("AVC ERROR");
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenSetXY(40, 19); pspDebugScreenPrintf("%.18s", status);
-    pspDebugScreenSetTextColor(0x00FFFFFF);
-    pspDebugScreenSetXY(3, 28); pspDebugScreenPrintf("UP/DOWN SELECT   X OPEN   LEFT BACK");
-    pspDebugScreenSetXY(3, 30); pspDebugScreenPrintf("L/R PAGE   [] RELOAD   START EXIT");
+    gui_text(326, 45, 0x00D8E8FF, "NOW SELECTED");
+    if (item_count) gui_text(326, 62, 0x00FFFFFF, "%.20s", items[selected].title);
+    else gui_text(326, 62, 0x00FFFFFF, "Waiting for library");
+    if (item_count) gui_text(326, 88, 0x008A9BAA, "%s", items[selected].is_folder ? "FOLDER" : (items[selected].is_audio ? "MUSIC" : "H.264 VIDEO"));
+    gui_text(326, 108, 0x008A9BAA, "%d entries", item_count);
+    gui_text(326, 128, 0x008A9BAA, "Profile %d", active_network_profile);
+    if (hardware_runtime_result == 0) gui_text(326, 148, 0x008A9BAA, "AVC READY");
+    else if (hardware_runtime_result != -9999) gui_text(326, 148, 0x008A9BAA, "AVC ERROR");
+    gui_text(326, 172, 0x00FFFFFF, "%.20s", status);
+    gui_text(20, 226, 0x00FFFFFF, "UP/DOWN SELECT    X OPEN    LEFT BACK");
+    gui_text(20, 240, 0x00FFFFFF, "L/R PAGE    [] RELOAD    START EXIT");
 }
 
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
@@ -1621,28 +1652,24 @@ static int playback_options(void) {
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
         gui_library_shell("PLAYBACK SETUP");
-        pspDebugScreenSetTextColor(0x00D8E8FF);
-        pspDebugScreenSetXY(3, 5); pspDebugScreenPrintf("STREAM OPTIONS");
-        pspDebugScreenSetTextColor(0x00FFFFFF);
-        if (row == 0) gui_rect((u32 *)0x44000000, 16, 66, 279, 9, 0x00314C61);
-        if (row == 1) gui_rect((u32 *)0x44000000, 16, 82, 279, 9, 0x00314C61);
-        if (row == 2) gui_rect((u32 *)0x44000000, 16, 98, 279, 9, 0x00314C61);
-        pspDebugScreenSetXY(3, 8); pspDebugScreenPrintf("AUDIO: %s%s%s",
+        gui_text(18, 45, 0x00D8E8FF, "STREAM OPTIONS");
+        if (row == 0) gui_rect((u32 *)0x44000000, 16, 69, 279, 9, 0x00314C61);
+        if (row == 1) gui_rect((u32 *)0x44000000, 16, 89, 279, 9, 0x00314C61);
+        if (row == 2) gui_rect((u32 *)0x44000000, 16, 109, 279, 9, 0x00314C61);
+        gui_text(20, 69, 0x00FFFFFF, "AUDIO: %s%s%s",
                              audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
                              audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
                              audio_track_count ? audio_tracks[selected_audio_track].title : "");
-        pspDebugScreenSetXY(3, 10); pspDebugScreenPrintf("SUBS:  %s%s%s",
+        gui_text(20, 89, 0x00FFFFFF, "SUBS:  %s%s%s",
                              selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
                              selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                              selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-        pspDebugScreenSetXY(3, 12); pspDebugScreenPrintf("QUALITY: %s", audio_quality_name());
-        pspDebugScreenSetTextColor(0x008A9BAA);
-        pspDebugScreenSetXY(40, 7); pspDebugScreenPrintf("AUDIO / SUBTITLE");
-        pspDebugScreenSetXY(40, 10); pspDebugScreenPrintf("Preferences save");
-        pspDebugScreenSetXY(40, 11); pspDebugScreenPrintf("for the next video.");
-        pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenSetXY(3, 28); pspDebugScreenPrintf("UP/DOWN ROW   LEFT/RIGHT CHANGE");
-        pspDebugScreenSetXY(3, 30); pspDebugScreenPrintf("X START   O BACK");
+        gui_text(20, 109, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
+        gui_text(326, 57, 0x008A9BAA, "AUDIO / SUBTITLE");
+        gui_text(326, 86, 0x008A9BAA, "Preferences save");
+        gui_text(326, 97, 0x008A9BAA, "for the next video.");
+        gui_text(20, 226, 0x00FFFFFF, "UP/DOWN ROW    LEFT/RIGHT CHANGE");
+        gui_text(20, 240, 0x00FFFFFF, "X START    O BACK");
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
