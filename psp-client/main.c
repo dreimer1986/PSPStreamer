@@ -1212,6 +1212,19 @@ static int play_mjpeg(const char *media_id) {
 }
 #endif
 
+static void audio_measure_pcm(const short *pcm, int frames) {
+    int sample, left_peak = 0, right_peak = 0;
+    for (sample = 0; sample < frames * 2; sample += 64) {
+        int left = pcm[sample] < 0 ? -pcm[sample] : pcm[sample];
+        int right = pcm[sample + 1] < 0 ? -pcm[sample + 1] : pcm[sample + 1];
+        if (left > left_peak) left_peak = left;
+        if (right > right_peak) right_peak = right;
+    }
+    vu_left = left_peak * 100 / 32767;
+    vu_right = right_peak * 100 / 32767;
+    spectrum_measure(pcm);
+}
+
 static int audio_output_thread(SceSize args, void *argp) {
     int channel, block, primed = 0, dac_samples = audio_dac_samples;
     const int block_bytes = dac_samples * 2 * (int)sizeof(short);
@@ -1233,21 +1246,6 @@ static int audio_output_thread(SceSize args, void *argp) {
         primed = 1;
         if (!audio_clock_started) audio_clock_started = 1;
         block = audio_queue_read;
-        /* Meter the same PCM that goes to the DAC. Sampling every 32nd
-         * stereo frame is visually stable and negligible beside decoding. */
-        {
-            short *pcm = audio_samples + block * AUDIO_BLOCK_SAMPLES * 2;
-            int sample, left_peak = 0, right_peak = 0;
-            for (sample = 0; sample < dac_samples * 2; sample += 64) {
-                int left = pcm[sample] < 0 ? -pcm[sample] : pcm[sample];
-                int right = pcm[sample + 1] < 0 ? -pcm[sample + 1] : pcm[sample + 1];
-                if (left > left_peak) left_peak = left;
-                if (right > right_peak) right_peak = right;
-            }
-            vu_left = left_peak * 100 / 32767;
-            vu_right = right_peak * 100 / 32767;
-            spectrum_measure(pcm);
-        }
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
         /* The producer cannot reuse this slot until OutputBlocking returns:
          * count remains unchanged while the DSP owns the DMA buffer. */
@@ -1457,6 +1455,7 @@ static int audio_thread(SceSize args, void *argp) {
         if (frames_in_block * MP3_DECODE_SAMPLES == audio_dac_samples) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
+            audio_measure_pcm(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
             audio_queue_count++;
             frames_in_block = 0;
@@ -1486,7 +1485,7 @@ static int play_audio(const char *media_id, const char *title) {
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
     audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
-    audio_dac_samples = MP3_DECODE_SAMPLES;
+    audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
