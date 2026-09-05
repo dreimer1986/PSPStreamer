@@ -84,8 +84,9 @@ typedef struct { int start, end, x, y, width, height, canvas_width, canvas_heigh
 static char response[RESPONSE_SIZE];
 /* Menu-only artwork is kept outside EBOOT so the actual video player stays
  * small.  It occupies 510 KiB only while the application is running. */
-static unsigned char *menu_skin;
-static int menu_skin_checked;
+extern unsigned char receiver_skin[];
+extern unsigned char receiver_skin_end[];
+static const unsigned char *menu_skin;
 /* 512 pixels is the required power-of-two display stride. */
 static unsigned char h264_buffer[H264_BUFFER_BYTES] __attribute__((aligned(64)));
 static LibraryItem items[MAX_ITEMS];
@@ -879,20 +880,7 @@ static void spectrum_measure(const short *pcm) {
 }
 
 static void menu_skin_load(void) {
-    char cwd[192], path[256];
-    SceUID file;
-    if (menu_skin_checked) return;
-    menu_skin_checked = 1;
-    if (!getcwd(cwd, sizeof(cwd))) return;
-    snprintf(path, sizeof(path), "%s/menu_skin.raw", cwd);
-    file = sceIoOpen(path, PSP_O_RDONLY, 0);
-    if (file < 0) return;
-    menu_skin = memalign(64, MENU_SKIN_BYTES);
-    if (!menu_skin || sceIoRead(file, menu_skin, MENU_SKIN_BYTES) != MENU_SKIN_BYTES) {
-        if (menu_skin) free(menu_skin);
-        menu_skin = NULL;
-    }
-    sceIoClose(file);
+    if (receiver_skin_end - receiver_skin == MENU_SKIN_BYTES) menu_skin = receiver_skin;
 }
 
 static void gui_skin_receiver(u32 *vram) {

@@ -1,5 +1,5 @@
 TARGET = PSPStreamer
-OBJS = main.o h264_hw.o language.o
+OBJS = main.o h264_hw.o language.o menu_skin.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
@@ -21,3 +21,5 @@ include $(PSPSDK)/lib/build.mak
 # libmpegbase: moving it into OBJS makes PSP import stubs non-contiguous on
 # 6.61.  The explicit prerequisite still makes a clean checkout buildable.
 main.o: mpeg_extra.o
+
+# menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.

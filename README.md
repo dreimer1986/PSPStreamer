@@ -83,7 +83,7 @@ Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and st
 
 ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP overlays a compact outlined DejaVu Sans bitmap locally. HDMV PGS subtitles use native palette-indexed sprites, preserving their original colour and outline without burning them into video. Other bitmap formats (VobSub/DVDSUB, DVB, XSUB) continue to use the server fallback.
 
-Keep `subtitle_font.raw`, `menu_skin.raw`, and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compact DejaVu Sans Latin-1 atlas is loaded only after the AVC decoder is ready; if it is missing, video playback remains safe and text subtitles are simply not drawn. `menu_skin.raw` is menu-only receiver artwork; without it, the application uses its built-in plain interface fallback.
+Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compact DejaVu Sans Latin-1 atlas is loaded only after the AVC decoder is ready; if it is missing, video playback remains safe and text subtitles are simply not drawn. The receiver artwork is embedded in `EBOOT.PBP`; no separate `menu_skin.raw` is required.
 
 Video output and a dedicated 480p mode are deliberately not part of this release yet.
 
@@ -95,7 +95,6 @@ A PSP SDK and an OpenH264 library built for PSP are required. The library path i
 cd psp-client
 make OPENH264_DIR=/pfad/zu/openh264
 cp EBOOT.PBP release/PSPStreamer/EBOOT.PBP
-cp assets/menu_skin.raw release/PSPStreamer/menu_skin.raw
 ```
 
 The library must provide `libopenh264_dec_psp.a` and its headers.
