@@ -870,6 +870,9 @@ static void gui_skin_receiver(u32 *vram) {
         if (mask && (receiver_flash_button & mask))
             gui_rect(vram, 221 + x * 31, 238, 22, 3, 0x0000D8FF);
     }
+    /* Temporary calibration reference: cyan is the geometric knob centre;
+     * amber is the volume marker travelling around its rim. */
+    gui_rect(vram, 429, 226, 3, 3, 0x00FFFF00);
     gui_rect(vram, 430 + knob_x[pointer] - 2, 227 + knob_y[pointer] - 2, 5, 5, 0x0000D8FF);
 }
 
