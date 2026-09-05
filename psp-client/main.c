@@ -198,6 +198,8 @@ static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
 static volatile int audio_played_blocks;
 static volatile int vu_left, vu_right;
+/* Separate displayed needles from the instantaneous PCM peaks. */
+static int vu_display_left, vu_display_right;
 static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
@@ -790,6 +792,22 @@ static void gui_text(int left, int top, u32 color, const char *format, ...) {
     }
 }
 
+/* Analogue VU ballistics: the coil/needle state approaches a peak in small
+ * equal steps in either direction.  A fresh louder impulse takes over on the
+ * next draw, while silence lets the needle settle naturally towards zero. */
+static void vu_ballistics_step(void) {
+    int target_left = vu_left, target_right = vu_right;
+    int delta;
+    if (target_left < 0) target_left = 0;
+    if (target_left > 100) target_left = 100;
+    if (target_right < 0) target_right = 0;
+    if (target_right > 100) target_right = 100;
+    delta = target_left - vu_display_left;
+    if (delta) vu_display_left += delta > 0 ? (delta + 3) / 4 : (delta - 3) / 4;
+    delta = target_right - vu_display_right;
+    if (delta) vu_display_right += delta > 0 ? (delta + 3) / 4 : (delta - 3) / 4;
+}
+
 static void menu_skin_load(void) {
     char cwd[192], path[256];
     SceUID file;
@@ -808,10 +826,12 @@ static void menu_skin_load(void) {
 }
 
 static void gui_skin_receiver(u32 *vram) {
-    int x, left_level = vu_left / 10, right_level = vu_right / 10;
+    int x, left_level, right_level;
     static const signed char knob_x[] = {0, 4, 7, 9, 9, 7, 4, 0, -4, -7, -9, -9, -7, -4};
     static const signed char knob_y[] = {-10, -9, -7, -4, 0, 4, 7, 10, 9, 7, 4, 0, -4, -7};
     int pointer = (playback_volume * 13 + 15) / 30;
+    vu_ballistics_step();
+    left_level = vu_display_left / 10; right_level = vu_display_right / 10;
     if (left_level > 10) left_level = 10;
     if (right_level > 10) right_level = 10;
     /* Meter needles are painted as tiny live LEDs over the otherwise
@@ -840,7 +860,8 @@ static void receiver_hud(int frames) {
     gui_rect(vram, 0, 220, VIDEO_WIDTH, 52, 0x0010151B);
     gui_rect(vram, 0, 220, VIDEO_WIDTH, 1, 0x00D8E8FF);
     /* Two compact stereo VU meters. */
-    meter_left = vu_left; meter_right = vu_right;
+    vu_ballistics_step();
+    meter_left = vu_display_left; meter_right = vu_display_right;
     if (meter_left > 100) meter_left = 100;
     if (meter_right > 100) meter_right = 100;
     for (x = 0; x < 10; x++) {
@@ -1232,6 +1253,7 @@ static int play_audio(const char *media_id, const char *title) {
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_queue_count = audio_played_blocks = 0;
+    vu_left = vu_right = vu_display_left = vu_display_right = 0;
     audio_output_thread_id = -1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
@@ -1239,8 +1261,10 @@ static int play_audio(const char *media_id, const char *title) {
     sceKernelStartThread(audio_thread_id, 0, NULL);
     while (audio_running) {
         SceCtrlData pad;
-        int x, bars = (vu_left + vu_right) / 2;
+        int x, bars;
         keep_awake();
+        if (video_fullscreen) vu_ballistics_step();
+        bars = (vu_display_left + vu_display_right) / 2;
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
         pspDebugScreenSetXY(3, 2); pspDebugScreenSetTextColor(0x00D8E8FF);
@@ -1287,6 +1311,7 @@ static int play_h264(const char *media_id) {
     int paused = 0;
     playback_reached_end = 0;
     playback_paused = 0;
+    vu_left = vu_right = vu_display_left = vu_display_right = 0;
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
      * retain the established server burn-in path rather than losing subtitles. */
