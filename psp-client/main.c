@@ -156,13 +156,13 @@ static int tvout_load_manager(void) {
 /* Video uses the exact EDRAM layout proven by the calibration card.  It is
  * intentionally independent of the browser: the normal 480x272 UI remains
  * untouched until a film is actually started. */
-static int tvout_begin_video(void) {
+static int tvout_begin_video(int component_session_active) {
     int result;
     /* The GUI already owns a confirmed component session.  Some firmware
      * revisions report a transient non-2 state from CheckVideoOut while the
      * DVE is actively scanning it; that used to select the 480x272 decoder
      * path while the TV was still in 720x480 mode, yielding a black screen. */
-    if (tvout_gui_active) {
+    if (component_session_active) {
         result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
         if (result < 0) return result;
         sceDisplayWaitVblankStart();
@@ -1716,12 +1716,18 @@ static int play_h264(const char *media_id) {
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
+    int component_gui_session = tvout_gui_active;
     playback_reached_end = 0;
     playback_paused = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
      * retain the established server burn-in path rather than losing subtitles. */
+    /* The component browser uses extra RAM as its off-screen canvas.  AVC
+     * also allocates from that RAM on a PSP-3000, so relinquish it before any
+     * decoder/MP3 allocation.  Keep the already-established DVE session via
+     * the explicit flag below; no mode probe is needed during the hand-off. */
+    tvout_gui_active = 0;
     prepare_client_subtitles(media_id);
     result = load_video_modules();
     if (result < 0) return result;
@@ -1729,7 +1735,7 @@ static int play_h264(const char *media_id) {
     video_step = "Hardware-AVC";
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
-    tvout_video_active = tvout_begin_video() == 0;
+    tvout_video_active = tvout_begin_video(component_gui_session) == 0;
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
      * clock in native TV mode.  Let FFmpeg composite them before the stream
