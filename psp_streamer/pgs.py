@@ -20,6 +20,8 @@ class PgsCue:
     height: int
     pixels: bytes
     palette: bytes
+    canvas_width: int
+    canvas_height: int
 
 
 def _u16(data: bytes, offset: int) -> int:
@@ -73,7 +75,7 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
     palettes: dict[int, bytearray] = {}
     objects: dict[int, tuple[int, int, bytes]] = {}
     fragments: dict[int, bytearray] = {}
-    active: tuple[float, list[tuple[int, int, int]], int] | None = None
+    active: tuple[float, list[tuple[int, int, int]], int, int, int] | None = None
     cues: list[PgsCue] = []
     offset = 0
     while offset + 13 <= len(data):
@@ -108,12 +110,13 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
                 objects[object_id] = (width, height, bytes(fragments.pop(object_id, b"")))
         elif kind == 0x16 and len(payload) >= 11:  # composition
             if active:
-                start, refs, palette_id = active
+                start, refs, palette_id, canvas_width, canvas_height = active
                 for object_id, x, y in refs:
                     if object_id in objects and palette_id in palettes:
                         width, height, rle = objects[object_id]
                         if rle:
-                            cues.append(PgsCue(start, pts, x, y, width, height, _decode_rle(rle, width, height), bytes(palettes[palette_id])))
+                            cues.append(PgsCue(start, pts, x, y, width, height, _decode_rle(rle, width, height), bytes(palettes[palette_id]), canvas_width, canvas_height))
+            canvas_width, canvas_height = _u16(payload, 0), _u16(payload, 2)
             palette_id = payload[9]
             count = payload[10]
             refs = []
@@ -125,16 +128,16 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
                 x, y = _u16(payload, cursor + 4), _u16(payload, cursor + 6)
                 refs.append((object_id, x, y))
                 cursor += 8 + (8 if flags & 0x80 else 0)
-            active = (pts, refs, palette_id)
+            active = (pts, refs, palette_id, canvas_width, canvas_height)
         elif kind == 0x80 and active:
             # END merely finalises a display set; its end time is supplied by
             # the next composition state, above.
             pass
     if active:
-        start, refs, palette_id = active
+        start, refs, palette_id, canvas_width, canvas_height = active
         for object_id, x, y in refs:
             if object_id in objects and palette_id in palettes:
                 width, height, rle = objects[object_id]
                 if rle:
-                    cues.append(PgsCue(start, start + 8, x, y, width, height, _decode_rle(rle, width, height), bytes(palettes[palette_id])))
+                    cues.append(PgsCue(start, start + 8, x, y, width, height, _decode_rle(rle, width, height), bytes(palettes[palette_id]), canvas_width, canvas_height))
     return cues
