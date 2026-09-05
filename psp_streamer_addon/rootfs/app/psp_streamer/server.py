@@ -30,6 +30,10 @@ BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "
 PSP_SUBTITLE_FPS = 20.1
 MAX_SUBTITLE_CUES = 1800
 PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
+CALIBRATION_MEDIA = {
+    "__psp_calibration_10s__": ("A/V Calibration — 10 seconds", 10),
+    "__psp_calibration_5m__": ("A/V Calibration — 5 minutes", 300),
+}
 
 
 def track_label(value: object) -> str:
@@ -137,6 +141,9 @@ class Library:
             raise ValueError("Folder is unavailable")
 
         folders, videos = [], []
+        if not relative:
+            for token, (name, duration) in CALIBRATION_MEDIA.items():
+                videos.append({"name": name, "id": token, "bytes": duration, "kind": "video"})
         for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), natural_name_key(path.name))):
             if entry.name.startswith("."):
                 continue
@@ -256,6 +263,26 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # Fragmented MP4 can be emitted on a pipe immediately; ordinary +faststart cannot.
         command.extend(["-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"])
     return command
+
+
+def calibration_command(duration: int, container: str, tv_output: bool) -> list[str]:
+    """Generate second-aligned white flashes and 1-kHz audio clicks."""
+    if container == "mp3":
+        pulse = "aevalsrc=if(lt(mod(t\\,1)\\,0.04)\\,0.75*sin(2*PI*1000*t)\\,0):s=44100:d=%d" % duration
+        return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", pulse,
+                "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", "-write_xing", "0",
+                "-id3v2_version", "0", "-f", "mp3", "pipe:1"]
+    width, height = (720, 480) if tv_output else (480, 272)
+    fps = "101/5" if tv_output else "201/10"
+    source = f"color=c=black:s={width}x{height}:r={fps}:d={duration}"
+    flash = "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='lt(mod(t,1),0.04)'"
+    return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
+            "-vf", flash, "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
+            "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"), "-tune", "zerolatency",
+            "-b:v", "850k" if tv_output else "600k", "-maxrate", "950k" if tv_output else "700k",
+            "-bufsize", "1200k" if tv_output else "900k",
+            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
+            "-an", "-f", "h264", "pipe:1"]
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -383,6 +410,11 @@ class AppHandler(BaseHTTPRequestHandler):
         cached = self.server.metadata_cache.get(token)
         if cached is not None:
             return self.send_json(cached)
+        if token in CALIBRATION_MEDIA:
+            payload = {"a": [{"n": "0", "l": "und", "t": "1 kHz click"}], "s": [],
+                       "d": str(CALIBRATION_MEDIA[token][1])}
+            self.server.metadata_cache[token] = payload
+            return self.send_json(payload)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json", str(source)],
@@ -493,7 +525,8 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False) -> None:
-        _, source = self.server.library.decode(token)
+        calibration_duration = CALIBRATION_MEDIA.get(token, ("", 0))[1]
+        source = None if calibration_duration else self.server.library.decode(token)[1]
         if not self.server.transcode_slots.acquire(blocking=False):
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
@@ -513,7 +546,7 @@ class AppHandler(BaseHTTPRequestHandler):
             self.connection.settimeout(float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default)))
             subtitle_source = None
             bitmap_subtitle = False
-            if container == "h264" and subtitle_track >= 0:
+            if source is not None and container == "h264" and subtitle_track >= 0:
                 probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)], capture_output=True, text=True, check=False)
                 bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
                 alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
@@ -522,7 +555,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not subtitle_source.exists():
                     os.symlink(source, subtitle_source)
             process = subprocess.Popen(
-                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output),
+                (calibration_command(calibration_duration, container, tv_output) if calibration_duration else
+                 ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output)),
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on
