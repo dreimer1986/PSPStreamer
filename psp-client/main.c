@@ -133,6 +133,13 @@ static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
 #define TVOUT_STRIDE 768
 
+/* In component GUI mode, never draw the 512-pixel UI into the surface that
+ * the DVE is scanning.  Extra RAM is a complete 480x272 work surface; the
+ * scaler copies it to EDRAM only after a view has been fully rendered. */
+static u32 *gui_framebuffer(void) {
+    return tvout_gui_active ? (u32 *)0x0a000000 : (u32 *)0x44000000;
+}
+
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
     int status;
@@ -151,6 +158,19 @@ static int tvout_load_manager(void) {
  * untouched until a film is actually started. */
 static int tvout_begin_video(void) {
     int result;
+    /* The GUI already owns a confirmed component session.  Some firmware
+     * revisions report a transient non-2 state from CheckVideoOut while the
+     * DVE is actively scanning it; that used to select the 480x272 decoder
+     * path while the TV was still in 720x480 mode, yielding a black screen. */
+    if (tvout_gui_active) {
+        result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+        if (result < 0) return result;
+        sceDisplayWaitVblankStart();
+        sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
+                              PSP_DISPLAY_PIXEL_FORMAT_8888,
+                              PSP_DISPLAY_SETBUF_NEXTVSYNC);
+        return 0;
+    }
     result = tvout_load_manager();
     if (result < 0 || pspDveMgrCheckVideoOut() != 2) return -1;
     result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
@@ -174,17 +194,14 @@ static void tvout_end_video(void) {
  * existing receiver UI into the proven 720x480/768-pitch EDRAM surface.
  * This runs only on a browser redraw, never per video frame. */
 static void tvout_present_gui(void) {
-    const u32 *source;
     u32 *staging = (u32 *)0x0a000000;
     u32 *output = (u32 *)0x44000000;
     int x, y;
     if (!tvout_gui_active) return;
-    for (y = 0; y < VIDEO_HEIGHT; y++)
-        memcpy(staging + y * VIDEO_STRIDE, output + y * VIDEO_STRIDE,
-               VIDEO_WIDTH * sizeof(u32));
-    source = staging;
+    sceKernelDcacheWritebackInvalidateRange(staging,
+                                             VIDEO_HEIGHT * VIDEO_STRIDE * sizeof(u32));
     for (y = 0; y < 480; y++) {
-        const u32 *row = source + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
+        const u32 *row = staging + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
         u32 *destination = output + y * TVOUT_STRIDE;
         for (x = 0; x < 720; x++) destination[x] = row[x * VIDEO_WIDTH / 720];
         for (x = 720; x < TVOUT_STRIDE; x++) destination[x] = 0;
@@ -873,7 +890,7 @@ static void tvout_subtitle_present(int absolute_frame) {
  * framebuffer or font renderer.  It makes pause state and progress visible
  * while retaining the proven direct Media-Engine presentation path. */
 static void playback_hud(int frames, int paused) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = gui_framebuffer();
     int x, y = VIDEO_HEIGHT - 5, filled = 0;
     if (current_duration_seconds > 0.0f)
         filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * 20.1f) / (current_duration_seconds * 20.1f));
@@ -978,7 +995,7 @@ static void gui_text(int left, int top, u32 color, const char *format, ...) {
     const char *cursor;
     va_list arguments;
     int glyph, index = 0;
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = gui_framebuffer();
     va_start(arguments, format);
     vsnprintf(line, sizeof(line), format, arguments);
     va_end(arguments);
@@ -1122,7 +1139,7 @@ static void gui_audio_fullscreen_receiver(u32 *vram) {
 /* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
  * deliberately uses primitives, so there is no additional texture memory. */
 static void receiver_hud(int frames) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = gui_framebuffer();
     int x, meter_left, meter_right, level, pointer_x, pointer_y;
     static const signed char knob_x[] = {0,2,3,4,6,7,8,10,10,10,9,8,6,4,2,0,-2,-4,-5,-6,-8,-9,-9,-10,-10,-10,-9,-8,-8,-6,-5};
     static const signed char knob_y[] = {-10,-10,-10,-9,-8,-7,-5,-3,-1,2,4,6,8,9,10,10,10,9,9,8,6,5,4,2,0,-2,-4,-5,-6,-8,-9};
@@ -1618,8 +1635,8 @@ static int play_audio(const char *media_id, const char *title) {
             gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
             gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
         } else {
-            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
-            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
+            gui_rect(gui_framebuffer(), 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+            gui_rect(gui_framebuffer(), 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
             gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
         }
         /* Actual PCM frequency bins, not a decorative level animation. */
@@ -1633,10 +1650,10 @@ static int play_audio(const char *media_id, const char *title) {
                 spectrum_display[x] -= 3;
             else spectrum_display[x] = 0;
             height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
-            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
+            gui_rect(gui_framebuffer(), fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
                      fullscreen ? 25 : 15, height, color);
         }
-        if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
+        if (fullscreen) gui_audio_fullscreen_receiver(gui_framebuffer());
         else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
         if (tvout_gui_active) gui_present();
         else {
@@ -2162,7 +2179,7 @@ static void refresh_library(void) {
  * primitives as the receiver strip.  It replaces the old diagnostic-console
  * landing page.  No video decoder buffers or textures are involved here. */
 static void gui_library_shell(const char *section) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = gui_framebuffer();
     int x, lit_left = vu_left / 10, lit_right = vu_right / 10;
     int y;
     menu_skin_load();
@@ -2220,7 +2237,7 @@ static void show(int selected) {
     } else {
         for (i = first; i < last; i++) {
             int row = i - first;
-            if (i == selected) gui_rect((u32 *)0x44000000, 36, 64 + row * 8, 310, 8, 0x004A5A32);
+            if (i == selected) gui_rect(gui_framebuffer(), 36, 64 + row * 8, 310, 8, 0x004A5A32);
             gui_text(38, 64 + row * 8, i == selected ? 0x00FFFFFF : 0x00D8E8FF,
                      "%c %.38s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
         }
@@ -2304,8 +2321,8 @@ static int playback_options(int audio_only) {
         gui_library_shell(tr(TXT_STREAM_OPTIONS));
         gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
         if (audio_only) {
-            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+            if (row == 0) gui_rect(gui_framebuffer(), 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect(gui_framebuffer(), 36, 84, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
             gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
             gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
@@ -2314,9 +2331,9 @@ static int playback_options(int audio_only) {
             gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
             gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
         } else {
-            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-            if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
+            if (row == 0) gui_rect(gui_framebuffer(), 36, 64, 310, 9, 0x004A5A32);
+            if (row == 1) gui_rect(gui_framebuffer(), 36, 84, 310, 9, 0x004A5A32);
+            if (row == 2) gui_rect(gui_framebuffer(), 36, 104, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
                                  audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                                  audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
