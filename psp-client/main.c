@@ -188,10 +188,13 @@ static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((ali
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
+static volatile int vu_left, vu_right;
 static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
+/* 0..30 maps cleanly to the 30 LED detents in the receiver UI. */
+static int playback_volume = 24;
 static StreamTrack audio_tracks[8], subtitle_tracks[8];
 static int audio_track_count, subtitle_track_count;
 static SubtitleCue *subtitle_cues;
@@ -203,6 +206,9 @@ static int subtitle_client_side;
 static float current_duration_seconds;
 static int playback_reached_end;
 static volatile int playback_paused;
+static int video_fullscreen = 1;
+static int receiver_visible;
+static unsigned int receiver_flash_button;
 static int stream_start_seconds;
 static int resume_pending;
 static char resume_media_id[ID_SIZE];
@@ -253,11 +259,13 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
+            else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
     if (selected_subtitle_track < -1 || selected_subtitle_track > 7) selected_subtitle_track = -1;
     if (selected_audio_quality < 0 || selected_audio_quality > 2) selected_audio_quality = 2;
+    if (playback_volume < 0 || playback_volume > 30) playback_volume = 24;
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
     if (!server_host[0]) strcpy(server_host, PSP_STREAMER_HOST);
 }
@@ -265,8 +273,8 @@ static void load_playback_settings(void) {
 static void save_playback_settings(void) {
     SceUID file;
     char data[192];
-    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\n",
-                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality);
+    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\n",
+                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume);
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -687,7 +695,7 @@ static void subtitle_present(int absolute_frame) {
     {
         const char *text = subtitle_cues[index].text;
         for (y = 0; *text && y < 3; y++) {
-            const char *next = subtitle_draw_line(text, 210 + y * 20, vram);
+            const char *next = subtitle_draw_line(text, (video_fullscreen || !receiver_visible ? 210 : 12) + y * 20, vram);
             if (next == text) break;
             text = next;
         }
@@ -713,6 +721,57 @@ static void playback_hud(int frames, int paused) {
             else if (x == 444 || x == 471 || y == 8 || y == 29)
                 vram[y * VIDEO_STRIDE + x] = 0x00000000;
     }
+}
+
+static void gui_rect(u32 *vram, int left, int top, int width, int height, u32 color) {
+    int x, y;
+    if (left < 0) { width += left; left = 0; }
+    if (top < 0) { height += top; top = 0; }
+    if (left + width > VIDEO_WIDTH) width = VIDEO_WIDTH - left;
+    if (top + height > VIDEO_HEIGHT) height = VIDEO_HEIGHT - top;
+    for (y = top; y < top + height; y++) for (x = left; x < left + width; x++)
+        vram[y * VIDEO_STRIDE + x] = color;
+}
+
+/* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
+ * deliberately uses primitives, so there is no additional texture memory. */
+static void receiver_hud(int frames) {
+    u32 *vram = (u32 *)0x44000000;
+    int x, meter_left, meter_right, level, pointer_x, pointer_y;
+    static const signed char knob_x[] = {0, 4, 7, 9, 9, 7, 4, 0, -4, -7, -9, -9, -7, -4};
+    static const signed char knob_y[] = {-10, -9, -7, -4, 0, 4, 7, 10, 9, 7, 4, 0, -4, -7};
+    gui_rect(vram, 0, 220, VIDEO_WIDTH, 52, 0x0010151B);
+    gui_rect(vram, 0, 220, VIDEO_WIDTH, 1, 0x00D8E8FF);
+    /* Two compact stereo VU meters. */
+    meter_left = vu_left; meter_right = vu_right;
+    if (meter_left > 100) meter_left = 100;
+    if (meter_right > 100) meter_right = 100;
+    for (x = 0; x < 10; x++) {
+        level = (x + 1) * 10;
+        gui_rect(vram, 18 + x * 4, 262 - x * 2, 3, x * 2 + 2,
+                 meter_left >= level ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
+        gui_rect(vram, 66 + x * 4, 262 - x * 2, 3, x * 2 + 2,
+                 meter_right >= level ? (x > 7 ? 0x00FFB000 : 0x0000D8FF) : 0x00202B33);
+    }
+    /* Transport buttons; their amber state is driven by the actual input. */
+    for (x = 0; x < 5; x++) {
+        u32 color = 0x00313A43;
+        unsigned int mask = x == 0 ? PSP_CTRL_LTRIGGER : x == 1 ? PSP_CTRL_SELECT : x == 2 ? PSP_CTRL_RTRIGGER : 0;
+        if (mask && (receiver_flash_button & mask)) color = 0x00D88700;
+        gui_rect(vram, 132 + x * 38, 234, 31, 27, color);
+        gui_rect(vram, 134 + x * 38, 236, 27, 23, 0x001B222A);
+    }
+    /* Volume knob with a real positional marker across 14 detents. */
+    gui_rect(vram, 353, 228, 49, 38, 0x00252C33);
+    gui_rect(vram, 358, 233, 39, 28, 0x005A6268);
+    pointer_x = 377 + knob_x[(playback_volume * 13 + 15) / 30];
+    pointer_y = 247 + knob_y[(playback_volume * 13 + 15) / 30];
+    gui_rect(vram, pointer_x - 1, pointer_y - 1, 3, 3, 0x00FFB000);
+    for (x = 0; x < 30; x++)
+        gui_rect(vram, 414 + x * 2, 258 - (x < playback_volume ? 10 : 4), 1,
+                 x < playback_volume ? 10 : 4, x < playback_volume ? 0x00FFB000 : 0x002B343C);
+    /* Keep the verified progress signal visible in receiver mode too. */
+    playback_hud(frames, playback_paused);
 }
 
 /* The JPEG entry points are visible in user mode, but their AV backend is
@@ -824,7 +883,8 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         if (result > 0) {
             subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
             bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
-            playback_hud(hardware_decoder_frames, playback_paused);
+            if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
+            else receiver_hud(hardware_decoder_frames);
             sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
@@ -945,11 +1005,25 @@ static int audio_output_thread(SceSize args, void *argp) {
         if (!audio_start || audio_queue_count <= 0) continue;
         if (!audio_clock_started) audio_clock_started = 1;
         block = audio_queue_read;
+        /* Meter the same PCM that goes to the DAC. Sampling every 32nd
+         * stereo frame is visually stable and negligible beside decoding. */
+        {
+            short *pcm = audio_samples + block * AUDIO_BLOCK_SAMPLES * 2;
+            int sample, left_peak = 0, right_peak = 0;
+            for (sample = 0; sample < AUDIO_BLOCK_SAMPLES * 2; sample += 64) {
+                int left = pcm[sample] < 0 ? -pcm[sample] : pcm[sample];
+                int right = pcm[sample + 1] < 0 ? -pcm[sample + 1] : pcm[sample + 1];
+                if (left > left_peak) left_peak = left;
+                if (right > right_peak) right_peak = right;
+            }
+            vu_left = left_peak * 100 / 32767;
+            vu_right = right_peak * 100 / 32767;
+        }
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
         /* The producer cannot reuse this slot until OutputBlocking returns:
          * count remains unchanged while the DSP owns the DMA buffer. */
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
-        if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX,
+        if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
                                    audio_samples + block * AUDIO_BLOCK_SAMPLES * 2) < 0) {
             audio_state = -20; audio_running = 0; break;
         }
@@ -1125,6 +1199,21 @@ static int play_h264(const char *media_id) {
             sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
         }
+        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
+            (previous_buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) {
+            video_fullscreen = !video_fullscreen;
+            receiver_flash_button = PSP_CTRL_TRIANGLE;
+        }
+        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(previous_buttons & PSP_CTRL_CIRCLE)) {
+            receiver_visible = !receiver_visible;
+            receiver_flash_button = PSP_CTRL_CIRCLE;
+        }
+        if ((pad.Buttons & PSP_CTRL_UP) && !(previous_buttons & PSP_CTRL_UP) && playback_volume < 30) {
+            playback_volume++; receiver_flash_button = PSP_CTRL_UP; save_playback_settings();
+        }
+        if ((pad.Buttons & PSP_CTRL_DOWN) && !(previous_buttons & PSP_CTRL_DOWN) && playback_volume > 0) {
+            playback_volume--; receiver_flash_button = PSP_CTRL_DOWN; save_playback_settings();
+        }
         if (!paused && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) &&
             !(previous_buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
             int delta = (pad.Buttons & PSP_CTRL_RTRIGGER) ? 10 : -10;
@@ -1137,6 +1226,8 @@ static int play_h264(const char *media_id) {
             result = frames;
             break;
         }
+        if (!(pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_SELECT | PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)))
+            receiver_flash_button = 0;
         previous_buttons = pad.Buttons;
         if (paused) { sceKernelDelayThread(75000); continue; }
         if (received <= 0) {
