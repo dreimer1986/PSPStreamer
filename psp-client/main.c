@@ -532,7 +532,7 @@ static void subtitle_release(void) {
 }
 
 static void bitmap_present(int frame, const char *media_id) {
-    int index = -1, i, got, dx, dy;
+    int index = -1, i, got, x, y, left, top, right, bottom;
     BitmapCue *cue;
     if (!bitmap_client_side || !bitmap_cues) return;
     for (i = 0; i < bitmap_cue_count; i++) if (frame >= bitmap_cues[i].start && frame < bitmap_cues[i].end) { index = i; break; }
@@ -545,12 +545,39 @@ static void bitmap_present(int frame, const char *media_id) {
         if (got < 1024 + cue->width * cue->height) return;
         bitmap_bytes = got; bitmap_loaded_cue = index;
     }
-    for (dy = 0; dy < cue->height; dy++) for (dx = 0; dx < cue->width; dx++) {
-        unsigned char color = (unsigned char)response[1024 + dy * cue->width + dx];
-        unsigned char alpha = (unsigned char)response[color * 4 + 3];
-        int x = (cue->x + dx) * VIDEO_WIDTH / cue->canvas_width, y = (cue->y + dy) * VIDEO_HEIGHT / cue->canvas_height;
-        if (alpha > 80 && x >= 0 && x < VIDEO_WIDTH && y >= 0 && y < VIDEO_HEIGHT)
-            ((u32 *)0x44000000)[y * VIDEO_STRIDE + x] = 0x00ffffff;
+    /* PGS stores a full-HD, palette-indexed sprite.  Sample it once per PSP
+     * output pixel rather than writing every source pixel (often 20 times
+     * over the same destination).  This both preserves video headroom and
+     * makes the original coloured, antialiased caption legible. */
+    left = cue->x * VIDEO_WIDTH / cue->canvas_width;
+    top = cue->y * VIDEO_HEIGHT / cue->canvas_height;
+    right = (cue->x + cue->width) * VIDEO_WIDTH / cue->canvas_width;
+    bottom = (cue->y + cue->height) * VIDEO_HEIGHT / cue->canvas_height;
+    if (right > VIDEO_WIDTH) right = VIDEO_WIDTH;
+    if (bottom > VIDEO_HEIGHT) bottom = VIDEO_HEIGHT;
+    for (y = top; y < bottom; y++) for (x = left; x < right; x++) {
+        int source_x = (x * cue->canvas_width + cue->canvas_width / 2) / VIDEO_WIDTH - cue->x;
+        int source_y = (y * cue->canvas_height + cue->canvas_height / 2) / VIDEO_HEIGHT - cue->y;
+        unsigned char color, alpha, red, green, blue;
+        u32 *destination;
+        if (source_x < 0) source_x = 0;
+        if (source_y < 0) source_y = 0;
+        if (source_x >= cue->width) source_x = cue->width - 1;
+        if (source_y >= cue->height) source_y = cue->height - 1;
+        color = (unsigned char)response[1024 + source_y * cue->width + source_x];
+        alpha = (unsigned char)response[color * 4 + 3];
+        if (!alpha) continue;
+        red = (unsigned char)response[color * 4];
+        green = (unsigned char)response[color * 4 + 1];
+        blue = (unsigned char)response[color * 4 + 2];
+        destination = &((u32 *)0x44000000)[y * VIDEO_STRIDE + x];
+        if (alpha == 255) *destination = red | ((u32)green << 8) | ((u32)blue << 16);
+        else {
+            u32 old = *destination;
+            *destination = ((red * alpha + (old & 0xff) * (255 - alpha)) / 255) |
+                           (((green * alpha + ((old >> 8) & 0xff) * (255 - alpha)) / 255) << 8) |
+                           (((blue * alpha + ((old >> 16) & 0xff) * (255 - alpha)) / 255) << 16);
+        }
     }
 }
 
