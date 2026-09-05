@@ -511,10 +511,14 @@ static int subtitle_utf8_char(const char **text) {
 }
 
 static void subtitle_draw_glyph(u32 *vram, int glyph, int left, int top) {
-    const unsigned char *bitmap = subtitle_font + glyph * SUBTITLE_FONT_CELL_WIDTH * SUBTITLE_FONT_CELL_HEIGHT;
+    /* The atlas is 16 glyphs wide.  Cells are not contiguous in memory: a
+     * glyph's next scanline starts one complete 256-pixel atlas row later. */
+    const unsigned char *bitmap = subtitle_font +
+        (glyph >> 4) * SUBTITLE_FONT_CELL_HEIGHT * (SUBTITLE_FONT_CELL_WIDTH * 16) +
+        (glyph & 15) * SUBTITLE_FONT_CELL_WIDTH;
     int x, y, dx, dy;
     for (y = 0; y < SUBTITLE_FONT_CELL_HEIGHT; y++) for (x = 0; x < SUBTITLE_FONT_CELL_WIDTH; x++) {
-        if (bitmap[y * SUBTITLE_FONT_CELL_WIDTH + x] > 72) {
+        if (bitmap[y * SUBTITLE_FONT_CELL_WIDTH * 16 + x] > 72) {
             int px = left + x, py = top + y;
             for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++)
                 if ((dx || dy) && px + dx >= 0 && px + dx < VIDEO_WIDTH && py + dy >= 0 && py + dy < VIDEO_HEIGHT)
