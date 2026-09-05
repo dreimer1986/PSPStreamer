@@ -131,6 +131,7 @@ static volatile int remote_control_running;
 static volatile int remote_control_action;
 static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
+static int remote_control_sequence;
 #define TVOUT_STRIDE 768
 
 static int tvout_load_manager(void) {
@@ -1992,7 +1993,7 @@ static int json_integer(const char *from, const char *key, int fallback) {
  * This costs one tiny JSON request per second, never competes with the two
  * real-time audio/video sockets, and lets the TV be controlled from a phone. */
 static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
-                            int *subtitle, int *is_audio) {
+                            int *subtitle, int *is_audio, int *start_seconds) {
     static int sequence;
     char path[64], action[16], kind[16];
     char *field;
@@ -2005,12 +2006,13 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
     *audio = json_integer(response, "audio", 0);
     *subtitle = json_integer(response, "subtitle", -1);
+    *start_seconds = json_integer(response, "start", 0);
     *is_audio = json_value(response, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
     return 1;
 }
 
 static int remote_control_thread(SceSize args, void *argp) {
-    int sequence = 0;
+    int sequence = remote_control_sequence;
     (void)args; (void)argp;
     while (remote_control_running) {
         char path[64], reply[1024], action[16];
@@ -2019,7 +2021,7 @@ static int remote_control_thread(SceSize args, void *argp) {
         if (http_get_wait(path, reply, sizeof(reply), 500) >= 0 &&
             json_value(reply, "action", action, sizeof(action))) {
             field = strstr(reply, "\"seq\":");
-            if (field) sequence = atoi(field + 6);
+            if (field) remote_control_sequence = sequence = atoi(field + 6);
             if (!strcmp(action, "pause")) remote_control_action = 1;
             else if (!strcmp(action, "resume")) remote_control_action = 2;
             else if (!strcmp(action, "stop")) remote_control_action = 3;
@@ -2372,18 +2374,23 @@ int main(void) {
         now = sceKernelGetSystemTimeWide();
         if (network_ready && now >= next_remote_poll_tick) {
             char remote_media_id[ID_SIZE];
-            int remote_audio, remote_subtitle, remote_is_audio;
+            int remote_audio, remote_subtitle, remote_is_audio, remote_start;
             next_remote_poll_tick = now + 1000000ULL;
             if (remote_poll_play(remote_media_id, sizeof(remote_media_id), &remote_audio,
-                                 &remote_subtitle, &remote_is_audio)) {
+                                 &remote_subtitle, &remote_is_audio, &remote_start)) {
                 selected_audio_track = remote_audio;
                 selected_subtitle_track = remote_subtitle;
-                stream_start_seconds = 0;
+                stream_start_seconds = remote_start;
                 resume_pending = 0;
                 load_media_metadata(remote_media_id);
                 snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
-                result = remote_is_audio ? play_audio(remote_media_id, "Remote stream") : play_h264(remote_media_id);
+                do {
+                    result = remote_is_audio ? play_audio(remote_media_id, "Remote stream") : play_h264(remote_media_id);
+                    if (!(resume_pending && seek_requested) || result < 0) break;
+                    seek_requested = 0;
+                    sceKernelDelayThread(250000);
+                } while (1);
                 pspDebugScreenInit();
                 if (result < 0) snprintf(status, sizeof(status), "%s: %08X", video_step, result);
                 dirty = 1;

@@ -354,6 +354,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 clean["kind"] = "audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video"
                 clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
                 clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
+                clean["start"] = max(0, min(86400, int(command.get("start", 0))))
             elif action == "seek":
                 clean["seconds"] = max(0, min(86400, int(command.get("seconds", 0))))
             return self.send_json(self.server.set_remote_command(clean))
