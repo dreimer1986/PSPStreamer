@@ -872,8 +872,10 @@ static void gui_skin_receiver(u32 *vram) {
     }
     /* Temporary calibration reference: cyan is the geometric knob centre;
      * amber is the volume marker travelling around its rim. */
-    gui_rect(vram, 429, 226, 3, 3, 0x00FFFF00);
-    gui_rect(vram, 430 + knob_x[pointer] - 2, 227 + knob_y[pointer] - 2, 5, 5, 0x0000D8FF);
+    gui_rect(vram, 419, 213, 3, 3, 0x00FFFF00);
+    /* Rounded 5x5 LED: full centre, with the four corner pixels omitted. */
+    gui_rect(vram, 420 + knob_x[pointer] - 1, 214 + knob_y[pointer] - 2, 3, 5, 0x0000D8FF);
+    gui_rect(vram, 420 + knob_x[pointer] - 2, 214 + knob_y[pointer] - 1, 5, 3, 0x0000D8FF);
 }
 
 /* Fullscreen music retains the exact same physical receiver controls rather
