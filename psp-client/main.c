@@ -853,8 +853,8 @@ static void gui_skin_receiver(u32 *vram) {
         0x0000D8FF, 0x00FFB000, 0x00B070FF, 0x0000FFD0,
         0x00D000FF, 0x00FF9040
     };
-    static const signed char indicator_x_offset[] = {5, 2, 0, -2, -4};
-    static const unsigned char indicator_width_extra[] = {0, 2, 3, 2, 3};
+    static const signed char indicator_x_offset[] = {2, 2, 0, -2, -4};
+    static const unsigned char indicator_width_extra[] = {3, 2, 2, 3, 3};
     /* Marker follows the visible inner rim of the photorealistic knob, not
      * a tiny circle near its centre.  Every one of the 31 volume values has
      * a physical detent, so neighbouring values cannot jump between coarse
