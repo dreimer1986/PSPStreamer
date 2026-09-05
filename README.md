@@ -61,9 +61,17 @@ port=8091
 audio=0
 subtitle=-1
 quality=2
+volume=24
+language=en
 ```
 
-`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `quality` means `0=96k`, `1=128k`, `2=160k` MP3.
+`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k` MP3; and `volume` ranges from `0` to `30`.
+
+`language` selects the PSP interface language: `en` (default) or `de`. The PSP's bundled Latin-1 font supports direct German `ä`, `ö`, `ü`, and `ß` characters.
+
+### Adding a PSP interface language
+
+Create `psp-client/lang_xx.h` by copying `lang_en.h`, translate every string while preserving printf placeholders such as `%d` and `%s`, then include that file in `psp-client/language.c`. Register its code and table in the `languages[]` array in that same file, for example `{"fr", lang_fr}`. Rebuild the EBOOT and set `language=fr` in `PSPStreamer.cfg`.
 
 Browser controls: Cross opens a folder or playback options; Triangle opens the media information page for a file; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
 

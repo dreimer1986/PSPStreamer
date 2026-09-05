@@ -31,6 +31,7 @@
 
 #include "config.h"
 #include "h264_hw.h"
+#include "language.h"
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -276,6 +277,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
+            else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
@@ -289,8 +291,8 @@ static void load_playback_settings(void) {
 static void save_playback_settings(void) {
     SceUID file;
     char data[192];
-    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\n",
-                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume);
+    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nlanguage=%s\n",
+                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, language_code());
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1383,14 +1385,14 @@ static int play_audio(const char *media_id, const char *title) {
         keep_awake();
         if (fullscreen) vu_ballistics_step();
         if (!fullscreen) {
-            gui_library_shell("NOW PLAYING");
-            gui_text(38, 40, 0x0000D8FF, "MUSIC STREAM");
+            gui_library_shell(tr(TXT_NOW_PLAYING));
+            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
             gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
-            gui_text(38, 64, 0x008A9BAA, "MP3  %d%% VOLUME  SELECT PAUSE", playback_volume * 100 / 30);
+            gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
         } else {
             gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
             gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
-            gui_text(18, 12, 0x00D8E8FF, "MUSIC // %.48s", title);
+            gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
         }
         /* Actual PCM frequency bins, not a decorative level animation. */
         for (x = 0; x < SPECTRUM_BANDS; x++) {
@@ -1407,7 +1409,7 @@ static int play_audio(const char *media_id, const char *title) {
                      fullscreen ? 25 : 15, height, color);
         }
         if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
-        else gui_text(38, 177, 0x00FFFFFF, "SELECT PAUSE  UP/DN VOL  X+TRI FULLSCREEN  START EXIT");
+        else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
         sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
         sceDisplayWaitVblankStart();
         sceCtrlPeekBufferPositive(&pad, 1);
@@ -1701,17 +1703,17 @@ static void load_media_metadata(const char *media_id) {
 static void gui_library_shell(const char *section);
 
 static void show_metadata_loading(void) {
-    gui_library_shell("PREPARING MEDIA");
-    gui_text(38, 47, 0x0000D8FF, "READING MEDIA INFORMATION");
-    gui_text(38, 76, 0x00FFFFFF, "Loading audio tracks and subtitles...");
-    gui_text(38, 96, 0x008A9BAA, "The source may be waking over SMB.");
+    gui_library_shell(tr(TXT_PREPARING_MEDIA));
+    gui_text(38, 47, 0x0000D8FF, "%s", tr(TXT_READING_MEDIA));
+    gui_text(38, 76, 0x00FFFFFF, "%s", tr(TXT_LOADING_TRACKS));
+    gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_SOURCE_WAKING));
     /* Start at the panel edge; the compact glyph itself already carries its
      * own tiny left bearing, so an extra character-cell offset reads as a
      * spurious leading blank on the PSP LCD. */
-    gui_text(369, 47, 0x00FFB000, "PLEASE WAIT");
-    gui_text(376, 76, 0x008A9BAA, "No video");
-    gui_text(376, 87, 0x008A9BAA, "stream has");
-    gui_text(376, 98, 0x008A9BAA, "started");
+    gui_text(369, 47, 0x00FFB000, "%s", tr(TXT_PLEASE_WAIT));
+    gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_NO_VIDEO));
+    gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_STREAM_HAS));
+    gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STARTED));
 }
 
 static void parse_library(void) {
@@ -1777,21 +1779,21 @@ static void refresh_library(void) {
     char encoded_path[ID_SIZE * 3 + 1];
     char api_path[ID_SIZE * 3 + 32];
     if (!network_ready || !http_ready) {
-        strcpy(status, "Wi-Fi/HTTP not ready yet");
+        strcpy(status, tr(TXT_WIFI_NOT_READY));
         return;
     }
-    strcpy(status, "Loading library ...");
+    strcpy(status, tr(TXT_LOADING_LIBRARY));
     url_encode(current_path, encoded_path, sizeof(encoded_path));
     snprintf(api_path, sizeof(api_path), "/api/library?path=%s", encoded_path);
     result = http_get(api_path, response, sizeof(response));
     if (result < 0) {
-        snprintf(status, sizeof(status), "Server error: %08X", result);
+        snprintf(status, sizeof(status), tr(TXT_SERVER_ERROR), result);
         /* A just-restored hotspot often has IP before DNS.  Keep the useful
          * browser state visible so Square can simply be tried again. */
         return;
     }
     parse_library();
-    snprintf(status, sizeof(status), "%d entries  [X: Open]", item_count);
+    snprintf(status, sizeof(status), tr(TXT_ENTRIES), item_count);
 }
 
 /* The library is intentionally drawn with the same inexpensive VRAM
@@ -1848,11 +1850,11 @@ static void show(int selected) {
     first = item_count ? (selected / GUI_LIST_ROWS) * GUI_LIST_ROWS : 0;
     last = first + GUI_LIST_ROWS;
     if (last > item_count) last = item_count;
-    gui_library_shell("MEDIA LIBRARY");
-    gui_text(38, 40, 0x0000D8FF, "LIBRARY");
+    gui_library_shell(tr(TXT_MEDIA_LIBRARY));
+    gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_LIBRARY));
     gui_text(38, 51, 0x008A9BAA, "%.39s", current_path[0] ? current_path : "/");
     if (!item_count) {
-        gui_text(38, 80, 0x00FFFFFF, "No entries -- [] reload");
+        gui_text(38, 80, 0x00FFFFFF, "%s", tr(TXT_NO_ENTRIES));
     } else {
         for (i = first; i < last; i++) {
             int row = i - first;
@@ -1861,16 +1863,16 @@ static void show(int selected) {
                      "%c %.38s", items[i].is_folder ? '+' : (items[i].is_audio ? '~' : '>'), items[i].title);
         }
     }
-    gui_text(376, 40, 0x00FFB000, "SELECTED");
+    gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_SELECTED));
     if (item_count) gui_text(376, 57, 0x00FFFFFF, "%.11s", items[selected].title);
-    else gui_text(376, 57, 0x00FFFFFF, "Waiting...");
-    if (item_count) gui_text(376, 76, 0x008A9BAA, "%s", items[selected].is_folder ? "FOLDER" : (items[selected].is_audio ? "MUSIC" : "VIDEO"));
-    gui_text(376, 90, 0x008A9BAA, "%d entries", item_count);
-    gui_text(376, 104, 0x008A9BAA, "Profile %d", active_network_profile);
-    if (hardware_runtime_result == 0) gui_text(376, 118, 0x008A9BAA, "AVC READY");
-    else if (hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "AVC ERROR");
+    else gui_text(376, 57, 0x00FFFFFF, "%s", tr(TXT_WAITING));
+    if (item_count) gui_text(376, 76, 0x008A9BAA, "%s", items[selected].is_folder ? tr(TXT_FOLDER) : (items[selected].is_audio ? tr(TXT_MUSIC) : tr(TXT_VIDEO)));
+    gui_text(376, 90, 0x008A9BAA, tr(TXT_ENTRIES), item_count);
+    gui_text(376, 104, 0x008A9BAA, tr(TXT_PROFILE), active_network_profile);
+    if (hardware_runtime_result == 0) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
+    else if (hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
     gui_text(376, 138, 0x00FFFFFF, "%.11s", status);
-    gui_text(38, 177, 0x00FFFFFF, "UP/DN NAV  X OPEN  TRI INFO  L/R PAGE  [] RLD");
+    gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
 }
 
 /* A real media-information screen rather than a second copy of the browser.
@@ -1887,23 +1889,22 @@ static void media_info(int selected) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_TRIANGLE);
     while (1) {
-        gui_library_shell("MEDIA INFORMATION");
-        gui_text(38, 40, 0x0000D8FF, "FILE DETAILS");
+        gui_library_shell(tr(TXT_FILE_DETAILS));
+        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
         gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
-        gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? "MUSIC STREAM" : "H.264 VIDEO");
+        gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
         if (current_duration_seconds > 0.0f)
-            gui_text(38, 96, 0x008A9BAA, "DURATION: %d:%02d", minutes, seconds);
-        else gui_text(38, 96, 0x008A9BAA, "DURATION: SERVER UNKNOWN");
-        gui_text(38, 112, 0x008A9BAA, "AUDIO TRACKS: %d", audio_track_count);
-        gui_text(38, 128, 0x008A9BAA, "SUBTITLE TRACKS: %d", subtitle_track_count);
-        gui_text(38, 142, 0x008A9BAA, "X returns to library.");
-        gui_text(376, 40, 0x00FFB000, "STREAMS");
-        if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "No tracks.");
+            gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
+        else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
+        gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
+        gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+        gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
+        if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
         for (i = 0; i < audio_track_count && i < 6; i++)
             gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
         for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
             gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
-        gui_text(38, 177, 0x00FFFFFF, "O / TRIANGLE BACK     X RETURNS TO LIBRARY");
+        gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
             !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
@@ -1927,34 +1928,34 @@ static int playback_options(int audio_only) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
-        gui_library_shell("PLAYBACK SETUP");
-        gui_text(38, 40, 0x0000D8FF, "STREAM OPTIONS");
+        gui_library_shell(tr(TXT_STREAM_OPTIONS));
+        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
         if (audio_only) {
             gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-            gui_text(38, 64, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
-            gui_text(376, 47, 0x00FFB000, "QUALITY");
-            gui_text(376, 76, 0x008A9BAA, "Saved for");
-            gui_text(376, 87, 0x008A9BAA, "next music");
-            gui_text(376, 98, 0x008A9BAA, "stream!");
-            gui_text(38, 177, 0x00FFFFFF, "L/R QUALITY  X START  O BACK");
+            gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+            gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
+            gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
+            gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
+            gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
+            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
         } else {
             if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
             if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
             if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
-            gui_text(38, 64, 0x00FFFFFF, "AUDIO: %s%s%s",
-                                 audio_track_count ? audio_tracks[selected_audio_track].language : "not detected",
+            gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
+                                 audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                                  audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
                                  audio_track_count ? audio_tracks[selected_audio_track].title : "");
-            gui_text(38, 84, 0x00FFFFFF, "SUBS:  %s%s%s",
-                                 selected_subtitle_track < 0 ? "Off" : subtitle_tracks[selected_subtitle_track].language,
+            gui_text(38, 84, 0x00FFFFFF, tr(TXT_SUBS_LABEL),
+                                 selected_subtitle_track < 0 ? tr(TXT_OFF) : subtitle_tracks[selected_subtitle_track].language,
                                  selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                                  selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-            gui_text(38, 104, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
-            gui_text(373, 47, 0x00FFB000, "AUDIO & SUB");
-            gui_text(376, 76, 0x008A9BAA, "Saved for");
-            gui_text(376, 87, 0x008A9BAA, "next play-");
-            gui_text(376, 98, 0x008A9BAA, "back");
-            gui_text(38, 177, 0x00FFFFFF, "UP/DN ROW  L/R CHANGE  X START  O BACK");
+            gui_text(38, 104, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+            gui_text(373, 47, 0x00FFB000, "%s", tr(TXT_AUDIO_SUB));
+            gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
+            gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_PLAY));
+            gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
+            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
         }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
@@ -1996,14 +1997,14 @@ int main(void) {
     * legacy systemctrl speed API tops out at the Sony 333-MHz range, so do
     * not call it here and accidentally undo a Homebrew overclock. */
     performance_result = 0;
-    strcpy(status, "Connecting to Wi-Fi...");
+    strcpy(status, tr(TXT_CONNECTING_WIFI));
     /* Present the media appliance immediately.  Network association can take
      * several seconds on a PSP; leaving the old blank debug screen there made
      * the application appear to start only after a file was chosen. */
     show(0);
     result = wait_for_network();
     if (result < 0) {
-        snprintf(status, sizeof(status), "%s failed: %08X", failure_step, result);
+        snprintf(status, sizeof(status), tr(TXT_NETWORK_FAILED), failure_step, result);
     } else {
         network_ready = 1;
         http_ready = 1;
@@ -2056,10 +2057,10 @@ int main(void) {
             dirty = 1;
         } else if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && !items[selected].is_folder) {
             if (resume_pending && !strcmp(resume_media_id, items[selected].value)) {
-                snprintf(status, sizeof(status), "Resuming at %d s ...", stream_start_seconds);
+                snprintf(status, sizeof(status), tr(TXT_RESUMING), stream_start_seconds);
                 show(selected);
                 if (wait_for_network_restore() < 0) {
-                    strcpy(status, "Wi-Fi not ready - press X again");
+                    strcpy(status, tr(TXT_WIFI_RETRY));
                     dirty = 1;
                     old_buttons = pad.Buttons;
                     continue;
@@ -2075,7 +2076,7 @@ int main(void) {
             }
             do {
                 int next;
-                snprintf(status, sizeof(status), "%s ...", items[selected].is_audio ? "Starting music stream" : "Starting H.264 video (20.1 FPS)");
+                snprintf(status, sizeof(status), "%s", items[selected].is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 result = items[selected].is_audio ? play_audio(items[selected].value, items[selected].title) : play_h264(items[selected].value);
                 pspDebugScreenInit();
@@ -2092,22 +2093,22 @@ int main(void) {
                         sceKernelDelayThread(250000);
                         continue;
                     }
-                    snprintf(status, sizeof(status), "Wi-Fi interrupted. Reconnect Wi-Fi, press X to resume.");
+                    snprintf(status, sizeof(status), "%s", tr(TXT_INTERRUPTED));
                     break;
                 }
                 resume_pending = 0;
                 next = playback_reached_end ? next_video_index(selected) : -1;
                 if (next < 0) {
                     if (items[selected].is_audio)
-                        snprintf(status, sizeof(status), "Music ended | Audio %d", audio_state);
+                        snprintf(status, sizeof(status), tr(TXT_MUSIC_ENDED), audio_state);
                     else
-                        snprintf(status, sizeof(status), "Video ended: %d frames", result);
+                        snprintf(status, sizeof(status), tr(TXT_VIDEO_ENDED), result);
                     break;
                 }
                 selected = next;
                 resume_pending = 0;
                 stream_start_seconds = 0;
-                snprintf(status, sizeof(status), "Next episode: %.58s", items[selected].title);
+                snprintf(status, sizeof(status), tr(TXT_NEXT_EPISODE), items[selected].title);
                 show(selected);
                 sceKernelDelayThread(500000);
                 load_media_metadata(items[selected].value);
