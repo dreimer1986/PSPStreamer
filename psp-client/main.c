@@ -107,6 +107,11 @@ static volatile int audio_output_thread_id = -1;
 /* Kept deliberately numeric: it is displayed after START exits playback and
  * identifies the exact network/audio stage on real hardware. */
 static volatile int audio_state;
+/* TV calibration is deliberately independent from the LCD path.  The
+ * component receiver/display chain is released four seconds before the DAC;
+ * this compensates the fixed start offset measured on that output. */
+#define TVOUT_PRESENT_INTERVAL_US 51020ULL /* 1,000,000 / 19.6 fps */
+#define TVOUT_AUDIO_START_DELAY_US 4000000ULL
 static int hardware_decoder_ready;
 static int video_modules_ready;
 static int hardware_decoder_frames;
@@ -1275,10 +1280,10 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             sceDisplayWaitVblankStart();
             frames++;
             hardware_decoder_frames++;
-            /* Component output measured 3.1% ahead of the audio master.
+            /* Component output is paced independently from LCD playback.
              * Only this presentation deadline is calibrated; stream format,
              * subtitles and the LCD path retain their original time bases. */
-            *next_frame_tick += tvout_video_active ? 51091ULL : 49751ULL;
+            *next_frame_tick += tvout_video_active ? TVOUT_PRESENT_INTERVAL_US : 49751ULL;
         }
         memmove(h264_buffer, h264_buffer + next, *size - next);
         *size -= next;
@@ -1681,6 +1686,7 @@ static int play_h264(const char *media_id) {
     int socket_fd, header_size = 0, received, h264_size = 0, frames = 0, result, buffered = 0, wait;
     int audio_thread_id = -1;
     unsigned long long next_frame_tick = 0;
+    unsigned long long tvout_audio_release_tick = 0;
     unsigned long long last_packet_tick;
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
@@ -1874,17 +1880,25 @@ static int play_h264(const char *media_id) {
                 sceKernelDelayThread(10000);
         }
         if (!audio_start) {
-            /* Release the DAC first; it is the master clock for the video
-             * presentation deadlines that follow. */
-            audio_start = 1;
-            for (wait = 0; wait < 20 && !audio_clock_started; wait++)
-                sceKernelDelayThread(1000);
-            next_frame_tick = sceKernelGetSystemTimeWide();
+            unsigned long long now = sceKernelGetSystemTimeWide();
+            /* The component display path has a fixed startup delay that is
+             * separate from its cadence.  Let its first frames run four
+             * seconds before unmuting the audio DAC.  LCD retains the proven
+             * simultaneous-start behaviour. */
+            if (!tvout_video_active ||
+                (tvout_audio_release_tick && now >= tvout_audio_release_tick)) {
+                audio_start = 1;
+                for (wait = 0; wait < 20 && !audio_clock_started; wait++)
+                    sceKernelDelayThread(1000);
+                next_frame_tick = sceKernelGetSystemTimeWide();
+            } else if (!tvout_audio_release_tick) {
+                tvout_audio_release_tick = now + TVOUT_AUDIO_START_DELAY_US;
+            }
         }
         buffered = 1;
         result = decode_h264_access_units(&h264_size, &next_frame_tick);
         if (result < 0) break;
-        if (result > 0 && !audio_start) audio_start = 1;
+        if (result > 0 && !audio_start && !tvout_video_active) audio_start = 1;
         frames += result;
         received = 0;
     }
