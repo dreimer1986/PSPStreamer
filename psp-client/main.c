@@ -861,23 +861,21 @@ static void gui_skin_receiver(u32 *vram) {
     /* Real moving needles over the printed analogue meter scales. */
     /* The generated artwork includes a neutral centre needle; erase just
      * that hairline before drawing the live coil position. */
-    gui_line(vram, 69, 237, 69, 215, 0x00120F0B);
+    gui_line(vram, 68, 237, 68, 215, 0x00120F0B);
     gui_line(vram, 162, 237, 162, 215, 0x00120F0B);
-    gui_line(vram, 69, 237, 69 + needle_x[needle], 237 + needle_y[needle], 0x0000B0FF);
+    gui_line(vram, 68, 237, 68 + needle_x[needle], 237 + needle_y[needle], 0x0000B0FF);
     gui_line(vram, 162, 237, 162 + needle_x[needle_right], 237 + needle_y[needle_right], 0x0000B0FF);
-    gui_rect(vram, 68, 236, 3, 3, 0x0000B0FF);
+    gui_rect(vram, 67, 236, 3, 3, 0x0000B0FF);
     gui_rect(vram, 161, 236, 3, 3, 0x0000B0FF);
     for (x = 0; x < 5; x++) {
         unsigned int mask = x == 0 ? PSP_CTRL_LTRIGGER : x == 1 ? PSP_CTRL_SELECT : x == 2 ? PSP_CTRL_RTRIGGER : 0;
         if (mask && (receiver_flash_button & mask))
             gui_rect(vram, 221 + x * 31, 238, 22, 3, 0x0000D8FF);
     }
-    /* Temporary calibration reference: cyan is the geometric knob centre;
-     * amber is the volume marker travelling around its rim. */
-    gui_rect(vram, 419, 213, 3, 3, 0x00FFFF00);
+    /* Amber is the volume marker travelling around the knob's inner rim. */
     /* Rounded 5x5 LED: full centre, with the four corner pixels omitted. */
-    gui_rect(vram, 420 + knob_x[pointer] - 1, 214 + knob_y[pointer] - 2, 3, 5, 0x0000D8FF);
-    gui_rect(vram, 420 + knob_x[pointer] - 2, 214 + knob_y[pointer] - 1, 5, 3, 0x0000D8FF);
+    gui_rect(vram, 420 + knob_x[pointer] - 1, 215 + knob_y[pointer] - 2, 3, 5, 0x0000D8FF);
+    gui_rect(vram, 420 + knob_x[pointer] - 2, 215 + knob_y[pointer] - 1, 5, 3, 0x0000D8FF);
 }
 
 /* Fullscreen music retains the exact same physical receiver controls rather
@@ -1216,11 +1214,11 @@ static int audio_thread(SceSize args, void *argp) {
     (void)args; (void)argp;
     audio_state = 10;
     memset(mp3_codec, 0, sizeof(mp3_codec));
-    if (sceAudiocodecCheckNeedMem(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -21; return 0; }
+    if (sceAudiocodecCheckNeedMem(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -21; audio_running = 0; return 0; }
     /* The firmware codec's ME-side DMA touches whole cache lines; reserve a
      * rounded work area, not merely the nominal byte count it reports. */
     mp3_codec_work = memalign(64, (mp3_codec[4] + 63) & ~63UL);
-    if (!mp3_codec_work) { audio_state = -22; return 0; }
+    if (!mp3_codec_work) { audio_state = -22; audio_running = 0; return 0; }
     mp3_codec[3] = (unsigned long)mp3_codec_work;
     if (sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -23; goto cleanup; }
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, selected_audio_track, audio_quality_name(), stream_start_seconds, server_host);
@@ -1285,6 +1283,11 @@ static int audio_thread(SceSize args, void *argp) {
         }
     }
 cleanup:
+    /* A decoder failure or end-of-stream must wake the UI and DAC worker.
+     * Previously this flag could remain true after the producer had gone,
+     * leaving the player apparently frozen with an empty audio queue. */
+    audio_running = 0;
+    audio_start = 1;
     if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) sceNetInetClose(socket_fd); }
     if (mp3_codec_work) { free(mp3_codec_work); mp3_codec_work = NULL; }
     return 0;
@@ -1355,7 +1358,13 @@ static int play_audio(const char *media_id, const char *title) {
     audio_running = 0; audio_start = 1; audio_queue_count = 0;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
-    if (audio_output_thread_id >= 0) { sceKernelWaitThreadEnd(audio_output_thread_id, NULL); audio_output_thread_id = -1; }
+    sceKernelDeleteThread(audio_thread_id);
+    if (audio_output_thread_id >= 0) {
+        int output_thread_id = audio_output_thread_id;
+        sceKernelWaitThreadEnd(output_thread_id, NULL);
+        sceKernelDeleteThread(output_thread_id);
+        audio_output_thread_id = -1;
+    }
     return audio_state < 0 ? audio_state : 0;
 }
 
@@ -1536,9 +1545,14 @@ static int play_h264(const char *media_id) {
         audio_socket_fd = -1;
         sceNetInetClose(closing_socket);
     }
-    if (audio_thread_id >= 0) sceKernelWaitThreadEnd(audio_thread_id, NULL);
+    if (audio_thread_id >= 0) {
+        sceKernelWaitThreadEnd(audio_thread_id, NULL);
+        sceKernelDeleteThread(audio_thread_id);
+    }
     if (audio_output_thread_id >= 0) {
-        sceKernelWaitThreadEnd(audio_output_thread_id, NULL);
+        int output_thread_id = audio_output_thread_id;
+        sceKernelWaitThreadEnd(output_thread_id, NULL);
+        sceKernelDeleteThread(output_thread_id);
         audio_output_thread_id = -1;
     }
     h264_hw_shutdown();
