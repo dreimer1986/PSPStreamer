@@ -75,6 +75,7 @@ typedef struct {
     int end_frame;
     char text[SUBTITLE_TEXT_SIZE];
 } SubtitleCue;
+typedef struct { int start, end, x, y, width, height, canvas_width, canvas_height; } BitmapCue;
 
 static char response[RESPONSE_SIZE];
 /* 512 pixels is the required power-of-two display stride. */
@@ -201,6 +202,8 @@ static int audio_track_count, subtitle_track_count;
 static SubtitleCue *subtitle_cues;
 static int subtitle_cue_count;
 static unsigned char *subtitle_font;
+static BitmapCue *bitmap_cues;
+static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1, bitmap_bytes;
 static int subtitle_client_side;
 static float current_duration_seconds;
 static int playback_reached_end;
@@ -430,6 +433,28 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
     return (int)strlen(buffer);
 }
 
+static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
+    struct sockaddr_in server;
+    char request[2048], header[4096], *body;
+    int socket_fd, received = 0, header_size = 0, body_size;
+    socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd < 0 || prepare_server(&server) < 0) return -1;
+    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { sceNetInetClose(socket_fd); return -1; }
+    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, server_host);
+    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1; }
+    while (header_size < (int)sizeof(header) - 1) {
+        int got = sceNetInetRecv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
+        if (got <= 0) { sceNetInetClose(socket_fd); return -1; }
+        header_size += got; header[header_size] = 0; body = strstr(header, "\r\n\r\n"); if (body) break;
+    }
+    if (!body || !strstr(header, " 200 ")) { sceNetInetClose(socket_fd); return -1; }
+    body += 4; body_size = header_size - (int)(body - header);
+    if (body_size > buffer_size) { sceNetInetClose(socket_fd); return -1; }
+    memcpy(buffer, body, body_size); received = body_size;
+    while (received < buffer_size) { int got = sceNetInetRecv(socket_fd, buffer + received, buffer_size - received, 0); if (got <= 0) break; received += got; }
+    sceNetInetClose(socket_fd); return received;
+}
+
 /* The subtitle endpoint deliberately emits a restricted JSON form:
  * {"t":"text","c":[[start,end,"ASCII text"],...]}.  Text has already
  * been normalised by the server, so a narrow parser is both safer and much
@@ -446,6 +471,22 @@ static int prepare_client_subtitles(const char *media_id) {
     if (result < 0) return result;
     /* Bitmap tracks keep the existing server-overlay fallback until the
      * sprite transport is available.  Never silently lose a requested PGS. */
+    if (strstr(response, "\"t\":\"bitmap\"")) {
+        char path[ID_SIZE + 64], *cursor;
+        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d", media_id, selected_subtitle_track);
+        if (http_get(path, response, sizeof(response)) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
+        if (bitmap_cues) free(bitmap_cues);
+        bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
+        if (!bitmap_cues) return 0;
+        bitmap_cue_count = 0; bitmap_loaded_cue = -1; bitmap_client_side = 1;
+        cursor = strstr(response, "\"c\":["); if (!cursor) return 0; cursor++;
+        while (bitmap_cue_count < 960) {
+            BitmapCue *cue = &bitmap_cues[bitmap_cue_count]; int used = 0; char *entry = strchr(cursor, '[');
+            if (!entry || sscanf(entry, "[%d,%d,%d,%d,%d,%d,%d,%d]%n", &cue->start, &cue->end, &cue->x, &cue->y, &cue->width, &cue->height, &cue->canvas_width, &cue->canvas_height, &used) != 8) break;
+            bitmap_cue_count++; cursor = entry + used;
+        }
+        return 0;
+    }
     if (!strstr(response, "\"t\":\"text\"")) return 0;
     subtitle_client_side = 1;
     return 0;
@@ -482,6 +523,31 @@ static void subtitle_release(void) {
     subtitle_cues = NULL;
     subtitle_font = NULL;
     subtitle_cue_count = 0;
+    if (bitmap_cues) free(bitmap_cues);
+    bitmap_cues = NULL; bitmap_cue_count = 0; bitmap_client_side = 0; bitmap_loaded_cue = -1;
+}
+
+static void bitmap_present(int frame, const char *media_id) {
+    int index = -1, i, got, dx, dy;
+    BitmapCue *cue;
+    if (!bitmap_client_side || !bitmap_cues) return;
+    for (i = 0; i < bitmap_cue_count; i++) if (frame >= bitmap_cues[i].start && frame < bitmap_cues[i].end) { index = i; break; }
+    if (index < 0) return;
+    cue = &bitmap_cues[index];
+    if (bitmap_loaded_cue != index) {
+        char path[ID_SIZE + 96];
+        snprintf(path, sizeof(path), "/api/bitmap-sprite/%s?track=%d&cue=%d", media_id, selected_subtitle_track, index);
+        got = http_get_binary(path, (unsigned char *)response, RESPONSE_SIZE);
+        if (got < 1024 + cue->width * cue->height) return;
+        bitmap_bytes = got; bitmap_loaded_cue = index;
+    }
+    for (dy = 0; dy < cue->height; dy++) for (dx = 0; dx < cue->width; dx++) {
+        unsigned char color = (unsigned char)response[1024 + dy * cue->width + dx];
+        unsigned char alpha = (unsigned char)response[color * 4 + 3];
+        int x = (cue->x + dx) * VIDEO_WIDTH / cue->canvas_width, y = (cue->y + dy) * VIDEO_HEIGHT / cue->canvas_height;
+        if (alpha > 80 && x >= 0 && x < VIDEO_WIDTH && y >= 0 && y < VIDEO_HEIGHT)
+            ((u32 *)0x44000000)[y * VIDEO_STRIDE + x] = 0x00ffffff;
+    }
 }
 
 static void subtitle_load_font(void) {
@@ -682,6 +748,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         if (result < 0) { video_step = h264_hw_last_step(); return result; }
         if (result > 0) {
             subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
+            bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
             sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
@@ -943,7 +1010,7 @@ static int play_h264(const char *media_id) {
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
     else { audio_running = 0; audio_state = audio_thread_id; }
     video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, PSP_STREAMER_PROFILE, selected_audio_track, subtitle_client_side ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { h264_hw_shutdown(); return socket_fd; }
     if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1307; }
