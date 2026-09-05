@@ -153,7 +153,8 @@ class Library:
 
 def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
                    subtitle_track: int = -1, audio_bitrate: str = "160k", subtitle_source: Path | None = None,
-                   start_seconds: float = 0, bitmap_subtitle: bool = False) -> list[str]:
+                   start_seconds: float = 0, bitmap_subtitle: bool = False,
+                   tv_output: bool = False) -> list[str]:
     """Conservative AVC/AAC profile for a PSP-3000 over an 802.11b LAN."""
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
@@ -186,7 +187,9 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # repeated headers let a client recover at each IDR.
         # The 20.1-fps output rate matches the validated PSP presentation
         # clock and prevents a cumulative audio lag on real hardware.
-        video_filter = "fps=201/10,scale=480:272:force_original_aspect_ratio=decrease,pad=480:272:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
+        target_width, target_height = (720, 480) if tv_output else (480, 272)
+        video_filter = (f"fps=201/10,scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+                        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
         if subtitle_track >= 0 and bitmap_subtitle:
             bitmap_filter = f"[0:v:0][0:s:{subtitle_track}]overlay,{video_filter}[v]"
@@ -215,9 +218,9 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"),
             "-tune", "zerolatency",
-            "-b:v", "400k" if low_bandwidth else "600k",
-            "-maxrate", "450k" if low_bandwidth else "700k",
-            "-bufsize", "600k" if low_bandwidth else "900k",
+            "-b:v", "400k" if low_bandwidth else ("850k" if tv_output else "600k"),
+            "-maxrate", "450k" if low_bandwidth else ("950k" if tv_output else "700k"),
+            "-bufsize", "600k" if low_bandwidth else ("1200k" if tv_output else "900k"),
             # Each repeated SPS/PPS marks a safe firmware-AVC reset point.
             # 3.2 seconds is below the ME deadlock window but makes the reset
             # much less noticeable than the earlier 2.4-second GOP.
@@ -309,11 +312,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 profile = query.get("profile", ["normal"])[0]
                 if container not in {"mp4", "mpegts", "mjpeg", "h264", "mp3"}:
                     raise ValueError("Unsupported stream container")
-                if profile not in {"normal", "low"}:
+                if profile not in {"normal", "low", "tv"}:
                     raise ValueError("Unsupported stream profile")
                 if subtitle < -1 or subtitle > 31 or audio_bitrate not in {"96k", "128k", "160k"} or not 0 <= start_seconds <= 86400:
                     raise ValueError("Unsupported stream option")
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds)
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv")
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -446,7 +449,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
-                  subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0) -> None:
+                  subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
+                  tv_output: bool = False) -> None:
         _, source = self.server.library.decode(token)
         if not self.server.transcode_slots.acquire(blocking=False):
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
@@ -476,7 +480,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not subtitle_source.exists():
                     os.symlink(source, subtitle_source)
             process = subprocess.Popen(
-                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle),
+                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output),
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on

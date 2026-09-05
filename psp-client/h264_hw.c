@@ -44,6 +44,9 @@ static unsigned char *hw_avcc;
 static unsigned char hw_sps[256], hw_pps[256];
 static int hw_sps_size, hw_pps_size, hw_ready;
 static int hw_first_access_unit;
+static int hw_output_stride = 512;
+static int hw_output_height = 272;
+static int hw_mpeg_mode = 4;
 static const char *hw_step = "Hardware-AVC";
 
 static int start_code_size(const unsigned char *data, int size, int at) {
@@ -97,12 +100,12 @@ int h264_hw_init_from_annexb(const unsigned char *access_unit, int size) {
     result = sceMpegInit();
     hw_step = "AVC: sceMpegInit";
     if (result < 0) return result;
-    state_size = sceMpegQueryMemSize(4); /* AVC mode for 480x272 */
+    state_size = sceMpegQueryMemSize(hw_mpeg_mode);
     if (state_size < 0) return state_size;
     hw_state = memalign(64, state_size);
     if (!hw_state) return -3;
     hw_step = "AVC: sceMpegCreate";
-    result = sceMpegCreate(&hw_mpeg, hw_state, state_size, &hw_ring, 512, 4, (SceInt32)hw_workspace);
+    result = sceMpegCreate(&hw_mpeg, hw_state, state_size, &hw_ring, 512, hw_mpeg_mode, (SceInt32)hw_workspace);
     if (result < 0) return result;
     memset(&hw_au, 0xff, sizeof(hw_au));
     hw_step = "AVC: sceMpegInitAu";
@@ -134,7 +137,7 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     result = sceMpegGetAvcNalAu(&hw_mpeg, &input, &hw_au);
     if (result < 0) return result;
     hw_step = "AVC: Decode";
-    result = sceMpegAvcDecode(&hw_mpeg, &hw_au, 512, NULL, &pictures);
+    result = sceMpegAvcDecode(&hw_mpeg, &hw_au, hw_output_stride, NULL, &pictures);
     if (result < 0 || pictures <= 0) return result;
     hw_first_access_unit = 0;
     hw_step = "AVC: Detail";
@@ -145,10 +148,19 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     csc.width_blocks = (detail->picture->width + 15) >> 4;
     memcpy(csc.plane, detail->yuv->plane, sizeof(csc.plane));
     hw_step = "AVC: Hardware-CSC";
-    result = sceMpegBaseCscAvc(framebuffer, 0, 512, &csc);
+    result = sceMpegBaseCscAvc(framebuffer, 0, hw_output_stride, &csc);
     if (result < 0) return result;
-    sceKernelDcacheWritebackInvalidateRange(framebuffer, 512 * 272 * 4);
+    sceKernelDcacheWritebackInvalidateRange(framebuffer, hw_output_stride * hw_output_height * 4);
     return pictures;
+}
+
+void h264_hw_set_output_layout(int stride, int height, int mpeg_mode) {
+    if (!hw_ready && stride >= 512 && !(stride & 15) && height >= 272 &&
+        (mpeg_mode == 4 || mpeg_mode == 5)) {
+        hw_output_stride = stride;
+        hw_output_height = height;
+        hw_mpeg_mode = mpeg_mode;
+    }
 }
 
 void h264_hw_shutdown(void) {
@@ -159,6 +171,9 @@ void h264_hw_shutdown(void) {
     if (hw_workspace) free(hw_workspace);
     hw_state = hw_avcc = hw_workspace = NULL;
     hw_sps_size = hw_pps_size = 0;
+    hw_output_stride = 512;
+    hw_output_height = 272;
+    hw_mpeg_mode = 4;
     hw_first_access_unit = 0;
     hw_step = "Hardware-AVC";
 }

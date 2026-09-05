@@ -124,6 +124,7 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
                                 int x, int y, int flags);
 
 static int tvout_module_id = -1;
+static int tvout_video_active;
 #define TVOUT_STRIDE 768
 
 static int tvout_load_manager(void) {
@@ -177,6 +178,28 @@ static int tvout_component_test(void) {
     sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
                           PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
     return 0;
+}
+
+/* Video uses the exact EDRAM layout proven by the calibration card.  It is
+ * intentionally independent of the browser: the normal 480x272 UI remains
+ * untouched until a film is actually started. */
+static int tvout_begin_video(void) {
+    int result;
+    result = tvout_load_manager();
+    if (result < 0 || pspDveMgrCheckVideoOut() != 2) return -1;
+    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+    if (result < 0) return result;
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
+                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    return 0;
+}
+
+static void tvout_end_video(void) {
+    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
 }
 
 static int load_hardware_avc_runtime(void) {
@@ -1173,11 +1196,18 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         result = h264_hw_decode_annexb(h264_buffer, next, (void *)0x44000000);
         if (result < 0) { video_step = h264_hw_last_step(); return result; }
         if (result > 0) {
-            subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
-            bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
-            if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
-            else receiver_hud(hardware_decoder_frames);
-            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
+            /* The established subtitle/HUD renderer targets 512-pixel LCD
+             * rows.  Do not let it corrupt a native 768-pixel TV frame; a
+             * dedicated TV overlay follows once video presentation is proven. */
+            if (!tvout_video_active) {
+                subtitle_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames);
+                bitmap_present((int)(stream_start_seconds * 20.1f) + hardware_decoder_frames, audio_media_id);
+                if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
+                else receiver_hud(hardware_decoder_frames);
+            }
+            sceDisplaySetFrameBuf((void *)0x04000000,
+                                  tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
+                                  PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
             frames++;
@@ -1602,6 +1632,10 @@ static int play_h264(const char *media_id) {
     video_step = "Hardware-AVC";
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
+    tvout_video_active = tvout_begin_video() == 0;
+    h264_hw_set_output_layout(tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
+                              tvout_video_active ? 480 : VIDEO_HEIGHT,
+                              tvout_video_active ? 5 : 4);
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_start = 0;
@@ -1619,7 +1653,7 @@ static int play_h264(const char *media_id) {
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
     else { audio_running = 0; audio_state = audio_thread_id; }
     video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { h264_hw_shutdown(); return socket_fd; }
     if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1307; }
@@ -1651,8 +1685,10 @@ static int play_h264(const char *media_id) {
             paused = !paused;
             playback_paused = paused;
             audio_start = paused ? 0 : 1;
-            playback_hud(hardware_decoder_frames, paused);
-            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
+            if (!tvout_video_active) playback_hud(hardware_decoder_frames, paused);
+            sceDisplaySetFrameBuf((void *)0x04000000,
+                                  tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
+                                  PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
         }
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
@@ -1772,6 +1808,8 @@ static int play_h264(const char *media_id) {
     h264_hw_shutdown();
     subtitle_release();
     sceNetInetClose(socket_fd);
+    if (tvout_video_active) tvout_end_video();
+    tvout_video_active = 0;
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;
