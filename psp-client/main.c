@@ -1322,6 +1322,18 @@ static int music_mp3_thread(SceSize args, void *argp) {
         memcpy(destination, body + 4, initial_size);
         if (sceMp3NotifyAddStreamData(handle, initial_size) < 0) { audio_state = -28; goto cleanup; }
     }
+    /* sceMp3Init parses a small run of consecutive source data, not merely
+     * one MP3 header.  A TCP receive commonly returns only ~4 KiB alongside
+     * the HTTP header, whereas the firmware's first requested window is
+     * normally 6720 bytes.  Complete that window before initialising. */
+    while (initial_size < 6720) {
+        unsigned char *destination; SceInt32 writable, position;
+        if (sceMp3GetInfoToAddStreamData(handle, &destination, &writable, &position) < 0 || writable <= 0) { audio_state = -28; goto cleanup; }
+        received = stream_recv(socket_fd, destination, writable, 1000);
+        if (received <= 0) { audio_state = -14; goto cleanup; }
+        if (sceMp3NotifyAddStreamData(handle, received) < 0) { audio_state = -28; goto cleanup; }
+        initial_size += received;
+    }
     video_step = "MP3 start";
     module_result = sceMp3Init(handle);
     if (module_result < 0) { audio_state = module_result; goto cleanup; }
