@@ -857,12 +857,12 @@ static void gui_skin_receiver(u32 *vram) {
     /* Real moving needles over the printed analogue meter scales. */
     /* The generated artwork includes a neutral centre needle; erase just
      * that hairline before drawing the live coil position. */
-    gui_line(vram, 80, 244, 80, 222, 0x00120F0B);
-    gui_line(vram, 162, 244, 162, 222, 0x00120F0B);
-    gui_line(vram, 80, 244, 80 + needle_x[needle], 244 + needle_y[needle], 0x0000B0FF);
-    gui_line(vram, 162, 244, 162 + needle_x[needle_right], 244 + needle_y[needle_right], 0x0000B0FF);
-    gui_rect(vram, 79, 243, 3, 3, 0x0000B0FF);
-    gui_rect(vram, 161, 243, 3, 3, 0x0000B0FF);
+    gui_line(vram, 68, 237, 68, 215, 0x00120F0B);
+    gui_line(vram, 162, 237, 162, 215, 0x00120F0B);
+    gui_line(vram, 68, 237, 68 + needle_x[needle], 237 + needle_y[needle], 0x0000B0FF);
+    gui_line(vram, 162, 237, 162 + needle_x[needle_right], 237 + needle_y[needle_right], 0x0000B0FF);
+    gui_rect(vram, 67, 236, 3, 3, 0x0000B0FF);
+    gui_rect(vram, 161, 236, 3, 3, 0x0000B0FF);
     for (x = 0; x < 5; x++) {
         unsigned int mask = x == 0 ? PSP_CTRL_LTRIGGER : x == 1 ? PSP_CTRL_SELECT : x == 2 ? PSP_CTRL_RTRIGGER : 0;
         if (mask && (receiver_flash_button & mask))
