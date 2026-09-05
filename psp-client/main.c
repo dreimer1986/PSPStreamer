@@ -744,6 +744,24 @@ static void gui_rect(u32 *vram, int left, int top, int width, int height, u32 co
         vram[y * VIDEO_STRIDE + x] = color;
 }
 
+static void gui_line(u32 *vram, int x0, int y0, int x1, int y1, u32 color) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int error = dx + dy, twice_error;
+    while (1) {
+        if (x0 >= 0 && x0 < VIDEO_WIDTH && y0 >= 0 && y0 < VIDEO_HEIGHT)
+            vram[y0 * VIDEO_STRIDE + x0] = color;
+        if (x0 == x1 && y0 == y1) break;
+        /* Both decisions must use the same error snapshot.  Reusing the
+         * first updated value can walk past the endpoint indefinitely. */
+        twice_error = 2 * error;
+        if (twice_error >= dy) { error += dy; x0 += sx; }
+        if (twice_error <= dx) { error += dx; y0 += sy; }
+    }
+}
+
+static void receiver_hud(int frames);
+
 /* The SDK's debug font is ideal for diagnostics, but its 8-pixel-wide bold
  * glyphs make a 480-pixel media browser look like a terminal.  Reuse the
  * already shipped Latin-1 atlas at a deliberately slim 6x8 size for UI text.
@@ -826,28 +844,42 @@ static void menu_skin_load(void) {
 }
 
 static void gui_skin_receiver(u32 *vram) {
-    int x, left_level, right_level;
+    int x;
     static const signed char knob_x[] = {0, 4, 7, 9, 9, 7, 4, 0, -4, -7, -9, -9, -7, -4};
     static const signed char knob_y[] = {-10, -9, -7, -4, 0, 4, 7, 10, 9, 7, 4, 0, -4, -7};
     int pointer = (playback_volume * 13 + 15) / 30;
+    static const signed char needle_x[] = {-25,-24,-22,-20,-18,-15,-12,-9,-6,-3,0,3,6,9,12,15,18,20,22,24,25};
+    static const signed char needle_y[] = {-4,-7,-10,-12,-14,-16,-18,-19,-20,-21,-21,-21,-20,-19,-18,-16,-14,-12,-10,-7,-4};
+    int needle, needle_right;
     vu_ballistics_step();
-    left_level = vu_display_left / 10; right_level = vu_display_right / 10;
-    if (left_level > 10) left_level = 10;
-    if (right_level > 10) right_level = 10;
-    /* Meter needles are painted as tiny live LEDs over the otherwise
-     * photorealistic analogue windows. */
-    for (x = 0; x < 10; x++) {
-        gui_rect(vram, 45 + x * 5, 244 - x, 3, 2,
-                 x < left_level ? 0x00FFB000 : 0x002C2720);
-        gui_rect(vram, 126 + x * 5, 244 - x, 3, 2,
-                 x < right_level ? 0x00FFB000 : 0x002C2720);
-    }
+    needle = (vu_display_left * 20 + 50) / 100;
+    needle_right = (vu_display_right * 20 + 50) / 100;
+    /* Real moving needles over the printed analogue meter scales. */
+    /* The generated artwork includes a neutral centre needle; erase just
+     * that hairline before drawing the live coil position. */
+    gui_line(vram, 80, 244, 80, 222, 0x00120F0B);
+    gui_line(vram, 162, 244, 162, 222, 0x00120F0B);
+    gui_line(vram, 80, 244, 80 + needle_x[needle], 244 + needle_y[needle], 0x0000B0FF);
+    gui_line(vram, 162, 244, 162 + needle_x[needle_right], 244 + needle_y[needle_right], 0x0000B0FF);
+    gui_rect(vram, 79, 243, 3, 3, 0x0000B0FF);
+    gui_rect(vram, 161, 243, 3, 3, 0x0000B0FF);
     for (x = 0; x < 5; x++) {
         unsigned int mask = x == 0 ? PSP_CTRL_LTRIGGER : x == 1 ? PSP_CTRL_SELECT : x == 2 ? PSP_CTRL_RTRIGGER : 0;
         if (mask && (receiver_flash_button & mask))
             gui_rect(vram, 221 + x * 31, 238, 22, 3, 0x0000D8FF);
     }
     gui_rect(vram, 430 + knob_x[pointer] - 1, 227 + knob_y[pointer] - 1, 3, 3, 0x0000D8FF);
+}
+
+/* Fullscreen music retains the exact same physical receiver controls rather
+ * than replacing them with a digital level bar. */
+static void gui_audio_fullscreen_receiver(u32 *vram) {
+    int y;
+    menu_skin_load();
+    if (!menu_skin) { receiver_hud(0); return; }
+    for (y = 198; y < VIDEO_HEIGHT; y++)
+        memcpy(vram + y * VIDEO_STRIDE, menu_skin + y * VIDEO_WIDTH * 4, VIDEO_WIDTH * 4);
+    gui_skin_receiver(vram);
 }
 
 /* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
@@ -1163,6 +1195,8 @@ static int mp3_frame_size(const unsigned char *data, int size) {
     return (144 * bitrate) / 44100 + padding;
 }
 
+static void gui_library_shell(const char *section);
+
 static int audio_thread(SceSize args, void *argp) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body;
@@ -1248,7 +1282,7 @@ cleanup:
 }
 
 static int play_audio(const char *media_id, const char *title) {
-    int audio_thread_id, paused = 0;
+    int audio_thread_id, paused = 0, fullscreen = 0;
     unsigned int old = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
@@ -1263,24 +1297,29 @@ static int play_audio(const char *media_id, const char *title) {
         SceCtrlData pad;
         int x, bars;
         keep_awake();
-        if (video_fullscreen) vu_ballistics_step();
+        if (fullscreen) vu_ballistics_step();
         bars = (vu_display_left + vu_display_right) / 2;
-        gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
-        gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
-        pspDebugScreenSetXY(3, 2); pspDebugScreenSetTextColor(0x00D8E8FF);
-        pspDebugScreenPrintf("PSP STREAMER  /  MUSIC");
-        pspDebugScreenSetXY(3, 4); pspDebugScreenSetTextColor(0x00FFFFFF);
-        pspDebugScreenPrintf("%.52s", title);
-        pspDebugScreenSetXY(3, 6); pspDebugScreenSetTextColor(0x00A8B8C8);
-        pspDebugScreenPrintf("MP3 stream  |  %d%% volume  |  SELECT pause", playback_volume * 100 / 30);
+        if (!fullscreen) {
+            gui_library_shell("NOW PLAYING");
+            gui_text(38, 40, 0x0000D8FF, "MUSIC STREAM");
+            gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
+            gui_text(38, 64, 0x008A9BAA, "MP3  %d%% VOLUME  SELECT PAUSE", playback_volume * 100 / 30);
+        } else {
+            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
+            gui_text(18, 12, 0x00D8E8FF, "MUSIC // %.48s", title);
+        }
         /* MilkDrop-inspired, deliberately light-weight spectrum motion. */
         for (x = 0; x < 36; x++) {
             int height = (bars * (12 + ((x * 17 + audio_played_blocks) % 18))) / 300;
-            if (height > 78) height = 78;
-            gui_rect((u32 *)0x44000000, 24 + x * 12, 205 - height, 8, height,
+            int baseline = fullscreen ? 194 : 150;
+            if (height > (fullscreen ? 130 : 72)) height = fullscreen ? 130 : 72;
+            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 12 : 42 + x * 8, baseline - height,
+                     fullscreen ? 8 : 5, height,
                      x > 28 ? 0x00FFB000 : 0x0000D8FF);
         }
-        if (!video_fullscreen) receiver_hud((int)(audio_played_blocks * AUDIO_BLOCK_SAMPLES * 20.1f / 44100.0f));
+        if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
+        else gui_text(38, 177, 0x00FFFFFF, "SELECT PAUSE  UP/DN VOL  X+TRI FULLSCREEN  START EXIT");
         sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
         sceDisplayWaitVblankStart();
         sceCtrlPeekBufferPositive(&pad, 1);
@@ -1289,7 +1328,7 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP) && playback_volume < 30) { playback_volume++; save_playback_settings(); }
         if ((pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN) && playback_volume > 0) { playback_volume--; save_playback_settings(); }
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
-            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) video_fullscreen = !video_fullscreen;
+            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         old = pad.Buttons;
         sceKernelDelayThread(33000);
     }
