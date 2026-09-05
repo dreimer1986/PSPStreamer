@@ -201,7 +201,9 @@ static short audio_samples[AUDIO_BLOCK_SAMPLES * 2 * AUDIO_QUEUE_BLOCKS] __attri
 static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((aligned(64)));
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
-static volatile int audio_queue_read, audio_queue_write, audio_queue_count;
+static volatile int audio_queue_read, audio_queue_write;
+static volatile int audio_queue_primed;
+static volatile int audio_blocks_published;
 /* The PCM ring has two explicit ownership semaphores.  A slot is either
  * owned by the decoder (free) or by the DAC (ready), never inferred solely
  * from a concurrently changed counter.  This is the same bounded-ring model
@@ -1259,7 +1261,7 @@ static int audio_queue_wait(SceUID sema) {
 }
 
 static int audio_output_thread(SceSize args, void *argp) {
-    int channel, block, primed = 0, dac_samples = audio_dac_samples;
+    int channel, block, dac_samples = audio_dac_samples;
     const int block_bytes = dac_samples * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     /* MP3 is decoded natively at 44.1 kHz.  Use the regular DAC channel at
@@ -1272,16 +1274,16 @@ static int audio_output_thread(SceSize args, void *argp) {
      * and made this application's timing needlessly variable. */
     channel = sceAudioChReserve(0, dac_samples, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
-    while (audio_running || audio_queue_count > 0) {
-        while ((audio_running && (!audio_start || (!primed && audio_queue_count < audio_prefill_target))) ||
-               (!audio_running && audio_queue_count <= 0)) {
-            if (!audio_running && audio_queue_count <= 0) break;
+    while (1) {
+        while (audio_running && (!audio_start || !audio_queue_primed)) {
             sceKernelDelayThread(1000);
         }
-        if (!audio_start || audio_queue_count <= 0) continue;
-        primed = 1;
+        if (!audio_start) break;
+        if (!audio_queue_wait(audio_queue_ready_sema)) {
+            if (!audio_running) break;
+            continue;
+        }
         if (!audio_clock_started) audio_clock_started = 1;
-        if (!audio_queue_wait(audio_queue_ready_sema)) continue;
         block = audio_queue_read;
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
         /* The producer cannot reuse this slot until OutputBlocking returns. */
@@ -1290,7 +1292,6 @@ static int audio_output_thread(SceSize args, void *argp) {
                                    audio_samples + block * AUDIO_BLOCK_SAMPLES * 2) < 0) {
             audio_state = -20; audio_running = 0; break;
         }
-        audio_queue_count--;
         sceKernelSignalSema(audio_queue_free_sema, 1);
         audio_played_blocks++;
         audio_state = 16;
@@ -1349,7 +1350,8 @@ static int audio_thread(SceSize args, void *argp) {
     if (initial_size > MP3_INPUT_BUFFER_BYTES) initial_size = MP3_INPUT_BUFFER_BYTES;
     if (initial_size > 0) memcpy(mp3_input_buffer, body + 4, initial_size);
     have = initial_size;
-    audio_queue_read = audio_queue_write = audio_queue_count = 0;
+    audio_queue_read = audio_queue_write = 0;
+    audio_queue_primed = audio_blocks_published = 0;
     if (audio_queue_create() < 0) { audio_state = -25; audio_running = 0; goto cleanup; }
     /* PMPlayer's output worker runs at ordinary playback priority.  The DAC
      * call itself blocks, so a very high priority only steals time from MP3
@@ -1401,11 +1403,14 @@ static int audio_thread(SceSize args, void *argp) {
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_measure_pcm(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
-            audio_queue_count++;
             sceKernelSignalSema(audio_queue_ready_sema, 1);
             frames_in_block = 0;
             write_slot_reserved = 0;
-            if (audio_queue_count >= audio_prefill_target) audio_state = 15;
+            audio_blocks_published++;
+            if (audio_blocks_published >= audio_prefill_target) {
+                audio_queue_primed = 1;
+                audio_state = 15;
+            }
         }
     }
 cleanup:
@@ -1427,7 +1432,8 @@ static int play_audio(const char *media_id, const char *title) {
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
-    audio_queue_read = audio_queue_write = audio_queue_count = audio_played_blocks = 0;
+    audio_queue_read = audio_queue_write = audio_played_blocks = 0;
+    audio_queue_primed = audio_blocks_published = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
     memset(spectrum_display, 0, sizeof(spectrum_display));
@@ -1495,7 +1501,7 @@ static int play_audio(const char *media_id, const char *title) {
         old = pad.Buttons;
         sceKernelDelayThread(33000);
     }
-    audio_running = 0; audio_start = 1; audio_queue_count = 0;
+    audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
     sceKernelDeleteThread(audio_thread_id);
@@ -1550,6 +1556,7 @@ static int play_h264(const char *media_id) {
     audio_state = 0;
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
+    audio_queue_primed = audio_blocks_published = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
                                             0x18, 0x4000, 0, NULL);
     if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
@@ -1687,7 +1694,6 @@ static int play_h264(const char *media_id) {
     }
     audio_running = 0;
     audio_start = 1;
-    audio_queue_count = 0;
     /* Wake a blocking receive before returning to the browser.  Otherwise
      * it retains the firmware MP3 handle and the next film is silent. */
     if (audio_socket_fd >= 0) {
