@@ -1932,9 +1932,10 @@ static int playback_options(int audio_only) {
         if (audio_only) {
             gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
             gui_text(38, 64, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
-            gui_text(376, 47, 0x00FFB000, "MUSIC QUALITY");
-            gui_text(376, 76, 0x008A9BAA, "Saved for next");
-            gui_text(376, 87, 0x008A9BAA, "music stream.");
+            gui_text(376, 47, 0x00FFB000, "QUALITY");
+            gui_text(376, 76, 0x008A9BAA, "Saved for");
+            gui_text(376, 87, 0x008A9BAA, "next music");
+            gui_text(376, 98, 0x008A9BAA, "stream!");
             gui_text(38, 177, 0x00FFFFFF, "L/R QUALITY  X START  O BACK");
         } else {
             if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
@@ -1949,9 +1950,10 @@ static int playback_options(int audio_only) {
                                  selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                                  selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
             gui_text(38, 104, 0x00FFFFFF, "QUALITY: %s", audio_quality_name());
-            gui_text(376, 47, 0x00FFB000, "AUDIO / SUB");
-            gui_text(376, 76, 0x008A9BAA, "Saved for next");
-            gui_text(376, 87, 0x008A9BAA, "playback.");
+            gui_text(373, 47, 0x00FFB000, "AUDIO & SUB");
+            gui_text(376, 76, 0x008A9BAA, "Saved for");
+            gui_text(376, 87, 0x008A9BAA, "next play-");
+            gui_text(376, 98, 0x008A9BAA, "back");
             gui_text(38, 177, 0x00FFFFFF, "UP/DN ROW  L/R CHANGE  X START  O BACK");
         }
         sceCtrlReadBufferPositive(&pad, 1);
