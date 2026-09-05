@@ -199,9 +199,6 @@ static short audio_samples[AUDIO_BLOCK_SAMPLES * 2 * AUDIO_QUEUE_BLOCKS] __attri
 /* Direct firmware codec input and its required work area.  Unlike sceMp3,
  * this path has no fake file offsets or opaque streaming ring. */
 static unsigned char mp3_input_buffer[MP3_INPUT_BUFFER_BYTES] __attribute__((aligned(64)));
-/* Keep the Media Engine's decode target separate from DAC-owned ring slots.
- * PMPlayer Advance uses this exact staging arrangement; it prevents a late
- * ME cache/DMA write from ever touching a buffer being recycled by audio. */
 static unsigned long mp3_codec[65] __attribute__((aligned(64)));
 static void *mp3_codec_work;
 static volatile int audio_queue_read, audio_queue_write;
