@@ -1,5 +1,5 @@
 TARGET = PSPStreamer
-OBJS = main.o h264_hw.o language.o menu_skin.o
+OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer

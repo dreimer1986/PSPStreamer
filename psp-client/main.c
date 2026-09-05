@@ -117,6 +117,64 @@ static const char *hardware_runtime_step = "not loaded";
  * GAME folder name is user-defined, so it is the fastest way to diagnose a
  * PRX copied beside a different EBOOT. */
 static char hardware_runtime_path[256] = "-";
+static void keep_awake(void);
+
+extern int pspDveMgrCheckVideoOut(void);
+extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
+                                int x, int y, int flags);
+
+static int tvout_module_id = -1;
+
+static int tvout_load_manager(void) {
+    char path[256], cwd[192];
+    int status;
+    if (tvout_module_id >= 0) return 0;
+    if (!getcwd(cwd, sizeof(cwd))) strncpy(cwd, PSP_STREAMER_INSTALL_DIR, sizeof(cwd) - 1);
+    cwd[sizeof(cwd) - 1] = '\0';
+    snprintf(path, sizeof(path), "%s/dvemgr.prx", cwd);
+    tvout_module_id = kuKernelLoadModule(path, 0, NULL);
+    if (tvout_module_id < 0) return tvout_module_id;
+    status = 0;
+    return sceKernelStartModule(tvout_module_id, 0, NULL, &status, NULL);
+}
+
+/* This is deliberately a calibration-only first stage.  It proves cable
+ * detection, DVE switching and the 768-pixel external framebuffer before the
+ * validated 480x272 AVC path is made resolution-dynamic.  Exit with the same
+ * chord used to enter: SELECT+L+R. */
+static int tvout_component_test(void) {
+    SceCtrlData pad;
+    unsigned int old = 0;
+    u32 *vram;
+    int cable, x, y, result;
+    result = tvout_load_manager();
+    if (result < 0) return result;
+    cable = pspDveMgrCheckVideoOut();
+    if (cable != 2) return cable ? -2 : -1;
+    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+    if (result < 0) return result;
+    vram = (u32 *)0x44000000;
+    for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
+        u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
+        if ((y / 24) & 1) color >>= 1;
+        vram[y * 768 + x] = color;
+    }
+    sceKernelDcacheWritebackInvalidateRange(vram, 768 * 480 * 4);
+    sceDisplaySetFrameBuf((void *)0x04000000, 768, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+    while (1) {
+        keep_awake();
+        sceCtrlReadBufferPositive(&pad, 1);
+        if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
+            (old & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) break;
+        old = pad.Buttons;
+        sceKernelDelayThread(20000);
+    }
+    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
+    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    return 0;
+}
 
 static int load_hardware_avc_runtime(void) {
     char bridge_path[256], cwd[192];
@@ -2114,6 +2172,16 @@ int main(void) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) break;
+        if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
+            (old_buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
+            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) {
+            result = tvout_component_test();
+            snprintf(status, sizeof(status), result == 0 ? "480p test complete" : "TV-out test: %08X", result);
+            dirty = 1;
+            old_buttons = pad.Buttons;
+            continue;
+        }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) { refresh_library(); dirty = 1; }
         if (item_count && (pad.Buttons & (PSP_CTRL_DOWN | PSP_CTRL_UP))) {
             unsigned long long now = sceKernelGetSystemTimeWide();
