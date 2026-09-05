@@ -5,6 +5,8 @@ BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
 PSP_EBOOT_PIC1 = assets/pic1.png
+# Displayed by the PSP's game browser from PARAM.SFO.
+SFOFLAGS = -d VERSION=1.00
 
 CFLAGS = -O2 -G0 -Wall -Wextra
 # The compiler specs and build.mak already provide utility and network stubs.
