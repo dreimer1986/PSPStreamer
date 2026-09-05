@@ -1689,6 +1689,17 @@ static int play_h264(const char *media_id) {
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
     tvout_video_active = tvout_begin_video() == 0;
+    /* PGS sprites are comparatively large.  The LCD path caches and fetches
+     * them on demand, which is acceptable at 480x272 but stalls the video
+     * clock in native TV mode.  Let FFmpeg composite them before the stream
+     * instead; text cues remain a zero-latency PSP overlay. */
+    if (tvout_video_active && bitmap_client_side) {
+        if (bitmap_cues) free(bitmap_cues);
+        bitmap_cues = NULL;
+        bitmap_cue_count = 0;
+        bitmap_client_side = 0;
+        bitmap_loaded_cue = -1;
+    }
     h264_hw_set_output_layout(tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                               tvout_video_active ? 480 : VIDEO_HEIGHT,
                               tvout_video_active ? 5 : 4);
