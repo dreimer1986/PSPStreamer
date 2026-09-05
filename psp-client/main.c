@@ -153,14 +153,17 @@ static int tvout_component_test(void) {
     if (cable != 2) return cable ? -2 : -1;
     result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
     if (result < 0) return result;
-    vram = (u32 *)0x44000000;
+    /* The display engine's progressive-TV path reads from the PSP-3000's
+     * extra RAM window, not the 2 MiB LCD VRAM.  This is PMPlayer Advance's
+     * 0x0A000000 TV framebuffer arrangement. */
+    vram = (u32 *)0x0a000000;
     for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
         u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
         if ((y / 24) & 1) color >>= 1;
         vram[y * 768 + x] = color;
     }
     sceKernelDcacheWritebackInvalidateRange(vram, 768 * 480 * 4);
-    sceDisplaySetFrameBuf((void *)0x04000000, 768, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+    sceDisplaySetFrameBuf(vram, 768, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
     while (1) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
