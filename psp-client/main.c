@@ -1943,6 +1943,35 @@ static void load_media_metadata(const char *media_id) {
      * the user has actually committed to starting the video. */
 }
 
+static int json_integer(const char *from, const char *key, int fallback) {
+    char needle[24];
+    const char *value;
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    value = strstr(from, needle);
+    return value ? atoi(value + strlen(needle)) : fallback;
+}
+
+/* Browser commands are deliberately polled only while the library is idle.
+ * This costs one tiny JSON request per second, never competes with the two
+ * real-time audio/video sockets, and lets the TV be controlled from a phone. */
+static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
+                            int *subtitle, int *is_audio) {
+    static int sequence;
+    char path[64], action[16], kind[16];
+    char *field;
+    int result;
+    snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
+    result = http_get_wait(path, response, sizeof(response), 1000);
+    if (result < 0 || !json_value(response, "action", action, sizeof(action))) return 0;
+    field = strstr(response, "\"seq\":");
+    if (field) sequence = atoi(field + 6);
+    if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
+    *audio = json_integer(response, "audio", 0);
+    *subtitle = json_integer(response, "subtitle", -1);
+    *is_audio = json_value(response, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
+    return 1;
+}
+
 static void gui_library_shell(const char *section);
 
 static void show_metadata_loading(void) {
@@ -2251,6 +2280,7 @@ int main(void) {
     unsigned int old_buttons = 0;
     unsigned long long next_repeat_tick = 0;
     unsigned long long next_page_repeat_tick = 0;
+    unsigned long long next_remote_poll_tick = 0;
     int selected = 0;
     int dirty = 1;
     int result;
@@ -2278,8 +2308,31 @@ int main(void) {
         refresh_library();
     }
     while (1) {
+        unsigned long long now;
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
+        now = sceKernelGetSystemTimeWide();
+        if (network_ready && now >= next_remote_poll_tick) {
+            char remote_media_id[ID_SIZE];
+            int remote_audio, remote_subtitle, remote_is_audio;
+            next_remote_poll_tick = now + 1000000ULL;
+            if (remote_poll_play(remote_media_id, sizeof(remote_media_id), &remote_audio,
+                                 &remote_subtitle, &remote_is_audio)) {
+                selected_audio_track = remote_audio;
+                selected_subtitle_track = remote_subtitle;
+                stream_start_seconds = 0;
+                resume_pending = 0;
+                load_media_metadata(remote_media_id);
+                snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
+                show(selected);
+                result = remote_is_audio ? play_audio(remote_media_id, "Remote stream") : play_h264(remote_media_id);
+                pspDebugScreenInit();
+                if (result < 0) snprintf(status, sizeof(status), "%s: %08X", video_step, result);
+                dirty = 1;
+                old_buttons = pad.Buttons;
+                continue;
+            }
+        }
         if ((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) break;
         if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&

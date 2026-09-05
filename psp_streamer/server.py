@@ -286,6 +286,9 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
+            if parsed.path == "/api/remote/next":
+                after = max(0, int(query.get("after", ["0"])[0]))
+                return self.send_json(self.server.remote_after(after))
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
                 return self.send_json(self.server.library.browse(root, query.get("path", [""])[0]))
@@ -328,6 +331,41 @@ class AppHandler(BaseHTTPRequestHandler):
             pass
         except Exception as exc:  # do not expose filesystem details to clients
             self.log_error("Unhandled error: %r", exc)
+            self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        try:
+            if parsed.path != "/api/remote/command":
+                return self.send_error_json(HTTPStatus.NOT_FOUND, "Not found")
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 2 <= length <= 8192:
+                raise ValueError("Invalid command length")
+            command = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(command, dict):
+                raise ValueError("Invalid command")
+            action = command.get("action")
+            if action not in {"play", "pause", "resume", "stop", "seek"}:
+                raise ValueError("Unsupported remote action")
+            clean: dict[str, object] = {"action": action}
+            if action == "play":
+                token = command.get("id")
+                if not isinstance(token, str) or len(token) > 1024:
+                    raise ValueError("Invalid media id")
+                _, source = self.server.library.decode(token)  # validates root confinement
+                clean["id"] = token
+                clean["kind"] = "audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video"
+                clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
+                clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
+            elif action == "seek":
+                clean["seconds"] = max(0, min(86400, int(command.get("seconds", 0))))
+            return self.send_json(self.server.set_remote_command(clean))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        except BrokenPipeError:
+            pass
+        except Exception as exc:
+            self.log_error("Remote command failed: %r", exc)
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
 
     def static_file(self, path: str) -> None:
@@ -551,6 +589,21 @@ class AppServer(ThreadingHTTPServer):
         # One PSP uses two processes.  Four slots let a reconnect create its
         # fresh audio/video pair while the abandoned pair times out.
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
+        self.remote_lock = threading.Lock()
+        self.remote_sequence = 0
+        self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
+
+    def set_remote_command(self, command: dict[str, object]) -> dict[str, object]:
+        with self.remote_lock:
+            self.remote_sequence += 1
+            self.remote_command = {"seq": self.remote_sequence, **command}
+            return dict(self.remote_command)
+
+    def remote_after(self, sequence: int) -> dict[str, object]:
+        with self.remote_lock:
+            if self.remote_sequence > sequence:
+                return dict(self.remote_command)
+            return {"seq": self.remote_sequence, "action": "idle"}
 
 
 def main() -> None:
