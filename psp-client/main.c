@@ -1997,6 +1997,9 @@ static void show(int selected) {
     if (hardware_runtime_result == 0) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
     else if (hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
     gui_text(376, 138, 0x00FFFFFF, "%.11s", status);
+    /* The tiny receiver sidebar intentionally clips ordinary status copy.
+     * Decoder diagnostics need their complete signed hex code, however. */
+    if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
 }
 
