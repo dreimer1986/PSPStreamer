@@ -11,6 +11,8 @@ import signal
 import subprocess
 import tempfile
 import threading
+import re
+import unicodedata
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +20,58 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
+TEXT_SUBTITLE_CODECS = {"ass", "mov_text", "srt", "ssa", "subrip", "text", "webvtt"}
+BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "xsub"}
+PSP_SUBTITLE_FPS = 20.1
+MAX_SUBTITLE_CUES = 1800
+
+
+def psp_subtitle_text(value: str) -> str:
+    """Make an intentionally small, safe payload for the PSP bitmap font.
+
+    The native client has no general JSON or UTF-8 renderer on its real-time
+    playback path.  Keep cue text printable and transport line breaks as a
+    pipe; the client turns those into separately centred lines.
+    """
+    value = re.sub(r"<[^>]*>", "", value)
+    value = re.sub(r"\{[^}]*\}", "", value)
+    value = value.replace("\\N", "|").replace("\\n", "|").replace("\n", "|")
+    value = value.translate(str.maketrans({
+        "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+        "ß": "ss", "ẞ": "SS", "Æ": "AE", "æ": "ae", "Ø": "O", "ø": "o",
+    }))
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = value.replace('"', "'").replace("\\", "/")
+    value = re.sub(r"[^ -~|]", " ", value)
+    value = re.sub(r"[ \t]+", " ", value).strip(" |")
+    return value[:180]
+
+
+def parse_srt_cues(value: str) -> list[list[object]]:
+    """Convert FFmpeg's canonical SRT output into PSP presentation frames."""
+    cues: list[list[object]] = []
+    blocks = re.split(r"\r?\n\r?\n+", value.strip())
+    timing = re.compile(
+        r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*"
+        r"(\d+):(\d+):(\d+)[,.](\d+)"
+    )
+    for block in blocks:
+        lines = block.splitlines()
+        line_index = next((index for index, line in enumerate(lines) if "-->" in line), -1)
+        if line_index < 0:
+            continue
+        match = timing.search(lines[line_index])
+        if not match:
+            continue
+        parts = [int(part) for part in match.groups()]
+        start = ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000 + parts[3]
+        end = ((parts[4] * 60 + parts[5]) * 60 + parts[6]) * 1000 + parts[7]
+        text = psp_subtitle_text("|".join(lines[line_index + 1:]))
+        if text and end > start:
+            cues.append([round(start * PSP_SUBTITLE_FPS / 1000), round(end * PSP_SUBTITLE_FPS / 1000), text])
+        if len(cues) >= MAX_SUBTITLE_CUES:
+            break
+    return cues
 
 
 def load_roots(value: str | None) -> list[Path]:
@@ -213,6 +267,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.library.browse(root, query.get("path", [""])[0]))
             if parsed.path.startswith("/api/metadata/"):
                 return self.metadata(parsed.path.rsplit("/", 1)[-1])
+            if parsed.path.startswith("/api/subtitles/"):
+                track = int(query.get("track", ["-1"])[0])
+                if not 0 <= track <= 31:
+                    raise ValueError("Unsupported subtitle track")
+                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track)
             if parsed.path.startswith("/api/transcode/"):
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
@@ -276,6 +335,37 @@ class AppHandler(BaseHTTPRequestHandler):
         self.server.metadata_cache[token] = payload
         self.send_json(payload)
 
+    def subtitles(self, token: str, track: int) -> None:
+        """Return a compact cue list without involving the video transcode."""
+        cache_key = (token, track)
+        with self.server.subtitle_cache_lock:
+            cached = self.server.subtitle_cache.get(cache_key)
+        if cached is not None:
+            return self.send_json(cached)
+        _, source = self.server.library.decode(token)
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", f"s:{track}",
+             "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        codec = probe.stdout.strip()
+        if codec in BITMAP_SUBTITLE_CODECS:
+            payload = {"t": "bitmap", "c": []}
+        elif codec not in TEXT_SUBTITLE_CODECS:
+            payload = {"t": "unsupported", "c": []}
+        else:
+            extracted = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
+                 "-map", f"0:s:{track}", "-f", "srt", "pipe:1"],
+                capture_output=True, text=True, timeout=180, check=False,
+            )
+            if extracted.returncode:
+                raise ValueError("Could not extract subtitle track")
+            payload = {"t": "text", "c": parse_srt_cues(extracted.stdout)}
+        with self.server.subtitle_cache_lock:
+            self.server.subtitle_cache[cache_key] = payload
+        self.send_json(payload)
+
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0) -> None:
         _, source = self.server.library.decode(token)
@@ -300,7 +390,7 @@ class AppHandler(BaseHTTPRequestHandler):
             bitmap_subtitle = False
             if container == "h264" and subtitle_track >= 0:
                 probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)], capture_output=True, text=True, check=False)
-                bitmap_subtitle = probe.stdout.strip() in {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"}
+                bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
                 alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
                 alias_dir.mkdir(mode=0o700, exist_ok=True)
                 subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
@@ -352,6 +442,8 @@ class AppServer(ThreadingHTTPServer):
         super().__init__(address, AppHandler)
         self.library = library
         self.metadata_cache: dict[str, object] = {}
+        self.subtitle_cache: dict[tuple[str, int], object] = {}
+        self.subtitle_cache_lock = threading.Lock()
         # Video and the separate low-bandwidth PCM track each own one FFmpeg
         # process while a PSP is playing.
         # One PSP uses two processes.  Four slots let a reconnect create its

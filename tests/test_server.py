@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from psp_streamer.server import Library, MediaItem, ffmpeg_command, load_roots
+from psp_streamer.server import Library, MediaItem, ffmpeg_command, load_roots, parse_srt_cues, psp_subtitle_text
 
 
 class LibraryTests(unittest.TestCase):
@@ -76,6 +76,14 @@ class LibraryTests(unittest.TestCase):
     def test_load_roots_ignores_nonexistent_entries(self):
         with tempfile.TemporaryDirectory() as temporary:
             self.assertEqual(load_roots(f"/missing:{temporary}"), [Path(temporary).resolve()])
+
+    def test_text_subtitles_are_compact_psp_frame_cues(self):
+        cues = parse_srt_cues("""1
+00:00:01,000 --> 00:00:02,500
+Hallo <i>Welt</i>!\\N{\\an8}Oben
+""")
+        self.assertEqual(cues, [[20, 50, "Hallo Welt!|Oben"]])
+        self.assertEqual(psp_subtitle_text("Grüße \"PSP\""), "Gruesse 'PSP'")
 
 
 if __name__ == "__main__":

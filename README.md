@@ -2,13 +2,12 @@
 
 PSP Streamer makes a local or DynDNS-reachable video library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. The native PSP app receives a compact H.264 Baseline video stream and a separate MP3 audio stream, both decoded locally by the PSP.
 
-The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Burned-in text subtitles, audio-track selection, a kept-awake display, and large directory listings are supported.
+The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles are extracted as timed cues and rendered as a native PSP overlay; PGS and other bitmap subtitles retain the server-overlay fallback. Audio-track selection, a kept-awake display, and large directory listings are supported.
 
 ## Requirements
 
 - Python 3.11 or later
-- FFmpeg with `libx264`, `libmp3lame`, and `libass`
-- For subtitles: Fontconfig and DejaVu fonts (included in the Docker image)
+- FFmpeg with `libx264` and `libmp3lame`
 - A PSP with working infrastructure Wi-Fi and CFW for the homebrew app
 
 ## Run the server directly
@@ -28,7 +27,6 @@ The test interface is then available at `http://SERVER:8091`. It is useful for b
 | `PORT` | `8091` | HTTP-Port |
 | `MAX_TRANSCODES` | `2` | Concurrent FFmpeg processes; one PSP playback needs two |
 | `FFMPEG_PRESET` | `veryfast` | x264-Preset |
-| `FFMPEG_FONTS_DIR` | DejaVu system directory | Font directory for burned-in text subtitles |
 
 ## Docker
 
@@ -70,7 +68,7 @@ Controls: Cross opens a folder or playback options; Circle exits the options scr
 
 ## Subtitles and limitations
 
-ASS/SSA, SRT, and other text subtitles are burned in with libass. PGS subtitles use FFmpeg's bitmap-overlay path. Other bitmap formats such as VobSub/DVB may need a separate handling path. Starting with subtitles enabled can take longer while FFmpeg prepares fonts or subtitle data.
+ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once into compact, timed cues. The PSP caches a bitmap-font rendition and overlays it locally, so enabling a text track does not delay the H.264 transcode. PGS, VobSub/DVDSUB, DVB, and XSUB currently use FFmpeg's established bitmap-overlay fallback. A native sprite transport for those formats is the next extension point.
 
 Video output and a dedicated 480p mode are deliberately not part of this release yet.
 
