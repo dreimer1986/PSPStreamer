@@ -853,6 +853,8 @@ static void gui_skin_receiver(u32 *vram) {
         0x0000D8FF, 0x00FFB000, 0x00B070FF, 0x0000FFD0,
         0x00D000FF, 0x00FF9040
     };
+    static const signed char indicator_x_offset[] = {5, 2, 0, -2, -4};
+    static const unsigned char indicator_width_extra[] = {0, 2, 3, 2, 3};
     /* Marker follows the visible inner rim of the photorealistic knob, not
      * a tiny circle near its centre.  Every one of the 31 volume values has
      * a physical detent, so neighbouring values cannot jump between coarse
@@ -887,7 +889,8 @@ static void gui_skin_receiver(u32 *vram) {
          * light bars.  A pressed mapped transport control still flashes
          * white over its own bar for immediate feedback. */
         if (mask && (receiver_flash_button & mask)) color = 0x00FFFFFF;
-        gui_rect(vram, 221 + x * 31, 238, 22, 3, color);
+        gui_rect(vram, 221 + x * 31 + indicator_x_offset[x], 238,
+                 22 + indicator_width_extra[x], 3, color);
     }
     /* Amber is the volume marker travelling around the knob's inner rim. */
     /* Rounded 5x5 LED: full centre, with the four corner pixels omitted. */
