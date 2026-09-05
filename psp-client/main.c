@@ -1647,9 +1647,13 @@ static void show_metadata_loading(void) {
     gui_text(38, 47, 0x0000D8FF, "READING MEDIA INFORMATION");
     gui_text(38, 76, 0x00FFFFFF, "Loading audio tracks and subtitles...");
     gui_text(38, 96, 0x008A9BAA, "The source may be waking over SMB.");
-    gui_text(376, 47, 0x00FFB000, "PLEASE WAIT");
-    gui_text(376, 76, 0x008A9BAA, "No video stream");
-    gui_text(376, 87, 0x008A9BAA, "has started.");
+    /* Start at the panel edge; the compact glyph itself already carries its
+     * own tiny left bearing, so an extra character-cell offset reads as a
+     * spurious leading blank on the PSP LCD. */
+    gui_text(369, 47, 0x00FFB000, "PLEASE WAIT");
+    gui_text(376, 76, 0x008A9BAA, "No video");
+    gui_text(376, 87, 0x008A9BAA, "stream has");
+    gui_text(376, 98, 0x008A9BAA, "started");
 }
 
 static void parse_library(void) {
