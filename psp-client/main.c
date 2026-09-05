@@ -125,6 +125,7 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
 
 static int tvout_module_id = -1;
 static int tvout_video_active;
+static int tvout_gui_active;
 #define TVOUT_STRIDE 768
 
 static int tvout_load_manager(void) {
@@ -138,46 +139,6 @@ static int tvout_load_manager(void) {
     if (tvout_module_id < 0) return tvout_module_id;
     status = 0;
     return sceKernelStartModule(tvout_module_id, 0, NULL, &status, NULL);
-}
-
-/* Isolated component-480p calibration.  This intentionally uses the PSP's
- * real 2 MiB EDRAM (the same address space that sceDisplaySetFrameBuf scans)
- * rather than the 0x0A extra-RAM window.  The latter silently fell back to
- * the old 512-pixel LCD scanout on this ARK-5 PSP-3000. */
-static int tvout_component_test(void) {
-    SceCtrlData pad;
-    unsigned int old = 0;
-    u32 *vram;
-    int cable, x, y, result;
-    result = tvout_load_manager();
-    if (result < 0) return result;
-    cable = pspDveMgrCheckVideoOut();
-    if (cable != 2) return cable ? -2 : -1;
-    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
-    if (result < 0) return result;
-    vram = (u32 *)0x44000000;
-    for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
-        u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
-        if ((y / 24) & 1) color >>= 1;
-        vram[y * TVOUT_STRIDE + x] = color;
-    }
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    while (1) {
-        keep_awake();
-        sceCtrlReadBufferPositive(&pad, 1);
-        if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
-            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
-            (old & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
-            (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) break;
-        old = pad.Buttons;
-        sceKernelDelayThread(20000);
-    }
-    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    return 0;
 }
 
 /* Video uses the exact EDRAM layout proven by the calibration card.  It is
@@ -196,10 +157,54 @@ static int tvout_begin_video(void) {
 }
 
 static void tvout_end_video(void) {
+    if (tvout_gui_active) return;
     pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
     sceDisplayWaitVblankStart();
     sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
                           PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+}
+
+/* The display controller only scans EDRAM in component mode.  Use the
+ * otherwise-unused extra-RAM aperture as a staging copy, then expand the
+ * existing receiver UI into the proven 720x480/768-pitch EDRAM surface.
+ * This runs only on a browser redraw, never per video frame. */
+static void tvout_present_gui(void) {
+    const u32 *source;
+    u32 *staging = (u32 *)0x0a000000;
+    u32 *output = (u32 *)0x44000000;
+    int x, y;
+    if (!tvout_gui_active) return;
+    for (y = 0; y < VIDEO_HEIGHT; y++)
+        memcpy(staging + y * VIDEO_STRIDE, output + y * VIDEO_STRIDE,
+               VIDEO_WIDTH * sizeof(u32));
+    source = staging;
+    for (y = 0; y < 480; y++) {
+        const u32 *row = source + (y * VIDEO_HEIGHT / 480) * VIDEO_STRIDE;
+        u32 *destination = output + y * TVOUT_STRIDE;
+        for (x = 0; x < 720; x++) destination[x] = row[x * VIDEO_WIDTH / 720];
+        for (x = 720; x < TVOUT_STRIDE; x++) destination[x] = 0;
+    }
+    sceDisplayWaitVblankStart();
+    sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
+                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+}
+
+static int tvout_toggle_gui(void) {
+    int result;
+    if (tvout_gui_active) {
+        tvout_gui_active = 0;
+        pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
+        sceDisplayWaitVblankStart();
+        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
+                              PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+        return 0;
+    }
+    result = tvout_load_manager();
+    if (result < 0 || pspDveMgrCheckVideoOut() != 2) return result < 0 ? result : -1;
+    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+    if (result < 0) return result;
+    tvout_gui_active = 1;
+    return 0;
 }
 
 static int load_hardware_avc_runtime(void) {
@@ -2162,6 +2167,7 @@ static void show(int selected) {
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
+    tvout_present_gui();
 }
 
 /* A real media-information screen rather than a second copy of the browser.
@@ -2338,8 +2344,10 @@ int main(void) {
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
             (old_buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) {
-            result = tvout_component_test();
-            snprintf(status, sizeof(status), result == 0 ? "480p test complete" : "TV-out test: %08X", result);
+            result = tvout_toggle_gui();
+            snprintf(status, sizeof(status), result == 0 ?
+                     (tvout_gui_active ? "TV UI active" : "TV UI off") :
+                     "TV-out: %08X", result);
             dirty = 1;
             old_buttons = pad.Buttons;
             continue;
