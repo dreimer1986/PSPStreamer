@@ -1,6 +1,6 @@
 name: PSP Streamer
 slug: psp_streamer
-version: "0.1.6"
+version: "0.1.7"
 description: Transcodes a Home Assistant media library for PSP Streamer.
 url: https://github.com/dreimer1986/PSPStreamer
 # The reference add-on runs on this Home Assistant installation's amd64 host.
