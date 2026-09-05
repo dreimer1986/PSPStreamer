@@ -71,7 +71,7 @@ language=en
 
 ### Adding a PSP interface language
 
-Create `psp-client/lang_xx.h` by copying `lang_en.h`, translate every string while preserving printf placeholders such as `%d` and `%s`, then include that file in `psp-client/language.c`. Register its code and table in the `languages[]` array in that same file, for example `{"fr", lang_fr}`. Rebuild the EBOOT and set `language=fr` in `PSPStreamer.cfg`.
+Create `psp-client/lang_xx.h` by copying `lang_en.h`. Each visible text has its own named `TXT_*` entry and related entries are grouped by interface screen, so translations can be edited without relying on array order. Preserve printf placeholders such as `%d`, `%s`, and `%.48s`. Include the new file in `psp-client/language.c`, then register its code and table in the `languages[]` array there, for example `{"fr", lang_fr}`. Rebuild the EBOOT and set `language=fr` in `PSPStreamer.cfg`.
 
 Browser controls: Cross opens a folder or playback options; Triangle opens the media information page for a file; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
 
