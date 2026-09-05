@@ -1,3 +1,75 @@
+/* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
+ * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
- "MEDIATHEK","MEDIEN VORBEREITEN","MEDIENINFORMATIONEN LESEN","Audiospuren und Untertitel werden geladen...","Die Quelle wird eventuell über SMB aufgeweckt.","BITTE WARTEN","Kein Video","Stream wurde","gestartet","BIBLIOTHEK","Keine Einträge -- [] neu laden","AUSGEWÄHLT","Warten...","ORDNER","MUSIK","VIDEO","%d Einträge","Profil %d","AVC BEREIT","AVC FEHLER","DATEIINFORMATIONEN","MUSIKSTREAM","H.264 VIDEO","DAUER: %d:%02d","DAUER: UNBEKANNT","AUDIOSPUREN: %d","UNTERTITEL: %d","SPUREN","Keine Spuren.","STREAM-OPTIONEN","QUALITÄT","Gespeichert für","nächsten Musik-","stream!","AUDIO & UNTERT.","nächste Wieder-","gabe","AUDIO: %s%s%s","UT:     %s%s%s","Aus","nicht erkannt","WIRD ABGESPIELT","MP3  %d%% LAUTSTÄRKE  SELECT PAUSE","MUSIK // %.48s","SELECT PAUSE  HOCH/RUNTER LAUTST.  X+TRI VOLLBILD  START ZURÜCK","L/R QUALITÄT  X START  O ZURÜCK","HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK","HOCH/RUNTER NAV  X ÖFFNEN  TRI INFO  L/R SEITE  [] LADEN","O / TRIANGLE ZURÜCK     X ZUR BIBLIOTHEK","WLAN wird verbunden...","WLAN/HTTP noch nicht bereit","Bibliothek wird geladen ...","Serverfehler: %08X","%s fehlgeschlagen: %08X","Wiedergabe ab %d s ...","WLAN nicht bereit - X erneut drücken","Musikstream wird gestartet","H.264-Video startet (20,1 FPS)","WLAN unterbrochen. WLAN verbinden, X zum Fortsetzen.","Musik beendet | Audio %d","Video beendet: %d Frames","Nächste Episode: %.58s"
-};
+
+    /* Library and loading panels */
+    [TXT_MEDIA_LIBRARY] = "MEDIATHEK",
+    [TXT_PREPARING_MEDIA] = "MEDIEN VORBEREITEN",
+    [TXT_READING_MEDIA] = "MEDIENINFORMATIONEN LESEN",
+    [TXT_LOADING_TRACKS] = "Audiospuren und Untertitel werden geladen...",
+    [TXT_SOURCE_WAKING] = "Die Quelle wird eventuell über SMB aufgeweckt.",
+    [TXT_PLEASE_WAIT] = "BITTE WARTEN",
+    [TXT_NO_VIDEO] = "Kein Video",
+    [TXT_STREAM_HAS] = "Stream wurde",
+    [TXT_STARTED] = "gestartet",
+    [TXT_LIBRARY] = "BIBLIOTHEK",
+    [TXT_NO_ENTRIES] = "Keine Einträge -- [] neu laden",
+    [TXT_SELECTED] = "AUSGEWÄHLT",
+    [TXT_WAITING] = "Warten...",
+    [TXT_FOLDER] = "ORDNER",
+    [TXT_MUSIC] = "MUSIK",
+    [TXT_VIDEO] = "VIDEO",
+    [TXT_ENTRIES] = "%d Einträge",
+    [TXT_PROFILE] = "Profil %d",
+    [TXT_AVC_READY] = "AVC BEREIT",
+    [TXT_AVC_ERROR] = "AVC FEHLER",
+
+    /* File information */
+    [TXT_FILE_DETAILS] = "DATEIINFORMATIONEN",
+    [TXT_MUSIC_STREAM] = "MUSIKSTREAM",
+    [TXT_VIDEO_STREAM] = "H.264 VIDEO",
+    [TXT_DURATION] = "DAUER: %d:%02d",
+    [TXT_DURATION_UNKNOWN] = "DAUER: UNBEKANNT",
+    [TXT_AUDIO_TRACKS] = "AUDIOSPUREN: %d",
+    [TXT_SUBTITLE_TRACKS] = "UNTERTITEL: %d",
+    [TXT_STREAMS] = "SPUREN",
+    [TXT_NO_TRACKS] = "Keine Spuren.",
+
+    /* Playback setup */
+    [TXT_STREAM_OPTIONS] = "STREAM-OPTIONEN",
+    [TXT_QUALITY] = "QUALITÄT",
+    [TXT_SAVED_FOR] = "Gespeichert für",
+    [TXT_NEXT_MUSIC] = "nächsten Musik-",
+    [TXT_STREAM_BANG] = "stream!",
+    [TXT_AUDIO_SUB] = "AUDIO & UNTERT.",
+    [TXT_NEXT_PLAY] = "nächste Wieder-",
+    [TXT_BACK] = "gabe",
+    [TXT_AUDIO_LABEL] = "AUDIO: %s%s%s",
+    [TXT_SUBS_LABEL] = "UT:     %s%s%s",
+    [TXT_OFF] = "Aus",
+    [TXT_NOT_DETECTED] = "nicht erkannt",
+
+    /* Music playback */
+    [TXT_NOW_PLAYING] = "WIRD ABGESPIELT",
+    [TXT_VOLUME_LINE] = "MP3  %d%% LAUTSTÄRKE  SELECT PAUSE",
+    [TXT_FULLSCREEN_MUSIC] = "MUSIK // %.48s",
+    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  HOCH/RUNTER LAUTST.  X+TRI VOLLBILD  START ZURÜCK",
+    [TXT_MUSIC_SETUP_CONTROLS] = "L/R QUALITÄT  X START  O ZURÜCK",
+    [TXT_VIDEO_SETUP_CONTROLS] = "HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK",
+    [TXT_LIBRARY_CONTROLS] = "HOCH/RUNTER NAV  X ÖFFNEN  TRI INFO  L/R SEITE  [] LADEN",
+    [TXT_INFO_CONTROLS] = "O / TRIANGLE ZURÜCK     X ZUR BIBLIOTHEK",
+
+    /* Status messages */
+    [TXT_CONNECTING_WIFI] = "WLAN wird verbunden...",
+    [TXT_WIFI_NOT_READY] = "WLAN/HTTP noch nicht bereit",
+    [TXT_LOADING_LIBRARY] = "Bibliothek wird geladen ...",
+    [TXT_SERVER_ERROR] = "Serverfehler: %08X",
+    [TXT_NETWORK_FAILED] = "%s fehlgeschlagen: %08X",
+    [TXT_RESUMING] = "Wiedergabe ab %d s ...",
+    [TXT_WIFI_RETRY] = "WLAN nicht bereit - X erneut drücken",
+    [TXT_STARTING_MUSIC] = "Musikstream wird gestartet",
+    [TXT_STARTING_VIDEO] = "H.264-Video startet (20,1 FPS)",
+    [TXT_INTERRUPTED] = "WLAN unterbrochen. WLAN verbinden, X zum Fortsetzen.",
+    [TXT_MUSIC_ENDED] = "Musik beendet | Audio %d",
+    [TXT_VIDEO_ENDED] = "Video beendet: %d Frames",
+    [TXT_NEXT_EPISODE] = "Nächste Episode: %.58s"};
