@@ -305,12 +305,11 @@ static volatile int audio_blocks_published;
 static SceUID audio_queue_free_sema = -1;
 static SceUID audio_queue_ready_sema = -1;
 static volatile int audio_played_blocks;
-/* Updated immediately around the blocking DAC submission.  A complete DMA
- * block is 104 ms, so counting blocks alone is too coarse to drive video.
- * The partial current block gives the A/V synchroniser a smooth audio clock. */
-static volatile unsigned int audio_dac_block_start_tick;
-static volatile unsigned long audio_dac_block_start_samples;
-static volatile int audio_dac_block_active;
+/* This mirrors PMPlayer Advance's output_audio_frame_buffers[].timestamp:
+ * each decoded PCM ring slot carries its media timestamp, and the DAC worker
+ * publishes that timestamp immediately before sceAudioOutputBlocking(). */
+static unsigned int audio_block_timestamp_us[AUDIO_QUEUE_BLOCKS];
+static volatile unsigned int audio_current_timestamp_us;
 /* Video keeps its proven two-block lead.  Stand-alone music can afford a
  * deeper runway before the DAC starts, absorbing Wi-Fi/FFmpeg jitter. */
 static volatile int audio_prefill_target = AUDIO_PREFILL_BLOCKS;
@@ -1237,22 +1236,8 @@ static int find_aud(const unsigned char *data, int size, int from) {
  * Annex-B transport has no container PTS, but the server deliberately emits
  * a constant 20.2-fps TV stream, so its frame ordinal is an exact PTS grid. */
 static unsigned long long audio_master_microseconds(void) {
-    unsigned long samples;
-    unsigned int start_tick;
-    unsigned int now;
     if (!audio_clock_started || !audio_running) return 0;
-    samples = (unsigned long)audio_played_blocks * (unsigned long)audio_dac_samples;
-    if (audio_dac_block_active) {
-        unsigned long start_samples = audio_dac_block_start_samples;
-        unsigned long elapsed_samples;
-        start_tick = audio_dac_block_start_tick;
-        now = (unsigned int)sceKernelGetSystemTimeWide();
-        elapsed_samples = ((unsigned long)(now - start_tick) * 44100UL) / 1000000UL;
-        if (elapsed_samples > (unsigned long)audio_dac_samples)
-            elapsed_samples = (unsigned long)audio_dac_samples;
-        samples = start_samples + elapsed_samples;
-    }
-    return ((unsigned long long)samples * 1000000ULL) / 44100ULL;
+    return audio_current_timestamp_us;
 }
 
 /* 0: video is ahead, hold its compressed AU.  1: present normally.
@@ -1301,7 +1286,7 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
         /* TCP delivers H.264 in bursts.  Drawing every received access unit
          * immediately was the visible catch-up effect.  Never present faster
          * than the server's active frame rate, with the audio DAC as master clock. */
-        if (sync_status == 1) {
+        if (sync_status == 1 && !tvout_video_active) {
             unsigned long long now = sceKernelGetSystemTimeWide();
             if (*next_frame_tick == 0 || now > *next_frame_tick + 100000ULL)
                 *next_frame_tick = now;
@@ -1338,8 +1323,8 @@ static int decode_h264_access_units(int *size, unsigned long long *next_frame_ti
             /* Component output is paced independently from LCD playback.
              * Only this presentation deadline is calibrated; stream format,
              * subtitles and the LCD path retain their original time bases. */
-            if (sync_status == 1)
-                *next_frame_tick += tvout_video_active ? TVOUT_PRESENT_INTERVAL_US : 49751ULL;
+            if (sync_status == 1 && !tvout_video_active)
+                *next_frame_tick += 49751ULL;
         }
         memmove(h264_buffer, h264_buffer + next, *size - next);
         *size -= next;
@@ -1504,17 +1489,15 @@ static int audio_output_thread(SceSize args, void *argp) {
         if (!audio_clock_started) audio_clock_started = 1;
         block = audio_queue_read;
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
+        /* PPA assigns current_timestamp before its blocking audio call.
+         * Do the same rather than estimating time from the system timer. */
+        audio_current_timestamp_us = audio_block_timestamp_us[block];
         /* The producer cannot reuse this slot until OutputBlocking returns. */
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
-        audio_dac_block_start_samples = (unsigned long)audio_played_blocks * (unsigned long)dac_samples;
-        audio_dac_block_start_tick = (unsigned int)sceKernelGetSystemTimeWide();
-        audio_dac_block_active = 1;
         if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
                                    audio_samples + block * AUDIO_BLOCK_SAMPLES * 2) < 0) {
-            audio_dac_block_active = 0;
             audio_state = -20; audio_running = 0; break;
         }
-        audio_dac_block_active = 0;
         sceKernelSignalSema(audio_queue_free_sema, 1);
         audio_played_blocks++;
         audio_state = 16;
@@ -1621,6 +1604,9 @@ static int audio_thread(SceSize args, void *argp) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_measure_pcm(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
+            audio_block_timestamp_us[audio_queue_write] =
+                (unsigned int)(((unsigned long long)audio_blocks_published *
+                                (unsigned long long)audio_dac_samples * 1000000ULL) / 44100ULL);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
             sceKernelSignalSema(audio_queue_ready_sema, 1);
             frames_in_block = 0;
@@ -1652,9 +1638,8 @@ static int play_audio(const char *media_id, const char *title) {
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_played_blocks = 0;
-    audio_dac_block_start_tick = 0;
-    audio_dac_block_start_samples = 0;
-    audio_dac_block_active = 0;
+    audio_current_timestamp_us = 0;
+    memset(audio_block_timestamp_us, 0, sizeof(audio_block_timestamp_us));
     audio_queue_primed = audio_blocks_published = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
@@ -1795,9 +1780,8 @@ static int play_h264(const char *media_id) {
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     audio_queue_read = audio_queue_write = audio_played_blocks = 0;
-    audio_dac_block_start_tick = 0;
-    audio_dac_block_start_samples = 0;
-    audio_dac_block_active = 0;
+    audio_current_timestamp_us = 0;
+    memset(audio_block_timestamp_us, 0, sizeof(audio_block_timestamp_us));
     audio_queue_primed = audio_blocks_published = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
                                             0x18, 0x4000, 0, NULL);
