@@ -81,7 +81,15 @@ library into that directory on the Home Assistant host. Configure `port` (defaul
 start it. Point the PSP configuration at the Home Assistant host or its DynDNS
 name with `server=…` and `port=8091`.
 
-**Update the server/add-on to 0.1.19 or later before installing the timestamp-based client.** Older servers cannot provide its FLV stream. Refresh the add-on store, install the update and restart the add-on. Media mounts and options stay unchanged. The updated server retains the old raw H.264/MP3 endpoints for older clients; the new video client does not fall back to their estimated timing.
+**Update the server/add-on to 0.1.20 or later for the current client.** Version 0.1.19 introduced FLV streaming; 0.1.20 also provides automatic continuation for remotely started playback. Refresh the add-on store, install the update and restart the add-on. Media mounts and options stay unchanged. The updated server retains the old raw H.264/MP3 endpoints for older clients; the new video client does not fall back to their estimated timing.
+
+### Automatic continuation from the web remote
+
+After a remotely started episode ends naturally, the PSP requests the next video in the same folder, using natural filename order (episode 2 before episode 10). This does not depend on the folder currently open in the PSP browser or its visible page. Playback stops at the last video; it does not descend into other folders or switch to music. Stop, playback errors and seeking do not trigger next-episode playback.
+
+Music continues through audio files in the same folder. The PSP's saved shuffle option also applies to remotely started music; shuffle excludes the current track, while sequential playback stops at the folder end. Requested audio/subtitle track indices are reused for the next video and checked against its available tracks.
+
+The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1` for shuffled music). It returns `{"id":"...","kind":"video"}` or `{"id":"...","kind":"audio"}`, and `{}` when there is no successor. It does not enqueue remote commands. Update both the server and PSP app to use remote continuation. The web page's selected-file details still describe the file selected in the browser, not a live report of the automatically selected successor.
 
 ## Install and configure the PSP app
 

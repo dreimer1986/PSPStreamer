@@ -2143,6 +2143,7 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     field = strstr(response, "\"seq\":");
     if (field) sequence = atoi(field + 6);
     if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
+    remote_control_sequence = sequence;
     *audio = json_integer(response, "audio", 0);
     *subtitle = json_integer(response, "subtitle", -1);
     *start_seconds = json_integer(response, "start", 0);
@@ -2257,6 +2258,29 @@ static int next_media_index(int selected, int is_audio) {
     for (index = selected + 1; index < item_count; index++)
         if (!items[index].is_folder && items[index].is_audio == is_audio) return index;
     return -1;
+}
+
+/* Remote playback has no relationship to the PSP's currently browsed folder.
+ * Resolve successors from the media ID on the server, only after natural EOF. */
+static int remote_next_media(char *media_id, size_t capacity, int is_audio) {
+    char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16];
+    int result;
+    snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d", media_id,
+             is_audio && audio_shuffle);
+    result = http_get(path, response, sizeof(response));
+    if (result < 0) return result;
+    if (!json_value(response, "id", next_id, sizeof(next_id))) return 0;
+    if (!json_value(response, "kind", kind, sizeof(kind)) ||
+        strcmp(kind, is_audio ? "audio" : "video") || !strcmp(media_id, next_id) ||
+        strlen(next_id) >= capacity) return 0;
+    /* A new Stop/Play during the transition takes precedence over autoplay.
+     * Leave it for the normal command consumer; do not create commands here. */
+    snprintf(path, sizeof(path), "/api/remote/next?after=%d", remote_control_sequence);
+    result = http_get_wait(path, response, sizeof(response), 1000);
+    if (result < 0) return result;
+    if (!json_value(response, "action", kind, sizeof(kind)) || strcmp(kind, "idle")) return 0;
+    strcpy(media_id, next_id);
+    return 1;
 }
 
 static void refresh_library(void) {
@@ -2521,14 +2545,30 @@ int main(void) {
                 selected_subtitle_track = remote_subtitle;
                 stream_start_seconds = remote_start;
                 resume_pending = 0;
+                seek_requested = 0;
                 load_media_metadata(remote_media_id);
                 snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 do {
                     result = remote_is_audio ? play_audio(remote_media_id, "Remote stream") : play_h264(remote_media_id);
-                    if (!(resume_pending && seek_requested) || result < 0) break;
-                    seek_requested = 0;
-                    sceKernelDelayThread(250000);
+                    if (result < 0) break;
+                    if (resume_pending && seek_requested) {
+                        seek_requested = 0;
+                        sceKernelDelayThread(250000);
+                        continue;
+                    }
+                    if (!playback_reached_end || resume_pending) break;
+                    {
+                        int following = remote_next_media(remote_media_id, sizeof(remote_media_id), remote_is_audio);
+                        if (following < 0) { result = following; video_step = "Next media"; break; }
+                        if (!following) break;
+                    }
+                    stream_start_seconds = 0;
+                    resume_pending = seek_requested = 0;
+                    selected_audio_track = remote_audio;
+                    selected_subtitle_track = remote_subtitle;
+                    load_media_metadata(remote_media_id);
+                    sceKernelDelayThread(500000);
                 } while (1);
                 pspDebugScreenInit();
                 if (result < 0) snprintf(status, sizeof(status), "%s: %08X", video_step, result);

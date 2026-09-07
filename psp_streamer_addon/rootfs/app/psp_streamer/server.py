@@ -8,6 +8,7 @@ import hashlib
 import json
 import mimetypes
 import os
+import random
 import signal
 import subprocess
 import tempfile
@@ -133,6 +134,48 @@ class Library:
         if root not in target.parents or not target.is_file() or target.suffix.lower() not in MEDIA_EXTENSIONS:
             raise ValueError("Media item is unavailable")
         return item, target
+
+    def next_media(self, token: str, shuffle: bool = False) -> dict:
+        """Resolve a same-folder successor independently of PSP menu state.
+
+        Video stops at the folder's end. Music may shuffle, excluding the
+        current file. Synthetic calibration clips do not have successors.
+        """
+        if token in CALIBRATION_MEDIA:
+            return {}
+        item, source = self.decode(token)
+        root = self.roots[item.root]
+        directory = (root / item.relative).parent.resolve()
+        if directory != root and root not in directory.parents:
+            raise ValueError("Path escapes media root")
+        is_audio = source.suffix.lower() in AUDIO_EXTENSIONS
+        candidates = []
+        for entry in directory.iterdir():
+            if entry.name.startswith(".") or not entry.is_file():
+                continue
+            if entry.suffix.lower() not in MEDIA_EXTENSIONS:
+                continue
+            if (entry.suffix.lower() in AUDIO_EXTENSIONS) != is_audio:
+                continue
+            if root not in entry.resolve().parents:
+                continue
+            candidates.append(entry)
+        candidates.sort(key=lambda entry: (natural_name_key(entry.name), entry.name))
+        current = next((i for i, entry in enumerate(candidates)
+                        if entry.name == Path(item.relative).name), None)
+        if current is None:
+            return {}
+        if is_audio and shuffle:
+            choices = candidates[:current] + candidates[current + 1:]
+            if not choices:
+                return {}
+            following = random.choice(choices)
+        elif current + 1 < len(candidates):
+            following = candidates[current + 1]
+        else:
+            return {}
+        return {"id": self.encode(MediaItem(item.root, following.relative_to(root).as_posix())),
+                "kind": "audio" if is_audio else "video"}
 
     def browse(self, root_index: int, relative: str = "") -> dict:
         if root_index < 0 or root_index >= len(self.roots):
@@ -336,6 +379,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
                 return self.send_json(self.server.library.browse(root, query.get("path", [""])[0]))
+            if parsed.path.startswith("/api/media-next/"):
+                return self.send_json(self.server.library.next_media(
+                    parsed.path.rsplit("/", 1)[-1], query.get("shuffle", ["0"])[0] == "1"))
             if parsed.path.startswith("/api/metadata/"):
                 return self.metadata(parsed.path.rsplit("/", 1)[-1])
             if parsed.path.startswith("/api/subtitles/"):
