@@ -35,7 +35,7 @@ class FlvIntegrationTests(unittest.TestCase):
             audio = [float(p["pts_time"]) for p in packets if p["codec_type"] == "audio"]
             video = [float(p["pts_time"]) for p in packets if p["codec_type"] == "video"]
             self.assertLess(audio[0], .1)
-            self.assertGreater(audio[-1], video[-1] - .1)
+            self.assertLess(audio[-1], video[-1])
             self.assertLess(max(b - a for a, b in zip(audio, audio[1:])), .028)
 
     def test_http_flv_endpoint_and_video_without_audio(self):

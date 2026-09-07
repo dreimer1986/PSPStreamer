@@ -235,10 +235,10 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
             * (["-an", "-f", "h264", "pipe:1"] if container == "h264" else
                ["-map", f"0:a:{audio_track}?", "-c:a", "libmp3lame", "-ar", "44100",
-                # Preserve a delayed track as initial silence and pad its
-                # tail to video EOF. A bounded live demuxer must not wait for
-                # absent audio while its video queue is already full.
-                "-af", "aresample=44100:first_pts=0,apad", "-shortest",
+                # Normalize delayed audio to the same zero-based PTS. Do not
+                # use an infinite apad filter: on a short track it can keep a
+                # live FLV process running after video EOF.
+                "-af", "aresample=44100:first_pts=0",
                 "-ac", "2", "-b:a", audio_bitrate, "-flvflags", "no_duration_filesize",
                 "-f", "flv", "pipe:1"]),
         ]

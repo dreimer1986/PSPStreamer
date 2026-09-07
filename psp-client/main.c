@@ -99,6 +99,10 @@ static const char *video_step = "Start";
 static volatile int audio_running;
 static volatile int audio_start;
 static volatile int audio_clock_started;
+/* Video playback releases the first audio block only after its first decoded
+ * frame has reached the display queue. This measures startup latency instead
+ * of guessing a TV-dependent offset. Stand-alone music bypasses the barrier. */
+static volatile int video_first_presented;
 static volatile int audio_socket_fd = -1;
 static volatile int audio_output_thread_id = -1;
 /* Kept deliberately numeric: it is displayed after START exits playback and
@@ -1254,6 +1258,7 @@ static int present_timed_video(TimedPacket *packet, int drop) {
                 tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                 PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
             sceDisplayWaitVblankStart();
+            video_first_presented = 1;
         }
         hardware_decoder_frames++;
     }
@@ -1403,7 +1408,8 @@ static int audio_output_thread(SceSize args, void *argp) {
     channel = sceAudioChReserve(0, dac_samples, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
     while (1) {
-        while (audio_running && (!audio_start || !audio_queue_primed)) {
+        while (audio_running && (!audio_start || !audio_queue_primed ||
+                                 (timed_active && !video_first_presented))) {
             sceKernelDelayThread(1000);
         }
         if (!audio_start) break;
@@ -1615,6 +1621,7 @@ static int play_audio(const char *media_id, const char *title) {
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
     timed_active = 0;
+    video_first_presented = 1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     if (audio_thread_id < 0) { audio_running = 0; return audio_thread_id; }
@@ -1738,8 +1745,9 @@ static int play_h264(const char *media_id) {
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_start = 0;
     audio_clock_started = 0;
+    video_first_presented = 0;
     /* One muxed stream supplies both codecs. Keep the DAC gated until the
-     * audio queue and AVC decoder are ready; then follow container PTS. */
+     * first decoded frame is actually queued for display; then follow PTS. */
     audio_running = 1;
     audio_state = 0;
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
@@ -1923,6 +1931,7 @@ static int play_h264(const char *media_id) {
 done:
     timed_running = 0;
     audio_running = 0; audio_start = 1;
+    video_first_presented = 0;
     remote_control_running = 0;
     if (timed_socket >= 0) {
         int fd = timed_socket; timed_socket = -1; sceNetInetClose(fd);
