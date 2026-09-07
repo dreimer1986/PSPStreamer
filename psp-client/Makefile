@@ -20,6 +20,6 @@ include $(PSPSDK)/lib/build.mak
 # mpeg_extra must remain at its historical position between libmpeg and
 # libmpegbase: moving it into OBJS makes PSP import stubs non-contiguous on
 # 6.61.  The explicit prerequisite still makes a clean checkout buildable.
-main.o: mpeg_extra.o timed_stream.h flv.h
+main.o: mpeg_extra.o timed_stream.h flv.h audio_lease.h sync_trace.h
 
 # menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.

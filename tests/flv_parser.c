@@ -2,8 +2,41 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../psp-client/flv.h"
+#include "../psp-client/audio_lease.h"
+
+static void test_output_lifecycle(void) {
+    AudioLease lease = {-1};
+    int i, released;
+    /* Full ring under producer pressure, with an occasional DAC drain.
+     * Never recycle the buffer just submitted; release each slot once. */
+    for (i = 0; i < 10000; ++i) {
+        int slot = i % 8, previous = lease.held;
+        assert(previous != slot);
+        released = audio_lease_submit(&lease, slot);
+        assert(released == previous && lease.held == slot && released != slot);
+        if (i % 13 == 0) {
+            assert(audio_lease_drain(&lease) == slot);
+            assert(audio_lease_drain(&lease) == -1);
+        }
+    }
+    assert(audio_lease_drain(&lease) >= 0); /* final EOF without next packet */
+    assert(audio_lease_drain(&lease) == -1);
+    /* Startup cannot deadlock: prepare, show first, release DAC, then sync. */
+    assert(pts_presentation_status(0, 0, 1, 0, 0, 25, 50, 0) == 0);
+    assert(pts_presentation_status(1, 0, 1, 0, 0, 25, 50, 0) == 1);
+    assert(pts_presentation_status(1, 1, 1, 0, 0, 75, 50, 0) == 0);
+    assert(pts_presentation_status(1, 1, 1, 1, 0, 75, 50, 0) == 1);
+    /* A 600-ms prepare stall makes a formerly timely picture late. Re-read
+     * audio at presentation, discard the picture, never rewind audio. */
+    assert(pts_presentation_status(1, 1, 1, 1, 1000, 1000, 50, 0) == 1);
+    assert(pts_presentation_status(1, 1, 1, 1, 1600, 1000, 50, 0) == 2);
+    assert(pts_presentation_status(1, 1, 1, 1, 1000, 1600, 50, 0) == 0);
+    assert(pts_presentation_status(1, 1, 0, 0, 0, 500, 50, 499) == 0);
+    assert(pts_presentation_status(1, 1, 0, 0, 0, 500, 50, 500) == 1);
+}
 
 int main(int argc, char **argv) {
+    test_output_lifecycle();
     unsigned char header[13], tag[11], prev[4];
     unsigned char body[FLV_MAX_VIDEO], out[FLV_MAX_VIDEO];
     FlvAvc avc = {{0}, 0, 0};

@@ -151,9 +151,12 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     csc.width_blocks = (detail->picture->width + 15) >> 4;
     memcpy(csc.plane, detail->yuv->plane, sizeof(csc.plane));
     hw_step = "AVC: Hardware-CSC";
+    /* The destination may be a reusable RAM staging frame. Flush old CPU
+     * overlays BEFORE DMA, never over the newly converted picture. */
+    sceKernelDcacheWritebackInvalidateRange(framebuffer, hw_output_stride * hw_output_height * 4);
     result = sceMpegBaseCscAvc(framebuffer, 0, hw_output_stride, &csc);
     if (result < 0) return result;
-    sceKernelDcacheWritebackInvalidateRange(framebuffer, hw_output_stride * hw_output_height * 4);
+    sceKernelDcacheInvalidateRange(framebuffer, hw_output_stride * hw_output_height * 4);
     return pictures;
 }
 

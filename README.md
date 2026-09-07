@@ -10,10 +10,24 @@ Both LCD and TV playback follow the audio-master approach in [PMPlayer Advance](
 
 - One FFmpeg process muxes both streams, including their timestamps. The PSP reads FLV tag timestamps and the signed H.264 composition offset to obtain video PTS.
 - Decoded PCM buffers retain their first MP3 packet's PTS. The output worker publishes that timestamp immediately before its blocking DAC call, matching PPA's buffer-based audio clock.
-- Video compares its PTS with that audio timestamp. It waits when ahead and discards late decoded pictures without displaying them. As in PPA, the tolerance is two video-frame durations; here the duration comes from adjacent packet PTS, not a guessed display rate.
+- Video is decoded and composited with its subtitles in a RAM staging frame. The finished picture is compared with fresh audio PTS, again at VBlank before copying to the established LCD/TV framebuffer. It waits when ahead and discards late pictures. As in PPA, the tolerance is two video-frame durations; here the duration comes from adjacent packet PTS.
+- Codec initialization, decoding and related cache operations share one Media Engine semaphore. Network reads, audio output and display waits remain independent. PCM ownership follows PPA: a successful submission releases the previous buffer; the last buffer is released after the DAC drains. Audio content is never repeated or skipped to synchronize video.
 - Subtitle cues and progress use milliseconds. Seek and reconnect start a new container timeline at the requested source position. Video-only files use PTS differences on a monotonic clock.
 
 The old 20.1/20.2-fps playback estimates and artificial start offsets are no longer used by the client. Existing hardware initialization, LCD/TV layouts, MP3 decoding and DAC block sizes remain in place. This is a streaming adaptation of PPA's scheduling, not a replacement of the working hardware drivers. Hardware validation is still required for actual DAC/display latency, rendering load and long-episode playback; host tests cannot establish those.
+
+### Measuring a remaining offset
+
+The client records a bounded trace in RAM during video playback and writes it after Stop/end, once playback threads have joined:
+
+- TV: `ms0:/PSP/SYSTEM/PSPStreamer-sync-tv.csv`
+- LCD: `ms0:/PSP/SYSTEM/PSPStreamer-sync-lcd.csv`
+
+Each file is overwritten by the next completed playback session using that output (including seek/reconnect restarts). Copy it off the Memory Stick after stopping the test video, before starting another one. No recording configuration or server update is required. There are no trace file writes during playback. The trace retains up to 4096 samples: the first 32 decisions and subsequently at most one per second, overwriting the oldest rows when full.
+
+Rows contain elapsed wall time, video PTS, submitted audio-block PTS, remaining DAC samples, outstanding PCM blocks, preparation/copy durations, display/drop counters and non-increasing audio-PTS counts. `action` is `0=wait`, `1=display handoff`, `2=drop`. `decode_us` includes ME lock wait, decode and CSC; `prepare_us` also includes overlays; `copy_us` measures transfer to VRAM and the display API call. `dac_rest_samples=-1` means the sample was unavailable or crossed an audio timestamp change.
+
+The audio PTS describes the submitted block, not an exact sample at the speaker. The video handoff is measured on the PSP, not at the TV panel. The trace can expose internal stalls and timestamp discontinuities; it cannot directly measure a television's processing delay. The staging frame uses approximately 544 KiB on LCD or 1.41 MiB on TV, plus 192 KiB for the trace. The measured copy duration helps assess its cost on real hardware.
 
 ## Requirements
 
@@ -133,6 +147,8 @@ Keep the firmware bridge and TV-out PRX files from the working installation alon
 ## Tests
 
 Host integration tests require `cc`, FFmpeg and FFprobe. They compile the same FLV parsing/sync helpers used by the PSP with undefined-behavior checks, compare every parsed PTS with FFprobe (including a five-minute stream), decode the extracted H.264/MP3, and exercise seek, video-only HTTP output and millisecond subtitle cues.
+
+Client regression tests also exercise the first-picture/DAC startup barrier, late decisions after a 600-ms preparation stall, and the actual audio output worker with a simulated asynchronous DAC and immediate producer reuse of released buffers. They cover single-block EOF, ring wraparound, cancellation and output failure; they do not emulate real firmware decoding.
 
 ```bash
 python3 -m unittest discover -s tests -v

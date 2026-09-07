@@ -99,9 +99,9 @@ static const char *video_step = "Start";
 static volatile int audio_running;
 static volatile int audio_start;
 static volatile int audio_clock_started;
-/* Video playback releases the first audio block only after its first decoded
- * frame has reached the display queue. This measures startup latency instead
- * of guessing a TV-dependent offset. Stand-alone music bypasses the barrier. */
+/* Video releases the first audio block after its first prepared frame reaches
+ * PSP scanout. This barrier does not measure downstream TV processing time.
+ * Stand-alone music bypasses it. */
 static volatile int video_first_presented;
 static volatile int audio_socket_fd = -1;
 static volatile int audio_output_thread_id = -1;
@@ -110,6 +110,8 @@ static volatile int audio_output_thread_id = -1;
 static volatile int audio_state;
 /* Playback position and synchronisation use container milliseconds. */
 static int playback_position_ms;
+/* Overlay helpers target the off-screen frame only during preparation. */
+static u32 *playback_draw_target = (u32 *)0x44000000;
 static int hardware_decoder_ready;
 static int video_modules_ready;
 static int hardware_decoder_frames;
@@ -734,7 +736,7 @@ static void bitmap_present(int frame, const char *media_id) {
         red = (unsigned char)response[color * 4];
         green = (unsigned char)response[color * 4 + 1];
         blue = (unsigned char)response[color * 4 + 2];
-        destination = &((u32 *)0x44000000)[y * VIDEO_STRIDE + x];
+        destination = &playback_draw_target[y * VIDEO_STRIDE + x];
         if (alpha == 255) *destination = red | ((u32)green << 8) | ((u32)blue << 16);
         else {
             u32 old = *destination;
@@ -829,7 +831,7 @@ static void subtitle_present(int position_ms) {
         if (subtitle_cues[cue_index].start_ms > position_ms) break;
     }
     if (index < 0) return;
-    vram = (u32 *)0x44000000;
+    vram = playback_draw_target;
     if (!subtitle_font) subtitle_load_font();
     if (!subtitle_font) return; /* Never risk AVC for an optional font asset. */
     {
@@ -845,7 +847,7 @@ static void subtitle_present(int position_ms) {
 
 static void tvout_subtitle_present(int position_ms) {
     int index = -1, cue_index, y;
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = playback_draw_target;
     if (!subtitle_client_side || !subtitle_cues) return;
     for (cue_index = 0; cue_index < subtitle_cue_count; cue_index++) {
         if (position_ms >= subtitle_cues[cue_index].start_ms &&
@@ -870,7 +872,7 @@ static void tvout_subtitle_present(int position_ms) {
  * framebuffer or font renderer.  It makes pause state and progress visible
  * while retaining the proven direct Media-Engine presentation path. */
 static void playback_hud(int frames, int paused) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = playback_draw_target;
     int x, y = VIDEO_HEIGHT - 5, filled = 0;
     (void)frames;
     if (current_duration_seconds > 0.0f)
@@ -893,7 +895,7 @@ static void playback_hud(int frames, int paused) {
  * is redrawn after CSC on every frame and therefore has no extra buffer or
  * timing cost. */
 static void tvout_playback_hud(int frames, int paused) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = playback_draw_target;
     int x, y, filled = 0;
     (void)frames;
     if (current_duration_seconds > 0.0f)
@@ -1120,7 +1122,7 @@ static void gui_audio_fullscreen_receiver(u32 *vram) {
 /* Receiver strip for the non-fullscreen video and upcoming audio mode.  It
  * deliberately uses primitives, so there is no additional texture memory. */
 static void receiver_hud(int frames) {
-    u32 *vram = (u32 *)0x44000000;
+    u32 *vram = playback_draw_target;
     int x, meter_left, meter_right, level, pointer_x, pointer_y;
     static const signed char knob_x[] = {0,2,3,4,6,7,8,10,10,10,9,8,6,4,2,0,-2,-4,-5,-6,-8,-9,-9,-10,-10,-10,-9,-8,-8,-6,-5};
     static const signed char knob_y[] = {-10,-10,-10,-9,-8,-7,-5,-3,-1,2,4,6,8,9,10,10,10,9,9,8,6,5,4,2,0,-2,-4,-5,-6,-8,-9};
@@ -1225,43 +1227,55 @@ static void present_yuv420(const unsigned char *y, const unsigned char *u,
 
 #include "timed_stream.h"
 
-/* Both display targets consume the same container timestamp queue.  The
- * renderer receives a source-time position only for the existing cue/HUD API;
- * it is never used to pace playback. */
-static int present_timed_video(TimedPacket *packet, int drop) {
-    int result, cue_ms;
-    if (!hardware_decoder_ready) {
-        result = h264_hw_init_from_annexb(packet->data, packet->size);
-        if (result < 0) { video_step = h264_hw_last_step(); return result; }
-        hardware_decoder_ready = 1;
-        subtitle_parse_prepared_response();
+#include "audio_lease.h"
+#include "sync_trace.h"
+
+/* Serialize all ME codec and cache transactions, including initialization.
+ * Neither networking, DAC output nor display waits may hold this semaphore. */
+static SceUID codec_sema = -1;
+static int codec_enter(void) {
+    if (!timed_active) return 1;
+    while (timed_running) {
+        SceUInt timeout = 10000;
+        if (sceKernelWaitSema(codec_sema, 1, &timeout) >= 0) return 1;
     }
-    result = h264_hw_decode_annexb(packet->data, packet->size,
-                                  drop ? NULL : (void *)0x44000000);
+    return 0;
+}
+static void codec_leave(void) {
+    if (timed_active) sceKernelSignalSema(codec_sema, 1);
+}
+static unsigned char *video_staging;
+static int video_staging_bytes;
+
+/* Prepare exactly once into RAM; nothing here writes the visible scanout.
+ * The owner can hold or discard this finished picture after reading fresh
+ * audio PTS, like PPA's show thread, while continuing to process controls. */
+static int prepare_timed_video(TimedPacket *packet) {
+    int result, cue_ms, saved_position = playback_position_ms;
+    unsigned long long start = sceKernelGetSystemTimeWide();
+    if (!codec_enter()) return -1324;
+    result = h264_hw_decode_annexb(packet->data, packet->size, video_staging);
+    codec_leave();
+    sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     if (result < 0) { video_step = h264_hw_last_step(); return result; }
     if (result > 0) {
-        timed_position_ms = packet->pts - timed_video_origin;
-        if (timed_position_ms < 0) timed_position_ms = 0;
-        playback_position_ms = stream_start_seconds * 1000 + timed_position_ms;
-        cue_ms = playback_position_ms;
-        if (!drop) {
-            if (!tvout_video_active) {
-                subtitle_present(cue_ms);
-                bitmap_present(cue_ms, audio_media_id);
-                if (video_fullscreen || !receiver_visible) playback_hud(0, playback_paused);
-                else receiver_hud(0);
-            } else {
-                tvout_subtitle_present(cue_ms);
-                tvout_playback_hud(0, playback_paused);
-            }
-            sceDisplaySetFrameBuf((void *)0x04000000,
-                tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
-                PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-            sceDisplayWaitVblankStart();
-            video_first_presented = 1;
+        cue_ms = stream_start_seconds * 1000 + packet->pts - timed_video_origin;
+        playback_position_ms = cue_ms;
+        playback_draw_target = (u32 *)video_staging;
+        if (!tvout_video_active) {
+            subtitle_present(cue_ms);
+            bitmap_present(cue_ms, audio_media_id);
+            if (video_fullscreen || !receiver_visible) playback_hud(0, playback_paused);
+            else receiver_hud(0);
+        } else {
+            tvout_subtitle_present(cue_ms);
+            tvout_playback_hud(0, playback_paused);
         }
+        playback_draw_target = (u32 *)0x44000000;
+        playback_position_ms = saved_position;
         hardware_decoder_frames++;
     }
+    sync_prepare_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     return result;
 }
 
@@ -1396,44 +1410,66 @@ static int audio_queue_wait(SceUID sema) {
 static int audio_output_thread(SceSize args, void *argp) {
     int channel, block, dac_samples = audio_dac_samples;
     const int block_bytes = dac_samples * 2 * (int)sizeof(short);
+    AudioLease lease = {-1};
+    unsigned int previous_pts = 0;
+    int have_previous_pts = 0;
     (void)args; (void)argp;
-    /* MP3 is decoded natively at 44.1 kHz.  Use the regular DAC channel at
-     * that exact rate instead of sending it through the SRC mixer.  On this
-     * PSP the SRC path leaves a small, periodic seam between DMA blocks that
-     * is especially audible in speech as a "tok-tok" artefact. */
     sceAudioSRCChRelease();
-    /* PMPlayer consistently owns channel 0 for PCM playback.  Reserving an
-     * arbitrary channel leaves channel selection to other resident services
-     * and made this application's timing needlessly variable. */
     channel = sceAudioChReserve(0, dac_samples, PSP_AUDIO_FORMAT_STEREO);
     if (channel < 0) { audio_state = -16; audio_running = 0; return 0; }
+    sync_audio_channel = channel;
     while (1) {
         while (audio_running && (!audio_start || !audio_queue_primed ||
                                  (timed_active && !video_first_presented))) {
             sceKernelDelayThread(1000);
         }
-        if (!audio_start) break;
+        if (!audio_start || (timed_active && !timed_running)) break;
         if (!audio_queue_wait(audio_queue_ready_sema)) {
-            if (!audio_running) break;
+            /* Release the last slot at a real drain, including at EOF and
+             * underrun. It must not wait for a nonexistent next packet. */
+            if (lease.held >= 0 && sceAudioGetChannelRestLen(channel) == 0) {
+                audio_lease_drain(&lease);
+                sceKernelSignalSema(audio_queue_free_sema, 1);
+                audio_played_blocks++;
+            }
+            if (!audio_running && lease.held < 0) break;
             continue;
         }
         block = audio_queue_read;
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
-        /* PPA assigns current_timestamp before its blocking audio call.
-         * Do the same rather than estimating time from the system timer. */
+        /* Keep PPA's submitted-block clock, measured separately from the
+         * hardware's remaining sample count in the diagnostic trace. */
         audio_current_timestamp_ms = audio_block_timestamp_ms[block];
+        if (have_previous_pts && audio_current_timestamp_ms <= previous_pts)
+            sync_audio_pts_errors++;
+        previous_pts = audio_current_timestamp_ms; have_previous_pts = 1;
         audio_clock_started = 1;
-        /* The producer cannot reuse this slot until OutputBlocking returns. */
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
         if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
                                    audio_samples + block * AUDIO_BLOCK_SAMPLES * 2) < 0) {
             audio_state = -20; audio_running = 0; break;
         }
-        sceKernelSignalSema(audio_queue_free_sema, 1);
-        audio_played_blocks++;
+        /* As in PPA: the first submission frees nothing; a later successful
+         * submission releases the PREVIOUS slot, never the just-submitted one. */
+        if (audio_lease_submit(&lease, block) >= 0) {
+            sceKernelSignalSema(audio_queue_free_sema, 1);
+            audio_played_blocks++;
+        }
         if (audio_state >= 0) audio_state = 16;
     }
+    /* No worker is allowed to recycle held PCM during channel teardown. */
+    {
+        unsigned long long stop = sceKernelGetSystemTimeWide();
+        while (sceAudioGetChannelRestLen(channel) > 0 &&
+               sceKernelGetSystemTimeWide() - stop < 500000ULL)
+            sceKernelDelayThread(1000);
+    }
     sceAudioChRelease(channel);
+    sync_audio_channel = -1;
+    if (audio_lease_drain(&lease) >= 0) {
+        sceKernelSignalSema(audio_queue_free_sema, 1);
+        audio_played_blocks++;
+    }
     return 0;
 }
 
@@ -1461,14 +1497,19 @@ static int audio_thread(SceSize args, void *argp) {
     const int decoded_bytes = MP3_DECODE_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
     audio_state = 10;
+    if (!codec_enter()) { audio_state = -27; goto cleanup; }
     memset(mp3_codec, 0, sizeof(mp3_codec));
-    if (sceAudiocodecCheckNeedMem(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -21; audio_running = 0; return 0; }
+    if (sceAudiocodecCheckNeedMem(mp3_codec, PSP_CODEC_MP3) < 0) {
+        codec_leave(); audio_state = -21; goto cleanup;
+    }
     /* The firmware codec's ME-side DMA touches whole cache lines; reserve a
      * rounded work area, not merely the nominal byte count it reports. */
     mp3_codec_work = memalign(64, (mp3_codec[4] + 63) & ~63UL);
-    if (!mp3_codec_work) { audio_state = -22; audio_running = 0; return 0; }
+    if (!mp3_codec_work) { codec_leave(); audio_state = -22; goto cleanup; }
     mp3_codec[3] = (unsigned long)mp3_codec_work;
-    if (sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -23; goto cleanup; }
+    result = sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3);
+    codec_leave();
+    if (result < 0) { audio_state = -23; goto cleanup; }
     if (!timed_active) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
@@ -1541,6 +1582,7 @@ static int audio_thread(SceSize args, void *argp) {
         }
         if (!audio_running) break;
         }
+        if (!codec_enter()) { audio_state = -27; break; }
         mp3_codec[6] = (unsigned long)mp3_input_buffer;
         mp3_codec[7] = mp3_codec[10] = frame_size;
         mp3_codec[8] = (unsigned long)(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 +
@@ -1549,6 +1591,10 @@ static int audio_thread(SceSize args, void *argp) {
         sceKernelDcacheWritebackRange(mp3_input_buffer, frame_size);
         sceKernelDcacheWritebackInvalidateRange((void *)mp3_codec[8], decoded_bytes);
         result = sceAudiocodecDecode(mp3_codec, PSP_CODEC_MP3);
+        /* Invalidate while holding the ME/cache lock: AVC's whole-cache
+         * maintenance must not write stale PCM back over the DMA result. */
+        sceKernelDcacheInvalidateRange((void *)mp3_codec[8], decoded_bytes);
+        codec_leave();
         if (result < 0) { audio_state = -24; audio_running = 0; break; }
         memmove(mp3_input_buffer, mp3_input_buffer + frame_size, have - frame_size);
         have -= frame_size;
@@ -1705,6 +1751,7 @@ static int play_audio(const char *media_id, const char *title) {
 
 static int play_h264(const char *media_id) {
     int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
+    int prepared = 0, trace_start_seconds = stream_start_seconds;
     int video_only_origin = 0;
     int audio_thread_id = -1;
     TimedPacket current = {0}, next = {0};
@@ -1725,7 +1772,10 @@ static int play_h264(const char *media_id) {
     video_step = "Hardware-AVC";
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
+    video_staging = NULL;
+    sync_trace_reset();
     tvout_video_active = tvout_begin_video() == 0;
+    if (tvout_video_active) memset((void *)0x44000000, 0, TVOUT_STRIDE * 480 * 4);
     prepare_client_subtitles(media_id, tvout_video_active);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
@@ -1766,6 +1816,8 @@ static int play_h264(const char *media_id) {
     if (timed_queue_init(&timed_video) < 0 || timed_queue_init(&timed_audio) < 0) {
         result = -1321; goto done;
     }
+    codec_sema = sceKernelCreateSema("PSPStreamerME", 0, 1, 1, NULL);
+    if (codec_sema < 0) { result = codec_sema; goto done; }
     snprintf(timed_request, sizeof(timed_request),
         "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
@@ -1884,9 +1936,15 @@ static int play_h264(const char *media_id) {
             }
             /* Initialise AVC before starting the DAC, keeping the established
              * MPEG/ME module order. No decoder startup delay enters A/V time. */
+            if (!codec_enter()) { result = -1324; break; }
             result = h264_hw_init_from_annexb(current.data, current.size);
+            codec_leave();
             if (result < 0) { video_step = h264_hw_last_step(); break; }
             hardware_decoder_ready = 1;
+            video_staging_bytes = (tvout_video_active ? TVOUT_STRIDE * 480 : VIDEO_STRIDE * VIDEO_HEIGHT) * 4;
+            video_staging = memalign(64, video_staging_bytes);
+            if (!video_staging) { result = -1325; video_step = "Video staging RAM"; break; }
+            memset(video_staging, 0, video_staging_bytes);
             subtitle_parse_prepared_response();
             audio_start = 1; buffered = timed_playing = 1;
             video_only_tick = sceKernelGetSystemTimeWide();
@@ -1898,33 +1956,61 @@ static int play_h264(const char *media_id) {
             }
             sceKernelDelayThread(2000); continue;
         }
+        if (!prepared) {
+            prepared = prepare_timed_video(&current);
+            if (prepared < 0) { result = prepared; break; }
+            if (!prepared) {
+                free(current.data); current = next; memset(&next, 0, sizeof(next));
+                continue;
+            }
+        }
         {
             int sync;
-            if (timed_has_audio && !timed_audio_done) {
-                /* The first picture is the measured startup barrier for the
-                 * DAC. Waiting for audio_clock_started here would deadlock:
-                 * the DAC is deliberately waiting for this picture. */
-                if (!audio_clock_started && video_first_presented) {
-                    sceKernelDelayThread(2000); continue;
-                }
-                sync = audio_clock_started ?
-                    pts_avsync((int)audio_current_timestamp_ms, current.pts, duration) : 1;
-            } else {
-                /* Video-only media or the tail after audio EOF follows its
-                 * PTS differences on a monotonic clock, never a nominal FPS. */
-                if (timed_has_audio && !tail_clock) {
-                    video_only_tick = sceKernelGetSystemTimeWide();
-                    video_only_origin = (int)audio_current_timestamp_ms +
-                        audio_dac_samples * 1000 / 44100;
-                    tail_clock = 1;
-                }
-                int clock_ms = (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL);
-                sync = clock_ms < current.pts - video_only_origin ? 0 : 1;
+            unsigned int copy_us = 0;
+            if (timed_has_audio && timed_audio_done && !tail_clock) {
+                video_only_tick = sceKernelGetSystemTimeWide();
+                video_only_origin = (int)audio_current_timestamp_ms +
+                    audio_dac_samples * 1000 / 44100;
+                tail_clock = 1;
             }
-            if (!sync) { sceKernelDelayThread(2000); continue; }
-            result = present_timed_video(&current, sync == 2);
-            if (result < 0) break;
-            frames += result;
+            sync = pts_presentation_status(prepared, video_first_presented,
+                timed_has_audio && !timed_audio_done, audio_clock_started,
+                (int)audio_current_timestamp_ms, current.pts, duration,
+                video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
+            if (!sync) {
+                sync_trace_record(current.pts, 0, 0);
+                sceKernelDelayThread(2000); continue;
+            }
+            if (sync == 1) {
+                /* The complete picture (CSC and subtitles included) is now
+                 * ready. Refresh the decision at VBlank before touching VRAM. */
+                sceDisplayWaitVblankStart();
+                sync = pts_presentation_status(prepared, video_first_presented,
+                    timed_has_audio && !timed_audio_done, audio_clock_started,
+                    (int)audio_current_timestamp_ms, current.pts, duration,
+                    video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
+                if (!sync) continue;
+                if (sync == 1) {
+                    unsigned long long copy_start = sceKernelGetSystemTimeWide();
+                    memcpy((void *)0x44000000, video_staging, video_staging_bytes);
+                    result = sceDisplaySetFrameBuf((void *)0x04000000,
+                        tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
+                        PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+                    copy_us = (unsigned int)(sceKernelGetSystemTimeWide() - copy_start);
+                    if (result < 0) { video_step = "Video display"; break; }
+                    if (!video_first_presented) {
+                        video_only_tick = sceKernelGetSystemTimeWide();
+                        video_only_origin = current.pts;
+                    }
+                    video_first_presented = 1;
+                }
+            }
+            sync_trace_record(current.pts, sync, copy_us);
+            timed_position_ms = current.pts - timed_video_origin;
+            if (timed_position_ms < 0) timed_position_ms = 0;
+            playback_position_ms = stream_start_seconds * 1000 + timed_position_ms;
+            frames += prepared;
+            prepared = 0;
             free(current.data); current = next; memset(&next, 0, sizeof(next));
         }
     }
@@ -1959,10 +2045,14 @@ done:
         sceKernelDeleteThread(remote_control_thread_id); remote_control_thread_id = -1;
     }
     free(current.data); free(next.data);
+    free(video_staging); video_staging = NULL;
+    playback_draw_target = (u32 *)0x44000000;
+    if (codec_sema >= 0) { sceKernelDeleteSema(codec_sema); codec_sema = -1; }
     timed_queue_destroy(&timed_video); timed_queue_destroy(&timed_audio);
     timed_active = 0;
     audio_queue_destroy();
     h264_hw_shutdown(); subtitle_release();
+    sync_trace_save(tvout_video_active, result, trace_start_seconds);
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
     if (result < 0) return result;

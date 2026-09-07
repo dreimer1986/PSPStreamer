@@ -72,4 +72,16 @@ static int pts_avsync(int audio, int video, int duration) {
     if (-delta > 2LL * duration) return 2;
     return 1;
 }
+/* Only a prepared picture may release the startup barrier. Once the first
+ * picture has released the DAC, wait for its clock before showing more. */
+static int pts_presentation_status(int prepared, int first_presented,
+                                  int audio_active, int clock_started,
+                                  int audio, int video, int duration, int wall_pts) {
+    if (!prepared) return 0;
+    if (audio_active) {
+        if (!clock_started) return first_presented ? 0 : 1;
+        return pts_avsync(audio, video, duration);
+    }
+    return wall_pts < video ? 0 : 1;
+}
 #endif
