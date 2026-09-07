@@ -13,7 +13,7 @@ class LibraryTests(unittest.TestCase):
             (root / "Serien").mkdir()
             library = Library([root])
             result = library.browse(0)
-            self.assertEqual(result["videos"][0]["name"], "Film.mkv")
+            self.assertIn("Film.mkv", [entry["name"] for entry in result["videos"]])
             self.assertEqual(result["folders"][0]["name"], "Serien")
             with self.assertRaises(ValueError):
                 library.browse(0, "../")
@@ -31,7 +31,8 @@ class LibraryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "Titel.mp3").touch()
-            self.assertEqual(Library([root]).browse(0)["videos"][0]["kind"], "audio")
+            entry = next(item for item in Library([root]).browse(0)["videos"] if item["name"] == "Titel.mp3")
+            self.assertEqual(entry["kind"], "audio")
 
     def test_command_has_psp_constraints(self):
         command = ffmpeg_command(Path("/media/test.mkv"), 1)

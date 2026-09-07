@@ -192,14 +192,12 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             "-r", "6", "-c:v", "mjpeg", "-q:v", "24", "-an",
             "-f", "mjpeg", "pipe:1",
         ]
-    if container == "h264":
-        # Annex-B is the native input expected by the PSP OpenH264 playback
-        # path. AUD makes access-unit boundaries unambiguous on a raw socket;
-        # repeated headers let a client recover at each IDR.
-        # LCD playback retains its validated 20.1-fps cadence.  Native
-        # component output retains its original 20.2-fps source clock.
+    if container in {"h264", "flv"}:
+        # New clients demux H.264/MP3 from one FLV timeline. The 20 fps filter
+        # limits decoder workload; playback is paced by container timestamps.
+        # Keep the raw H.264 endpoint's old cadence for older clients only.
         target_width, target_height = (720, 480) if tv_output else (480, 272)
-        frame_rate = "101/5" if tv_output else "201/10"
+        frame_rate = "20" if container == "flv" else ("101/5" if tv_output else "201/10")
         video_filter = (f"fps={frame_rate},scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
                         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
@@ -224,20 +222,25 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             # resumes the normal real-time rate.
             "ffmpeg", "-hide_banner", "-loglevel", "error", *( ["-ss", f"{start_seconds:.3f}"] if start_seconds else [] ), "-re", "-readrate_initial_burst", "2", "-i", str(source),
             "-map", "[v]" if bitmap_filter else "0:v:0",
-            # The selected profile's calibrated frame rate is the real-time ceiling
-            # for software H.264 decoding plus YUV-to-RGBA conversion on a
-            # PSP-3000.  It prevents video falling behind the audio clock.
+            # Baseline without B-frames keeps packet PTS in display order and
+            # preserves the firmware decoder's existing input constraints.
             "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"),
             "-tune", "zerolatency",
             "-b:v", "400k" if low_bandwidth else ("850k" if tv_output else "600k"),
             "-maxrate", "450k" if low_bandwidth else ("950k" if tv_output else "700k"),
             "-bufsize", "600k" if low_bandwidth else ("1200k" if tv_output else "900k"),
-            # Each repeated SPS/PPS marks a safe firmware-AVC reset point.
-            # 3.2 seconds is below the ME deadlock window but makes the reset
-            # much less noticeable than the earlier 2.4-second GOP.
+            # Retain established GOP size and headers. They are not a clock
+            # and the client does not reset the decoder at each keyframe.
             "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
-            "-an", "-f", "h264", "pipe:1",
+            * (["-an", "-f", "h264", "pipe:1"] if container == "h264" else
+               ["-map", f"0:a:{audio_track}?", "-c:a", "libmp3lame", "-ar", "44100",
+                # Preserve a delayed track as initial silence and pad its
+                # tail to video EOF. A bounded live demuxer must not wait for
+                # absent audio while its video queue is already full.
+                "-af", "aresample=44100:first_pts=0,apad", "-shortest",
+                "-ac", "2", "-b:a", audio_bitrate, "-flvflags", "no_duration_filesize",
+                "-f", "flv", "pipe:1"]),
         ]
         if bitmap_filter:
             command[command.index("-map"):command.index("-map")] = ["-filter_complex", bitmap_filter]
@@ -273,19 +276,21 @@ def calibration_command(duration: int, container: str, tv_output: bool) -> list[
     """Generate unique colour/tone pairs for unambiguous A/V measurement."""
     markers = ((7, "red", 440), (11, "green", 880), (15, "blue", 1320)) if duration < 60 else \
               ((10, "red", 440), (150, "green", 880), (290, "blue", 1320))
-    if container == "mp3":
+    if container in {"mp3", "flv"}:
         terms = "+".join("if(between(t\\,%d\\,%.2f)\\,0.75*sin(2*PI*%d*t)\\,0)" % (second, second + .35, frequency)
                          for second, _colour, frequency in markers)
         pulse = "aevalsrc=%s:s=44100:d=%d" % (terms, duration)
-        return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", pulse,
+        audio_command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", pulse,
                 "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", "-write_xing", "0",
                 "-id3v2_version", "0", "-f", "mp3", "pipe:1"]
+        if container == "mp3":
+            return audio_command
     width, height = (720, 480) if tv_output else (480, 272)
-    fps = "101/5" if tv_output else "201/10"
+    fps = "20" if container == "flv" else ("101/5" if tv_output else "201/10")
     source = f"color=c=black:s={width}x{height}:r={fps}:d={duration}"
     flash = ",".join("drawbox=x=0:y=0:w=iw:h=ih:color=%s:t=fill:enable='between(t,%.2f,%.2f)'" %
                      (colour, second, second + .35) for second, colour, _frequency in markers)
-    return ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
+    command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
             "-vf", flash, "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"), "-tune", "zerolatency",
             "-b:v", "850k" if tv_output else "600k", "-maxrate", "950k" if tv_output else "700k",
@@ -293,6 +298,12 @@ def calibration_command(duration: int, container: str, tv_output: bool) -> list[
             "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
             "-an", "-f", "h264", "pipe:1"]
 
+    if container == "flv":
+        at = command.index("-vf")
+        command[at:at] = ["-f", "lavfi", "-i", pulse, "-map", "0:v:0", "-map", "1:a:0"]
+        command[-4:] = ["-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "160k",
+                        "-flvflags", "no_duration_filesize", "-f", "flv", "pipe:1"]
+    return command
 
 class AppHandler(BaseHTTPRequestHandler):
     server: "AppServer"
@@ -331,12 +342,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1")
+                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms")
             if parsed.path.startswith("/api/bitmap-subtitles/"):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1")
+                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms")
             if parsed.path.startswith("/api/bitmap-sprite/"):
                 track = int(query.get("track", ["-1"])[0])
                 cue = int(query.get("cue", ["-1"])[0])
@@ -350,7 +361,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 start_seconds = float(query.get("start", ["0"])[0])
                 container = query.get("container", ["mp4"])[0]
                 profile = query.get("profile", ["normal"])[0]
-                if container not in {"mp4", "mpegts", "mjpeg", "h264", "mp3"}:
+                if container not in {"mp4", "mpegts", "mjpeg", "h264", "mp3", "flv"}:
                     raise ValueError("Unsupported stream container")
                 if profile not in {"normal", "low", "tv"}:
                     raise ValueError("Unsupported stream profile")
@@ -449,7 +460,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.server.metadata_cache[token] = payload
         self.send_json(payload)
 
-    def subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
+    def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False) -> None:
         """Return a compact cue list without involving the video transcode.
 
         Text tracks are converted by FFmpeg to its canonical SRT form.  This
@@ -458,7 +469,7 @@ class AppHandler(BaseHTTPRequestHandler):
         deliberately report their kind now; the PSP client can retain the
         proven burn-in fallback until its sprite overlay transport lands.
         """
-        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
+        fps = 1000 if milliseconds else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
         cache_key = (token, track, fps)
         with self.server.subtitle_cache_lock:
             cached = self.server.subtitle_cache.get(cache_key)
@@ -517,11 +528,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.pgs_cache.popitem(last=False)
         return parsed
 
-    def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False) -> None:
+    def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False) -> None:
         cues = self.pgs_cues(token, track)
         # Frames share the video presentation clock; positions are scaled by
         # the client from the original PGS canvas into 480x272.
-        fps = 20.2 if tv_profile else PSP_SUBTITLE_FPS
+        fps = 1000 if milliseconds else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
         payload = {"t": "pgs", "c": [[round(cue.start * fps), round(cue.end * fps),
                                          cue.x, cue.y, cue.width, cue.height, cue.canvas_width, cue.canvas_height]
                                        for cue in cues]}
@@ -562,11 +573,11 @@ class AppHandler(BaseHTTPRequestHandler):
             # Audio deliberately waits while a subtitle-enabled video stream
             # prepares its first frame.  Its queue must survive that wait;
             # video sockets can be reclaimed quickly after a disconnect.
-            timeout_default = "180" if container == "mp3" else "5"
+            timeout_default = "180" if container in {"mp3", "flv"} else "5"
             self.connection.settimeout(float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default)))
             subtitle_source = None
             bitmap_subtitle = False
-            if source is not None and container == "h264" and subtitle_track >= 0:
+            if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
                 probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)], capture_output=True, text=True, check=False)
                 bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
                 alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
@@ -587,7 +598,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             )
             self.send_response(HTTPStatus.OK)
-            content_type = {"mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
+            content_type = {"flv": "video/x-flv", "mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
@@ -597,7 +608,7 @@ class AppHandler(BaseHTTPRequestHandler):
             # MJPEG that used to batch several frames into a 64-KB burst, so
             # the PSP paused and then caught up. read1() returns what ffmpeg
             # has produced now; small blocks keep frame cadence intact.
-            chunk_size = 4 * 1024 if container in {"mjpeg", "h264"} else 64 * 1024
+            chunk_size = 4 * 1024 if container in {"mjpeg", "h264", "flv"} else 64 * 1024
             while chunk := process.stdout.read1(chunk_size):
                 self.wfile.write(chunk)
                 self.wfile.flush()
@@ -611,6 +622,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     process.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     process.kill()
+                    process.wait()
+            if process and process.stdout:
+                process.stdout.close()
             self.server.transcode_slots.release()
 
 
@@ -627,10 +641,8 @@ class AppServer(ThreadingHTTPServer):
         # them indefinitely makes a long browsing session consume host RAM.
         self.pgs_cache: OrderedDict[tuple[str, int], list[PgsCue]] = OrderedDict()
         self.pgs_cache_lock = threading.Lock()
-        # Video and the separate low-bandwidth PCM track each own one FFmpeg
-        # process while a PSP is playing.
-        # One PSP uses two processes.  Four slots let a reconnect create its
-        # fresh audio/video pair while the abandoned pair times out.
+        # New video clients use one muxed FLV process; music uses one MP3
+        # process. Spare slots allow reconnects and legacy two-stream clients.
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
         self.remote_lock = threading.Lock()
         self.remote_sequence = 0

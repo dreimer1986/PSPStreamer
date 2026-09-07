@@ -1,8 +1,19 @@
 # PSP Streamer
 
-PSP Streamer makes a local or DynDNS-reachable video library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. The native PSP app receives a compact H.264 Baseline video stream and a separate MP3 audio stream, both decoded locally by the PSP.
+PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 Baseline and MP3 audio, both decoded locally by the PSP.
 
-The proven target profile is 480×272, H.264 Baseline at 20.1 fps, and 44.1 kHz MP3. Text subtitles and PGS bitmap subtitles are rendered as native PSP overlays. Video and common music formats stream through the same native MP3 DAC path; audio playback includes a receiver UI with live stereo VU meters and an amplified, real 12-band PCM spectrum display.
+Video profiles are 480×272 for LCD and 720×480 for component TV output, with 44.1 kHz MP3. The encoder currently produces 20 fps to limit decoder workload; that number is **not a playback clock or an A/V calibration value**. Text subtitles and LCD PGS bitmap subtitles use native PSP overlays. Video and common music formats use the same MP3 DAC path; music playback includes a receiver UI with live stereo VU meters and a real 12-band PCM spectrum display.
+
+## Timestamp-based audio/video synchronization
+
+Both LCD and TV playback follow the audio-master approach in [PMPlayer Advance](https://github.com/DavisDev/pmplayer-advance/tree/9ce494d020d3c909ee312bda1932f8d806a2f05d/ppa/mod):
+
+- One FFmpeg process muxes both streams, including their timestamps. The PSP reads FLV tag timestamps and the signed H.264 composition offset to obtain video PTS.
+- Decoded PCM buffers retain their first MP3 packet's PTS. The output worker publishes that timestamp immediately before its blocking DAC call, matching PPA's buffer-based audio clock.
+- Video compares its PTS with that audio timestamp. It waits when ahead and discards late decoded pictures without displaying them. As in PPA, the tolerance is two video-frame durations; here the duration comes from adjacent packet PTS, not a guessed display rate.
+- Subtitle cues and progress use milliseconds. Seek and reconnect start a new container timeline at the requested source position. Video-only files use PTS differences on a monotonic clock.
+
+The old 20.1/20.2-fps playback estimates and artificial start offsets are no longer used by the client. Existing hardware initialization, LCD/TV layouts, MP3 decoding and DAC block sizes remain in place. This is a streaming adaptation of PPA's scheduling, not a replacement of the working hardware drivers. Hardware validation is still required for actual DAC/display latency, rendering load and long-episode playback; host tests cannot establish those.
 
 ## Requirements
 
@@ -25,7 +36,7 @@ The test interface is then available at `http://SERVER:8091`. It is useful for b
 | --- | --- | --- |
 | `MEDIA_ROOTS` | `/media` | Allowed video directories, separated by `:` |
 | `PORT` | `8091` | HTTP-Port |
-| `MAX_TRANSCODES` | `4` | Concurrent FFmpeg processes; one PSP playback needs two |
+| `MAX_TRANSCODES` | `4` | Concurrent FFmpeg processes; one current PSP playback needs one |
 | `PGS_CACHE_TRACKS` | `1` | Number of decoded PGS tracks retained in host RAM |
 | `FFMPEG_PRESET` | `veryfast` | x264-Preset |
 
@@ -55,6 +66,8 @@ library into that directory on the Home Assistant host. Configure `port` (defaul
 `8091`) and `max_transcodes` (default `4`) in the add-on configuration, then
 start it. Point the PSP configuration at the Home Assistant host or its DynDNS
 name with `server=…` and `port=8091`.
+
+**Update the server/add-on to 0.1.19 or later before installing the timestamp-based client.** Older servers cannot provide its FLV stream. Refresh the add-on store, install the update and restart the add-on. Media mounts and options stay unchanged. The updated server retains the old raw H.264/MP3 endpoints for older clients; the new video client does not fall back to their estimated timing.
 
 ## Install and configure the PSP app
 
@@ -103,25 +116,33 @@ ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once i
 
 Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compact DejaVu Sans Latin-1 atlas is loaded only after the AVC decoder is ready; if it is missing, video playback remains safe and text subtitles are simply not drawn. The receiver artwork is embedded in `EBOOT.PBP`; no separate `menu_skin.raw` is required.
 
-Video output and a dedicated 480p mode are deliberately not part of this release yet.
+Component TV playback uses native 720×480 output. The browser and options stay on the PSP LCD; the video switches to the TV. The existing Select+L+R TV check is available from the browser. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands.
 
 ## Build the PSP client
 
-A PSP SDK and an OpenH264 library built for PSP are required. The library path is deliberately not hard-coded to a personal location:
+A PSPDEV/PSPSDK toolchain is required. The active video path uses firmware AVC, not OpenH264:
 
 ```bash
 cd psp-client
-make OPENH264_DIR=/pfad/zu/openh264
+make
 cp EBOOT.PBP release/PSPStreamer/EBOOT.PBP
 ```
 
-The library must provide `libopenh264_dec_psp.a` and its headers.
+Keep the firmware bridge and TV-out PRX files from the working installation alongside the new EBOOT. The Makefile preserves the MPEG import-library order and embeds the receiver artwork.
 
 ## Tests
+
+Host integration tests require `cc`, FFmpeg and FFprobe. They compile the same FLV parsing/sync helpers used by the PSP with undefined-behavior checks, compare every parsed PTS with FFprobe (including a five-minute stream), decode the extracted H.264/MP3, and exercise seek, video-only HTTP output and millisecond subtitle cues.
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+Before treating a build as hardware-validated, test one complete episode on both LCD and TV, then pause/resume, seek, stop/start another file, subtitles and a WLAN disconnect/reconnect. A successful host test or build alone is not a claim of perfect real-device synchronization.
+
+## License and reference
+
+GPL-2.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the PPA attribution and pinned reference revision; the original BSD notice is preserved in [LICENSE.BSD](LICENSE.BSD).
 
 ## Security
 

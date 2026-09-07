@@ -43,7 +43,6 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 #define MAX_ITEMS 1024
 #define LIST_ROWS 20
 #define GUI_LIST_ROWS 11
-#define H264_BUFFER_BYTES (768 * 1024)
 #define VIDEO_WIDTH 480
 #define VIDEO_HEIGHT 272
 #define VIDEO_STRIDE 512
@@ -68,17 +67,16 @@ typedef struct {
     char title[48];
 } StreamTrack;
 
-/* Subtitle times are server-normalised to the active presentation
- * clock as the raw H.264 stream.  Keeping them in frames avoids a second,
- * drifting millisecond clock on the PSP. */
+/* Subtitle cues use source milliseconds, like the container presentation
+ * timestamps. No frame-rate conversion is involved. */
 #define MAX_SUBTITLE_CUES 960
 #define SUBTITLE_TEXT_SIZE 160
 #define SUBTITLE_FONT_CELL_WIDTH 16
 #define SUBTITLE_FONT_CELL_HEIGHT 20
 #define SUBTITLE_FONT_BYTES (16 * 16 * SUBTITLE_FONT_CELL_WIDTH * SUBTITLE_FONT_CELL_HEIGHT)
 typedef struct {
-    int start_frame;
-    int end_frame;
+    int start_ms;
+    int end_ms;
     char text[SUBTITLE_TEXT_SIZE];
 } SubtitleCue;
 typedef struct { int start, end, x, y, width, height, canvas_width, canvas_height; } BitmapCue;
@@ -90,7 +88,6 @@ extern unsigned char receiver_skin[];
 extern unsigned char receiver_skin_end[];
 static const unsigned char *menu_skin;
 /* 512 pixels is the required power-of-two display stride. */
-static unsigned char h264_buffer[H264_BUFFER_BYTES] __attribute__((aligned(64)));
 static LibraryItem items[MAX_ITEMS];
 static int item_count;
 static char current_path[ID_SIZE];
@@ -107,14 +104,12 @@ static volatile int audio_output_thread_id = -1;
 /* Kept deliberately numeric: it is displayed after START exits playback and
  * identifies the exact network/audio stage on real hardware. */
 static volatile int audio_state;
-/* The component stream itself is 20.2 fps.  Its presentation is continuously
- * disciplined against the DAC clock below; this is not a hand-tuned TV rate. */
-#define TVOUT_PRESENT_INTERVAL_US 49505ULL /* 1,000,000 / 20.2 fps */
+/* Playback position and synchronisation use container milliseconds. */
+static int playback_position_ms;
 static int hardware_decoder_ready;
 static int video_modules_ready;
 static int hardware_decoder_frames;
 static int hardware_runtime_result = -9999;
-static float playback_fps = 20.1f;
 static int performance_result = -9999;
 static const char *hardware_runtime_step = "not loaded";
 /* This is intentionally shown on screen on a load failure: on real PSPs the
@@ -308,8 +303,8 @@ static volatile int audio_played_blocks;
 /* This mirrors PMPlayer Advance's output_audio_frame_buffers[].timestamp:
  * each decoded PCM ring slot carries its media timestamp, and the DAC worker
  * publishes that timestamp immediately before sceAudioOutputBlocking(). */
-static unsigned int audio_block_timestamp_us[AUDIO_QUEUE_BLOCKS];
-static volatile unsigned int audio_current_timestamp_us;
+static unsigned int audio_block_timestamp_ms[AUDIO_QUEUE_BLOCKS];
+static volatile unsigned int audio_current_timestamp_ms;
 /* Video keeps its proven two-block lead.  Stand-alone music can afford a
  * deeper runway before the DAC starts, absorbing Wi-Fi/FFmpeg jitter. */
 static volatile int audio_prefill_target = AUDIO_PREFILL_BLOCKS;
@@ -446,7 +441,9 @@ static int stream_recv(int socket_fd, void *buffer, int length, int timeout_ms) 
     struct SceNetInetPollfd pollfd = { socket_fd, SCE_NET_INET_POLLIN, 0 };
     int ready = sceNetInetPoll(&pollfd, 1, timeout_ms);
     if (ready == 0) return -2;
-    if (ready < 0 || (pollfd.revents & (SCE_NET_INET_POLLERR | SCE_NET_INET_POLLHUP | SCE_NET_INET_POLLNVAL))) return 0;
+    if (ready < 0) return 0;
+    /* EOF may arrive together with the last readable bytes. Drain them. */
+    if (!(pollfd.revents & SCE_NET_INET_POLLIN)) return 0;
     return (int)sceNetInetRecv(socket_fd, buffer, length, 0);
 }
 
@@ -629,14 +626,14 @@ static int prepare_client_subtitles(const char *media_id, int tv_profile) {
     subtitle_client_side = 0;
     if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
     if (selected_subtitle_track < 0) return 0;
-    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d", media_id, selected_subtitle_track, tv_profile);
+    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
     result = http_get(path, response, sizeof(response));
     if (result < 0) return result;
     /* Bitmap tracks keep the existing server-overlay fallback until the
      * sprite transport is available.  Never silently lose a requested PGS. */
     if (strstr(response, "\"t\":\"bitmap\"")) {
         char path[ID_SIZE + 64], *cursor;
-        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d", media_id, selected_subtitle_track, tv_profile);
+        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
         if (http_get_wait(path, response, sizeof(response), 180000) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
         if (bitmap_cues) free(bitmap_cues);
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
@@ -677,9 +674,9 @@ static void subtitle_parse_prepared_response(void) {
         int consumed = 0;
         char *entry = strchr(cursor, '[');
         if (!entry || !strchr(cursor, ']')) break;
-        if (sscanf(entry, "[%d,%d,\"%159[^\"]\"]%n", &cue->start_frame,
-                   &cue->end_frame, cue->text, &consumed) != 3 || consumed <= 0) break;
-        if (cue->end_frame > cue->start_frame) subtitle_cue_count++;
+        if (sscanf(entry, "[%d,%d,\"%159[^\"]\"]%n", &cue->start_ms,
+                   &cue->end_ms, cue->text, &consumed) != 3 || consumed <= 0) break;
+        if (cue->end_ms > cue->start_ms) subtitle_cue_count++;
         cursor = entry + consumed;
     }
 }
@@ -818,14 +815,14 @@ static const char *subtitle_draw_line(const char *text, int y, u32 *vram,
     return end;
 }
 
-static void subtitle_present(int absolute_frame) {
+static void subtitle_present(int position_ms) {
     int index = -1, cue_index, y;
     u32 *vram;
     if (!subtitle_client_side || !subtitle_cues) return;
     for (cue_index = 0; cue_index < subtitle_cue_count; cue_index++) {
-        if (absolute_frame >= subtitle_cues[cue_index].start_frame &&
-            absolute_frame < subtitle_cues[cue_index].end_frame) { index = cue_index; break; }
-        if (subtitle_cues[cue_index].start_frame > absolute_frame) break;
+        if (position_ms >= subtitle_cues[cue_index].start_ms &&
+            position_ms < subtitle_cues[cue_index].end_ms) { index = cue_index; break; }
+        if (subtitle_cues[cue_index].start_ms > position_ms) break;
     }
     if (index < 0) return;
     vram = (u32 *)0x44000000;
@@ -842,14 +839,14 @@ static void subtitle_present(int absolute_frame) {
     }
 }
 
-static void tvout_subtitle_present(int absolute_frame) {
+static void tvout_subtitle_present(int position_ms) {
     int index = -1, cue_index, y;
     u32 *vram = (u32 *)0x44000000;
     if (!subtitle_client_side || !subtitle_cues) return;
     for (cue_index = 0; cue_index < subtitle_cue_count; cue_index++) {
-        if (absolute_frame >= subtitle_cues[cue_index].start_frame &&
-            absolute_frame < subtitle_cues[cue_index].end_frame) { index = cue_index; break; }
-        if (subtitle_cues[cue_index].start_frame > absolute_frame) break;
+        if (position_ms >= subtitle_cues[cue_index].start_ms &&
+            position_ms < subtitle_cues[cue_index].end_ms) { index = cue_index; break; }
+        if (subtitle_cues[cue_index].start_ms > position_ms) break;
     }
     if (index < 0) return;
     if (!subtitle_font) subtitle_load_font();
@@ -871,8 +868,9 @@ static void tvout_subtitle_present(int absolute_frame) {
 static void playback_hud(int frames, int paused) {
     u32 *vram = (u32 *)0x44000000;
     int x, y = VIDEO_HEIGHT - 5, filled = 0;
+    (void)frames;
     if (current_duration_seconds > 0.0f)
-        filled = (int)(VIDEO_WIDTH * (frames + stream_start_seconds * playback_fps) / (current_duration_seconds * playback_fps));
+        filled = (int)(VIDEO_WIDTH * (playback_position_ms / 1000.0) / current_duration_seconds);
     if (filled < 0) filled = 0;
     if (filled > VIDEO_WIDTH) filled = VIDEO_WIDTH;
     for (x = 0; x < VIDEO_WIDTH; x++)
@@ -893,9 +891,9 @@ static void playback_hud(int frames, int paused) {
 static void tvout_playback_hud(int frames, int paused) {
     u32 *vram = (u32 *)0x44000000;
     int x, y, filled = 0;
+    (void)frames;
     if (current_duration_seconds > 0.0f)
-        filled = (int)(720 * (frames + stream_start_seconds * playback_fps) /
-                       (current_duration_seconds * playback_fps));
+filled = (int)(720 * (playback_position_ms / 1000.0) / current_duration_seconds);
     if (filled < 0) filled = 0;
     if (filled > 720) filled = 720;
     for (x = 0; x < 720; x++) {
@@ -1221,118 +1219,45 @@ static void present_yuv420(const unsigned char *y, const unsigned char *u,
 }
 #endif
 
-static int find_aud(const unsigned char *data, int size, int from) {
-    int i;
-    for (i = from; i + 4 < size; i++) {
-        if (data[i] == 0 && data[i + 1] == 0 &&
-            ((data[i + 2] == 1 && data[i + 3] == 9) ||
-             (data[i + 2] == 0 && data[i + 3] == 1 && data[i + 4] == 9))) return i;
-    }
-    return -1;
-}
+#include "timed_stream.h"
 
-/* PMPlayer Advance treats the audio-output timestamp as the master clock and
- * decides for every video frame whether to hold, show, or drop it.  Our raw
- * Annex-B transport has no container PTS, but the server deliberately emits
- * a constant 20.2-fps TV stream, so its frame ordinal is an exact PTS grid. */
-static unsigned long long audio_master_microseconds(void) {
-    if (!audio_clock_started || !audio_running) return 0;
-    return audio_current_timestamp_us;
-}
-
-/* 0: video is ahead, hold its compressed AU.  1: present normally.
- * 2: audio is ahead, decode but discard the displayed frame.  Decoding even
- * a dropped AVC AU preserves the reference-picture chain. */
-static int tvout_avsync_status(void) {
-    unsigned long long audio_time;
-    unsigned long long video_time;
-    const unsigned long long tolerance = TVOUT_PRESENT_INTERVAL_US * 2ULL;
-    if (!audio_clock_started || !audio_running) return 1;
-    audio_time = audio_master_microseconds();
-    video_time = (unsigned long long)hardware_decoder_frames * TVOUT_PRESENT_INTERVAL_US;
-    if (video_time > audio_time + tolerance) return 0;
-    if (audio_time > video_time + tolerance) return 2;
-    return 1;
-}
-
-static int decode_h264_access_units(int *size, unsigned long long *next_frame_tick) {
-    int first, next, result, frames = 0;
-    first = find_aud(h264_buffer, *size, 0);
-    if (first > 0) {
-        memmove(h264_buffer, h264_buffer + first, *size - first);
-        *size -= first;
-    }
-    while ((next = find_aud(h264_buffer, *size, 4)) > 0) {
-        int sync_status = tvout_video_active ? tvout_avsync_status() : 1;
-        if (!hardware_decoder_ready) {
-            result = h264_hw_init_from_annexb(h264_buffer, next);
-            /* Codec headers precede the first decodable IDR access unit. */
-            if (result == -1) {
-                memmove(h264_buffer, h264_buffer + next, *size - next);
-                *size -= next;
-                continue;
-            }
-            if (result < 0) { video_step = h264_hw_last_step(); return result; }
-            hardware_decoder_ready = 1;
-            subtitle_parse_prepared_response();
-        }
-        if (sync_status == 0) {
-            /* Keep the access unit intact until audio reaches it.  A small
-             * sleep lets the DAC worker advance without busy-spinning or
-             * needlessly filling the TCP/H.264 buffers. */
-            sceKernelDelayThread(2000);
-            continue;
-        }
-        /* TCP delivers H.264 in bursts.  Drawing every received access unit
-         * immediately was the visible catch-up effect.  Never present faster
-         * than the server's active frame rate, with the audio DAC as master clock. */
-        if (sync_status == 1 && !tvout_video_active) {
-            unsigned long long now = sceKernelGetSystemTimeWide();
-            if (*next_frame_tick == 0 || now > *next_frame_tick + 100000ULL)
-                *next_frame_tick = now;
-            if (now < *next_frame_tick)
-                sceKernelDelayThread((unsigned int)(*next_frame_tick - now));
-        }
-        result = h264_hw_decode_annexb(h264_buffer, next, (void *)0x44000000);
+/* Both display targets consume the same container timestamp queue.  The
+ * renderer receives a source-time position only for the existing cue/HUD API;
+ * it is never used to pace playback. */
+static int present_timed_video(TimedPacket *packet, int drop) {
+    int result, cue_ms;
+    if (!hardware_decoder_ready) {
+        result = h264_hw_init_from_annexb(packet->data, packet->size);
         if (result < 0) { video_step = h264_hw_last_step(); return result; }
-        if (result > 0) {
-            /* The established subtitle/HUD renderer targets 512-pixel LCD
-             * rows.  Do not let it corrupt a native 768-pixel TV frame; a
-             * dedicated TV overlay follows once video presentation is proven. */
-            if (sync_status == 2) {
-                /* Audio caught up by more than PPA's two-frame window.
-                 * Consume this AVC picture without presenting it. */
-            } else if (!tvout_video_active) {
-                subtitle_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames);
-                bitmap_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames, audio_media_id);
-                if (video_fullscreen || !receiver_visible) playback_hud(hardware_decoder_frames, playback_paused);
-                else receiver_hud(hardware_decoder_frames);
-            } else {
-                tvout_subtitle_present((int)(stream_start_seconds * playback_fps) + hardware_decoder_frames);
-                tvout_playback_hud(hardware_decoder_frames, playback_paused);
-            }
-            if (sync_status != 2) {
-                sceDisplaySetFrameBuf((void *)0x04000000,
-                                      tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
-                                      PSP_DISPLAY_PIXEL_FORMAT_8888,
-                                      PSP_DISPLAY_SETBUF_NEXTVSYNC);
-                sceDisplayWaitVblankStart();
-            }
-            frames++;
-            hardware_decoder_frames++;
-            /* Component output is paced independently from LCD playback.
-             * Only this presentation deadline is calibrated; stream format,
-             * subtitles and the LCD path retain their original time bases. */
-            if (sync_status == 1 && !tvout_video_active)
-                *next_frame_tick += 49751ULL;
-        }
-        memmove(h264_buffer, h264_buffer + next, *size - next);
-        *size -= next;
-        /* Keep draining all complete access units already received.  Each
-         * iteration is still paced above; returning after one AU made a
-         * multi-frame TCP packet grow the H.264 buffer until playback froze. */
+        hardware_decoder_ready = 1;
+        subtitle_parse_prepared_response();
     }
-    return frames;
+    result = h264_hw_decode_annexb(packet->data, packet->size,
+                                  drop ? NULL : (void *)0x44000000);
+    if (result < 0) { video_step = h264_hw_last_step(); return result; }
+    if (result > 0) {
+        timed_position_ms = packet->pts - timed_video_origin;
+        if (timed_position_ms < 0) timed_position_ms = 0;
+        playback_position_ms = stream_start_seconds * 1000 + timed_position_ms;
+        cue_ms = playback_position_ms;
+        if (!drop) {
+            if (!tvout_video_active) {
+                subtitle_present(cue_ms);
+                bitmap_present(cue_ms, audio_media_id);
+                if (video_fullscreen || !receiver_visible) playback_hud(0, playback_paused);
+                else receiver_hud(0);
+            } else {
+                tvout_subtitle_present(cue_ms);
+                tvout_playback_hud(0, playback_paused);
+            }
+            sceDisplaySetFrameBuf((void *)0x04000000,
+                tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
+                PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+            sceDisplayWaitVblankStart();
+        }
+        hardware_decoder_frames++;
+    }
+    return result;
 }
 
 /* Receive concatenated JPEG images, decode each with the PSP firmware's
@@ -1486,12 +1411,12 @@ static int audio_output_thread(SceSize args, void *argp) {
             if (!audio_running) break;
             continue;
         }
-        if (!audio_clock_started) audio_clock_started = 1;
         block = audio_queue_read;
         audio_queue_read = (audio_queue_read + 1) % AUDIO_QUEUE_BLOCKS;
         /* PPA assigns current_timestamp before its blocking audio call.
          * Do the same rather than estimating time from the system timer. */
-        audio_current_timestamp_us = audio_block_timestamp_us[block];
+        audio_current_timestamp_ms = audio_block_timestamp_ms[block];
+        audio_clock_started = 1;
         /* The producer cannot reuse this slot until OutputBlocking returns. */
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
         if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
@@ -1500,7 +1425,7 @@ static int audio_output_thread(SceSize args, void *argp) {
         }
         sceKernelSignalSema(audio_queue_free_sema, 1);
         audio_played_blocks++;
-        audio_state = 16;
+        if (audio_state >= 0) audio_state = 16;
     }
     sceAudioChRelease(channel);
     return 0;
@@ -1522,6 +1447,8 @@ static int audio_thread(SceSize args, void *argp) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body;
     int socket_fd = -1, header_size = 0, received, output_thread_id = -1;
+    TimedPacket timed_packet = {0};
+    unsigned int block_pts = 0;
     int have = 0, frame_size, result, initial_size, frames_in_block = 0;
     int write_slot_reserved = 0;
     const int block_bytes = audio_dac_samples * 2 * (int)sizeof(short);
@@ -1536,6 +1463,7 @@ static int audio_thread(SceSize args, void *argp) {
     if (!mp3_codec_work) { audio_state = -22; audio_running = 0; return 0; }
     mp3_codec[3] = (unsigned long)mp3_codec_work;
     if (sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3) < 0) { audio_state = -23; goto cleanup; }
+    if (!timed_active) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host);
@@ -1556,6 +1484,7 @@ static int audio_thread(SceSize args, void *argp) {
     if (initial_size > MP3_INPUT_BUFFER_BYTES) initial_size = MP3_INPUT_BUFFER_BYTES;
     if (initial_size > 0) memcpy(mp3_input_buffer, body + 4, initial_size);
     have = initial_size;
+    }
     audio_queue_read = audio_queue_write = 0;
     audio_queue_primed = audio_blocks_published = 0;
     if (audio_queue_create() < 0) { audio_state = -25; audio_running = 0; goto cleanup; }
@@ -1565,13 +1494,30 @@ static int audio_thread(SceSize args, void *argp) {
     output_thread_id = sceKernelCreateThread("PSPStreamerDAC", audio_output_thread, 0x3D, 0x2000, 0, NULL);
     if (output_thread_id < 0) { audio_state = -16; audio_running = 0; goto cleanup; }
     audio_output_thread_id = output_thread_id;
-    sceKernelStartThread(output_thread_id, 0, NULL);
+    if (sceKernelStartThread(output_thread_id, 0, NULL) < 0) {
+        sceKernelDeleteThread(output_thread_id); audio_output_thread_id = -1;
+        audio_state = -16; audio_running = 0; goto cleanup;
+    }
     while (audio_running) {
         if (!write_slot_reserved) {
             if (!audio_queue_wait(audio_queue_free_sema)) continue;
             if (!audio_running) break;
             write_slot_reserved = 1;
         }
+        if (timed_active) {
+            while (timed_running && !timed_get(&timed_audio, &timed_packet)) {
+                if (timed_eof) break;
+            }
+            if (!timed_packet.data) break;
+            frame_size = mp3_frame_size(timed_packet.data, timed_packet.size);
+            if (frame_size != timed_packet.size || frame_size > MP3_MAX_FRAME_BYTES) {
+                audio_state = -26; break;
+            }
+            memcpy(mp3_input_buffer, timed_packet.data, frame_size);
+            if (!frames_in_block) block_pts = (unsigned int)timed_packet.pts;
+            free(timed_packet.data); timed_packet.data = NULL;
+            have = frame_size;
+        } else {
         while (have < 4 && audio_running) {
             received = stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
             if (received == -2) continue;
@@ -1588,6 +1534,7 @@ static int audio_thread(SceSize args, void *argp) {
             have += received;
         }
         if (!audio_running) break;
+        }
         mp3_codec[6] = (unsigned long)mp3_input_buffer;
         mp3_codec[7] = mp3_codec[10] = frame_size;
         mp3_codec[8] = (unsigned long)(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2 +
@@ -1604,9 +1551,9 @@ static int audio_thread(SceSize args, void *argp) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             sceKernelDcacheWritebackRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
             audio_measure_pcm(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, audio_dac_samples);
-            audio_block_timestamp_us[audio_queue_write] =
+            audio_block_timestamp_ms[audio_queue_write] = timed_active ? block_pts :
                 (unsigned int)(((unsigned long long)audio_blocks_published *
-                                (unsigned long long)audio_dac_samples * 1000000ULL) / 44100ULL);
+                                (unsigned long long)audio_dac_samples * 1000ULL) / 44100ULL);
             audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
             sceKernelSignalSema(audio_queue_ready_sema, 1);
             frames_in_block = 0;
@@ -1614,11 +1561,30 @@ static int audio_thread(SceSize args, void *argp) {
             audio_blocks_published++;
             if (audio_blocks_published >= audio_prefill_target) {
                 audio_queue_primed = 1;
-                audio_state = 15;
+                if (audio_state >= 0) audio_state = 15;
             }
         }
     }
 cleanup:
+    free(timed_packet.data);
+    if (timed_active && frames_in_block && write_slot_reserved && audio_state >= 0 && timed_running) {
+        int used = frames_in_block * MP3_DECODE_SAMPLES * 2;
+        short *slot = audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2;
+        sceKernelDcacheInvalidateRange(slot, block_bytes);
+        memset(slot + used, 0, block_bytes - used * sizeof(short));
+        audio_block_timestamp_ms[audio_queue_write] = block_pts;
+        sceKernelDcacheWritebackRange(slot, block_bytes);
+        audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
+        sceKernelSignalSema(audio_queue_ready_sema, 1);
+        audio_blocks_published++;
+        write_slot_reserved = 0;
+    }
+    if (timed_active) {
+        audio_queue_primed = 1;
+        while (timed_running && audio_state >= 0 && audio_played_blocks < audio_blocks_published)
+            sceKernelDelayThread(10000);
+        timed_audio_done = 1;
+    }
     /* A decoder failure or end-of-stream must wake the UI and DAC worker.
      * Previously this flag could remain true after the producer had gone,
      * leaving the player apparently frozen with an empty audio queue. */
@@ -1638,8 +1604,8 @@ static int play_audio(const char *media_id, const char *title) {
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_played_blocks = 0;
-    audio_current_timestamp_us = 0;
-    memset(audio_block_timestamp_us, 0, sizeof(audio_block_timestamp_us));
+    audio_current_timestamp_ms = 0;
+    memset(audio_block_timestamp_ms, 0, sizeof(audio_block_timestamp_ms));
     audio_queue_primed = audio_blocks_published = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
@@ -1648,6 +1614,7 @@ static int play_audio(const char *media_id, const char *title) {
     audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
+    timed_active = 0;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     if (audio_thread_id < 0) { audio_running = 0; return audio_thread_id; }
@@ -1730,17 +1697,17 @@ static int play_audio(const char *media_id, const char *title) {
 }
 
 static int play_h264(const char *media_id) {
-    struct sockaddr_in server;
-    char request[2048], header[4096], receive_buffer[4096], *body;
-    int socket_fd, header_size = 0, received, h264_size = 0, frames = 0, result, buffered = 0, wait;
+    int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
+    int video_only_origin = 0;
     int audio_thread_id = -1;
-    unsigned long long next_frame_tick = 0;
-    unsigned long long last_packet_tick;
+    TimedPacket current = {0}, next = {0};
+    unsigned long long video_only_tick = 0, pause_tick = 0;
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
     playback_reached_end = 0;
     playback_paused = 0;
+    playback_position_ms = stream_start_seconds * 1000;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     /* Text subtitle extraction is independent of the H.264 transcode and
      * normally completes in a fraction of a second.  If it is unavailable,
@@ -1752,7 +1719,6 @@ static int play_h264(const char *media_id) {
     hardware_decoder_ready = 0;
     hardware_decoder_frames = 0;
     tvout_video_active = tvout_begin_video() == 0;
-    playback_fps = tvout_video_active ? 20.2f : 20.1f;
     prepare_client_subtitles(media_id, tvout_video_active);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
@@ -1772,50 +1738,42 @@ static int play_h264(const char *media_id) {
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_start = 0;
     audio_clock_started = 0;
-    /* Start both server transcodes together.  The audio thread fills one DMA
-     * block but deliberately stays muted until the first video frame is on
-     * screen, which gives them a common practical start point. */
+    /* One muxed stream supplies both codecs. Keep the DAC gated until the
+     * audio queue and AVC decoder are ready; then follow container PTS. */
     audio_running = 1;
     audio_state = 0;
     audio_prefill_target = AUDIO_PREFILL_BLOCKS;
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     audio_queue_read = audio_queue_write = audio_played_blocks = 0;
-    audio_current_timestamp_us = 0;
-    memset(audio_block_timestamp_us, 0, sizeof(audio_block_timestamp_us));
+    audio_current_timestamp_ms = 0;
+    memset(audio_block_timestamp_ms, 0, sizeof(audio_block_timestamp_ms));
     audio_queue_primed = audio_blocks_published = 0;
-    audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread,
-                                            0x18, 0x4000, 0, NULL);
-    if (audio_thread_id >= 0) sceKernelStartThread(audio_thread_id, 0, NULL);
-    else { audio_running = 0; audio_state = audio_thread_id; }
+
+    timed_active = timed_running = 1;
+    timed_eof = timed_error = timed_audio_done = timed_playing = 0;
+    timed_has_audio = -1;
+    timed_video_origin_set = timed_position_ms = 0;
+    timed_video.free = timed_video.ready = timed_audio.free = timed_audio.ready = -1;
+    timed_reader_id = audio_output_thread_id = -1;
+    if (timed_queue_init(&timed_video) < 0 || timed_queue_init(&timed_audio) < 0) {
+        result = -1321; goto done;
+    }
+    snprintf(timed_request, sizeof(timed_request),
+        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
+        (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
+        audio_quality_name(), stream_start_seconds, server_host);
+    timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x5000, 0, NULL);
+    if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
+    if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {
+        sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1; result = -1321; goto done;
+    }
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
     remote_control_running = 1;
     remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, 0x20, 0x3000, 0, NULL);
     if (remote_control_thread_id >= 0) sceKernelStartThread(remote_control_thread_id, 0, NULL);
-    video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=h264&profile=%s&audio=%d&subtitle=%d&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track, (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track, stream_start_seconds, server_host);
-    socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) { h264_hw_shutdown(); return socket_fd; }
-    if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1307; }
-    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
-        sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1301;
-    }
-    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) {
-        sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1302;
-    }
-    while (header_size < (int)sizeof(header) - 1) {
-        received = (int)sceNetInetRecv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
-        if (received <= 0) { sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1303; }
-        header_size += received; header[header_size] = '\0';
-        body = strstr(header, "\r\n\r\n");
-        if (body) break;
-    }
-    if (!body || !strstr(header, " 200 ")) {
-        video_step = "HTTP response"; sceNetInetClose(socket_fd); h264_hw_shutdown(); return -1304;
-    }
-    received = header_size - (int)(body + 4 - header);
-    if (received > 0) memcpy(receive_buffer, body + 4, received);
-    last_packet_tick = sceKernelGetSystemTimeWide();
+    video_step = "FLV/PTS stream";
     while (1) {
         SceCtrlData pad;
         keep_awake();
@@ -1826,7 +1784,7 @@ static int play_h264(const char *media_id) {
             if (action == 1 || action == 2) {
                 paused = action == 1;
                 playback_paused = paused;
-                audio_start = paused ? 0 : 1;
+                audio_start = paused ? 0 : buffered;
             } else if (action == 3) { result = frames; break; }
         }
         if (remote_control_seek_seconds >= 0) {
@@ -1843,7 +1801,7 @@ static int play_h264(const char *media_id) {
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(previous_buttons & PSP_CTRL_SELECT)) {
             paused = !paused;
             playback_paused = paused;
-            audio_start = paused ? 0 : 1;
+            audio_start = paused ? 0 : buffered;
             if (tvout_video_active) tvout_playback_hud(hardware_decoder_frames, paused);
             else playback_hud(hardware_decoder_frames, paused);
             sceDisplaySetFrameBuf((void *)0x04000000,
@@ -1874,7 +1832,7 @@ static int play_h264(const char *media_id) {
         if (!paused && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) &&
             !(previous_buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
             int delta = (pad.Buttons & PSP_CTRL_RTRIGGER) ? 10 : -10;
-            stream_start_seconds += frames / 20 + delta;
+            stream_start_seconds += timed_position_ms / 1000 + delta;
             if (stream_start_seconds < 0) stream_start_seconds = 0;
             strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
             resume_media_id[sizeof(resume_media_id) - 1] = '\0';
@@ -1886,94 +1844,110 @@ static int play_h264(const char *media_id) {
         if (!(pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER | PSP_CTRL_SELECT | PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)))
             receiver_flash_button = 0;
         previous_buttons = pad.Buttons;
-        if (paused) { sceKernelDelayThread(75000); continue; }
-        if (received <= 0) {
-            /* FFmpeg sends HTTP headers before libass prepares the first
-             * subtitle frame.  Until the initial video runway exists, wait
-             * normally; only active playback gets interruption polling. */
-            if (!buffered) {
-                received = (int)sceNetInetRecv(socket_fd, receive_buffer, sizeof(receive_buffer), 0);
+        if (paused) { if (!pause_tick) pause_tick = sceKernelGetSystemTimeWide(); sceKernelDelayThread(75000); continue; }
+
+        if (pause_tick) { video_only_tick += sceKernelGetSystemTimeWide() - pause_tick; pause_tick = 0; }
+        if (timed_error || audio_state < 0) {
+            result = timed_error ? timed_error : audio_state;
+            video_step = timed_error ? "FLV/PTS stream" : "MP3";
+            break;
+        }
+        if (timed_has_audio == 1 && audio_thread_id < 0) {
+            audio_thread_id = sceKernelCreateThread("PSPStreamerAudio", audio_thread, 0x18, 0x4000, 0, NULL);
+            if (audio_thread_id < 0) { result = audio_thread_id; break; }
+            if (sceKernelStartThread(audio_thread_id, 0, NULL) < 0) {
+                sceKernelDeleteThread(audio_thread_id); audio_thread_id = -1; result = -1321; break;
+            }
+        }
+        if (!current.data) timed_get(&timed_video, &current);
+        if (current.data && !next.data) timed_get(&timed_video, &next);
+        if (current.data && !timed_video_origin_set) {
+            timed_video_origin = current.pts; timed_video_origin_set = 1;
+        }
+        if (current.data && next.data) {
+            duration = next.pts - current.pts;
+            if (duration <= 0) { result = -1322; break; }
+        }
+        if (!buffered) {
+            if (!current.data || (!next.data && !timed_eof) || timed_has_audio < 0 ||
+                (timed_has_audio && !audio_queue_primed)) {
+                if (timed_eof && !current.data) { result = -1306; break; }
+                sceKernelDelayThread(2000); continue;
+            }
+            /* Initialise AVC before starting the DAC, keeping the established
+             * MPEG/ME module order. No decoder startup delay enters A/V time. */
+            result = h264_hw_init_from_annexb(current.data, current.size);
+            if (result < 0) { video_step = h264_hw_last_step(); break; }
+            hardware_decoder_ready = 1;
+            subtitle_parse_prepared_response();
+            audio_start = 1; buffered = timed_playing = 1;
+            video_only_tick = sceKernelGetSystemTimeWide();
+            video_only_origin = timed_video_origin;
+        }
+        if (!current.data) {
+            if (timed_eof && (!timed_has_audio || timed_audio_done)) {
+                playback_reached_end = 1; result = frames; break;
+            }
+            sceKernelDelayThread(2000); continue;
+        }
+        {
+            int sync;
+            if (timed_has_audio && !timed_audio_done) {
+                if (!audio_clock_started) { sceKernelDelayThread(2000); continue; }
+                sync = pts_avsync((int)audio_current_timestamp_ms, current.pts, duration);
             } else {
-                received = stream_recv(socket_fd, receive_buffer, sizeof(receive_buffer), 250);
-                if (received == -2) {
-                    if (sceKernelGetSystemTimeWide() - last_packet_tick < 5000000ULL) continue;
-                    received = 0;
+                /* Video-only media or the tail after audio EOF follows its
+                 * PTS differences on a monotonic clock, never a nominal FPS. */
+                if (timed_has_audio && !tail_clock) {
+                    video_only_tick = sceKernelGetSystemTimeWide();
+                    video_only_origin = (int)audio_current_timestamp_ms +
+                        audio_dac_samples * 1000 / 44100;
+                    tail_clock = 1;
                 }
+                int clock_ms = (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL);
+                sync = clock_ms < current.pts - video_only_origin ? 0 : 1;
             }
-            if (received > 0) last_packet_tick = sceKernelGetSystemTimeWide();
-            if (received <= 0) {
-                /* TCP EOF can also be a broken WLAN connection.  Advance
-                 * only after nearly the full known duration was rendered. */
-                if (received == 0 && current_duration_seconds > 0.0f &&
-                    (float)frames >= current_duration_seconds * 20.0f * 0.90f)
-                    playback_reached_end = 1;
-                if (!playback_reached_end) {
-                    stream_start_seconds += frames / 20;
-                    if (stream_start_seconds > 2) stream_start_seconds -= 2;
-                    strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
-                    resume_media_id[sizeof(resume_media_id) - 1] = '\0';
-                    resume_pending = 1;
-                }
-                break;
-            }
+            if (!sync) { sceKernelDelayThread(2000); continue; }
+            result = present_timed_video(&current, sync == 2);
+            if (result < 0) break;
+            frames += result;
+            free(current.data); current = next; memset(&next, 0, sizeof(next));
         }
-        if (h264_size + received > H264_BUFFER_BYTES) {
-            video_step = "H264-Puffer"; result = -1305; break;
-        }
-        memcpy(h264_buffer + h264_size, receive_buffer, received);
-        h264_size += received;
-        /* A small warm-up absorbs the connection start without accumulating
-         * so many frames that playback has to catch up afterwards. */
-        if (!buffered && h264_size < 16 * 1024) { received = 0; continue; }
-        if (!buffered && audio_running) {
-            /* Do not release either clock until audio has its initial runway. */
-            for (wait = 0; wait < 100 && audio_state < 15 && audio_running; wait++)
-                sceKernelDelayThread(10000);
-        }
-        if (!audio_start) {
-            /* Release the DAC first; it is the master clock for the video
-             * presentation deadlines that follow. */
-            audio_start = 1;
-            for (wait = 0; wait < 20 && !audio_clock_started; wait++)
-                sceKernelDelayThread(1000);
-            next_frame_tick = sceKernelGetSystemTimeWide();
-        }
-        buffered = 1;
-        result = decode_h264_access_units(&h264_size, &next_frame_tick);
-        if (result < 0) break;
-        if (result > 0 && !audio_start) audio_start = 1;
-        frames += result;
-        received = 0;
     }
-    audio_running = 0;
+    if (result < 0 && frames && !seek_requested) {
+        stream_start_seconds += timed_position_ms / 1000;
+        if (stream_start_seconds > 2) stream_start_seconds -= 2;
+        strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
+        resume_media_id[sizeof(resume_media_id) - 1] = 0; resume_pending = 1;
+    }
+done:
+    timed_running = 0;
+    audio_running = 0; audio_start = 1;
     remote_control_running = 0;
-    if (remote_control_thread_id >= 0) {
-        sceKernelWaitThreadEnd(remote_control_thread_id, NULL);
-        sceKernelDeleteThread(remote_control_thread_id);
-        remote_control_thread_id = -1;
+    if (timed_socket >= 0) {
+        int fd = timed_socket; timed_socket = -1; sceNetInetClose(fd);
     }
-    audio_start = 1;
-    /* Wake a blocking receive before returning to the browser.  Otherwise
-     * it retains the firmware MP3 handle and the next film is silent. */
-    if (audio_socket_fd >= 0) {
-        int closing_socket = audio_socket_fd;
-        audio_socket_fd = -1;
-        sceNetInetClose(closing_socket);
+    if (timed_reader_id >= 0) {
+        sceKernelWaitThreadEnd(timed_reader_id, NULL);
+        sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1;
     }
     if (audio_thread_id >= 0) {
         sceKernelWaitThreadEnd(audio_thread_id, NULL);
         sceKernelDeleteThread(audio_thread_id);
     }
     if (audio_output_thread_id >= 0) {
-        int output_thread_id = audio_output_thread_id;
-        sceKernelWaitThreadEnd(output_thread_id, NULL);
-        sceKernelDeleteThread(output_thread_id);
-        audio_output_thread_id = -1;
+        sceKernelWaitThreadEnd(audio_output_thread_id, NULL);
+        sceKernelDeleteThread(audio_output_thread_id); audio_output_thread_id = -1;
     }
+    if (remote_control_thread_id >= 0) {
+        sceKernelWaitThreadEnd(remote_control_thread_id, NULL);
+        sceKernelDeleteThread(remote_control_thread_id); remote_control_thread_id = -1;
+    }
+    free(current.data); free(next.data);
+    timed_queue_destroy(&timed_video); timed_queue_destroy(&timed_audio);
+    timed_active = 0;
     audio_queue_destroy();
-    h264_hw_shutdown();
-    subtitle_release();
-    sceNetInetClose(socket_fd);
+    h264_hw_shutdown(); subtitle_release();
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
     if (result < 0) return result;

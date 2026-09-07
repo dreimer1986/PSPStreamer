@@ -140,6 +140,9 @@ int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *fram
     result = sceMpegAvcDecode(&hw_mpeg, &hw_au, hw_output_stride, NULL, &pictures);
     if (result < 0 || pictures <= 0) return result;
     hw_first_access_unit = 0;
+    /* PPA discards already decoded late pictures without changing scanout.
+     * Keep AVC reference state, but skip CSC entirely for a dropped picture. */
+    if (!framebuffer) return pictures;
     hw_step = "AVC: Detail";
     result = sceMpegAvcDecodeDetail2(&hw_mpeg, &detail);
     if (result < 0 || !detail || !detail->picture || !detail->yuv) return result < 0 ? result : -11;

@@ -1,0 +1,23 @@
+PSP Streamer
+Copyright (c) 2026 Daniel Reimer
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 2 of the License, or (at your option)
+any later version (SPDX-License-Identifier: GPL-2.0-or-later).
+
+This program is distributed without any warranty, including the implied
+warranties of merchantability or fitness for a particular purpose. See LICENSE.
+The original BSD notice is retained in LICENSE.BSD.
+
+The timestamp-based A/V scheduling follows PMPlayer Advance by cooleyes:
+Copyright (C) 2010 cooleyes <eyes.cooleyes@gmail.com>, GPL-2.0-or-later.
+Reference: https://github.com/DavisDev/pmplayer-advance
+Revision: 9ce494d020d3c909ee312bda1932f8d806a2f05d
+Files: ppa/mod/flv1_play.c, flv1_read.c, flv1_decode.c; mp4_play.c.
+Adaptation dated 2026-09-07: bounded streaming FLV queues, signed AVC
+composition offsets, container-PTS PCM blocks, and common LCD/TV scheduling.
+This is a streaming adaptation, not the complete PPA player or demuxer.
+
+Bundled third-party components, including fonts and firmware bridges, retain
+their respective authorship and license terms.
