@@ -1901,8 +1901,14 @@ static int play_h264(const char *media_id) {
         {
             int sync;
             if (timed_has_audio && !timed_audio_done) {
-                if (!audio_clock_started) { sceKernelDelayThread(2000); continue; }
-                sync = pts_avsync((int)audio_current_timestamp_ms, current.pts, duration);
+                /* The first picture is the measured startup barrier for the
+                 * DAC. Waiting for audio_clock_started here would deadlock:
+                 * the DAC is deliberately waiting for this picture. */
+                if (!audio_clock_started && video_first_presented) {
+                    sceKernelDelayThread(2000); continue;
+                }
+                sync = audio_clock_started ?
+                    pts_avsync((int)audio_current_timestamp_ms, current.pts, duration) : 1;
             } else {
                 /* Video-only media or the tail after audio EOF follows its
                  * PTS differences on a monotonic clock, never a nominal FPS. */
