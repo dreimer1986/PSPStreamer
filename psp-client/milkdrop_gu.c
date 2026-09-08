@@ -52,9 +52,11 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset) {
     MdVertex *mesh, *ring, *blit;
     int target = 1-md_front;
-    int left = tv ? 34 : 38, top = tv ? 98 : 78;
-    int width = tv ? (fullscreen ? 720 : 504) : (fullscreen ? 480 : 300);
-    int height = tv ? (fullscreen ? 480 : 188) : (fullscreen ? 272 : 96);
+    /* Receiver aperture: calibrated edges, independent of full scanout.
+     * LCD [38,344) x [82,149); TV [41,531) x [108,293). */
+    int left = tv ? 41 : 38, top = tv ? 108 : 82;
+    int width = tv ? (fullscreen ? 720 : 490) : (fullscreen ? 480 : 306);
+    int height = tv ? (fullscreen ? 480 : 185) : (fullscreen ? 272 : 67);
     float seconds;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;

@@ -21,6 +21,16 @@ The receiver is hidden in visualization fullscreen, including between
 throttled graphics frames; returning redraws the receiver once. Without an
 active effect, the previous enlarged spectrum/receiver remains unchanged.
 Feedback textures stay 256×256; only the final GPU stretch covers more pixels.
+The receiver apertures were adjusted on 2026-09-09 using the user's edge
+offsets (right/bottom are exclusive pixel boundaries):
+
+| Output | Left | Top | Right | Bottom | Size |
+| --- | --- | --- | --- | --- | --- |
+| LCD receiver | 38 | 82 | 344 | 149 | 306×67 |
+| TV receiver | 41 | 108 | 531 | 293 | 490×185 |
+| LCD fullscreen | 0 | 0 | 480 | 272 | 480×272 |
+| TV fullscreen | 0 | 0 | 720 | 480 | 720×480 |
+
 Pause, volume,
 Stop and web controls remain available. Each new track starts with the
 original receiver; the prototype choice is intentionally not saved.

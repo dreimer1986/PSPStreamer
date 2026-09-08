@@ -52,6 +52,10 @@ rejected. This includes EEL `per_frame_*` / `per_pixel_*`, shader code,
 such as `fZoomExponent`. Removing fields does not guarantee that a preset
 retains its original appearance. Expression support is a later stage.
 
+The [expression source audit](MILKDROP_EXPRESSIONS.md) records the next
+implementation boundary, including original per-frame state and music-variable
+semantics. Expressions are not enabled by the aperture calibration update.
+
 The bundled example is newly authored for PSPStreamer; no third-party
 presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).
 
