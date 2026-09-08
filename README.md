@@ -176,6 +176,13 @@ Keep the firmware bridge and TV-out PRX files from the working installation alon
 
 ## Tests
 
+LCD and TV music views update only dynamic regions, at most 20 times per
+second, and give the existing audio-output worker priority over GUI work.
+No extra LCD framebuffer is needed. The initial scene is drawn before audio
+starts; switching fullscreen redraws once. Video timestamps and audio sample
+timing are unchanged. Native renderer tests compare incremental updates with
+full redraws, including volume, spectrum, VU decay and both layouts.
+
 Host integration tests require `cc`, FFmpeg and FFprobe. They compile the same FLV parsing/sync helpers used by the PSP with undefined-behavior checks, compare every parsed PTS with FFprobe (including a five-minute stream), decode the extracted H.264/MP3, and exercise seek, video-only HTTP output and millisecond subtitle cues.
 
 Client regression tests also exercise the first-picture/DAC startup barrier, late decisions after a 600-ms preparation stall, and the actual audio output worker with a simulated asynchronous DAC and immediate producer reuse of released buffers. They cover single-block EOF, ring wraparound, cancellation and output failure; they do not emulate real firmware decoding.

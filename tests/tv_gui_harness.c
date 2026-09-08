@@ -93,19 +93,20 @@ int main(int argc, char **argv) {
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == (void *)0x44000000);
     /* off/no cable/composite/module error all preserve LCD and allocate nothing. */
     tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels && mode_calls == 0);
-    assert(tv_music_lower_priority() == -1 && ui_priority == 0x20);
+    i = music_ui_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
+    music_ui_restore_priority(i); assert(ui_priority == 0x20);
     tv_ui_auto = 1; cable = 0; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 2; load_failure = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     load_failure = 0; tv_ui_start(); assert(tv_ui_active && display_output.tv && mode_calls == 1);
-    i = tv_music_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
-    tv_music_restore_priority(i); assert(ui_priority == 0x20);
+    i = music_ui_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
+    music_ui_restore_priority(i); assert(ui_priority == 0x20);
     priority_failure = 1;
-    i = tv_music_lower_priority(); assert(i == -1 && ui_priority == 0x20);
+    i = music_ui_lower_priority(); assert(i == -1 && ui_priority == 0x20);
     priority_failure = 0;
-    tv_music_restore_priority(i); assert(ui_priority == 0x20);
+    music_ui_restore_priority(i); assert(ui_priority == 0x20);
     ui_priority = 0x50;
-    assert(tv_music_lower_priority() == -1 && ui_priority == 0x50);
+    assert(music_ui_lower_priority() == -1 && ui_priority == 0x50);
     ui_priority = 0x20;
     before = mode_calls;
     for (i = 0; i < 100; i++) {

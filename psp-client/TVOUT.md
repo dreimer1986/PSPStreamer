@@ -52,6 +52,17 @@ both layouts. It also checks dirty-copy byte counts and priority restoration.
 This establishes visual equivalence and reduced transfer work, not that real
 PSP audio underruns or the longstanding faint residual click are eliminated.
 
+LCD music now uses the same 20 Hz budget and scoped GUI priority. Its
+480×272 scene is drawn once before the worker starts, then needle envelopes,
+changed volume and spectrum bar deltas are updated directly at stride 512.
+No extra framebuffer is allocated. The renderer preserves text/bar/knob
+overlaps and keeps the same analogue controls in fullscreen; VU ballistics
+advance once per visual tick in either layout. A layout change or new track
+redraws once. This does not alter the library screens or video rendering.
+An additional 720-frame LCD comparison uses the shipped font and artwork,
+both languages/layouts, all volume detents, held volume, pause, silence and
+end-of-stream decay. Padding and TV/video ownership guards are checked too.
+
 ## Calibration and first hardware test
 
 Select+L+R enters the existing component test card; repeat to return to the

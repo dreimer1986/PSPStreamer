@@ -1662,6 +1662,7 @@ cleanup:
 }
 
 #include "tv_gui.h"
+#include "lcd_music.h"
 
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
@@ -1684,57 +1685,31 @@ static int play_audio(const char *media_id, const char *title) {
     timed_active = 0;
     video_first_presented = 1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
+    /* Neither music GUI may outrank the existing 0x3D DAC worker. Restore
+     * the caller's priority before returning to menus or subsequent video. */
+    previous_ui_priority = music_ui_lower_priority();
+    /* The only initial full-frame draw happens BEFORE audio starts. */
     if (tv_ui_active) {
-        /* GUI must not outrank the existing 0x3D DAC worker. Change only this
-         * music UI thread, then restore it before any subsequent video. */
-        previous_ui_priority = tv_music_lower_priority();
         tv_music_reset();
-        /* The only initial full-frame draw happens BEFORE audio starts. */
         tv_draw_music(title, 0);
+    } else {
+        lcd_music_reset();
+        lcd_draw_music(title, 0);
     }
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     if (audio_thread_id < 0) {
         audio_running = 0;
-        tv_music_restore_priority(previous_ui_priority);
+        music_ui_restore_priority(previous_ui_priority);
         return audio_thread_id;
     }
     sceKernelStartThread(audio_thread_id, 0, NULL);
     while (audio_running) {
         SceCtrlData pad;
-        int x;
         keep_awake();
         if (tv_ui_active) {
             tv_draw_music(title, fullscreen);
         } else {
-            if (fullscreen) vu_ballistics_step();
-            if (!fullscreen) {
-                gui_library_shell(tr(TXT_NOW_PLAYING));
-                gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
-                gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
-                gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
-            } else {
-                gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
-                gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
-                gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
-            }
-            /* Actual PCM frequency bins, not a decorative level animation. */
-            for (x = 0; x < SPECTRUM_BANDS; x++) {
-                int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
-                int height, baseline = fullscreen ? 194 : 150;
-                u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
-                if (target > spectrum_display[x])
-                    spectrum_display[x] += (target - spectrum_display[x] + 1) / 2;
-                else if (spectrum_display[x] > 3)
-                    spectrum_display[x] -= 3;
-                else spectrum_display[x] = 0;
-                height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
-                gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
-                         fullscreen ? 25 : 15, height, color);
-            }
-            if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
-            else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
-            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-            sceDisplayWaitVblankStart();
+            lcd_draw_music(title, fullscreen);
         }
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
@@ -1757,7 +1732,7 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         old = pad.Buttons;
-        sceKernelDelayThread(tv_ui_active ? 10000 : 33000);
+        sceKernelDelayThread(10000);
     }
     audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
@@ -1777,7 +1752,7 @@ static int play_audio(const char *media_id, const char *title) {
     if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
         (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
-    tv_music_restore_priority(previous_ui_priority);
+    music_ui_restore_priority(previous_ui_priority);
     return audio_state < 0 ? audio_state : 0;
 }
 

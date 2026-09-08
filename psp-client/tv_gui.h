@@ -250,16 +250,15 @@ static struct {
 static void tv_music_reset(void) { memset(&tv_music, 0, sizeof(tv_music)); }
 
 /* Scope priority to music GUI work, never change the DAC/decoder workers. */
-static int tv_music_lower_priority(void) {
+static int music_ui_lower_priority(void) {
     int priority;
-    if (!tv_ui_active) return -1;
     priority = sceKernelGetThreadCurrentPriority();
     if (priority >= 0 && priority < 0x40 && sceKernelChangeThreadPriority(0, 0x40) >= 0)
         return priority;
     return -1;
 }
 
-static void tv_music_restore_priority(int priority) {
+static void music_ui_restore_priority(int priority) {
     if (priority >= 0) sceKernelChangeThreadPriority(0, priority);
 }
 
