@@ -1,8 +1,9 @@
 # Future music visualizations — reference backlog
 
-Saved at the user's request on 2026-09-08. None of these engines or presets
-is currently imported into PSPStreamer. Finish hardware validation of the
-optional native TV interface before starting a visualization port.
+Saved at the user's request on 2026-09-08. The first opt-in
+[MilkDrop warp prototype](MILKDROP_PROTOTYPE.md) now adapts a small part of
+MilkDrop 2's no-shader equations. No complete engine or third-party presets
+are bundled.
 
 Update: the user confirmed crackle-free LCD and TV music with `1852d20`.
 The preparation/cleanup and ownership boundaries are documented in

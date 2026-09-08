@@ -1667,11 +1667,13 @@ cleanup:
 static int json_value(const char *from, const char *key, char *destination, size_t length);
 static int json_integer(const char *from, const char *key, int fallback);
 #include "music_remote.h"
+#include "milkdrop_warp.h"
 
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
+    int visual_preset = 0;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1688,6 +1690,7 @@ static int play_audio(const char *media_id, const char *title) {
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
     timed_active = 0;
+    music_visual_active = 0;
     resume_pending = seek_requested = 0;
     video_first_presented = 1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
@@ -1736,6 +1739,17 @@ static int play_audio(const char *media_id, const char *title) {
         } else {
             lcd_draw_music(title, fullscreen);
         }
+        if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
+            unsigned char bands[SPECTRUM_BANDS];
+            int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
+            for (band = 0; band < SPECTRUM_BANDS; band++)
+                bands[band] = audio_start ? spectrum_levels[band] : 0;
+            if (!md_frame(tv_ui_active, fullscreen, bands, level,
+                          sceKernelGetSystemTimeWide(), visual_preset-1)) {
+                md_stop(); music_visual_active = visual_preset = 0;
+                lcd_music_reset(); tv_music_reset();
+            }
+        }
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -1756,6 +1770,14 @@ static int play_audio(const char *media_id, const char *title) {
         } else next_volume_repeat_tick = 0;
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
+        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
+            if (visual_preset == 3) {
+                md_stop(); visual_preset = 0; music_visual_active = 0;
+            } else if (visual_preset || md_start()) {
+                visual_preset++; music_visual_active = 1;
+            }
+            lcd_music_reset(); tv_music_reset();
+        }
         old = pad.Buttons;
         sceKernelDelayThread(MUSIC_UI_INPUT_POLL_US);
     }
@@ -1774,6 +1796,8 @@ static int play_audio(const char *media_id, const char *title) {
     /* An EOF racing a terminal remote command must not trigger autoplay. */
     if (music_remote_action >= MUSIC_REMOTE_STOP) stopped_by_user = 1;
     music_remote_stop();
+    md_stop();
+    music_visual_active = 0;
     /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song

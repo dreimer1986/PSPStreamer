@@ -21,3 +21,15 @@ This is a streaming adaptation, not the complete PPA player or demuxer.
 
 Bundled third-party components, including fonts and firmware bridges, retain
 their respective authorship and license terms.
+
+MilkDrop 2 warp equations
+------------------------
+The optional music prototype adapts WarpedBlit_NoShaders UV calculations
+from vis_milk2/milkdropfs.cpp, Copyright 2005-2013 Nullsoft, Inc.
+Source: https://github.com/eef2697d62fbe08e2fd927278/milkdrop2
+Revision: b5e4136c2f050eafa10aa199bb72c8e5c12c9320
+License: BSD-3-Clause; complete notice in licenses/MilkDrop2.txt and the
+adapted source file psp-client/milkdrop_warp.c. Binary packages include
+MilkDrop2-license.txt. The PSP GU adapter and spectrum ring are new additions,
+not the original MilkDrop renderer or waveform implementation. No third-party
+presets are bundled. See docs/MILKDROP_PROTOTYPE.md for supported scope.

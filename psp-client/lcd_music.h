@@ -24,7 +24,7 @@ static void lcd_music_full(const char *title, int fullscreen) {
         gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
     }
     /* Actual PCM frequency bins, not a decorative level animation. */
-    for (x = 0; x < SPECTRUM_BANDS; x++) {
+    for (x = 0; x < SPECTRUM_BANDS && !music_visual_active; x++) {
         int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
         int height, baseline = fullscreen ? 194 : 150;
         u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
@@ -82,7 +82,7 @@ static void lcd_draw_music(const char *title, int fullscreen) {
         if (!fullscreen) lcd_music_restore(38, 64, 436, 8, 0);
         lcd_music.volume = playback_volume;
     }
-    for (i = 0; i < SPECTRUM_BANDS; i++) {
+    for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
         int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[i];
         int previous = lcd_music.height[i], height;
         int x = fullscreen ? 24 + i * 36 : 42 + i * 23, width = fullscreen ? 25 : 15;
@@ -102,7 +102,8 @@ static void lcd_draw_music(const char *title, int fullscreen) {
      * In fullscreen the knob overlaps the last six rows of the last bars. */
     if (!fullscreen && label_dirty)
         gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
-    for (i = 0; i < SPECTRUM_BANDS && (fullscreen ? volume_changed : label_dirty); i++) {
+    for (i = 0; i < SPECTRUM_BANDS && !music_visual_active &&
+         (fullscreen ? volume_changed : label_dirty); i++) {
         int top = baseline - lcd_music.height[i], bottom = fullscreen ? 194 : 72;
         int x = fullscreen ? 24 + i * 36 : 42 + i * 23, width = fullscreen ? 25 : 15;
         u32 color = i < 4 ? 0x0000D8FF : i < 8 ? 0x00B070FF : 0x00FFB000;

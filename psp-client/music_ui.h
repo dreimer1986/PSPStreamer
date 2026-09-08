@@ -5,6 +5,8 @@
 #define MUSIC_UI_INTERVAL_US 50000ULL
 #define MUSIC_UI_INPUT_POLL_US 10000
 #define MUSIC_UI_THREAD_PRIORITY 0x40
+/* Session-only opt-in. The default receiver remains the startup view. */
+static int music_visual_active;
 
 /* Keep the existing attack/decay exactly, including decay when target equals
  * displayed level. This envelope is visual, not an audio sample transform. */

@@ -222,7 +222,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
             tv_text(562, 127, 10, 3, TV_MUTED, tr(TXT_TV_VOLUME), playback_volume * 100 / 30);
             tv_text(562, 194, 10, 3, TV_MUTED, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
         }
-        for (i = 0; i < SPECTRUM_BANDS; i++) {
+        for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
             int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
             int height;
             spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
@@ -310,7 +310,7 @@ static void tv_draw_music(const char *title, int fullscreen) {
         }
     }
     tv_receiver_parts(parts);
-    for (i = 0; i < SPECTRUM_BANDS; i++) {
+    for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
         int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
         int height, previous = tv_music.height[i];
         int x = 37 + i * (fullscreen ? 54 : 41), width = fullscreen ? 38 : 28;
