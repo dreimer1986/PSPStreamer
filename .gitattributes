@@ -1,0 +1,2 @@
+# Packed pixel/font data must never undergo line-ending conversion.
+*.raw binary
