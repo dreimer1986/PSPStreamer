@@ -17,7 +17,12 @@
 static unsigned int *md_list;
 static int md_front;
 static int md_last_tv, md_last_fullscreen;
+static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
+void md_set_tv_title_bottom(int bottom) {
+    int top = bottom + 5;
+    md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
+}
 
 static void *md_texture(int index) {
     return (void *)(uintptr_t)(0x04000000 + MD_TEXTURE_BASE + index*MD_TEXTURE_BYTES);
@@ -52,15 +57,18 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset) {
     MdVertex *mesh, *ring, *blit;
     int target = 1-md_front;
-    /* Receiver aperture: calibrated edges, independent of full scanout.
-     * LCD [38,344) x [82,149); TV [41,531) x [108,293). */
-    int left = tv ? 41 : 38, top = tv ? 108 : 82;
-    int width = tv ? (fullscreen ? 720 : 490) : (fullscreen ? 480 : 306);
-    int height = tv ? (fullscreen ? 480 : 185) : (fullscreen ? 272 : 67);
+    /* Independent edges: changing top/left must not move bottom/right.
+     * TV begins just inside the blue border and five rows below title ink. */
+    int left = fullscreen ? 0 : tv ? 26 : 38;
+    int top = fullscreen ? 0 : tv ? md_tv_top : 74;
+    int right = fullscreen ? (tv ? 720 : 480) : tv ? 534 : 344;
+    int bottom = fullscreen ? (tv ? 480 : 272) : tv ? 294 : 149;
+    int width = right - left, height = bottom - top;
     float seconds;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;
-    if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen) return 1;
+    if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
+        top == md_last_top) return 1;
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
     if (fullscreen) left = top = 0;
@@ -112,6 +120,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;
     md_last_tv = tv; md_last_fullscreen = fullscreen;
+    md_last_top = top;
     finished = sceKernelGetSystemTimeWide();
     cost = finished - now;
     /* Never attempt catch-up frames. Expensive frames lower the visual rate,

@@ -1748,6 +1748,7 @@ static int play_audio(const char *media_id, const char *title) {
             else lcd_draw_music(title, fullscreen);
         }
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
+            if (tv_ui_active) md_set_tv_title_bottom(tv_music_title_bottom);
             unsigned char bands[SPECTRUM_BANDS];
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
             for (band = 0; band < SPECTRUM_BANDS; band++)

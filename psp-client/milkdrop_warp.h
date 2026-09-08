@@ -16,6 +16,7 @@ void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
 /* PSP-only adapter: owns GU lists/textures solely during music visualization. */
 int md_start(void);
 void md_stop(void);
+void md_set_tv_title_bottom(int bottom);
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset);
 #endif

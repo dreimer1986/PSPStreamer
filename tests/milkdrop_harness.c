@@ -116,10 +116,10 @@ int main(void) {
     md_custom_preset.warp=md_presets[0];
     md_custom_preset.red=1; md_custom_preset.green=.5f; md_custom_preset.blue=0;
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
-        expected_left=full ? 0 : tv ? 41 : 38;
-        expected_top=full ? 0 : tv ? 108 : 82;
-        expected_width=full ? (tv ? 720 : 480) : tv ? 490 : 306;
-        expected_height=full ? (tv ? 480 : 272) : tv ? 185 : 67;
+        expected_left=full ? 0 : tv ? 26 : 38;
+        expected_top=full ? 0 : tv ? 86 : 74;
+        expected_width=full ? (tv ? 720 : 480) : tv ? 508 : 306;
+        expected_height=full ? (tv ? 480 : 272) : tv ? 208 : 75;
         assert(md_start() && md_start());
         for(int i=0;i<1474560;i++) assert(vram[i]==0xa5);
         for(int preset=0;preset<4;preset++) {
@@ -141,8 +141,19 @@ int main(void) {
     }
     assert(mesh_calls==1920 && ring_calls>0 && sprite_calls>mesh_calls);
     assert(syncs>=starts);
+    /* Title height changes only the top, never the other three TV edges. */
     expected_ring_color=0;
-    expected_left=38; expected_top=82; expected_width=306; expected_height=67;
+    assert(md_start());
+    expected_left=26; expected_top=84; expected_width=508; expected_height=210;
+    md_set_tv_title_bottom(79);
+    assert(md_frame(1,0,bands,0,test_time,0));
+    expected_top=100; expected_height=194;
+    md_set_tv_title_bottom(95);
+    assert(md_frame(1,0,bands,0,test_time,0));
+    md_stop();
+    md_set_tv_title_bottom(81);
+    expected_ring_color=0;
+    expected_left=38; expected_top=74; expected_width=306; expected_height=75;
     assert(md_start());
     render_cost=50000;
     assert(md_frame(0,0,bands,0,test_time,0));
@@ -160,7 +171,7 @@ int main(void) {
         int calls=starts;
         expected_left=expected_top=0; expected_width=480; expected_height=272;
         assert(md_frame(0,1,bands,0,test_time,0) && starts==calls+1);
-        expected_left=38; expected_top=82; expected_width=306; expected_height=67;
+        expected_left=38; expected_top=74; expected_width=306; expected_height=75;
         assert(md_frame(0,0,bands,0,test_time,0) && starts==calls+2);
     }
     md_stop();

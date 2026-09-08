@@ -40,24 +40,31 @@ static int tv_utf8_char(const char **text) {
 
 /* Proportional native glyphs with word wrap; limits remain pixel-based.
  * UTF-8 is decoded before measuring, so umlauts cannot be split into bytes. */
-static void tv_text(int x, int y, int columns, int lines, u32 color, const char *format, ...) {
+static int tv_music_title_bottom = 81;
+/* Return the exclusive lower ink edge, without changing text rendering. */
+static int tv_text(int x, int y, int columns, int lines, u32 color, const char *format, ...) {
     char text[512];
     const char *cursor;
     static unsigned char advance[256];
+    static unsigned char ink_height[256];
+    int bottom = y;
     int row = 0, offset = 0, new_word = 1, limit = columns * 13;
     va_list args;
     va_start(args, format);
     vsnprintf(text, sizeof(text), format, args);
     va_end(args);
     if (!subtitle_font) subtitle_load_font();
-    if (!subtitle_font) return;
+    if (!subtitle_font) return y + lines * 16;
     if (!advance[0]) {
         int g, xx, yy;
         for (g = 0; g < 256; g++) {
             const unsigned char *bitmap = subtitle_font + (g >> 4) * 20 * 256 + (g & 15) * 16;
             advance[g] = 6;
             for (yy = 0; yy < 16; yy++) for (xx = 0; xx < 12; xx++)
-                if (bitmap[yy * 256 + xx] && advance[g] < xx + 2) advance[g] = xx + 2;
+                if (bitmap[yy * 256 + xx]) {
+                    if (advance[g] < xx + 2) advance[g] = xx + 2;
+                    ink_height[g] = yy + 1;
+                }
         }
     }
     cursor = text;
@@ -76,8 +83,11 @@ static void tv_text(int x, int y, int columns, int lines, u32 color, const char 
         if (row >= lines) break;
         if (glyph == ' ' && !offset) continue;
         tv_glyph(&tv_canvas, subtitle_font, glyph, x + offset, y + row * 16, color);
+        if (ink_height[glyph] && bottom < y + row * 16 + ink_height[glyph])
+            bottom = y + row * 16 + ink_height[glyph];
         offset += advance[glyph];
     }
+    return bottom;
 }
 
 static u32 tv_indicator_color(int index) {
@@ -216,7 +226,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         tv_help(tr(audio_only ? TXT_MUSIC_SETUP_CONTROLS : TXT_VIDEO_SETUP_CONTROLS));
     } else {
         if (fullscreen) tv_rect(&tv_canvas, 25, 59, 673, 239, 0x000C0C0A);
-        tv_text(34, 65, fullscreen ? 50 : 38, 2, TV_WHITE, "%s", title);
+        tv_music_title_bottom = tv_text(34, 65, fullscreen ? 50 : 38, 2, TV_WHITE, "%s", title);
         if (!fullscreen) {
             tv_text(562, 67, 10, 3, TV_AMBER, "%s", tr(TXT_MUSIC));
             tv_text(562, 127, 10, 3, TV_MUTED, tr(TXT_TV_VOLUME), playback_volume * 100 / 30);

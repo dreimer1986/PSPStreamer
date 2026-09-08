@@ -26,10 +26,17 @@ offsets (right/bottom are exclusive pixel boundaries):
 
 | Output | Left | Top | Right | Bottom | Size |
 | --- | --- | --- | --- | --- | --- |
-| LCD receiver | 38 | 82 | 344 | 149 | 306×67 |
-| TV receiver | 41 | 108 | 531 | 293 | 490×185 |
+| LCD receiver | 38 | 74 | 344 | 149 | 306×75 |
+| TV receiver | 26 | title ink bottom + 5 | 534 | 294 | 508×(294 − top) |
 | LCD fullscreen | 0 | 0 | 480 | 272 | 480×272 |
 | TV fullscreen | 0 | 0 | 720 | 480 | 720×480 |
+
+The corrected interpretation extends individual edges rather than translating
+the viewport. LCD top is eight pixels above its previous position. TV left
+starts inside the artwork's blue line; right is extended three pixels and
+bottom one pixel. The TV text renderer reports its exclusive lower ink edge,
+so one- and two-line titles each retain five blank rows before visualization.
+The top is defensively bounded to 70–102. Other edges remain fixed.
 
 Pause, volume,
 Stop and web controls remain available. Each new track starts with the
