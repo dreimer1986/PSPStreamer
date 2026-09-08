@@ -20,6 +20,7 @@ class MilkDropTests(unittest.TestCase):
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=undefined", "-I", str(ROOT / "psp-client"),
                             str(source), str(ROOT / "psp-client/milkdrop_warp.c"),
+                            str(ROOT / "psp-client/milkdrop_preset.c"),
                             "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=20)
 
@@ -27,7 +28,9 @@ class MilkDropTests(unittest.TestCase):
         source = (ROOT / "psp-client/main.c").read_text()
         music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
         self.assertIn("music_visual_active = 0;", music)
-        self.assertIn("visual_preset == 3", music)
+        self.assertIn("visual_preset == 4", music)
+        self.assertLess(music.index("md_load_preset("), music.index("sceKernelCreateThread("))
+        self.assertEqual(music.count("md_load_preset("), 1)
         self.assertIn("PSP_CTRL_SQUARE", music)
         self.assertIn("md_stop();\n    music_visual_active = 0;", music)
         audio = source[source.index("static int audio_thread(SceSize args, void *argp) {"):

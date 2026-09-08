@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * PSP adapter, no display-mode changes, no audio/ME calls. */
 #include "milkdrop_warp.h"
+#include "milkdrop_preset.h"
 #include <pspgu.h>
 #include <pspge.h>
 #include <pspkernel.h>
@@ -54,7 +55,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     int height = tv ? 188 : (fullscreen ? 140 : 96);
     float seconds;
     unsigned long long finished, cost;
-    if (!md_list || preset < 0 || preset > 2) return 0;
+    if (!md_list || preset < 0 || preset > 3) return 0;
     if (now < md_next) return 1;
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
@@ -72,12 +73,18 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
-    md_warp_mesh(mesh, &md_presets[preset], seconds);
+    md_warp_mesh(mesh, preset == 3 ? &md_custom_preset.warp : &md_presets[preset], seconds);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
     if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
         md_audio_ring(ring, bands, level, seconds, preset);
+        if (preset == 3) {
+            unsigned int color = 0xff000000U | (unsigned int)(md_custom_preset.red*255) |
+                ((unsigned int)(md_custom_preset.green*255)<<8) |
+                ((unsigned int)(md_custom_preset.blue*255)<<16);
+            for (int i = 0; i < 97; i++) ring[i].color = color;
+        }
         sceGuDrawArray(GU_LINE_STRIP, MD_FORMAT, 97, NULL, ring);
     }
     sceGuTexSync();

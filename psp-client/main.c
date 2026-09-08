@@ -1668,12 +1668,17 @@ static int json_value(const char *from, const char *key, char *destination, size
 static int json_integer(const char *from, const char *key, int fallback);
 #include "music_remote.h"
 #include "milkdrop_warp.h"
+#include "milkdrop_preset.h"
+#include "music_preset_ui.h"
 
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
     int visual_preset = 0;
+    MdFileError preset_error;
+    int preset_result;
+    unsigned long long preset_notice_tick = ~0ULL;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1693,6 +1698,8 @@ static int play_audio(const char *media_id, const char *title) {
     music_visual_active = 0;
     resume_pending = seek_requested = 0;
     video_first_presented = 1;
+    /* Read once, before either music worker exists. Never parse on a draw tick. */
+    preset_result = md_load_preset("presets/active.milk", &md_custom_preset, &preset_error);
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     /* Neither music GUI may outrank the existing 0x3D DAC worker. Restore
      * the caller's priority before returning to menus or subsequent video. */
@@ -1750,6 +1757,13 @@ static int play_audio(const char *media_id, const char *title) {
                 lcd_music_reset(); tv_music_reset();
             }
         }
+        if (visual_preset == 4 && preset_result != MD_FILE_OK) {
+            unsigned long long tick = tv_ui_active ? tv_music.next_tick : lcd_music.next_tick;
+            if (tick != preset_notice_tick) {
+                music_preset_notice(&preset_error, fullscreen);
+                preset_notice_tick = tick;
+            }
+        }
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -1771,11 +1785,15 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
-            if (visual_preset == 3) {
+            if (visual_preset == 4) {
                 md_stop(); visual_preset = 0; music_visual_active = 0;
+            } else if (visual_preset == 3) {
+                visual_preset = 4;
+                if (preset_result != MD_FILE_OK) { md_stop(); music_visual_active = 0; }
             } else if (visual_preset || md_start()) {
                 visual_preset++; music_visual_active = 1;
             }
+            preset_notice_tick = ~0ULL;
             lcd_music_reset(); tv_music_reset();
         }
         old = pad.Buttons;

@@ -12,14 +12,16 @@ Start music normally. **Square** cycles:
 1. Gentle zoom/rotation feedback.
 2. Stronger warp with opposite rotation.
 3. Faster outward zoom.
-4. Original spectrum/receiver, visualization off.
+4. Custom static file `presets/active.milk` (see [supported subset](MILKDROP_PRESETS.md)).
+5. Original spectrum/receiver, visualization off.
 
 **Cross + Triangle** still switches between the normal and enlarged music
 layout. Analogue meters and the volume dial remain visible. Pause, volume,
 Stop and web controls remain available. Each new track starts with the
 original receiver; the prototype choice is intentionally not saved.
 
-No server/add-on change, configuration key or preset download is required.
+No server/add-on change or configuration key is required. Copy the supplied
+`presets/active.milk` example to enable the custom slot.
 Use the same binary for LCD and native TV GUI (`tv_ui=auto`).
 The historical LCD-menu/TV-video mode still visualizes music on the LCD.
 
@@ -71,7 +73,7 @@ that physical PSP/OSSC rendering has already been validated.
 1. Start a song on LCD; verify ordinary playback, then press Square once.
 2. Check the animated feedback/ring, responsiveness and especially crackling.
 3. Try all three variants, the enlarged layout, pause/resume and volume.
-4. Return to the original spectrum with the fourth Square press.
+4. Return to the original spectrum with the fifth Square press.
 5. Enable again, then remotely start another song and a video.
 6. Repeat with the native TV GUI, restarting with the component cable attached.
 
@@ -80,7 +82,7 @@ stays clean, and whether music-to-video transitions remain clean. A hardware
 failure in GU submission cannot be ruled out by host tests; the previous
 stable release is retained separately for rollback.
 
-Host tests cover identity UV mapping, 1,440 adapter frames in LCD/TV and both
+Host tests cover identity UV mapping, 1,920 adapter frames in LCD/TV and both
 layouts, finite/bounded vertices, distinct source/destination textures, memory
 limits, init/start failures and repeated shutdown. They mock GU and do not
 emulate rasterization, GPU timing or actual firmware integration.

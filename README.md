@@ -174,8 +174,11 @@ Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compac
 Component TV playback uses native 720×480 output. By default, the browser and options stay on the PSP LCD and video switches to the TV. With `tv_ui=auto`, TV menus and video share the same output mode: Stop/end returns to the TV menu without an LCD mode reset. The existing Select+L+R TV check is available from either browser and returns to its originating output. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands. This GUI update does not require a server/add-on update.
 
 An optional [MilkDrop warp prototype](docs/MILKDROP_PROTOTYPE.md) is available
-during music: **Square** cycles three feedback effects, then returns to the
-normal spectrum. **Cross + Triangle** keeps its enlarged-layout function;
+during music: **Square** cycles three built-in effects, the custom file
+`presets/active.milk`, then the normal spectrum. Copy the supplied
+`psp-client/presets` folder beside EBOOT to try the fourth slot.
+See [supported static fields and limits](docs/MILKDROP_PRESETS.md).
+**Cross + Triangle** keeps its enlarged-layout function;
 analogue meters and volume remain visible. This adapts MilkDrop 2's no-shader
 warp equations to PSP GU, not its complete engine: arbitrary `.milk` files,
 EEL expressions and shader presets are not supported yet. Each track starts

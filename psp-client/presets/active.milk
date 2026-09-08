@@ -1,0 +1,15 @@
+; PSPStreamer static-subset example, authored for this project.
+; Change these values, then stop/start music to reload.
+; Square: three built-in effects, this file, then visualization off.
+[preset00]
+zoom=1.018
+rot=-0.020
+warp=1.4
+fWarpAnimSpeed=0.8
+fWarpScale=1.2
+fDecay=0.97
+
+; These colors apply to the PSP-native spectrum ring, not MilkDrop waves.
+wave_r=0.2
+wave_g=0.8
+wave_b=1.0

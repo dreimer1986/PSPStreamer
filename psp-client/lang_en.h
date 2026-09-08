@@ -1,5 +1,11 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Custom visualization: two compact lines, with field/line below. */
+    [TXT_PRESET_MISSING] = "Preset file missing",
+    [TXT_PRESET_INVALID] = "Invalid preset value",
+    [TXT_PRESET_UNSUPPORTED] = "Unsupported preset field",
+    [TXT_PRESET_IO] = "Cannot read preset",
+
     /* Native TV sidebar */
     [TXT_TV_SAVED_LINE1] = "Saved for",
     [TXT_TV_SAVED_LINE2] = "next",

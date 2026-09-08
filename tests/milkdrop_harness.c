@@ -18,6 +18,7 @@ static unsigned char *list_base;
 static size_t list_used;
 static unsigned long long test_time = 1000000;
 static unsigned long long render_cost;
+static uint32_t expected_ring_color;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return test_time; }
 static int sceGuInit(void) {
@@ -71,7 +72,10 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     const MdVertex *v=data;
     assert(format==15 && !indices);
     if(type==GU_TRIANGLES) { assert(count==MD_MESH_VERTICES); mesh_calls++; }
-    else if(type==GU_LINE_STRIP) { assert(count==97); ring_calls++; }
+    else if(type==GU_LINE_STRIP) {
+        assert(count==97); ring_calls++;
+        if(expected_ring_color) for(int i=0;i<count;i++) assert(v[i].color==expected_ring_color);
+    }
     else { assert(type==GU_SPRITES && count==2 && !target_offset); sprite_calls++; }
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
@@ -101,10 +105,13 @@ int main(void) {
     memset(bands,0,sizeof(bands));
     assert(!md_frame(0,0,bands,0,test_time,0) && !md_list && !gu_live);
     fail_start=0;
+    md_custom_preset.warp=md_presets[0];
+    md_custom_preset.red=1; md_custom_preset.green=.5f; md_custom_preset.blue=0;
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         assert(md_start() && md_start());
         for(int i=0;i<1474560;i++) assert(vram[i]==0xa5);
-        for(int preset=0;preset<3;preset++) {
+        for(int preset=0;preset<4;preset++) {
+            expected_ring_color=preset==3 ? 0xff007fffU : 0;
             for(int frame=0;frame<120;frame++) {
                 int calls=starts;
                 for(int i=0;i<12;i++) bands[i]=(frame*7+i*9)%101;
@@ -119,8 +126,9 @@ int main(void) {
         }
         md_stop(); md_stop(); assert(!gu_live && !md_list);
     }
-    assert(mesh_calls==1440 && ring_calls>0 && sprite_calls>mesh_calls);
+    assert(mesh_calls==1920 && ring_calls>0 && sprite_calls>mesh_calls);
     assert(syncs>=starts);
+    expected_ring_color=0;
     assert(md_start());
     render_cost=50000;
     assert(md_frame(0,0,bands,0,test_time,0));

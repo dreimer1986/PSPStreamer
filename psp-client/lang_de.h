@@ -1,6 +1,12 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Eigene Visualisierung: darunter folgen Zeile und Feldname. */
+    [TXT_PRESET_MISSING] = "Preset-Datei fehlt",
+    [TXT_PRESET_INVALID] = "Ungültiger Preset-Wert",
+    [TXT_PRESET_UNSUPPORTED] = "Preset-Feld nicht unterstützt",
+    [TXT_PRESET_IO] = "Preset nicht lesbar",
+
     /* Native TV sidebar */
     [TXT_TV_SAVED_LINE1] = "Für nächste",
     [TXT_TV_SAVED_LINE2] = "Wiedergabe",
