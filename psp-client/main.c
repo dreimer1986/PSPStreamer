@@ -1665,6 +1665,7 @@ cleanup:
 
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
+    int previous_ui_priority = -1;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1683,15 +1684,27 @@ static int play_audio(const char *media_id, const char *title) {
     timed_active = 0;
     video_first_presented = 1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
+    if (tv_ui_active) {
+        /* GUI must not outrank the existing 0x3D DAC worker. Change only this
+         * music UI thread, then restore it before any subsequent video. */
+        previous_ui_priority = tv_music_lower_priority();
+        tv_music_reset();
+        /* The only initial full-frame draw happens BEFORE audio starts. */
+        tv_draw_music(title, 0);
+    }
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
-    if (audio_thread_id < 0) { audio_running = 0; return audio_thread_id; }
+    if (audio_thread_id < 0) {
+        audio_running = 0;
+        tv_music_restore_priority(previous_ui_priority);
+        return audio_thread_id;
+    }
     sceKernelStartThread(audio_thread_id, 0, NULL);
     while (audio_running) {
         SceCtrlData pad;
         int x;
         keep_awake();
         if (tv_ui_active) {
-            tv_draw_view(TV_VIEW_MUSIC, 0, 0, 1, title, fullscreen);
+            tv_draw_music(title, fullscreen);
         } else {
             if (fullscreen) vu_ballistics_step();
             if (!fullscreen) {
@@ -1744,7 +1757,7 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         old = pad.Buttons;
-        sceKernelDelayThread(33000);
+        sceKernelDelayThread(tv_ui_active ? 10000 : 33000);
     }
     audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
@@ -1764,6 +1777,7 @@ static int play_audio(const char *media_id, const char *title) {
     if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
         (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
+    tv_music_restore_priority(previous_ui_priority);
     return audio_state < 0 ? audio_state : 0;
 }
 

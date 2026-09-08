@@ -27,6 +27,16 @@ class TvGuiTests(unittest.TestCase):
         self.assertIn('tv_ui=%s\\n', source)
         self.assertIn('!strcmp(line + 6, "auto")', source)
 
+    def test_music_priority_scope_and_initial_draw_precede_audio(self):
+        source = (ROOT / "psp-client/main.c").read_text()
+        music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        self.assertLess(music.index("tv_draw_music(title, 0);"),
+                        music.index('sceKernelCreateThread("PSPStreamerMusic"'))
+        # Both exit paths restore the caller's priority, including create failure.
+        self.assertEqual(music.count("return "), 2)
+        self.assertEqual(music.count("tv_music_restore_priority(previous_ui_priority);"), 2)
+        self.assertNotIn("tv_draw_view(TV_VIEW_MUSIC", music)
+
 
 if __name__ == "__main__":
     unittest.main()

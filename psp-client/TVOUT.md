@@ -37,6 +37,21 @@ VBlank. Two 32-bit 768×480 buffers do not fit in the real 2 MiB EDRAM, so the
 second buffer is RAM, **not** an assumed second VRAM framebuffer. Host tests
 do not establish transfer timing, tearing behaviour or physical TV sync.
 
+Music uses incremental updates rather than that full-frame path every tick.
+The initial scene is drawn before starting audio; later ticks (at most 20 Hz)
+restore only moving needles/volume labels and update the gained/lost rows of
+spectrum bars. Only these rectangles reach EDRAM. Fullscreen changes redraw
+once. The TV signal, framebuffer address and stride remain continuously active,
+so an OSSC can keep forwarding audio even when no pixels need updating.
+The music GUI runs below the existing DAC worker's priority and restores its
+caller's priority on exit; decoder/DAC priorities and sample timing are unchanged.
+
+The host regression test compares 180 incremental frames pixel-for-pixel with
+full redraws, including pause decay, every volume detent, pressed lights and
+both layouts. It also checks dirty-copy byte counts and priority restoration.
+This establishes visual equivalence and reduced transfer work, not that real
+PSP audio underruns or the longstanding faint residual click are eliminated.
+
 ## Calibration and first hardware test
 
 Select+L+R enters the existing component test card; repeat to return to the

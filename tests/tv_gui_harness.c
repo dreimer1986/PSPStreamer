@@ -27,6 +27,15 @@ static TvCanvas tv_canvas;
 static int tv_ui_auto, tv_ui_active, tvout_video_active, cable = 2;
 static int mode_calls, framebuffer_calls, mode_failure, buffer_failure, hardware_tv;
 static int debug_calls, load_failure;
+static unsigned long long clock_tick = 1800000;
+static unsigned int test_buttons;
+static int ui_priority = 0x20, priority_failure;
+static int sceKernelGetThreadCurrentPriority(void) { return ui_priority; }
+static int sceKernelChangeThreadPriority(int thread, int priority) {
+    assert(thread == 0);
+    if (priority_failure) return -1;
+    ui_priority = priority; return 0;
+}
 static unsigned char font[81920], *subtitle_font = font;
 static int playback_volume = 24, vu_display_left = 30, vu_display_right = 80;
 static int item_count = 40, audio_track_count = 2, subtitle_track_count = 2;
@@ -52,8 +61,8 @@ static int subtitle_utf8_char(const char **text) {
     (*text)++; return s[0] < 128 ? s[0] : '?';
 }
 static void vu_ballistics_step(void) {}
-static unsigned long long sceKernelGetSystemTimeWide(void) { return 1800000; }
-static void sceCtrlPeekBufferPositive(SceCtrlData *pad, int count) { assert(count == 1); pad->Buttons = 0; }
+static unsigned long long sceKernelGetSystemTimeWide(void) { return clock_tick; }
+static void sceCtrlPeekBufferPositive(SceCtrlData *pad, int count) { assert(count == 1); pad->Buttons = test_buttons; }
 static void sceDisplayWaitVblankStart(void) {}
 static int sceDisplaySetFrameBuf(void *address, int stride, int format, int sync) {
     assert(address == (void *)0x04000000 && stride == 768 && format == 3 && sync == 1);
@@ -84,10 +93,20 @@ int main(int argc, char **argv) {
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == (void *)0x44000000);
     /* off/no cable/composite/module error all preserve LCD and allocate nothing. */
     tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels && mode_calls == 0);
+    assert(tv_music_lower_priority() == -1 && ui_priority == 0x20);
     tv_ui_auto = 1; cable = 0; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 2; load_failure = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     load_failure = 0; tv_ui_start(); assert(tv_ui_active && display_output.tv && mode_calls == 1);
+    i = tv_music_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
+    tv_music_restore_priority(i); assert(ui_priority == 0x20);
+    priority_failure = 1;
+    i = tv_music_lower_priority(); assert(i == -1 && ui_priority == 0x20);
+    priority_failure = 0;
+    tv_music_restore_priority(i); assert(ui_priority == 0x20);
+    ui_priority = 0x50;
+    assert(tv_music_lower_priority() == -1 && ui_priority == 0x50);
+    ui_priority = 0x20;
     before = mode_calls;
     for (i = 0; i < 100; i++) {
         /* TV menu -> video -> stop/seek/EOF -> TV menu: no mode resets. */
@@ -131,6 +150,51 @@ int main(int argc, char **argv) {
                 assert(tv_canvas.pixels[i * 768 + x] == 0x12345678);
             if (argc > 1) dump_frame(argv[1], language_code(), view, variant);
         }
+    }
+    /* Compare every incremental music frame to the production full renderer.
+     * Include rising/falling bars, silence, all volume detents, both VUs,
+     * changing/pressed indicators and both fullscreen layouts. */
+    for (int fullscreen = 0; fullscreen < 2; fullscreen++) {
+        u32 *incremental = malloc(TV_GUI_BYTES);
+        unsigned long long start_bytes, max_bytes = 0;
+        assert(incremental);
+        tv_music_reset();
+        tv_draw_music("Music / Grüße aus München", fullscreen);
+        assert(tv_music.full_frames == 1);
+        start_bytes = tv_music.copied_bytes;
+        tv_draw_music("Music / Grüße aus München", fullscreen);
+        assert(tv_music.incremental_frames == 0); /* budget guard, no redundant draw */
+        for (int frame = 0; frame < 90; frame++) {
+            int previous_spectrum[12];
+            unsigned long long bytes = tv_music.copied_bytes;
+            clock_tick += 60000;
+            playback_volume = frame % 31;
+            vu_display_left = frame * 7 % 101;
+            vu_display_right = frame * 19 % 101;
+            test_buttons = frame % 64;
+            audio_start = frame < 50 || frame > 65;
+            for (i = 0; i < 12; i++) spectrum_levels[i] = (frame * 17 + i * 31) % 101;
+            memcpy(previous_spectrum, spectrum_display, sizeof(previous_spectrum));
+            tv_draw_music("Music / Grüße aus München", fullscreen);
+            assert(!memcmp(tv_canvas.pixels, (void *)0x44000000, TV_GUI_BYTES));
+            bytes = tv_music.copied_bytes - bytes;
+            if (bytes > max_bytes) max_bytes = bytes;
+            assert(bytes < TV_GUI_BYTES / 4); /* no recurring full-frame copies */
+            memcpy(incremental, tv_canvas.pixels, TV_GUI_BYTES);
+            memcpy(spectrum_display, previous_spectrum, sizeof(previous_spectrum));
+            tv_draw_view(TV_VIEW_MUSIC, 0, 0, 1, "Music / Grüße aus München", fullscreen);
+            assert(!memcmp(incremental, tv_canvas.pixels, TV_GUI_BYTES));
+        }
+        assert(tv_music.full_frames == 1 && tv_music.incremental_frames == 90);
+        printf("TV music fullscreen=%d: average %llu, maximum %llu bytes/update (full=%d)\n",
+               fullscreen, (tv_music.copied_bytes - start_bytes) / 90, max_bytes, TV_GUI_BYTES);
+        tvout_video_active = 1;
+        tv_draw_music("Music / Grüße aus München", !fullscreen);
+        assert(tv_music.full_frames == 1); /* no takeover while video owns scanout */
+        tvout_video_active = 0;
+        tv_draw_music("Music / Grüße aus München", !fullscreen);
+        assert(tv_music.full_frames == 2); /* explicit layout change repaints once */
+        free(incremental);
     }
     free(tv_canvas.pixels); munmap((void *)0x44000000, TV_GUI_BYTES);
     return 0;

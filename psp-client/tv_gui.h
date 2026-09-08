@@ -80,36 +80,47 @@ static void tv_text(int x, int y, int columns, int lines, u32 color, const char 
     }
 }
 
-static void tv_receiver(void) {
+static u32 tv_indicator_color(int index) {
+    SceCtrlData pad;
+    static const unsigned int masks[] = {PSP_CTRL_LTRIGGER, PSP_CTRL_SELECT,
+        PSP_CTRL_RTRIGGER, PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE, PSP_CTRL_START};
+    static const u32 colors[] = {TV_CYAN, TV_AMBER, 0x00B070FF, 0x0060DD80, 0x00FF9060};
+    unsigned int tick = (unsigned int)(sceKernelGetSystemTimeWide() / 600000ULL);
+    sceCtrlPeekBufferPositive(&pad, 1);
+    return pad.Buttons & masks[index] ? TV_WHITE : colors[(tick + index * 3) % 5];
+}
+
+/* Bits 0/1: meters, 2..6: indicator lights, 7: volume marker and label. */
+static void tv_receiver_parts(unsigned int parts) {
     static const signed char needle_x[] = {-42,-40,-37,-34,-30,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,34,37,40,42};
     static const signed char needle_y[] = {-11,-16,-21,-25,-29,-32,-35,-37,-39,-40,-40,-40,-39,-37,-35,-32,-29,-25,-21,-16,-11};
     /* Clockwise travel over the upper 270 degrees of the volume dial. */
     static const signed char knob_x[] = {-21,-24,-27,-29,-30,-30,-30,-29,-27,-24,-21,-18,-14,-9,-5,0,5,9,14,18,21,24,27,29,30,30,30,29,27,24,21};
     static const signed char knob_y[] = {21,18,14,9,5,0,-5,-9,-14,-18,-21,-24,-27,-29,-30,-30,-30,-29,-27,-24,-21,-18,-14,-9,-5,0,5,9,14,18,21};
-    static const u32 colors[] = {TV_CYAN, TV_AMBER, 0x00B070FF, 0x0060DD80, 0x00FF9060};
     int i, volume = playback_volume < 0 ? 0 : playback_volume > 30 ? 30 : playback_volume;
-    vu_ballistics_step();
     for (i = 0; i < 2; i++) {
         int cx = i ? 237 : 90;
         int value = ((i ? vu_display_right : vu_display_left) * 20 + 50) / 100;
+        if (!(parts & (1U << i))) continue;
         if (value < 0) value = 0;
         if (value > 20) value = 20;
         tv_line(&tv_canvas, cx, 430, cx + needle_x[value], 430 + needle_y[value], TV_AMBER);
         tv_rect(&tv_canvas, cx - 2, 428, 5, 4, TV_AMBER);
     }
     for (i = 0; i < 5; i++) {
-        SceCtrlData pad;
-        static const unsigned int masks[] = {PSP_CTRL_LTRIGGER, PSP_CTRL_SELECT,
-            PSP_CTRL_RTRIGGER, PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE, PSP_CTRL_START};
-        unsigned int tick = (unsigned int)(sceKernelGetSystemTimeWide() / 600000ULL);
-        u32 color = colors[(tick + i * 3) % 5];
-        sceCtrlPeekBufferPositive(&pad, 1);
-        if (pad.Buttons & masks[i]) color = TV_WHITE;
-        tv_rect(&tv_canvas, 331 + i * 47, 387, 25, 2, color);
+        if (parts & (1U << (i + 2)))
+            tv_rect(&tv_canvas, 331 + i * 47, 387, 25, 2, tv_indicator_color(i));
     }
-    tv_rect(&tv_canvas, 633 + knob_x[volume] * 27 / 32 - 2, 408 + knob_y[volume] - 1, 5, 3, TV_AMBER);
-    tv_rect(&tv_canvas, 633 + knob_x[volume] * 27 / 32 - 1, 408 + knob_y[volume] - 2, 3, 5, TV_AMBER);
-    tv_text(607, 452, 6, 1, TV_MUTED, "%3d %%", volume * 100 / 30);
+    if (parts & 128) {
+        tv_rect(&tv_canvas, 633 + knob_x[volume] * 27 / 32 - 2, 408 + knob_y[volume] - 1, 5, 3, TV_AMBER);
+        tv_rect(&tv_canvas, 633 + knob_x[volume] * 27 / 32 - 1, 408 + knob_y[volume] - 2, 3, 5, TV_AMBER);
+        tv_text(607, 452, 6, 1, TV_MUTED, "%3d %%", volume * 100 / 30);
+    }
+}
+
+static void tv_receiver(void) {
+    vu_ballistics_step();
+    tv_receiver_parts(255);
 }
 
 static void tv_shell(const char *section) {
@@ -223,5 +234,129 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         tv_help(tr(TXT_MUSIC_CONTROLS));
     }
     tv_present();
+}
+
+/* Music is an incremental scene. No second full-frame cache is required:
+ * restore tiny moving controls from the immutable skin and update only the
+ * gained/lost portion of each spectrum bar. Static text stays untouched. */
+typedef struct { int x, y, width, height; } TvDirtyRect;
+static struct {
+    int valid, fullscreen, volume, meter[2], height[SPECTRUM_BANDS];
+    u32 light[5];
+    unsigned long long next_tick, copied_bytes;
+    unsigned int full_frames, incremental_frames;
+} tv_music;
+
+static void tv_music_reset(void) { memset(&tv_music, 0, sizeof(tv_music)); }
+
+/* Scope priority to music GUI work, never change the DAC/decoder workers. */
+static int tv_music_lower_priority(void) {
+    int priority;
+    if (!tv_ui_active) return -1;
+    priority = sceKernelGetThreadCurrentPriority();
+    if (priority >= 0 && priority < 0x40 && sceKernelChangeThreadPriority(0, 0x40) >= 0)
+        return priority;
+    return -1;
+}
+
+static void tv_music_restore_priority(int priority) {
+    if (priority >= 0) sceKernelChangeThreadPriority(0, priority);
+}
+
+static void tv_restore_rect(int x, int y, int width, int height) {
+    int yy;
+    for (yy = y; yy < y + height; yy++) {
+        if (receiver_tv_skin_end - receiver_tv_skin == TV_GUI_WIDTH * TV_GUI_HEIGHT * 4)
+            memcpy(tv_canvas.pixels + yy * TV_GUI_STRIDE + x,
+                   receiver_tv_skin + (yy * TV_GUI_WIDTH + x) * 4, width * 4);
+        else tv_rect(&tv_canvas, x, yy, width, 1, 0);
+    }
+}
+
+static void tv_draw_music(const char *title, int fullscreen) {
+    TvDirtyRect dirty[SPECTRUM_BANDS + 10];
+    int count = 0, i;
+    unsigned int parts = 0;
+    unsigned long long now = sceKernelGetSystemTimeWide();
+    if (!tv_ui_active || !display_output.tv || tvout_video_active || !tv_canvas.pixels) return;
+    if (!tv_music.valid || tv_music.fullscreen != fullscreen) {
+        tv_draw_view(TV_VIEW_MUSIC, 0, 0, 1, title, fullscreen);
+        tv_music.valid = 1; tv_music.fullscreen = fullscreen;
+        tv_music.volume = playback_volume;
+        tv_music.meter[0] = (vu_display_left * 20 + 50) / 100;
+        tv_music.meter[1] = (vu_display_right * 20 + 50) / 100;
+        for (i = 0; i < 5; i++) tv_music.light[i] = tv_indicator_color(i);
+        for (i = 0; i < SPECTRUM_BANDS; i++) tv_music.height[i] = spectrum_display[i] * 168 / 100;
+        tv_music.next_tick = sceKernelGetSystemTimeWide() + 50000ULL;
+        tv_music.copied_bytes += TV_GUI_BYTES;
+        tv_music.full_frames++;
+        return;
+    }
+    /* Bound visual work to 20 Hz. Input polling and the DAC remain separate. */
+    if (now < tv_music.next_tick) return;
+    vu_ballistics_step();
+    for (i = 0; i < 2; i++) {
+        int meter = ((i ? vu_display_right : vu_display_left) * 20 + 50) / 100;
+        if (meter != tv_music.meter[i]) {
+            TvDirtyRect rect = {i ? 193 : 46, 388, 90, 47};
+            tv_restore_rect(rect.x, rect.y, rect.width, rect.height);
+            dirty[count++] = rect;
+            parts |= 1U << i; tv_music.meter[i] = meter;
+        }
+    }
+    for (i = 0; i < 5; i++) {
+        u32 color = tv_indicator_color(i);
+        if (color != tv_music.light[i]) {
+            dirty[count++] = (TvDirtyRect){331 + i * 47, 387, 25, 2};
+            tv_music.light[i] = color; parts |= 1U << (i + 2);
+        }
+    }
+    if (tv_music.volume != playback_volume) {
+        TvDirtyRect knob = {603, 375, 61, 66}, label = {607, 452, 78, 16};
+        tv_restore_rect(knob.x, knob.y, knob.width, knob.height);
+        tv_restore_rect(label.x, label.y, label.width, label.height);
+        dirty[count++] = knob; dirty[count++] = label;
+        parts |= 128; tv_music.volume = playback_volume;
+        if (!fullscreen) {
+            TvDirtyRect side = {562, 127, 130, 48};
+            tv_restore_rect(side.x, side.y, side.width, side.height);
+            tv_text(562, 127, 10, 3, TV_MUTED, tr(TXT_TV_VOLUME), playback_volume * 100 / 30);
+            dirty[count++] = side;
+        }
+    }
+    tv_receiver_parts(parts);
+    for (i = 0; i < SPECTRUM_BANDS; i++) {
+        int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
+        int height, previous = tv_music.height[i];
+        int x = 37 + i * (fullscreen ? 54 : 41), width = fullscreen ? 38 : 28;
+        if (target > spectrum_display[i]) spectrum_display[i] += (target - spectrum_display[i] + 1) / 2;
+        else spectrum_display[i] = spectrum_display[i] > 3 ? spectrum_display[i] - 3 : 0;
+        height = spectrum_display[i] * 168 / 100;
+        if (height > previous) {
+            tv_rect(&tv_canvas, x, 288 - height, width, height - previous,
+                    i < 4 ? TV_AMBER : i < 8 ? 0x00B070FF : TV_CYAN);
+            dirty[count++] = (TvDirtyRect){x, 288 - height, width, height - previous};
+        } else if (height < previous) {
+            if (fullscreen) tv_rect(&tv_canvas, x, 288 - previous, width, previous - height, 0x000C0C0A);
+            else tv_restore_rect(x, 288 - previous, width, previous - height);
+            dirty[count++] = (TvDirtyRect){x, 288 - previous, width, previous - height};
+        }
+        tv_music.height[i] = height;
+    }
+    if (count) {
+        u32 *vram = (u32 *)0x44000000;
+        sceDisplayWaitVblankStart();
+        for (i = 0; i < count; i++) {
+            TvDirtyRect rect = dirty[i];
+            int y;
+            for (y = rect.y; y < rect.y + rect.height; y++)
+                memcpy(vram + y * TV_GUI_STRIDE + rect.x,
+                       tv_canvas.pixels + y * TV_GUI_STRIDE + rect.x, rect.width * 4);
+            tv_music.copied_bytes += (unsigned int)(rect.width * rect.height * 4);
+        }
+        /* Address/stride stay fixed: no display API or mode reset is needed. */
+    }
+    tv_music.incremental_frames++;
+    tv_music.next_tick = sceKernelGetSystemTimeWide() + 50000ULL;
 }
 #endif
