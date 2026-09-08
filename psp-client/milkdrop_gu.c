@@ -16,6 +16,7 @@
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
 static int md_front;
+static int md_last_tv, md_last_fullscreen;
 static unsigned long long md_origin, md_next;
 
 static void *md_texture(int index) {
@@ -38,6 +39,7 @@ int md_start(void) {
         return 0;
     }
     md_front = 0; md_origin = md_next = 0;
+    md_last_tv = md_last_fullscreen = -1;
     return 1;
 }
 void md_stop(void) {
@@ -51,15 +53,15 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     MdVertex *mesh, *ring, *blit;
     int target = 1-md_front;
     int left = tv ? 34 : 38, top = tv ? 98 : 78;
-    int width = tv ? (fullscreen ? 648 : 504) : (fullscreen ? 432 : 300);
-    int height = tv ? 188 : (fullscreen ? 140 : 96);
+    int width = tv ? (fullscreen ? 720 : 504) : (fullscreen ? 480 : 300);
+    int height = tv ? (fullscreen ? 480 : 188) : (fullscreen ? 272 : 96);
     float seconds;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;
-    if (now < md_next) return 1;
+    if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen) return 1;
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
-    if (!tv && fullscreen) { left = 24; top = 48; }
+    if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
     sceGuDisable(GU_LIGHTING); sceGuDisable(GU_BLEND);
@@ -107,6 +109,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;
+    md_last_tv = tv; md_last_fullscreen = fullscreen;
     finished = sceKernelGetSystemTimeWide();
     cost = finished - now;
     /* Never attempt catch-up frames. Expensive frames lower the visual rate,

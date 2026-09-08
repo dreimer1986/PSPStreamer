@@ -19,6 +19,7 @@ static size_t list_used;
 static unsigned long long test_time = 1000000;
 static unsigned long long render_cost;
 static uint32_t expected_ring_color;
+static int expected_left, expected_top, expected_width, expected_height, covered_width;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return test_time; }
 static int sceGuInit(void) {
@@ -29,6 +30,7 @@ static void sceGuTerm(void) { assert(gu_live); gu_live=0; }
 static int sceGuStart(int mode, void *list) {
     if(fail_start) return -1;
     assert(gu_live && mode==GU_DIRECT); starts++; list_base=list; list_used=0;
+    covered_width=0;
     return 0;
 }
 static void sceGuSync(int a,int b) { assert(a==GU_SYNC_FINISH && b==GU_SYNC_WHAT_DONE); syncs++; }
@@ -76,7 +78,13 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         assert(count==97); ring_calls++;
         if(expected_ring_color) for(int i=0;i<count;i++) assert(v[i].color==expected_ring_color);
     }
-    else { assert(type==GU_SPRITES && count==2 && !target_offset); sprite_calls++; }
+    else {
+        assert(type==GU_SPRITES && count==2 && !target_offset); sprite_calls++;
+        assert(v[0].x==expected_left+covered_width && v[0].y==expected_top);
+        assert(v[1].y==expected_top+expected_height);
+        covered_width+=(int)(v[1].x-v[0].x);
+        assert(covered_width<=expected_width);
+    }
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
         assert(v[i].x>=0 && v[i].x<=target_width);
@@ -108,6 +116,10 @@ int main(void) {
     md_custom_preset.warp=md_presets[0];
     md_custom_preset.red=1; md_custom_preset.green=.5f; md_custom_preset.blue=0;
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
+        expected_left=full ? 0 : tv ? 34 : 38;
+        expected_top=full ? 0 : tv ? 98 : 78;
+        expected_width=full ? (tv ? 720 : 480) : tv ? 504 : 300;
+        expected_height=full ? (tv ? 480 : 272) : tv ? 188 : 96;
         assert(md_start() && md_start());
         for(int i=0;i<1474560;i++) assert(vram[i]==0xa5);
         for(int preset=0;preset<4;preset++) {
@@ -118,6 +130,7 @@ int main(void) {
                 test_time+=100000;
                 md_frame(tv,full,bands,frame%101,test_time,preset);
                 assert(starts==calls+1);
+                assert(covered_width==expected_width);
                 md_frame(tv,full,bands,50,test_time,preset);
                 assert(starts==calls+1);
                 md_audio_ring(ring,bands,frame%101,frame*.1f,preset);
@@ -129,6 +142,7 @@ int main(void) {
     assert(mesh_calls==1920 && ring_calls>0 && sprite_calls>mesh_calls);
     assert(syncs>=starts);
     expected_ring_color=0;
+    expected_left=38; expected_top=78; expected_width=300; expected_height=96;
     assert(md_start());
     render_cost=50000;
     assert(md_frame(0,0,bands,0,test_time,0));
@@ -137,6 +151,17 @@ int main(void) {
         int calls=starts;
         test_time+=100000;
         assert(md_frame(0,0,bands,0,test_time,0) && starts==calls);
+    }
+    md_stop();
+    assert(md_start());
+    render_cost=0;
+    assert(md_frame(0,0,bands,0,test_time,0));
+    {
+        int calls=starts;
+        expected_left=expected_top=0; expected_width=480; expected_height=272;
+        assert(md_frame(0,1,bands,0,test_time,0) && starts==calls+1);
+        expected_left=38; expected_top=78; expected_width=300; expected_height=96;
+        assert(md_frame(0,0,bands,0,test_time,0) && starts==calls+2);
     }
     md_stop();
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);

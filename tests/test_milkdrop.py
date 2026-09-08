@@ -32,6 +32,7 @@ class MilkDropTests(unittest.TestCase):
         self.assertLess(music.index("md_load_preset("), music.index("sceKernelCreateThread("))
         self.assertEqual(music.count("md_load_preset("), 1)
         self.assertIn("PSP_CTRL_SQUARE", music)
+        self.assertIn("if (!(music_visual_active && fullscreen))", music)
         self.assertIn("md_stop();\n    music_visual_active = 0;", music)
         audio = source[source.index("static int audio_thread(SceSize args, void *argp) {"):
                        source.index('#include "music_ui.h"')]

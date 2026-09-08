@@ -1741,10 +1741,11 @@ static int play_audio(const char *media_id, const char *title) {
         }
         if (action) music_remote_action = MUSIC_REMOTE_NONE;
         keep_awake();
-        if (tv_ui_active) {
-            tv_draw_music(title, fullscreen);
-        } else {
-            lcd_draw_music(title, fullscreen);
+        /* A true visualizer fullscreen owns all visible pixels. Do not draw
+         * receiver controls between GU frames (including throttled frames). */
+        if (!(music_visual_active && fullscreen)) {
+            if (tv_ui_active) tv_draw_music(title, fullscreen);
+            else lcd_draw_music(title, fullscreen);
         }
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
             unsigned char bands[SPECTRUM_BANDS];
@@ -1783,7 +1784,10 @@ static int play_audio(const char *media_id, const char *title) {
             }
         } else next_volume_repeat_tick = 0;
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
-            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
+            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) {
+            fullscreen = !fullscreen;
+            lcd_music_reset(); tv_music_reset();
+        }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
             if (visual_preset == 4) {
                 md_stop(); visual_preset = 0; music_visual_active = 0;

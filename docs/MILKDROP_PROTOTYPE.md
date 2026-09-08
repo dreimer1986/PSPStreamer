@@ -15,8 +15,13 @@ Start music normally. **Square** cycles:
 4. Custom static file `presets/active.milk` (see [supported subset](MILKDROP_PRESETS.md)).
 5. Original spectrum/receiver, visualization off.
 
-**Cross + Triangle** still switches between the normal and enlarged music
-layout. Analogue meters and the volume dial remain visible. Pause, volume,
+**Cross + Triangle** switches between the small receiver viewport and true
+visualization fullscreen: 480×272 on LCD, 720×480 on native TV output.
+The receiver is hidden in visualization fullscreen, including between
+throttled graphics frames; returning redraws the receiver once. Without an
+active effect, the previous enlarged spectrum/receiver remains unchanged.
+Feedback textures stay 256×256; only the final GPU stretch covers more pixels.
+Pause, volume,
 Stop and web controls remain available. Each new track starts with the
 original receiver; the prototype choice is intentionally not saved.
 
