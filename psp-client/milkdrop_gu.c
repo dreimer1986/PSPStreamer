@@ -65,12 +65,17 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     int bottom = fullscreen ? (tv ? 480 : 272) : tv ? 294 : 149;
     int width = right - left, height = bottom - top;
     float seconds;
+    MdPreset evaluated;
+    unsigned int custom_color = 0;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;
     if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
         top == md_last_top) return 1;
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
+    if (preset == 3 && md_eval_preset(&md_custom_preset, seconds, &evaluated,
+                                     &custom_color, &md_runtime_error) != MD_FILE_OK)
+        return -1; /* No GU list was started; caller retains music playback. */
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
@@ -85,17 +90,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
-    md_warp_mesh(mesh, preset == 3 ? &md_custom_preset.warp : &md_presets[preset], seconds);
+    md_warp_mesh(mesh, preset == 3 ? &evaluated : &md_presets[preset], seconds);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
     if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
         md_audio_ring(ring, bands, level, seconds, preset);
         if (preset == 3) {
-            unsigned int color = 0xff000000U | (unsigned int)(md_custom_preset.red*255) |
-                ((unsigned int)(md_custom_preset.green*255)<<8) |
-                ((unsigned int)(md_custom_preset.blue*255)<<16);
-            for (int i = 0; i < 97; i++) ring[i].color = color;
+            for (int i = 0; i < 97; i++) ring[i].color = custom_color;
         }
         sceGuDrawArray(GU_LINE_STRIP, MD_FORMAT, 97, NULL, ring);
     }

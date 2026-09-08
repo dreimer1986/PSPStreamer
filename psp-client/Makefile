@@ -1,5 +1,5 @@
 TARGET = PSPStreamer
-OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o milkdrop_warp.o milkdrop_gu.o milkdrop_preset.o
+OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o milkdrop_warp.o milkdrop_gu.o milkdrop_preset.o preset_math.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
@@ -23,7 +23,8 @@ include $(PSPSDK)/lib/build.mak
 main.o: mpeg_extra.o timed_stream.h flv.h audio_lease.h sync_trace.h display_output.h tv_canvas.h music_ui.h music_remote.h tv_gui.h lcd_music.h language.h
 language.o: language.h lang_en.h lang_de.h
 main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h
-main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h
+main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h preset_math.h
+preset_math.o: preset_math.h
 main.o: music_preset_ui.h
 
 # menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.

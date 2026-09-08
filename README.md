@@ -177,14 +177,17 @@ An optional [MilkDrop warp prototype](docs/MILKDROP_PROTOTYPE.md) is available
 during music: **Square** cycles three built-in effects, the custom file
 `presets/active.milk`, then the normal spectrum. Copy the supplied
 `psp-client/presets` folder beside EBOOT to try the fourth slot.
-See [supported static fields and limits](docs/MILKDROP_PRESETS.md).
+See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
+For animated rotation and colors, copy `presets/time-demo.milk` over
+`presets/active.milk` on the PSP, then stop and restart music.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,
 the existing enlarged spectrum/receiver layout is unchanged.
 This adapts MilkDrop 2's no-shader
 warp equations to PSP GU, not its complete engine: arbitrary `.milk` files,
-EEL expressions and shader presets are not supported yet. Each track starts
+full EEL and shader presets are not supported. A bounded arithmetic/time
+subset is available in the custom slot. Each track starts
 with visualization off. No server update is required.
 Further references are in [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md).
 

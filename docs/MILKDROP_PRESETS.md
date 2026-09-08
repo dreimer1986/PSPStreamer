@@ -1,4 +1,4 @@
-# Static .milk subset
+# Bounded .milk subset
 
 The hardware-validated warp prototype now has **one custom file slot**,
 not a preset browser or a complete MilkDrop interpreter.
@@ -47,14 +47,50 @@ out-of-range values, NUL bytes and oversized input reject the whole file
 without changing the previously loaded values.
 
 Most ordinary MilkDrop presets contain additional fields and are therefore
-rejected. This includes EEL `per_frame_*` / `per_pixel_*`, shader code,
+rejected. This includes arbitrary EEL, `per_pixel_*`, shader code,
 `nWaveMode`, custom waves/shapes and currently fixed transform properties
 such as `fZoomExponent`. Removing fields does not guarantee that a preset
-retains its original appearance. Expression support is a later stage.
+retains its original appearance.
 
-The [expression source audit](MILKDROP_EXPRESSIONS.md) records the next
-implementation boundary, including original per-frame state and music-variable
-semantics. Expressions are not enabled by the aperture calibration update.
+The [expression source audit](MILKDROP_EXPRESSIONS.md) records the implementation
+boundary, including original per-frame state and music-variable semantics.
+
+## Time formulas
+
+The optional `time-demo.milk` demonstrates changing rotation, warp and ring
+colors. Copy it as `presets/active.milk` on the PSP and restart music; the
+existing static example and three built-in effects are unchanged.
+
+```ini
+[preset00]
+warp=1
+per_frame_1=rot=0.025*sin(time*0.6); warp=warp+0.5*cos(time);
+per_frame_2=wave_r=0.5+0.4*sin(time);
+```
+
+Use consecutive keys `per_frame_1` through at most `per_frame_16`, in order.
+Each contains one or more assignments ending in semicolons. Supported syntax:
+decimal/scientific constants, parentheses, unary `+/-`, arithmetic `+ - * /`,
+and single-argument `sin`, `cos`, `abs`. Trigonometric arguments are radians.
+Readable/writable outputs are `zoom`, `rot`, `warp`, `decay`, `wave_r`,
+`wave_g`, `wave_b`. Note that formula `decay` corresponds to static `fDecay`.
+Warp speed/scale remain static fields. `time` is read-only elapsed seconds
+since visualization activation, not the audio position; it continues while
+music is paused. Stop/restart resets it. No `fps`, `frame`, music variables,
+persistent variables, conditions, loops or per-pixel programs are accepted.
+
+Inputs reset from static values before each rendered frame; assignments in
+that frame execute sequentially. The program is compiled once before music
+workers start: at most 128 instructions total, 16 nesting levels and a
+24-float execution stack. No allocation, disk access or source parsing occurs
+in the rendering loop. Execution runs only in the lower-priority UI thread,
+once per adaptive visual frame, never in decoder/audio workers.
+
+Division by zero, non-finite results or outputs outside the table's ranges
+disable the custom effect and display an invalid-preset message with the
+source line. Music continues; Square returns to the normal spectrum and the
+built-ins remain available. Stop/restart music to reload a corrected file.
+This is a new arithmetic subset, **not an NS-EEL compatibility claim**.
 
 The bundled example is newly authored for PSPStreamer; no third-party
 presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).
@@ -63,9 +99,14 @@ presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).
 
 The host suite checks the example, all range boundaries, defaults, BOM/CRLF,
 missing files, atomic failures, malformed numbers, duplicate/unsupported
-keys, size limits and 300 deterministic malformed byte strings.
+keys, size limits and 300 deterministic malformed byte strings. Formula tests
+cover precedence, sequential assignments, static reset, rejected syntax,
+instruction/depth/line bounds, atomic runtime errors and 30 minutes of demo
+values. The GU harness checks that a failed formula opens no render list.
 
 On PSP, check the cyan example in slot four. Set `wave_r/g/b` to `1/0/0`,
-restart music, and check the red ring. Append `per_frame_1=zoom=1;` and
+restart music, and check the red ring. Append `per_pixel_1=zoom=1;` and
 confirm an unsupported-field message without interrupting music.
 Restore the example afterward. The three original effects remain available.
+Also test the time demo in receiver/fullscreen views on LCD and TV, then
+switch to another track/video. Check that audio remains uninterrupted.

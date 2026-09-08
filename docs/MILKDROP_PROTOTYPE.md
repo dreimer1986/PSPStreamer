@@ -12,7 +12,8 @@ Start music normally. **Square** cycles:
 1. Gentle zoom/rotation feedback.
 2. Stronger warp with opposite rotation.
 3. Faster outward zoom.
-4. Custom static file `presets/active.milk` (see [supported subset](MILKDROP_PRESETS.md)).
+4. Custom file `presets/active.milk`, optionally with bounded time formulas
+   (see [supported subset](MILKDROP_PRESETS.md)).
 5. Original spectrum/receiver, visualization off.
 
 **Cross + Triangle** switches between the small receiver viewport and true
@@ -59,7 +60,8 @@ The historical LCD-menu/TV-video mode still visualizes music on the LCD.
   viewport. Native GUI artwork and controls are not rescaled.
 
 The selected subset fixes zoom exponent to 1, centre to 0.5/0.5, stretch to 1,
-and translation to zero. EEL expressions, per-frame/per-pixel user programs,
+and translation to zero. A bounded arithmetic/time per-frame interpreter is
+available for the custom slot. Full EEL, per-pixel user programs,
 custom waves/shapes, shader presets and preset blending are not implemented.
 
 The studied source contains Direct3D 9 dependencies even in the no-shader

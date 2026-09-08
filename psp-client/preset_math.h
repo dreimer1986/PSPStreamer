@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+#ifndef PSPSTREAMER_PRESET_MATH_H
+#define PSPSTREAMER_PRESET_MATH_H
+enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16 };
+typedef struct { int op, arg, line; float value; } PmOp;
+typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;
+enum { PM_OK, PM_INVALID, PM_UNSUPPORTED };
+/* Compile appends transactionally; source is never retained. */
+int pm_compile(PmProgram *program, const char *source, int line);
+/* values: zoom,rot,warp,warp speed,warp scale,decay,r,g,b,time.
+ * Execution commits all values only on success. No heap/recursion at runtime. */
+int pm_execute(const PmProgram *program, float values[10], int *error_line);
+int pm_assignment_line(const PmProgram *program, int variable);
+#endif

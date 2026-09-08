@@ -1,6 +1,6 @@
 #ifndef PSPSTREAMER_MUSIC_PRESET_UI_H
 #define PSPSTREAMER_MUSIC_PRESET_UI_H
-/* Only called for the custom slot after a failed pre-playback file load.
+/* Only called for the custom slot after a failed file load or formula.
  * Never changes scanout configuration or triggers another disk read. */
 static void music_preset_notice(const MdFileError *error, int fullscreen) {
     TextId id = error->code == MD_FILE_MISSING ? TXT_PRESET_MISSING :

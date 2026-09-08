@@ -21,6 +21,7 @@ class MilkDropTests(unittest.TestCase):
                             "-fsanitize=undefined", "-I", str(ROOT / "psp-client"),
                             str(source), str(ROOT / "psp-client/milkdrop_warp.c"),
                             str(ROOT / "psp-client/milkdrop_preset.c"),
+                            str(ROOT / "psp-client/preset_math.c"),
                             "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=20)
 
@@ -31,6 +32,8 @@ class MilkDropTests(unittest.TestCase):
         self.assertIn("visual_preset == 4", music)
         self.assertLess(music.index("md_load_preset("), music.index("sceKernelCreateThread("))
         self.assertEqual(music.count("md_load_preset("), 1)
+        self.assertIn("if (rendered <= 0)", music)
+        self.assertIn("preset_error = md_runtime_error;", music)
         self.assertIn("PSP_CTRL_SQUARE", music)
         self.assertIn("if (!(music_visual_active && fullscreen))", music)
         self.assertIn("md_stop();\n    music_visual_active = 0;", music)

@@ -1,8 +1,9 @@
-# Expression support: source audit and next implementation boundary
+# Expression support: source audit and implementation boundary
 
-This is implementation preparation, **not enabled formula support**.
-The shipped loader still rejects expressions. Receiver aperture calibration
-does not introduce a partially implemented interpreter into playback.
+The bounded arithmetic/time subset is now implemented in `preset_math.c`
+and integrated into the custom slot. See [syntax and limits](MILKDROP_PRESETS.md).
+The source findings below guided the boundary; they do not imply full EEL
+compatibility. Original NS-EEL differential testing remains outstanding.
 
 Reference studied locally: MilkDrop 2 mirror revision
 `b5e4136c2f050eafa10aa199bb72c8e5c12c9320`,
@@ -26,22 +27,22 @@ and `ns-eel2/nseel-compiler.c`.
 - The bundled compiler has architecture-specific x86/PPC machine-code paths.
   Linking that compiler into a MIPS executable does not yield a PSP backend.
 
-## Bounded next step
+## Implementation and deferred work
 
-1. Implement a portable, explicitly documented expression subset, compiling
+1. Implemented a portable, explicitly documented expression subset, compiling
    into bounded bytecode before music starts. No source parsing or allocation
    during rendering; no native code generation.
-2. Start with arithmetic, parentheses, `sin/cos`, time and supported static
+2. Implemented arithmetic, parentheses, `sin/cos/abs`, time and supported static
    output fields. Limit instructions, nesting and statements. Unknown
    identifiers/functions remain load errors with line/field information.
-3. Reset per-frame output inputs from static preset values. Add persistent
+3. Per-frame output inputs reset from static preset values. Add persistent
    variables only with explicit lifetime/reset tests.
-4. Reject non-finite results and division errors with a visible diagnostic;
+4. Non-finite results, out-of-range outputs and division errors are rejected with a visible diagnostic;
    do not pass invalid transforms to GU or silently substitute an effect.
-5. Compare supported operations against original NS-EEL on a supported host
+5. Deferred: compare supported operations against original NS-EEL on a supported host
    before claiming compatible semantics. Keep tests for execution bounds and
    adaptive-frame timing separate from the PSP audio worker.
-6. Add music variables only after defining and validating relative-level
+6. Deferred: add music variables only after defining and validating relative-level
    normalization and smoothing. Reuse analysis snapshots; never retain PCM
    ownership or move expression evaluation into the decoder/DAC threads.
 

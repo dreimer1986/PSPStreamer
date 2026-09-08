@@ -1753,9 +1753,16 @@ static int play_audio(const char *media_id, const char *title) {
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
             for (band = 0; band < SPECTRUM_BANDS; band++)
                 bands[band] = audio_start ? spectrum_levels[band] : 0;
-            if (!md_frame(tv_ui_active, fullscreen, bands, level,
-                          sceKernelGetSystemTimeWide(), visual_preset-1)) {
+            int rendered = md_frame(tv_ui_active, fullscreen, bands, level,
+                          sceKernelGetSystemTimeWide(), visual_preset-1);
+            if (rendered <= 0) {
                 md_stop(); music_visual_active = visual_preset = 0;
+                if (rendered < 0) {
+                    preset_error = md_runtime_error;
+                    preset_result = preset_error.code;
+                    visual_preset = 4;
+                    preset_notice_tick = ~0ULL;
+                }
                 lcd_music_reset(); tv_music_reset();
             }
         }

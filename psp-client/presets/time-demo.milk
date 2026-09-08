@@ -1,0 +1,10 @@
+; Optional bounded time-expression demo. Copy as active.milk to enable slot 4.
+[preset00]
+zoom=1.018
+rot=0
+warp=1
+fDecay=0.97
+per_frame_1=rot=0.025*sin(time*0.6); warp=1.2+0.5*cos(time*0.4);
+per_frame_2=wave_r=0.5+0.4*sin(time*0.7);
+per_frame_3=wave_g=0.5+0.4*sin(time*0.7+2);
+per_frame_4=wave_b=0.5+0.4*sin(time*0.7+4);

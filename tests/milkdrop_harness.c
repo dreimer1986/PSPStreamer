@@ -176,6 +176,16 @@ int main(void) {
     }
     md_stop();
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
+    /* A runtime formula failure must happen before opening a GU list. */
+    assert(pm_compile(&md_custom_preset.program,"rot=1/(time-time);",7)==PM_OK);
+    assert(md_start());
+    {
+        int calls=starts;
+        assert(md_frame(0,0,bands,50,test_time,3)==-1);
+        assert(starts==calls && md_runtime_error.line==7);
+        md_stop();
+        assert(!gu_live && !md_list);
+    }
     munmap(vram,edram_size);
     return 0;
 }

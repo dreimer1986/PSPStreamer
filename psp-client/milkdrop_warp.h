@@ -17,6 +17,7 @@ void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
 int md_start(void);
 void md_stop(void);
 void md_set_tv_title_bottom(int bottom);
+/* 1: rendered/throttled, 0: GU failure, -1: invalid custom formula (see md_runtime_error). */
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset);
 #endif
