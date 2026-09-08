@@ -12,6 +12,7 @@ Host tests alone do not establish real-device audio or display timing.
 | --- | --- |
 | `main.c: play_audio` | Start/stop workers, input, initial scene before audio, scope GUI priority and restore it before returning |
 | `music_ui.h` | Shared visual envelope, 50 ms minimum redraw interval, 10 ms input poll and GUI priority 0x40 |
+| `music_remote.h` | Separate music HTTP worker; publish controls, leave replacement Play for the idle dispatcher, join on exit |
 | `lcd_music.h` | LCD music scene and incremental writes at 480×272, stride 512; no extra framebuffer |
 | `tv_gui.h` | Native TV scene and dirty rectangles at 720×480, stride 768, using the existing RAM canvas |
 | `display_output.h` | Output mode ownership and transitions, not playback scheduling |
@@ -62,10 +63,17 @@ Further changes should be measured separately:
 - Do not expand this cleanup into network lifecycle, decoder initialization,
   audio queue sizing, compiler optimization levels or thread scheduling.
   These need separate failure-injection tests and hardware validation.
-- Review finding for a separate lifecycle patch: music checks thread creation
-  but does not yet check the return from starting that thread. This predates
-  the GUI changes. A failed start needs tested cleanup, not a silent retry
-  or a change to the proven audio loop.
+- The following music-remote patch also checks music thread start failure,
+  deletes an unstarted thread and restores the GUI priority. Remote-worker
+  create/start failures are covered by the host lifecycle harness.
+
+Remote music controls do not decode or own PCM. Pause/resume changes the
+existing output gate. Stop/replacement Play exits through normal cleanup;
+Seek uses the existing same-file restart path with a server start offset.
+The remote thread is joined before returning to the dispatcher. Replacement
+Play during video uses the existing full video cleanup too. Its command
+sequence is deliberately left unconsumed until the idle dispatcher accepts
+the new file. No network request is added to a render or DAC loop.
 
 ## Boundary for a MilkDrop prototype
 

@@ -1664,10 +1664,14 @@ cleanup:
 #include "music_ui.h"
 #include "tv_gui.h"
 #include "lcd_music.h"
+static int json_value(const char *from, const char *key, char *destination, size_t length);
+static int json_integer(const char *from, const char *key, int fallback);
+#include "music_remote.h"
 
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
     int previous_ui_priority = -1;
+    int remote_result = 0, start_result;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1684,6 +1688,7 @@ static int play_audio(const char *media_id, const char *title) {
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
     timed_active = 0;
+    resume_pending = seek_requested = 0;
     video_first_presented = 1;
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     /* Neither music GUI may outrank the existing 0x3D DAC worker. Restore
@@ -1698,14 +1703,33 @@ static int play_audio(const char *media_id, const char *title) {
         lcd_draw_music(title, 0);
     }
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
-    if (audio_thread_id < 0) {
+    start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
+    if (start_result < 0) {
+        if (audio_thread_id >= 0) sceKernelDeleteThread(audio_thread_id);
         audio_running = 0;
         music_ui_restore_priority(previous_ui_priority);
-        return audio_thread_id;
+        return start_result;
     }
-    sceKernelStartThread(audio_thread_id, 0, NULL);
-    while (audio_running) {
+    remote_result = music_remote_start();
+    while (audio_running && remote_result >= 0) {
         SceCtrlData pad;
+        int action = music_remote_action;
+        int seek_seconds = music_remote_seconds;
+        if (action == MUSIC_REMOTE_PAUSE || action == MUSIC_REMOTE_RESUME) {
+            paused = action == MUSIC_REMOTE_PAUSE;
+            audio_start = !paused;
+        } else if (action == MUSIC_REMOTE_STOP || action == MUSIC_REMOTE_PLAY ||
+                   action == MUSIC_REMOTE_SEEK) {
+            stopped_by_user = 1;
+            if (action == MUSIC_REMOTE_SEEK) {
+                stream_start_seconds = seek_seconds;
+                strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
+                resume_media_id[sizeof(resume_media_id) - 1] = '\0';
+                resume_pending = seek_requested = 1;
+            }
+            break;
+        }
+        if (action) music_remote_action = MUSIC_REMOTE_NONE;
         keep_awake();
         if (tv_ui_active) {
             tv_draw_music(title, fullscreen);
@@ -1735,6 +1759,7 @@ static int play_audio(const char *media_id, const char *title) {
         old = pad.Buttons;
         sceKernelDelayThread(MUSIC_UI_INPUT_POLL_US);
     }
+    music_remote_running = 0;
     audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
@@ -1746,15 +1771,19 @@ static int play_audio(const char *media_id, const char *title) {
         audio_output_thread_id = -1;
     }
     audio_queue_destroy();
+    /* An EOF racing a terminal remote command must not trigger autoplay. */
+    if (music_remote_action >= MUSIC_REMOTE_STOP) stopped_by_user = 1;
+    music_remote_stop();
     /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song
      * end, just as video uses its rendered-frame clock. */
     if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
-        (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
+        remote_result >= 0 &&
+        stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
     music_ui_restore_priority(previous_ui_priority);
-    return audio_state < 0 ? audio_state : 0;
+    return remote_result < 0 ? remote_result : audio_state < 0 ? audio_state : 0;
 }
 
 static int play_h264(const char *media_id) {
@@ -1853,7 +1882,7 @@ static int play_h264(const char *media_id) {
                 paused = action == 1;
                 playback_paused = paused;
                 audio_start = paused ? 0 : buffered;
-            } else if (action == 3) { result = frames; break; }
+            } else if (action == 3 || action == 4) { result = frames; break; }
         }
         if (remote_control_seek_seconds >= 0) {
             stream_start_seconds = remote_control_seek_seconds;
@@ -2141,7 +2170,7 @@ static int json_integer(const char *from, const char *key, int fallback) {
  * real-time audio/video sockets, and lets the TV be controlled from a phone. */
 static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
                             int *subtitle, int *is_audio, int *start_seconds) {
-    static int sequence;
+    int sequence = remote_control_sequence;
     char path[64], action[16], kind[16];
     char *field;
     int result;
@@ -2149,7 +2178,7 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     result = http_get_wait(path, response, sizeof(response), 1000);
     if (result < 0 || !json_value(response, "action", action, sizeof(action))) return 0;
     field = strstr(response, "\"seq\":");
-    if (field) sequence = atoi(field + 6);
+    if (field) remote_control_sequence = sequence = atoi(field + 6);
     if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
     remote_control_sequence = sequence;
     *audio = json_integer(response, "audio", 0);
@@ -2169,6 +2198,13 @@ static int remote_control_thread(SceSize args, void *argp) {
         if (http_get_wait(path, reply, sizeof(reply), 500) >= 0 &&
             json_value(reply, "action", action, sizeof(action))) {
             field = strstr(reply, "\"seq\":");
+            if (remote_control_running && field && atoi(field + 6) > sequence &&
+                !strcmp(action, "play")) {
+                /* Do not consume Play: exit through normal video teardown,
+                 * then let the idle dispatcher load the new file/kind. */
+                remote_control_action = 4;
+                break;
+            }
             if (field) remote_control_sequence = sequence = atoi(field + 6);
             if (!strcmp(action, "pause")) remote_control_action = 1;
             else if (!strcmp(action, "resume")) remote_control_action = 2;

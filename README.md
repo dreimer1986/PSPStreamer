@@ -89,6 +89,21 @@ After a remotely started episode ends naturally, the PSP requests the next video
 
 Music continues through audio files in the same folder. The PSP's saved shuffle option also applies to remotely started music; shuffle excludes the current track, while sequential playback stops at the folder end. Requested audio/subtitle track indices are reused for the next video and checked against its available tracks.
 
+The updated PSP client also accepts Pause, Resume, Stop and Seek during
+music, including tracks started using the PSP buttons. Seek restarts the
+stream at the requested position and resumes playback. Selecting another
+file and pressing Play during music **or video** first stops and releases
+the current playback resources, then starts the requested file (including
+switching between audio and video). A Stop or replacement Play does not
+trigger automatic next-track playback. These client changes use the existing
+server API; no server/add-on update is needed.
+
+Commands are polled in background workers, not in the music drawing or DAC
+loop. Allow normal network/polling and teardown/startup time for a command to
+take effect. The existing server stores the latest command, not a playlist
+or a queue of rapid button presses. The browser's progress control is a seek
+target, not a live report of the PSP playback position.
+
 The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1` for shuffled music). It returns `{"id":"...","kind":"video"}` or `{"id":"...","kind":"audio"}`, and `{}` when there is no successor. It does not enqueue remote commands. Update both the server and PSP app to use remote continuation. The web page's selected-file details still describe the file selected in the browser, not a live report of the automatically selected successor.
 
 ## Install and configure the PSP app
