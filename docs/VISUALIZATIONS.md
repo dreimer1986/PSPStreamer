@@ -4,6 +4,11 @@ Saved at the user's request on 2026-09-08. None of these engines or presets
 is currently imported into PSPStreamer. Finish hardware validation of the
 optional native TV interface before starting a visualization port.
 
+Update: the user confirmed crackle-free LCD and TV music with `1852d20`.
+The preparation/cleanup and ownership boundaries are documented in
+[MUSIC_RENDERING.md](MUSIC_RENDERING.md). No MilkDrop code has been integrated
+by that cleanup.
+
 ## MilkDrop 2
 
 - Source mirror: https://github.com/eef2697d62fbe08e2fd927278/milkdrop2

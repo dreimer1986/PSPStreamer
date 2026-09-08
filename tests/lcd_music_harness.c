@@ -50,9 +50,24 @@ static void receiver_hud(int frames) { (void)frames; }
 __asm__(".section .rodata\n.global receiver_skin\n.global receiver_skin_end\n"
         "receiver_skin:\n.incbin \"assets/menu_skin.raw\"\nreceiver_skin_end:\n.text\n");
 /* PRODUCTION_FUNCTIONS */
+static int sceKernelGetThreadCurrentPriority(void) { return 0x20; }
+static int sceKernelChangeThreadPriority(int thread, int priority) {
+    (void)thread; (void)priority; return 0;
+}
+#include "music_ui.h"
 #include "lcd_music.h"
 
 int main(void) {
+    /* Independent legacy formula, so sharing the new helper between full
+     * and partial renderers cannot hide an envelope regression. */
+    for (int value = 0; value <= 100; value++)
+        for (int target = 0; target <= 100; target++) {
+            int expected = value;
+            if (target > expected) expected += (target - expected + 1) / 2;
+            else if (expected > 3) expected -= 3;
+            else expected = 0;
+            assert(music_ui_envelope(value, target) == expected);
+        }
     u32 *vram = (u32 *)0x44000000;
     u32 *incremental = malloc(FRAME_BYTES);
     FILE *font_file = fopen("assets/subtitle_font.raw", "rb");

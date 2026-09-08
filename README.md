@@ -176,6 +176,10 @@ Keep the firmware bridge and TV-out PRX files from the working installation alon
 
 ## Tests
 
+See [music rendering ownership and performance](docs/MUSIC_RENDERING.md)
+for the shared LCD/TV helpers, hardware-validated baseline, rendering
+invariants and boundaries for a future visualization engine.
+
 LCD and TV music views update only dynamic regions, at most 20 times per
 second, and give the existing audio-output worker priority over GUI work.
 No extra LCD framebuffer is needed. The initial scene is drawn before audio

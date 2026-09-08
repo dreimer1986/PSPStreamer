@@ -225,8 +225,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         for (i = 0; i < SPECTRUM_BANDS; i++) {
             int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
             int height;
-            if (target > spectrum_display[i]) spectrum_display[i] += (target - spectrum_display[i] + 1) / 2;
-            else spectrum_display[i] = spectrum_display[i] > 3 ? spectrum_display[i] - 3 : 0;
+            spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
             height = spectrum_display[i] * 168 / 100;
             tv_rect(&tv_canvas, 37 + i * (fullscreen ? 54 : 41), 288 - height,
                     fullscreen ? 38 : 28, height, i < 4 ? TV_AMBER : i < 8 ? 0x00B070FF : TV_CYAN);
@@ -248,19 +247,6 @@ static struct {
 } tv_music;
 
 static void tv_music_reset(void) { memset(&tv_music, 0, sizeof(tv_music)); }
-
-/* Scope priority to music GUI work, never change the DAC/decoder workers. */
-static int music_ui_lower_priority(void) {
-    int priority;
-    priority = sceKernelGetThreadCurrentPriority();
-    if (priority >= 0 && priority < 0x40 && sceKernelChangeThreadPriority(0, 0x40) >= 0)
-        return priority;
-    return -1;
-}
-
-static void music_ui_restore_priority(int priority) {
-    if (priority >= 0) sceKernelChangeThreadPriority(0, priority);
-}
 
 static void tv_restore_rect(int x, int y, int width, int height) {
     int yy;
@@ -286,7 +272,7 @@ static void tv_draw_music(const char *title, int fullscreen) {
         tv_music.meter[1] = (vu_display_right * 20 + 50) / 100;
         for (i = 0; i < 5; i++) tv_music.light[i] = tv_indicator_color(i);
         for (i = 0; i < SPECTRUM_BANDS; i++) tv_music.height[i] = spectrum_display[i] * 168 / 100;
-        tv_music.next_tick = sceKernelGetSystemTimeWide() + 50000ULL;
+        tv_music.next_tick = sceKernelGetSystemTimeWide() + MUSIC_UI_INTERVAL_US;
         tv_music.copied_bytes += TV_GUI_BYTES;
         tv_music.full_frames++;
         return;
@@ -328,8 +314,7 @@ static void tv_draw_music(const char *title, int fullscreen) {
         int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
         int height, previous = tv_music.height[i];
         int x = 37 + i * (fullscreen ? 54 : 41), width = fullscreen ? 38 : 28;
-        if (target > spectrum_display[i]) spectrum_display[i] += (target - spectrum_display[i] + 1) / 2;
-        else spectrum_display[i] = spectrum_display[i] > 3 ? spectrum_display[i] - 3 : 0;
+        spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
         height = spectrum_display[i] * 168 / 100;
         if (height > previous) {
             tv_rect(&tv_canvas, x, 288 - height, width, height - previous,
@@ -356,6 +341,6 @@ static void tv_draw_music(const char *title, int fullscreen) {
         /* Address/stride stay fixed: no display API or mode reset is needed. */
     }
     tv_music.incremental_frames++;
-    tv_music.next_tick = sceKernelGetSystemTimeWide() + 50000ULL;
+    tv_music.next_tick = sceKernelGetSystemTimeWide() + MUSIC_UI_INTERVAL_US;
 }
 #endif

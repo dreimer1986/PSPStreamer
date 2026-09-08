@@ -1661,6 +1661,7 @@ cleanup:
     return 0;
 }
 
+#include "music_ui.h"
 #include "tv_gui.h"
 #include "lcd_music.h"
 
@@ -1732,7 +1733,7 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) fullscreen = !fullscreen;
         old = pad.Buttons;
-        sceKernelDelayThread(10000);
+        sceKernelDelayThread(MUSIC_UI_INPUT_POLL_US);
     }
     audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
