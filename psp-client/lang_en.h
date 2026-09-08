@@ -1,5 +1,12 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Native TV sidebar */
+    [TXT_TV_SAVED_LINE1] = "Saved for",
+    [TXT_TV_SAVED_LINE2] = "next",
+    [TXT_TV_SAVED_LINE3] = "playback.",
+
+    [TXT_TV_VOLUME] = "VOLUME: %d%%",
+
     /* Library and loading panels */
     [TXT_MEDIA_LIBRARY] = "MEDIA LIBRARY",
     [TXT_PREPARING_MEDIA] = "PREPARING MEDIA",

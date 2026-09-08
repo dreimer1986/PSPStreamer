@@ -32,6 +32,8 @@
 #include "config.h"
 #include "h264_hw.h"
 #include "language.h"
+#include "display_output.h"
+#include "tv_canvas.h"
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -82,8 +84,7 @@ typedef struct {
 typedef struct { int start, end, x, y, width, height, canvas_width, canvas_height; } BitmapCue;
 
 static char response[RESPONSE_SIZE];
-/* Menu-only artwork is kept outside EBOOT so the actual video player stays
- * small.  It occupies 510 KiB only while the application is running. */
+/* Both native menu skins are embedded; no external artwork file is needed. */
 extern unsigned char receiver_skin[];
 extern unsigned char receiver_skin_end[];
 static const unsigned char *menu_skin;
@@ -131,12 +132,28 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
 
 static int tvout_module_id = -1;
 static int tvout_video_active;
+static int tv_ui_auto;
+static int tv_ui_active;
+static TvCanvas tv_canvas;
+static void tv_ui_start(void);
+static void ui_restore_after_playback(void);
 static volatile int remote_control_running;
 static volatile int remote_control_action;
 static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
 static int remote_control_sequence;
 #define TVOUT_STRIDE 768
+
+static int output_mode(int tv) {
+    return pspDveMgrSetVideoOut(0, tv ? 0x1d2 : 0, tv ? 720 : 480,
+                              tv ? 480 : 272, 1, 15, 0);
+}
+static int output_framebuffer(int tv) {
+    sceDisplayWaitVblankStart();
+    return sceDisplaySetFrameBuf((void *)0x04000000, tv ? TVOUT_STRIDE : VIDEO_STRIDE,
+                                PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+}
+static DisplayOutput display_output = {0, output_mode, output_framebuffer};
 
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
@@ -164,7 +181,7 @@ static int tvout_component_test(void) {
     if (result < 0) return result;
     cable = pspDveMgrCheckVideoOut();
     if (cable != 2) return cable ? -2 : -1;
-    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
+    result = display_output_select(&display_output, 1);
     if (result < 0) return result;
     vram = (u32 *)0x44000000;
     for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
@@ -184,33 +201,27 @@ static int tvout_component_test(void) {
         old = pad.Buttons;
         sceKernelDelayThread(20000);
     }
-    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    display_output_select(&display_output, tv_ui_active);
     return 0;
 }
 
-/* Video uses the exact EDRAM layout proven by the calibration card.  It is
- * intentionally independent of the browser: the normal 480x272 UI remains
- * untouched until a film is actually started. */
+/* Video uses the exact EDRAM layout proven by the calibration card.
+ * Native TV menus already own this mode; the default LCD menu enters it
+ * only for playback. Decoder initialisation is independent of this choice. */
 static int tvout_begin_video(void) {
     int result;
     result = tvout_load_manager();
-    if (result < 0 || pspDveMgrCheckVideoOut() != 2) return -1;
-    result = pspDveMgrSetVideoOut(0, 0x1d2, 720, 480, 1, 15, 0);
-    if (result < 0) return result;
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf((void *)0x04000000, TVOUT_STRIDE,
-                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    return 0;
+    if (result < 0 || pspDveMgrCheckVideoOut() != 2) {
+        /* A removed cable must not leave LCD video in a TV-stride scanout. */
+        tv_ui_active = 0;
+        if (display_output.tv) display_output_select(&display_output, 0);
+        return -1;
+    }
+    return display_output_select(&display_output, 1);
 }
 
 static void tvout_end_video(void) {
-    pspDveMgrSetVideoOut(0, 0, 480, 272, 1, 15, 0);
-    sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE,
-                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    display_output_select(&display_output, tv_ui_active);
 }
 
 static int load_hardware_avc_runtime(void) {
@@ -360,7 +371,7 @@ static const char *audio_quality_name(void) {
 
 static void load_playback_settings(void) {
     SceUID file = sceIoOpen(SETTINGS_PATH, PSP_O_RDONLY, 0);
-    char data[192], *line;
+    char data[512], *line;
     int count;
     if (file < 0) return;
     count = sceIoRead(file, data, sizeof(data) - 1);
@@ -396,6 +407,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
+            else if (!strncmp(line, "tv_ui=", 6)) tv_ui_auto = !strcmp(line + 6, "auto");
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
@@ -409,9 +421,9 @@ static void load_playback_settings(void) {
 
 static void save_playback_settings(void) {
     SceUID file;
-    char data[192];
-    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\n",
-                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code());
+    char data[512];
+    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
+                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1649,6 +1661,8 @@ cleanup:
     return 0;
 }
 
+#include "tv_gui.h"
+
 static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
     unsigned int old = 0;
@@ -1676,35 +1690,39 @@ static int play_audio(const char *media_id, const char *title) {
         SceCtrlData pad;
         int x;
         keep_awake();
-        if (fullscreen) vu_ballistics_step();
-        if (!fullscreen) {
-            gui_library_shell(tr(TXT_NOW_PLAYING));
-            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
-            gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
-            gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
+        if (tv_ui_active) {
+            tv_draw_view(TV_VIEW_MUSIC, 0, 0, 1, title, fullscreen);
         } else {
-            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
-            gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
-            gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
+            if (fullscreen) vu_ballistics_step();
+            if (!fullscreen) {
+                gui_library_shell(tr(TXT_NOW_PLAYING));
+                gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
+                gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
+                gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
+            } else {
+                gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
+                gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
+                gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
+            }
+            /* Actual PCM frequency bins, not a decorative level animation. */
+            for (x = 0; x < SPECTRUM_BANDS; x++) {
+                int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
+                int height, baseline = fullscreen ? 194 : 150;
+                u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
+                if (target > spectrum_display[x])
+                    spectrum_display[x] += (target - spectrum_display[x] + 1) / 2;
+                else if (spectrum_display[x] > 3)
+                    spectrum_display[x] -= 3;
+                else spectrum_display[x] = 0;
+                height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
+                gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
+                         fullscreen ? 25 : 15, height, color);
+            }
+            if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
+            else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
+            sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+            sceDisplayWaitVblankStart();
         }
-        /* Actual PCM frequency bins, not a decorative level animation. */
-        for (x = 0; x < SPECTRUM_BANDS; x++) {
-            int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
-            int height, baseline = fullscreen ? 194 : 150;
-            u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
-            if (target > spectrum_display[x])
-                spectrum_display[x] += (target - spectrum_display[x] + 1) / 2;
-            else if (spectrum_display[x] > 3)
-                spectrum_display[x] -= 3;
-            else spectrum_display[x] = 0;
-            height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
-            gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
-                     fullscreen ? 25 : 15, height, color);
-        }
-        if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
-        else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
-        sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
-        sceDisplayWaitVblankStart();
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -2175,6 +2193,7 @@ static int remote_control_thread(SceSize args, void *argp) {
 static void gui_library_shell(const char *section);
 
 static void show_metadata_loading(void) {
+    if (tv_ui_active) { tv_draw_view(TV_VIEW_LOADING, 0, 0, 0, NULL, 0); return; }
     gui_library_shell(tr(TXT_PREPARING_MEDIA));
     gui_text(38, 47, 0x0000D8FF, "%s", tr(TXT_READING_MEDIA));
     gui_text(38, 76, 0x00FFFFFF, "%s", tr(TXT_LOADING_TRACKS));
@@ -2356,6 +2375,7 @@ static void gui_library_shell(const char *section) {
 static void show(int selected) {
     int i, first, last;
     if (selected < 0 || selected >= item_count) selected = 0;
+    if (tv_ui_active) { tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0); return; }
     first = item_count ? (selected / GUI_LIST_ROWS) * GUI_LIST_ROWS : 0;
     last = first + GUI_LIST_ROWS;
     if (last > item_count) last = item_count;
@@ -2401,22 +2421,26 @@ static void media_info(int selected) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_TRIANGLE);
     while (1) {
-        gui_library_shell(tr(TXT_FILE_DETAILS));
-        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
-        gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
-        gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
-        if (current_duration_seconds > 0.0f)
-            gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
-        else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
-        gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
-        gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
-        gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
-        if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
-        for (i = 0; i < audio_track_count && i < 6; i++)
-            gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
-        for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
-            gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
-        gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
+        keep_awake();
+        if (tv_ui_active) tv_draw_view(TV_VIEW_INFO, selected, 0, 0, NULL, 0);
+        else {
+            gui_library_shell(tr(TXT_FILE_DETAILS));
+            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_FILE_DETAILS));
+            gui_text(38, 57, 0x00FFFFFF, "%.39s", items[selected].title);
+            gui_text(38, 80, 0x008A9BAA, "TYPE: %s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
+            if (current_duration_seconds > 0.0f)
+                gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
+            else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
+            gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
+            gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+            gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
+            if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
+            for (i = 0; i < audio_track_count && i < 6; i++)
+                gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
+            for (i = 0; i < subtitle_track_count && i + audio_track_count < 10; i++)
+                gui_text(376, 57 + (i + audio_track_count) * 10, 0x008A9BAA, "S%d %.10s", i + 1, subtitle_tracks[i].language);
+            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_INFO_CONTROLS));
+        }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE)) &&
             !(old & (PSP_CTRL_CIRCLE | PSP_CTRL_TRIANGLE))) return;
@@ -2440,36 +2464,40 @@ static int playback_options(int audio_only) {
         sceKernelDelayThread(10000);
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
-        gui_library_shell(tr(TXT_STREAM_OPTIONS));
-        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
-        if (audio_only) {
-            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-            gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-            gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
-            gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
-            gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
-            gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
-            gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
-            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
-        } else {
-            if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-            if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-            if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
-            gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
-                                 audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
-                                 audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
-                                 audio_track_count ? audio_tracks[selected_audio_track].title : "");
-            gui_text(38, 84, 0x00FFFFFF, tr(TXT_SUBS_LABEL),
-                                 selected_subtitle_track < 0 ? tr(TXT_OFF) : subtitle_tracks[selected_subtitle_track].language,
-                                 selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
-                                 selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-            gui_text(38, 104, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-            gui_text(373, 47, 0x00FFB000, "%s", tr(TXT_AUDIO_SUB));
-            gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
-            gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_PLAY));
-            gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
-            gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
+        keep_awake();
+        if (tv_ui_active) tv_draw_view(TV_VIEW_OPTIONS, 0, row, audio_only, NULL, 0);
+        else {
+            gui_library_shell(tr(TXT_STREAM_OPTIONS));
+            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
+            if (audio_only) {
+                if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+                if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+                gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+                gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
+                gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
+                gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
+                gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
+                gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
+                gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
+            } else {
+                if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
+                if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+                if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
+                gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
+                                     audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
+                                     audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
+                                     audio_track_count ? audio_tracks[selected_audio_track].title : "");
+                gui_text(38, 84, 0x00FFFFFF, tr(TXT_SUBS_LABEL),
+                                     selected_subtitle_track < 0 ? tr(TXT_OFF) : subtitle_tracks[selected_subtitle_track].language,
+                                     selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
+                                     selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
+                gui_text(38, 104, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+                gui_text(373, 47, 0x00FFB000, "%s", tr(TXT_AUDIO_SUB));
+                gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
+                gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_PLAY));
+                gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
+                gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
+            }
         }
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
@@ -2504,6 +2532,7 @@ int main(void) {
     unsigned long long next_repeat_tick = 0;
     unsigned long long next_page_repeat_tick = 0;
     unsigned long long next_remote_poll_tick = 0;
+    unsigned long long next_tv_redraw_tick = 0;
     int selected = 0;
     int dirty = 1;
     int result;
@@ -2511,6 +2540,9 @@ int main(void) {
     load_playback_settings();
     pspDebugScreenInit();
     pspDebugScreenSetXY(0, 0);
+    /* Hold L at startup to bypass an unavailable TV without editing config. */
+    sceCtrlReadBufferPositive(&pad, 1);
+    if (!(pad.Buttons & PSP_CTRL_LTRIGGER)) tv_ui_start();
     /* ARK-5's true overclock is managed by its own runlevel setting.  The
     * legacy systemctrl speed API tops out at the Sony 333-MHz range, so do
     * not call it here and accidentally undo a Homebrew overclock. */
@@ -2535,6 +2567,10 @@ int main(void) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();
+        if (tv_ui_active && now >= next_tv_redraw_tick) {
+            dirty = 1;
+            next_tv_redraw_tick = now + 150000ULL;
+        }
         if (network_ready && now >= next_remote_poll_tick) {
             char remote_media_id[ID_SIZE];
             int remote_audio, remote_subtitle, remote_is_audio, remote_start;
@@ -2570,7 +2606,7 @@ int main(void) {
                     load_media_metadata(remote_media_id);
                     sceKernelDelayThread(500000);
                 } while (1);
-                pspDebugScreenInit();
+                ui_restore_after_playback();
                 if (result < 0) snprintf(status, sizeof(status), "%s: %08X", video_step, result);
                 dirty = 1;
                 old_buttons = pad.Buttons;
@@ -2603,8 +2639,9 @@ int main(void) {
             unsigned long long now = sceKernelGetSystemTimeWide();
             unsigned int trigger = pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER);
             if (!(old_buttons & trigger) || now >= next_page_repeat_tick) {
-                if (trigger & PSP_CTRL_RTRIGGER) selected = (selected + GUI_LIST_ROWS) % item_count;
-                else selected = (selected + item_count - (GUI_LIST_ROWS % item_count)) % item_count;
+                int page_rows = tv_ui_active ? TV_GUI_ROWS : GUI_LIST_ROWS;
+                if (trigger & PSP_CTRL_RTRIGGER) selected = (selected + page_rows) % item_count;
+                else selected = (selected + item_count - (page_rows % item_count)) % item_count;
                 next_page_repeat_tick = now + 150000ULL;
                 dirty = 1;
             }
@@ -2651,7 +2688,7 @@ int main(void) {
                 snprintf(status, sizeof(status), "%s", items[selected].is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 result = items[selected].is_audio ? play_audio(items[selected].value, items[selected].title) : play_h264(items[selected].value);
-                pspDebugScreenInit();
+                ui_restore_after_playback();
                 if (result < 0) {
                     snprintf(status, sizeof(status), "%s: %08X", video_step, result);
                     break;
@@ -2691,6 +2728,8 @@ int main(void) {
         if (dirty) { show(selected); dirty = 0; }
         sceKernelDelayThread(75000);
     }
+    if (display_output.tv) display_output_select(&display_output, 0);
+    free(tv_canvas.pixels);
     sceNetApctlTerm();
     sceNetInetTerm();
     sceNetTerm();

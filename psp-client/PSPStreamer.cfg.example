@@ -7,3 +7,6 @@ subtitle=-1
 quality=2
 volume=24
 shuffle=0
+language=en
+# off: LCD menus, TV video. auto: native TV menus when component cable is present.
+tv_ui=off

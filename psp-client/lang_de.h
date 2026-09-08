@@ -1,6 +1,13 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Native TV sidebar */
+    [TXT_TV_SAVED_LINE1] = "Für nächste",
+    [TXT_TV_SAVED_LINE2] = "Wiedergabe",
+    [TXT_TV_SAVED_LINE3] = "gemerkt.",
+
+    [TXT_TV_VOLUME] = "LAUTSTÄRKE\n%d %%",
+
 
     /* Library and loading panels */
     [TXT_MEDIA_LIBRARY] = "MEDIATHEK",

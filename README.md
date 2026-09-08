@@ -116,11 +116,29 @@ quality=2
 volume=24
 shuffle=0
 language=en
+tv_ui=off
 ```
 
 `server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
 
 `language` selects the PSP interface language: `en` (default) or `de`. The PSP's bundled Latin-1 font supports direct German `ä`, `ö`, `ü`, and `ß` characters.
+
+`tv_ui=off` (default) preserves LCD menus with TV video playback. Set `tv_ui=auto`
+to use the separate native 720×480 TV interface when a supported component
+cable is connected at app startup. This includes the library, loading screen,
+file information, playback options and music receiver/spectrum. Without that
+cable, or if TV initialization fails, menus remain on the LCD. Hold **L while
+starting the app** to bypass automatic TV menus for that session without
+changing the saved setting. Restart the app after changing `tv_ui`.
+
+The TV artwork is a separate embedded asset, not an enlarged LCD screenshot.
+Its volume dial is prepared for a 16:9 display; use the corresponding TV/OSSC
+aspect setting. The startup check detects a cable, not whether the TV is
+powered on. Automatic hotplug switching during playback is not provided.
+The TV interface adds a 1.41 MiB RAM drawing buffer only when enabled; its
+embedded artwork adds about 1.32 MiB to the executable. The current tested
+video staging/PTS scheduler is unchanged. Host tests verify rendering bounds
+and mode ownership, but physical PSP/OSSC transition tests are still required.
 
 ### Adding a PSP interface language
 
@@ -138,7 +156,11 @@ ASS/SSA, SRT, WebVTT, and other FFmpeg-readable text tracks are converted once i
 
 Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compact DejaVu Sans Latin-1 atlas is loaded only after the AVC decoder is ready; if it is missing, video playback remains safe and text subtitles are simply not drawn. The receiver artwork is embedded in `EBOOT.PBP`; no separate `menu_skin.raw` is required.
 
-Component TV playback uses native 720×480 output. The browser and options stay on the PSP LCD; the video switches to the TV. The existing Select+L+R TV check is available from the browser. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands.
+Component TV playback uses native 720×480 output. By default, the browser and options stay on the PSP LCD and video switches to the TV. With `tv_ui=auto`, TV menus and video share the same output mode: Stop/end returns to the TV menu without an LCD mode reset. The existing Select+L+R TV check is available from either browser and returns to its originating output. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands. This GUI update does not require a server/add-on update.
+
+MilkDrop 2/3 references and constraints for future music visualizations are
+recorded in [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md); no MilkDrop engine
+has been imported yet.
 
 ## Build the PSP client
 
