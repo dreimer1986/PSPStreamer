@@ -3,10 +3,12 @@
 #include "milkdrop_warp.h"
 #include "preset_math.h"
 #include "milkdrop_signal.h"
+#include "milkdrop_decor.h"
 typedef struct {
     MdPreset warp; float red, green, blue; PmProgram program;
     int legacy, wave_mode, wrap;
     float gamma, wave_scale, wave_smoothing, wave_alpha;
+    MdDecor decor;
 } MdFilePreset;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
@@ -16,6 +18,8 @@ int md_eval_preset(const MdFilePreset *preset, float seconds, MdPreset *warp,
                    unsigned int *color, MdFileError *error);
 int md_eval_preset_signal(const MdFilePreset *preset, float seconds, const MdSignal *signal,
                           MdPreset *warp, unsigned int *color, MdFileError *error);
+int md_eval_preset_visual(const MdFilePreset *preset, float seconds, const MdSignal *signal,
+                          MdPreset *warp, unsigned int *color, MdDecor *decor, MdFileError *error);
 /* Transactional: never change output on failure. Strict, bounded subset. */
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error);
 #endif

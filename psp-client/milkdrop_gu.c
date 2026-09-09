@@ -37,6 +37,7 @@ static void md_target(int offset, int stride, int width, int height) {
     sceGuViewport(2048, 2048, width, height);
     sceGuScissor(0, 0, width, height);
 }
+#include "milkdrop_decor_gu.h"
 int md_start(void) {
     if (md_list) return 1;
     if (MD_TEXTURE_BASE + 2*MD_TEXTURE_BYTES > sceGeEdramGetSize()) return 0;
@@ -63,7 +64,7 @@ void md_stop(void) {
 }
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset) {
-    MdVertex *mesh, *ring, *blit;
+    MdVertex *mesh, *ring;
     int target = 1-md_front;
     /* Independent edges: changing top/left must not move bottom/right.
      * TV begins just inside the blue border and five rows below title ink. */
@@ -74,6 +75,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     int width = right - left, height = bottom - top;
     float seconds;
     MdPreset evaluated;
+    MdDecor frame_decor;
     unsigned int custom_color = 0;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;
@@ -85,8 +87,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if (!md_signal_active) md_signal_reset(&md_signal_state);
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
-        if (md_eval_preset_signal(&md_custom_preset, seconds, &md_signal_state.signal,
-                                  &evaluated, &custom_color, &md_runtime_error) != MD_FILE_OK)
+        if (md_eval_preset_visual(&md_custom_preset, seconds, &md_signal_state.signal,
+                                  &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
     } else md_signal_active = 0;
     int circular=preset==3 && md_custom_preset.wave_mode==0;
@@ -114,14 +116,34 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_warp_mesh(mesh, preset == 3 ? &evaluated : &md_presets[preset], seconds);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
+    if(preset==3) md_shapes(&frame_decor,(float)height/width);
     if(circular) {
+        const MdDecor *d=&frame_decor;
         ring=sceGuGetMemory(MD_WAVE_VERTICES*sizeof(*ring));
-        unsigned int alpha=(unsigned int)(md_custom_preset.wave_alpha*255);
-        md_wave_circle(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
-                       seconds,(float)height/width,(custom_color&0xffffff)|(alpha<<24));
-        sceGuEnable(GU_BLEND);
-        sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,0,0);
-        sceGuDrawArray(GU_LINE_STRIP,MD_FORMAT,MD_WAVE_VERTICES,NULL,ring);
+        float alpha=d->wave_alpha;
+        if(d->wave_mod_alpha) {
+            float relative=(md_signal_state.signal.values[7]+md_signal_state.signal.values[8]+
+                            md_signal_state.signal.values[9])/3;
+            float mix=(relative-d->wave_mod_start)/(d->wave_mod_end-d->wave_mod_start);
+            if(mix<0) mix=0;
+            if(mix>1) mix=1;
+            alpha*=mix;
+        }
+        float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
+        if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
+        md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
+                       seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
+        md_blend(d->wave_additive!=0);
+        int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
+        sceGuDrawArray(primitive,MD_FORMAT,MD_WAVE_VERTICES,NULL,ring);
+        if(d->wave_thick) for(int pass=0;pass<3;pass++) {
+            MdVertex *copy=sceGuGetMemory(MD_WAVE_VERTICES*sizeof(*copy));
+            for(int i=0;i<MD_WAVE_VERTICES;i++) {
+                copy[i]=ring[i];
+                copy[i].x+=pass<2?1:0; copy[i].y+=pass>0?1:0;
+            }
+            sceGuDrawArray(primitive,MD_FORMAT,MD_WAVE_VERTICES,NULL,copy);
+        }
         sceGuDisable(GU_BLEND);
     } else if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
@@ -131,6 +153,10 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         }
         sceGuDrawArray(GU_LINE_STRIP, MD_FORMAT, 97, NULL, ring);
     }
+    if(preset==3) {
+        md_border(&frame_decor.outer,0);
+        md_border(&frame_decor.inner,frame_decor.outer.size);
+    }
     sceGuTexSync();
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
     sceGuEnable(GU_TEXTURE_2D);
@@ -139,23 +165,9 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexFlush();
     /* Slice the final stretch into narrow sprites, as recommended for PSP
      * texture-cache locality. It never copies the full scanout on the CPU. */
-    float gamma=preset==3 ? md_custom_preset.gamma : 1;
-    for(int pass=0;pass<(int)(gamma+.999f);pass++) {
-      float strength=gamma-pass; if(strength>1) strength=1;
-      unsigned int shade=(unsigned int)(strength*255);
-      unsigned int tint=0xff000000U|shade|(shade<<8)|(shade<<16);
-      if(pass) { sceGuEnable(GU_BLEND); sceGuBlendFunc(GU_ADD,GU_FIX,GU_FIX,0xffffff,0xffffff); }
-      for (int x = 0; x < width; x += 32) {
-        int end = x+32 < width ? x+32 : width;
-        blit = sceGuGetMemory(2*sizeof(*blit));
-        blit[0] = (MdVertex){(float)x*MD_TEXTURE/width, 0, tint,
-                              (float)(left+x), (float)top, 0};
-        blit[1] = (MdVertex){(float)end*MD_TEXTURE/width, MD_TEXTURE, tint,
-                              (float)(left+end), (float)(top+height), 0};
-        sceGuDrawArray(GU_SPRITES, MD_FORMAT, 2, NULL, blit);
-    }
-    }
-    sceGuDisable(GU_BLEND);
+    const MdDecor *d=&frame_decor;
+    md_present(left,top,width,height,preset==3?d->gamma:1,
+        preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0);
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;

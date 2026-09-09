@@ -31,6 +31,12 @@ int md_wave_snapshot(short right[MD_WAVE_SAMPLES]) {
 }
 void md_wave_circle(MdVertex *vertices, const short *right, float scale,
                     float smoothing, float seconds, float aspect, unsigned int color) {
+    MdDecor decor={.wave_x=.5f,.wave_y=.5f};
+    md_wave_circle_style(vertices,right,scale,smoothing,seconds,aspect,color,&decor);
+}
+void md_wave_circle_style(MdVertex *vertices, const short *right, float scale,
+                    float smoothing, float seconds, float aspect, unsigned int color,
+                    const MdDecor *decor) {
     float samples[MD_WAVE_SAMPLES];
     static float circle_x[240],circle_y[240],seam[24];
     static int ready;
@@ -49,9 +55,10 @@ void md_wave_circle(MdVertex *vertices, const short *right, float scale,
     for(int i=0;i<240;i++) {
         float radius=.5f+.4f*samples[i+120];
         if(i<24) radius=(.5f+.4f*samples[i+360])*(1-seam[i])+radius*seam[i];
+        radius+=decor->wave_param;
         vertices[i]=(MdVertex){0,0,color,
-            128+128*radius*(circle_x[i]*c-circle_y[i]*s)*aspect,
-            128-128*radius*(circle_x[i]*s+circle_y[i]*c),0};
+            decor->wave_x*256+128*radius*(circle_x[i]*c-circle_y[i]*s)*aspect,
+            (1-decor->wave_y)*256-128*radius*(circle_x[i]*s+circle_y[i]*c),0};
     }
     vertices[240]=vertices[0];
 }

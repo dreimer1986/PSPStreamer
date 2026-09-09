@@ -12,7 +12,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Warp(ctypes.Structure):
     _fields_ = [(key, ctypes.c_float) for key in
-                ("zoom", "rotation", "warp", "warp_speed", "warp_scale", "decay", "dx", "dy")]
+                ("zoom", "rotation", "warp", "warp_speed", "warp_scale", "decay", "dx", "dy",
+                 "cx","cy","sx","sy","zoomexp")]
+
+
+class Shape(ctypes.Structure):
+    _fields_=[(key,ctypes.c_float) for key in ("enabled","sides","additive","textured",
+        "x","y","rad","ang","tex_ang","tex_zoom","r","g","b","a","r2","g2","b2","a2",
+        "border_r","border_g","border_b","border_a")]
+
+
+class Border(ctypes.Structure):
+    _fields_=[(key,ctypes.c_float) for key in ("size","r","g","b","a")]
+
+
+class Decor(ctypes.Structure):
+    _fields_=[(key,ctypes.c_float) for key in ("wave_x","wave_y","wave_param","wave_dots",
+        "wave_thick","wave_additive","wave_brighten","wave_mod_alpha","wave_mod_start","wave_mod_end",
+        "echo_zoom","echo_alpha","echo_orient")]+[("outer",Border),("inner",Border),
+        ("gamma",ctypes.c_float),("wave_alpha",ctypes.c_float),("shapes",Shape*4)]
 
 
 class Op(ctypes.Structure):
@@ -29,7 +47,7 @@ class Preset(ctypes.Structure):
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
-                ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float)]
+                ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor)]
 
 
 class Error(ctypes.Structure):
@@ -58,6 +76,7 @@ class PresetTests(unittest.TestCase):
                         str(ROOT / "psp-client/preset_math.c"),
                         str(ROOT / "psp-client/milkdrop_signal.c"),
                         str(ROOT / "psp-client/milkdrop_wave.c"),
+                        str(ROOT / "psp-client/milkdrop_decor.c"),
                         str(ROOT / "psp-client/milkdrop_warp.c"), "-lm", "-o", str(library)],
                        check=True)
         cls.library = ctypes.CDLL(str(library))
@@ -314,8 +333,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(warp.zoom,2)
         self.assertAlmostEqual(warp.dx,.01)
         self.assertAlmostEqual(warp.dy,-.02)
-        for field,value in (("fVideoEchoAlpha",1),("ob_alpha",1),("bInvert",1),
-                            ("nWaveMode",2),("cx",.6),("fWaveParam",1)):
+        for field,value in (("fVideoEchoAlpha",2),("ob_alpha",2),("bInvert",1),
+                            ("nWaveMode",2),("cx",1.6),("fWaveParam",2)):
             self.assertEqual(self.parse(f"presetName=test\n{field}={value}".encode())[0],3)
         for data in (b"presetName=x\npresetName=x",b"[preset00]\ndx=0\ndx=0"):
             self.assertEqual(self.parse(data)[0],2)
@@ -329,6 +348,71 @@ class PresetTests(unittest.TestCase):
             for bass in (0,1,4,10,1000):
                 signal=Signal((ctypes.c_float*13)(*([0]*7+[bass]*6)))
                 self.assertEqual(self.evaluate(preset,time,signal)[0],0)
+
+    def test_extended_math(self):
+        for source,expected in (("floor(-.2)",-1),("ceil(.2)",1),("atan(1)",math.pi/4),
+            ("log(exp(1))",1),("log10(100)",2),("sqr(-1.5)",2.25),("sign(-4)",-1),
+            ("pow(2,1.5)",2**1.5),("atan2(1,-1)",3*math.pi/4),
+            ("above(2,1)",1),("below(2,1)",0),("equal(1,1.000001)",1),
+            ("equal(1,1.001)",0)):
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={source};".encode())
+            self.assertEqual(code,0,source)
+            result,warp,_,_=self.evaluate(preset,0)
+            self.assertEqual(result,0,source)
+            self.assertAlmostEqual(warp.warp,expected,places=5)
+        for source in ("log(0)","log10(-1)","pow(-1,.5)","exp(1000)"):
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={source};".encode())
+            self.assertEqual(code,0)
+            self.assertEqual(self.evaluate(preset,0)[0],2)
+
+    def test_transforms_and_static_layers(self):
+        data=b"[preset00]\nzoom=1\nfZoomExponent=1.5\ncx=.4\ncy=.6\nsx=2\nsy=.5\n"
+        code,preset,_=self.parse(data+b"per_frame_1=cx=.5+.1*sin(time); sy=1;\n")
+        self.assertEqual(code,0)
+        self.assertAlmostEqual(self.evaluate(preset,0)[1].cx,.5)
+        self.assertEqual(self.evaluate(preset,0)[1].sy,1)
+        for key,value in (("sx",0),("sy",-1),("fZoomExponent",10),("bWaveDots",.5),
+                          ("nVideoEchoOrientation",1.5)):
+            self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
+        for key in ("cx","cy","sx","sy","zoomexp"):
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1={key}=10;".encode())
+            self.assertEqual(code,0)
+            self.assertEqual(self.evaluate(preset,0)[0],2)
+        code,preset,_=self.parse(b"[preset00]\nshapecode_0_enabled=1\nshapecode_0_sides=32\n"
+            b"shapecode_0_textured=1\nshapecode_0_border_a=.5\nfVideoEchoAlpha=.5\n"
+            b"nVideoEchoOrientation=3\nob_size=.1\nob_alpha=.5\nbWaveThick=1\n")
+        self.assertEqual(code,0)
+        self.assertEqual(preset.decor.shapes[0].sides,32)
+        self.assertEqual(preset.decor.echo_orient,3)
+        self.assertEqual(preset.decor.wave_thick,1)
+        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",33),
+            ("shapecode_0_textured",.5),("shapecode_0_tex_zoom",0),("shapecode_0_per_frame1",0)):
+            self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
+        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
+        self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
+
+    def test_feature_demos_and_dynamic_fields(self):
+        for name in ("receiver-fx-demo.milk","echo-dots-demo.milk"):
+            code,preset,error=self.parse((ROOT / "psp-client/presets" / name).read_bytes())
+            self.assertEqual(code,0,(name,error.line,error.key))
+            state=SignalState()
+            rng=random.Random(45)
+            for frame in range(12000):
+                now=frame*100000
+                self.update(state,[rng.randrange(101) for _ in range(12)],rng.randrange(101),now)
+                self.assertEqual(self.evaluate(preset,now/1e6,state.signal)[0],0,(name,frame))
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=echo_alpha=.6; ob_r=.3; gamma=2; wave_a=.4;")
+        self.assertEqual(code,0)
+        evaluate=self.library.md_eval_preset_visual
+        evaluate.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),
+            ctypes.POINTER(Warp),ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(Decor),ctypes.POINTER(Error)]
+        out,warp,color,error=Decor(),Warp(),ctypes.c_uint(),Error()
+        self.assertEqual(evaluate(ctypes.byref(preset),0,None,ctypes.byref(warp),ctypes.byref(color),
+                                 ctypes.byref(out),ctypes.byref(error)),0)
+        self.assertAlmostEqual(out.echo_alpha,.6)
+        self.assertAlmostEqual(out.outer.r,.3)
+        self.assertAlmostEqual(out.wave_alpha,.4)
+        self.assertEqual(out.gamma,2)
 
     def test_wave_snapshot_and_reference_geometry(self):
         class Vertex(ctypes.Structure):

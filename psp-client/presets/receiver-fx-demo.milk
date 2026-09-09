@@ -1,0 +1,48 @@
+; PSPStreamer fixed-function feature tour; no third-party preset code.
+[preset00]
+nWaveMode=0
+zoom=1.025
+fDecay=0.97
+fGammaAdj=1.5
+fWaveAlpha=0.6
+bWaveThick=1
+bAdditiveWaves=1
+bMaximizeWaveColor=1
+fVideoEchoZoom=1.7
+fVideoEchoAlpha=0.25
+nVideoEchoOrientation=1
+ob_size=0.025
+ob_r=0.2
+ob_g=0.5
+ob_b=1
+ob_alpha=0.45
+ib_size=0.01
+ib_r=1
+ib_g=0.5
+ib_b=0.1
+ib_alpha=0.3
+shapecode_0_enabled=1
+shapecode_0_sides=5
+shapecode_0_x=0.3
+shapecode_0_y=0.5
+shapecode_0_rad=0.24
+shapecode_0_r=0.2
+shapecode_0_g=0.5
+shapecode_0_b=1
+shapecode_0_a=0.18
+shapecode_0_border_a=0.5
+shapecode_1_enabled=1
+shapecode_1_sides=6
+shapecode_1_x=0.7
+shapecode_1_y=0.5
+shapecode_1_rad=0.32
+shapecode_1_textured=1
+shapecode_1_additive=1
+shapecode_1_a=0.3
+shapecode_1_a2=0.15
+shapecode_1_border_a=0.3
+per_frame_1=cx=0.5+0.12*sin(time*0.3); cy=0.5+0.08*cos(time*0.4);
+per_frame_2=sx=1+0.025*sin(time*0.7); sy=1+0.025*cos(time*0.8);
+per_frame_3=wave_r=0.2+0.6*psp_low; wave_g=0.2+0.6*psp_mid; wave_b=0.2+0.6*psp_high;
+per_frame_4=echo_alpha=0.2+0.15*psp_low_smooth;
+per_frame_5=wave_x=0.5+0.1*sin(time*0.5); ob_a=0.2+0.3*psp_level;

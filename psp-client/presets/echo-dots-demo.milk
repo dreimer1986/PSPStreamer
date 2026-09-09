@@ -1,0 +1,19 @@
+; Sparse dotted circle and reflected echo; tests the new field/formula paths.
+[preset00]
+nWaveMode=0
+zoom=1.04
+fDecay=0.96
+bWaveDots=1
+bWaveThick=1
+bModWaveAlphaByVolume=1
+fModWaveAlphaStart=0.3
+fModWaveAlphaEnd=1.5
+fWaveAlpha=0.9
+fWaveParam=0.08
+fVideoEchoZoom=2
+fVideoEchoAlpha=0.4
+nVideoEchoOrientation=3
+fZoomExponent=1.2
+per_frame_1=wave_r=0.5+0.5*sin(time); wave_g=0.5+0.5*cos(time*0.7); wave_b=0.8;
+per_frame_2=rot=0.02*sin(time*0.4); echo_orient=floor(time/5)-4*floor(time/20);
+per_frame_3=wave_mystery=0.08+0.08*psp_low_smooth;

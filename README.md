@@ -190,6 +190,10 @@ The [Hyperdrive target subset](docs/HYPERDRIVE_TARGET.md) additionally supports
 the real circular PCM waveform (mode 0), `dx/dy`, texture clamp and gamma
 brightness. Copy your original preset as `presets/active.milk`; third-party
 presets are not bundled in Git. This is not full MilkDrop compatibility.
+The [extended fixed-function subset](docs/MILKDROP_FIXED_FUNCTION.md) adds
+animated transform centers/stretch, wave styling, echo, borders and four
+static custom shapes (including feedback-textured shapes). Try
+`receiver-fx-demo.milk` and `echo-dots-demo.milk` as the active preset.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

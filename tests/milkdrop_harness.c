@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include <sys/mman.h>
 #include "milkdrop_warp.h"
 enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D=8,
@@ -16,6 +17,7 @@ static int fail_init, fail_start;
 static int edram_size = 2*1024*1024, mesh_calls, ring_calls, sprite_calls;
 static unsigned char *list_base;
 static size_t list_used;
+static size_t list_peak;
 static unsigned long long test_time = 1000000;
 static unsigned long long render_cost;
 static uint32_t expected_ring_color;
@@ -50,10 +52,11 @@ static void sceGuScissor(int x,int y,int w,int h) {
     assert(!x && !y && w==target_width && h==target_height);
 }
 static void sceGuDisable(int what) { (void)what; }
-enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX };
+enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX,GU_POINTS,GU_TRIANGLE_FAN,GU_TCC_RGB };
 static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b) {
     assert(op==GU_ADD);
     assert((src==GU_SRC_ALPHA && dst==GU_ONE_MINUS_SRC_ALPHA && !a && !b) ||
+           (src==GU_SRC_ALPHA && dst==GU_FIX && !a && b==0xffffff) ||
            (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff));
 }
 static void sceGuEnable(int what) { (void)what; }
@@ -78,19 +81,22 @@ static void sceGuTexSync(void) {}
 static void *sceGuGetMemory(int bytes) {
     void *result=list_base+list_used;
     list_used+=(bytes+15)&~15;
-    assert(list_used<32768); /* at least half the command list stays free */
+    if(list_used>list_peak) list_peak=list_used;
+    assert(list_used<56000); /* reserve at least 9 KiB for command words */
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     const MdVertex *v=data;
     assert(format==15 && !indices);
     if(type==GU_TRIANGLES) { assert(count==MD_MESH_VERTICES); mesh_calls++; }
-    else if(type==GU_LINE_STRIP) {
-        assert(count==97 || count==241); ring_calls++;
+    else if(type==GU_TRIANGLE_FAN) { assert(count>=5 && count<=34); }
+    else if(type==GU_LINE_STRIP || type==GU_POINTS) {
+        assert(count==97 || count==241 || (count>=4 && count<=33)); ring_calls++;
         if(expected_ring_color) for(int i=0;i<count;i++) assert(v[i].color==expected_ring_color);
     }
     else {
-        assert(type==GU_SPRITES && count==2 && !target_offset); sprite_calls++;
+        assert(type==GU_SPRITES && count==2); sprite_calls++;
+        if(target_offset) return; /* feedback border rectangles */
         assert(v[0].x==expected_left+covered_width%expected_width && v[0].y==expected_top);
         assert(v[1].y==expected_top+expected_height);
         covered_width+=(int)(v[1].x-v[0].x);
@@ -105,7 +111,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 /* GU_ADAPTER */
 int main(void) {
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
-    MdPreset identity={1,0,0,1,1,1,0,0};
+    MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
     unsigned char *vram=(void *)0x44000000;
     assert(mmap(vram,edram_size,PROT_READ|PROT_WRITE,
@@ -121,6 +127,16 @@ int main(void) {
     for(int i=0;i<MD_MESH_VERTICES;i++) {
         assert(fabsf(mesh[i].u-(mesh[i].x+.5f-.01f*MD_TEXTURE))<.0001f);
         assert(fabsf(mesh[i].v-(mesh[i].y+.5f+.02f*MD_TEXTURE))<.0001f);
+    }
+    identity.zoom=1.2f; identity.zoomexp=1.5f; identity.cx=.2f; identity.cy=.7f;
+    identity.sx=2; identity.sy=.5f; identity.rotation=.1f;
+    md_warp_mesh(mesh,&identity,0);
+    {
+        double z=pow(1.2,pow(1.5,sqrt(2.0)*2-1));
+        double u=(-.5/z+.5-.2)/2+.2, v=(-.5/z+.5-.7)/.5+.7;
+        double a=u-.2,b=v-.7;
+        assert(fabs(mesh[0].u-((a*cos(.1)-b*sin(.1)+.2-.01)*256+.5))<.0002);
+        assert(fabs(mesh[0].v-((a*sin(.1)+b*cos(.1)+.7+.02)*256+.5))<.0002);
     }
     edram_size=1024*1024;
     assert(!md_start() && !gu_live);
@@ -252,6 +268,33 @@ int main(void) {
         assert(md_right[9]==pcm[19]);
         md_stop(); assert(!md_wave_capture);
     }
+    /* Maximum static layer combination: stays within one fixed GU list. */
+    expected_ring_color=0; expected_passes=8;
+    md_custom_preset.gamma=4;
+    MdDecor *decor=&md_custom_preset.decor;
+    decor->echo_zoom=2; decor->echo_alpha=.4f;
+    decor->wave_thick=decor->wave_dots=decor->wave_additive=decor->wave_brighten=1;
+    decor->wave_mod_alpha=1; decor->wave_mod_start=.75f; decor->wave_mod_end=.95f;
+    decor->outer=(MdBorder){.03f,1,0,0,.5f};
+    decor->inner=(MdBorder){.03f,0,0,1,.5f};
+    for(int i=0;i<MD_SHAPES;i++) decor->shapes[i]=(MdShape){
+        .enabled=1,.sides=32,.additive=i%2,.textured=i%2,.x=.5f,.y=.5f,.rad=.4f,
+        .tex_zoom=1,.r=1,.g=.3f,.b=.2f,.a=.5f,.r2=.2f,.g2=.3f,.b2=1,.a2=.1f,
+        .border_r=1,.border_g=1,.border_b=1,.border_a=.3f};
+    for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
+        expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
+        expected_width=full?(tv?720:480):tv?508:306;
+        expected_height=full?(tv?480:272):tv?208:75;
+        assert(md_start());
+        for(int orientation=0;orientation<4;orientation++) {
+            decor->echo_orient=orientation;
+            test_time+=100000;
+            assert(md_frame(tv,full,bands,75,test_time,3)==1);
+            assert(covered_width==expected_width*expected_passes);
+        }
+        md_stop();
+    }
+    printf("Visualization maximum vertex storage: %zu / 65536 bytes\n",list_peak);
     munmap(vram,edram_size);
     return 0;
 }

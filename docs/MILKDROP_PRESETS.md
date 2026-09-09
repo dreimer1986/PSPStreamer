@@ -49,7 +49,7 @@ without changing the previously loaded values.
 
 Most ordinary MilkDrop presets contain additional fields and are therefore
 rejected. This includes arbitrary EEL, `per_pixel_*`, shader code,
-wave modes other than 0, custom waves/shapes and unsupported non-default
+wave modes other than 0, custom wave/shape programs and unsupported
 transform properties. Removing fields does not guarantee that a preset
 retains its original appearance.
 
@@ -171,10 +171,10 @@ are clamped at draw time; runtime zoom accepts 0.1–64 instead of 0.8–1.2.
 existing native spectrum ring remains selected.
 
 Additional fields: `bTexWrap` (0/1), `fGammaAdj` (1–4 display brightness),
-`fWaveScale`, `fWaveSmoothing`, `fWaveAlpha` (0–1). Center/wave position are
-currently supported only at .5/.5, stretch and zoom exponent only at 1,
-wave parameter only at 0. Echo and borders accept their inactive settings;
-enabling them, other wave modes or drawing flags still fails explicitly.
+`fWaveScale`, `fWaveSmoothing`, `fWaveAlpha` (0–1). The
+[extended fixed-function subset](MILKDROP_FIXED_FUNCTION.md) documents variable
+center/stretch/exponent, wave position/styling, echo, borders, static shapes
+and their per-frame controls, plus the additional math functions.
 See [Hyperdrive implementation and test](HYPERDRIVE_TARGET.md).
 
 ### Host and hardware checks

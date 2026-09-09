@@ -6,7 +6,21 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
-enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT };
+enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT,
+       FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL };
+static int binary(int op) {
+    return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL);
+}
+static int function(const char *name) {
+    static const struct {const char *name; int op;} list[]={
+        {"sin",SIN},{"cos",COS},{"abs",ABS},{"min",MIN},{"max",MAX},{"sqrt",SQRT},
+        {"floor",FLOOR},{"ceil",CEIL},{"atan",ATAN},{"exp",EXP},{"log",LOG},
+        {"log10",LOG10},{"sqr",SQR},{"sign",SIGN},{"pow",POW},{"atan2",ATAN2},
+        {"above",ABOVE},{"below",BELOW},{"equal",EQUAL}};
+    for(unsigned int i=0;i<sizeof(list)/sizeof(list[0]);i++)
+        if(!strcmp(name,list[i].name)) return list[i].op;
+    return -1;
+}
 int pm_assignment_line(const PmProgram *program, int variable) {
     for (int i = program->count-1; i >= 0; i--)
         if (program->code[i].op == STORE && program->code[i].arg == variable)
@@ -34,7 +48,12 @@ static int variable(const char *s) {
     static const char *names[PM_VALUES] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
-        "bass","mid","treb","bass_att","mid_att","treb_att","dx","dy"};
+        "bass","mid","treb","bass_att","mid_att","treb_att","dx","dy",
+        "cx","cy","sx","sy","zoomexp",
+        "wave_x","wave_y","wave_mystery","wave_dots","wave_thick","wave_additive","wave_brighten",
+        "wave_mod_alpha","wave_mod_start","wave_mod_end","echo_zoom","echo_alpha","echo_orient",
+        "ob_size","ob_r","ob_g","ob_b","ob_a","ib_size","ib_r","ib_g","ib_b","ib_a",
+        "gamma","wave_a"};
     for (int i = 0; i < PM_VALUES; i++) if (*names[i] && !strcmp(s,names[i])) return i;
     return -1;
 }
@@ -59,13 +78,11 @@ static int unary(Parser *p) {
     } else if (name(p,text)) {
         space(p);
         if (*p->p == '(') {
-            int op = !strcmp(text,"sin") ? SIN : !strcmp(text,"cos") ? COS :
-                     !strcmp(text,"abs") ? ABS : !strcmp(text,"min") ? MIN :
-                     !strcmp(text,"max") ? MAX : !strcmp(text,"sqrt") ? SQRT : -1;
+            int op = function(text);
             if (op < 0) p->error = PM_UNSUPPORTED;
             else {
                 p->p++; ok = expression(p); space(p);
-                if (ok && (op == MIN || op == MAX)) {
+                if (ok && binary(op)) {
                     if (*p->p != ',') ok = 0;
                     else { p->p++; ok = expression(p); space(p); }
                 }
@@ -145,7 +162,7 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         }
         if (!used) return 0;
         a = stack[--used];
-        if ((op->op >= ADD && op->op <= DIV) || op->op == MIN || op->op == MAX) {
+        if (binary(op->op)) {
             if (!used) return 0;
             b = a; a = stack[--used];
         }
@@ -157,6 +174,14 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             case COS: result=cosf(a); break; case ABS: result=fabsf(a); break;
             case MIN: result=fminf(a,b); break; case MAX: result=fmaxf(a,b); break;
             case SQRT: if (a<0) return 0; result=sqrtf(a); break;
+            case FLOOR: result=floorf(a); break; case CEIL: result=ceilf(a); break;
+            case ATAN: result=atanf(a); break; case EXP: result=expf(a); break;
+            case LOG: if(a<=0) return 0; result=logf(a); break;
+            case LOG10: if(a<=0) return 0; result=log10f(a); break;
+            case SQR: result=a*a; break; case SIGN: result=(a>0)-(a<0); break;
+            case POW: result=powf(a,b); break; case ATAN2: result=atan2f(a,b); break;
+            case ABOVE: result=a>b; break; case BELOW: result=a<b; break;
+            case EQUAL: result=fabsf(a-b)<.00001f; break;
             default: return 0;
         }
         if (!isfinite(result)) return 0;

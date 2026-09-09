@@ -59,10 +59,11 @@ The historical LCD-menu/TV-video mode still visualizes music on the LCD.
 - PSP GU renders the feedback and stretches the result into the receiver
   viewport. Native GUI artwork and controls are not rescaled.
 
-The selected subset fixes zoom exponent to 1, centre to 0.5/0.5, stretch to 1,
-with variable translation (`dx/dy`). A bounded arithmetic/time per-frame interpreter is
-available for the custom slot. Full EEL, per-pixel user programs,
-custom waves/shapes, shader presets and preset blending are not implemented.
+The [extended subset](MILKDROP_FIXED_FUNCTION.md) supports bounded zoom exponent,
+center, stretch and translation, wave styling, echo, borders and static shapes.
+A bounded arithmetic/time per-frame interpreter is available for the custom
+slot. Full EEL, per-pixel programs, independent shape/wave programs, shader
+presets and preset blending are not implemented.
 
 The studied source contains Direct3D 9 dependencies even in the no-shader
 path, and its bundled NS-EEL has x86/PPC assembly rather than a PSP backend.

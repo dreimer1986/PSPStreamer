@@ -31,16 +31,16 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /* Modified PSP adaptation of the no-shader UV equations in MilkDrop 2's
  * WarpedBlit_NoShaders (milkdropfs.cpp), revision
  * b5e4136c2f050eafa10aa199bb72c8e5c12c9320.
- * Fixed zoom exponent=1, centre=(.5,.5), stretch=1; variable translation,
- * square feedback texture. No EEL, custom waves/shapes or shader interpreter.
+ * Bounded zoom exponent, centre, stretch and translation;
+ * square feedback texture. No per-vertex EEL or shader interpreter here.
  * Audio ring below is new PSPStreamer code, NOT MilkDrop's waveform engine. */
 #include "milkdrop_warp.h"
 #include <math.h>
 
 const MdPreset md_presets[3] = {
-    {1.025f,  0.015f, 0.8f, 1.0f, 1.0f, 0.97f, 0, 0},
-    {1.008f, -0.030f, 1.8f, 0.7f, 1.5f, 0.96f, 0, 0},
-    {1.045f,  0.004f, 0.4f, 1.4f, 0.8f, 0.98f, 0, 0}
+    {1.025f,  0.015f, 0.8f, 1.0f, 1.0f, 0.97f, 0, 0, .5f,.5f,1,1,1},
+    {1.008f, -0.030f, 1.8f, 0.7f, 1.5f, 0.96f, 0, 0, .5f,.5f,1,1,1},
+    {1.045f,  0.004f, 0.4f, 1.4f, 0.8f, 0.98f, 0, 0, .5f,.5f,1,1,1}
 };
 
 void md_warp_mesh(MdVertex *vertices, const MdPreset *p, float seconds) {
@@ -55,16 +55,22 @@ void md_warp_mesh(MdVertex *vertices, const MdPreset *p, float seconds) {
     int x, y, n = 0;
     for (y = 0; y <= MD_GRID; y++) for (x = 0; x <= MD_GRID; x++) {
         float px = 2.0f*x/MD_GRID - 1, py = 1 - 2.0f*y/MD_GRID;
-        float u = px*.5f/p->zoom + .5f, v = -py*.5f/p->zoom + .5f;
+        float zoom=p->zoom;
+        if(p->zoomexp!=1) {
+            float radius=sqrtf(px*px+py*py);
+            zoom=powf(p->zoom,powf(p->zoomexp,radius*2-1));
+        }
+        float u = px*.5f/zoom + .5f, v = -py*.5f/zoom + .5f;
+        u=(u-p->cx)/p->sx+p->cx; v=(v-p->cy)/p->sy+p->cy;
         float a, b;
         MdVertex *out = &grid[y*(MD_GRID+1)+x];
         u += p->warp*.0035f*sinf(time*.333f + inv_scale*(px*f[0]-py*f[3]));
         v += p->warp*.0035f*cosf(time*.375f - inv_scale*(px*f[2]+py*f[1]));
         u += p->warp*.0035f*cosf(time*.753f - inv_scale*(px*f[1]-py*f[2]));
         v += p->warp*.0035f*sinf(time*.825f + inv_scale*(px*f[0]+py*f[3]));
-        a = u-.5f; b = v-.5f;
-        out->u = (a*c-b*s+.5f-p->dx)*MD_TEXTURE + .5f;
-        out->v = (a*s+b*c+.5f-p->dy)*MD_TEXTURE + .5f;
+        a = u-p->cx; b = v-p->cy;
+        out->u = (a*c-b*s+p->cx-p->dx)*MD_TEXTURE + .5f;
+        out->v = (a*s+b*c+p->cy-p->dy)*MD_TEXTURE + .5f;
         out->x = (float)x*MD_TEXTURE/MD_GRID;
         out->y = (float)y*MD_TEXTURE/MD_GRID; out->z = 0;
         out->color = 0xff000000U | decay | (decay<<8) | (decay<<16);
