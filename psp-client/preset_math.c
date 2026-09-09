@@ -31,9 +31,10 @@ static int name(Parser *p, char text[32]) {
     text[n] = 0; return 1;
 }
 static int variable(const char *s) {
-    static const char *names[10] = {"zoom","rot","warp","","","decay",
-                                   "wave_r","wave_g","wave_b","time"};
-    for (int i = 0; i < 10; i++) if (*names[i] && !strcmp(s,names[i])) return i;
+    static const char *names[PM_VALUES] = {"zoom","rot","warp","","","decay",
+        "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
+        "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth"};
+    for (int i = 0; i < PM_VALUES; i++) if (*names[i] && !strcmp(s,names[i])) return i;
     return -1;
 }
 static int expression(Parser *p);
@@ -101,7 +102,7 @@ int pm_compile(PmProgram *program, const char *source, int line) {
         char text[32]; int id;
         if (!name(&p,text)) goto fail;
         id = variable(text);
-        if (id < 0 || id == 9) { p.error = PM_UNSUPPORTED; goto fail; }
+        if (id < 0 || id >= 9) { p.error = PM_UNSUPPORTED; goto fail; }
         space(&p);
         if (*p.p++ != '=') goto fail;
         if (!expression(&p) || !emit(&p,STORE,id,0)) goto fail;
@@ -115,8 +116,8 @@ fail:
     program->count = before;
     return p.error;
 }
-int pm_execute(const PmProgram *program, float values[10], int *error_line) {
-    float local[10], stack[PM_STACK];
+int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line) {
+    float local[PM_VALUES], stack[PM_STACK];
     int used = 0;
     memcpy(local,values,sizeof(local)); *error_line = 0;
     if (program->count < 0 || program->count > PM_MAX_OPS) return 0;
@@ -126,7 +127,7 @@ int pm_execute(const PmProgram *program, float values[10], int *error_line) {
         *error_line = op->line;
         if (op->op == PUSH || op->op == LOAD) {
             if (used >= PM_STACK) return 0;
-            if (op->op == LOAD && (op->arg < 0 || op->arg >= 10)) return 0;
+            if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
             result = op->op == PUSH ? op->value : local[op->arg];
             if (!isfinite(result)) return 0;
             stack[used++] = result; continue;

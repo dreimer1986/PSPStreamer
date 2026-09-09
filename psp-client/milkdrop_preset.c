@@ -98,11 +98,21 @@ done:
 
 int md_eval_preset(const MdFilePreset *p, float seconds, MdPreset *warp,
                    unsigned int *color, MdFileError *error) {
-    float v[10] = {p->warp.zoom, p->warp.rotation, p->warp.warp,
+    return md_eval_preset_signal(p, seconds, NULL, warp, color, error);
+}
+int md_eval_preset_signal(const MdFilePreset *p, float seconds, const MdSignal *signal,
+                          MdPreset *warp, unsigned int *color, MdFileError *error) {
+    float v[PM_VALUES] = {p->warp.zoom, p->warp.rotation, p->warp.warp,
         p->warp.warp_speed, p->warp.warp_scale, p->warp.decay,
         p->red, p->green, p->blue, seconds};
     int line = 0;
     memset(error, 0, sizeof(*error));
+    if (signal) for (int i = 0; i < MD_SIGNAL_COUNT; i++) {
+        float value = signal->values[i];
+        if (!isfinite(value) || value < 0 || value > 1)
+            return md_file_error(error, MD_FILE_INVALID, 0, "music input");
+        v[10+i] = value;
+    }
     if (!pm_execute(&p->program, v, &line))
         return md_file_error(error, MD_FILE_INVALID, line, "formula");
     for (int i = 0; i < 9; i++) {

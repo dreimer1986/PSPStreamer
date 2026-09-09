@@ -180,6 +180,9 @@ during music: **Square** cycles three built-in effects, the custom file
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.
+For music-reactive transforms and colors, use `presets/music-demo.milk`
+instead. It uses the existing PSP spectrum/VU snapshots, with optional
+time-based smoothing; no additional audio analysis is required.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

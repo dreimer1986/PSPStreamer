@@ -22,6 +22,7 @@ class MilkDropTests(unittest.TestCase):
                             str(source), str(ROOT / "psp-client/milkdrop_warp.c"),
                             str(ROOT / "psp-client/milkdrop_preset.c"),
                             str(ROOT / "psp-client/preset_math.c"),
+                            str(ROOT / "psp-client/milkdrop_signal.c"),
                             "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=20)
 

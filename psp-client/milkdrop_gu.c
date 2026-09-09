@@ -19,6 +19,8 @@ static int md_front;
 static int md_last_tv, md_last_fullscreen;
 static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
+static MdSignalState md_signal_state;
+static int md_signal_active;
 void md_set_tv_title_bottom(int bottom) {
     int top = bottom + 5;
     md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
@@ -45,6 +47,7 @@ int md_start(void) {
     }
     md_front = 0; md_origin = md_next = 0;
     md_last_tv = md_last_fullscreen = -1;
+    md_signal_reset(&md_signal_state); md_signal_active = 0;
     return 1;
 }
 void md_stop(void) {
@@ -73,9 +76,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         top == md_last_top) return 1;
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
-    if (preset == 3 && md_eval_preset(&md_custom_preset, seconds, &evaluated,
-                                     &custom_color, &md_runtime_error) != MD_FILE_OK)
-        return -1; /* No GU list was started; caller retains music playback. */
+    if (preset == 3) {
+        if (!md_signal_active) md_signal_reset(&md_signal_state);
+        md_signal_active = 1;
+        md_signal_update(&md_signal_state, bands, level, now);
+        if (md_eval_preset_signal(&md_custom_preset, seconds, &md_signal_state.signal,
+                                  &evaluated, &custom_color, &md_runtime_error) != MD_FILE_OK)
+            return -1; /* No GU list was started; caller retains music playback. */
+    } else md_signal_active = 0;
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);

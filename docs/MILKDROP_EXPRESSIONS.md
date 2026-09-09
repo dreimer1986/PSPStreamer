@@ -2,6 +2,7 @@
 
 The bounded arithmetic/time subset is now implemented in `preset_math.c`
 and integrated into the custom slot. See [syntax and limits](MILKDROP_PRESETS.md).
+Native `psp_*` music inputs are also available using existing display snapshots.
 The source findings below guided the boundary; they do not imply full EEL
 compatibility. Original NS-EEL differential testing remains outstanding.
 
@@ -42,7 +43,10 @@ and `ns-eel2/nseel-compiler.c`.
 5. Deferred: compare supported operations against original NS-EEL on a supported host
    before claiming compatible semantics. Keep tests for execution bounds and
    adaptive-frame timing separate from the PSP audio worker.
-6. Deferred: add music variables only after defining and validating relative-level
+6. Native display variables now have explicit names (`psp_low/mid/high/level`
+   and smoothed band variants), bounded 0–1 inputs and elapsed-time smoothing.
+   They are not aliases for original music variables. Deferred: add the latter
+   only after defining and validating relative-level
    normalization and smoothing. Reuse analysis snapshots; never retain PCM
    ownership or move expression evaluation into the decoder/DAC threads.
 

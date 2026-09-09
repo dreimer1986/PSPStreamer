@@ -1,0 +1,11 @@
+; Native PSP analysis demo, not MilkDrop relative bass/mid/treb semantics.
+; Copy as active.milk, restart music and select the fourth visualization.
+[preset00]
+zoom=1.018
+rot=0
+warp=1
+fDecay=0.97
+per_frame_1=zoom=1.005+0.025*psp_low_smooth;
+per_frame_2=warp=0.5+2*psp_low; rot=0.025*sin(time*0.6)*(0.3+psp_mid_smooth);
+per_frame_3=wave_r=0.15+0.8*psp_low; wave_g=0.15+0.8*psp_mid;
+per_frame_4=wave_b=0.15+0.8*psp_high; decay=0.94+0.045*psp_level;

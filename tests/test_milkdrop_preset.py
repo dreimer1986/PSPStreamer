@@ -32,6 +32,14 @@ class Error(ctypes.Structure):
     _fields_ = [("code", ctypes.c_int), ("line", ctypes.c_int), ("key", ctypes.c_char * 40)]
 
 
+class Signal(ctypes.Structure):
+    _fields_ = [("values", ctypes.c_float * 7)]
+
+
+class SignalState(ctypes.Structure):
+    _fields_ = [("signal", Signal), ("tick", ctypes.c_ulonglong), ("ready", ctypes.c_int)]
+
+
 class PresetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -42,12 +50,19 @@ class PresetTests(unittest.TestCase):
                         "-shared", "-fPIC", "-fsanitize=undefined",
                         str(ROOT / "psp-client/milkdrop_preset.c"),
                         str(ROOT / "psp-client/preset_math.c"),
+                        str(ROOT / "psp-client/milkdrop_signal.c"),
                         str(ROOT / "psp-client/milkdrop_warp.c"), "-lm", "-o", str(library)],
                        check=True)
         cls.library = ctypes.CDLL(str(library))
         cls.load = cls.library.md_load_preset
         cls.load.argtypes = [ctypes.c_char_p, ctypes.POINTER(Preset), ctypes.POINTER(Error)]
         cls.load.restype = ctypes.c_int
+        cls.update_signal = cls.library.md_signal_update
+        cls.update_signal.argtypes = [ctypes.POINTER(SignalState),
+                                      ctypes.POINTER(ctypes.c_ubyte), ctypes.c_int,
+                                      ctypes.c_ulonglong]
+        cls.reset_signal = cls.library.md_signal_reset
+        cls.reset_signal.argtypes = [ctypes.POINTER(SignalState)]
 
     @classmethod
     def tearDownClass(cls):
@@ -120,12 +135,12 @@ class PresetTests(unittest.TestCase):
             result, _, _ = self.parse(data)
             self.assertIn(result, (2, 3))
 
-    def evaluate(self, preset, seconds):
-        fn = self.library.md_eval_preset
-        fn.argtypes = [ctypes.POINTER(Preset), ctypes.c_float, ctypes.POINTER(Warp),
+    def evaluate(self, preset, seconds, signal=None):
+        fn = self.library.md_eval_preset_signal
+        fn.argtypes = [ctypes.POINTER(Preset), ctypes.c_float, ctypes.POINTER(Signal), ctypes.POINTER(Warp),
                        ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(Error)]
         warp, color, error = Warp(), ctypes.c_uint(123), Error()
-        result = fn(ctypes.byref(preset), seconds, ctypes.byref(warp),
+        result = fn(ctypes.byref(preset), seconds, ctypes.byref(signal) if signal else None, ctypes.byref(warp),
                     ctypes.byref(color), ctypes.byref(error))
         if result:
             self.assertEqual(bytes(warp), bytes(Warp()))
@@ -180,6 +195,67 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(result, 0)
         for frame in range(36000):
             self.assertEqual(self.evaluate(preset, frame/20)[0], 0)
+
+    def update(self, state, bands, level, now):
+        self.update_signal(ctypes.byref(state), (ctypes.c_ubyte * 12)(*bands), level, now)
+        for value in state.signal.values:
+            self.assertTrue(math.isfinite(value) and 0 <= value <= 1)
+
+    def test_native_signal_mapping_clamping_and_reset(self):
+        state = SignalState()
+        self.update(state, [100]*4 + [50]*4 + [0]*4, 75, 0)
+        self.assertEqual(list(state.signal.values), [1, .5, 0, .75, 1, .5, 0])
+        self.update(state, [255]*12, 999, 6_000_000)
+        self.assertEqual(list(state.signal.values), [1]*7)
+        self.update(state, [0]*12, -5, 12_000_000)
+        self.assertEqual(list(state.signal.values), [0]*7)
+        self.reset_signal(ctypes.byref(state))
+        self.assertEqual(bytes(state), bytes(SignalState()))
+
+    def test_smoothing_uses_elapsed_time_not_frame_count(self):
+        states = []
+        for interval in (25_000, 50_000, 100_000, 250_000):
+            state = SignalState()
+            self.update(state, [100]*12, 100, 0)
+            for now in range(interval, 1_000_001, interval):
+                self.update(state, [0]*12, 0, now)
+            self.assertEqual(list(state.signal.values)[:4], [0]*4)
+            self.assertAlmostEqual(state.signal.values[4], math.exp(-4), places=6)
+            states.append(state)
+        # A duplicate tick cannot advance the smoother; a clock reset rebases it.
+        state = states[0]
+        smooth = state.signal.values[4]
+        self.update(state, [100]*12, 100, state.tick)
+        self.assertEqual(state.signal.values[4], smooth)
+        self.update(state, [50]*12, 50, 1)
+        self.assertEqual(list(state.signal.values), [.5]*7)
+
+    def test_native_formula_inputs_are_read_only_and_not_eel_aliases(self):
+        names = ("psp_low", "psp_mid", "psp_high", "psp_level",
+                 "psp_low_smooth", "psp_mid_smooth", "psp_high_smooth")
+        signal = Signal((ctypes.c_float * 7)(.1, .2, .3, .4, .5, .6, .7))
+        for i, name in enumerate(names):
+            code, preset, _ = self.parse(f"[preset00]\nper_frame_1=warp={name};".encode())
+            self.assertEqual(code, 0)
+            self.assertAlmostEqual(self.evaluate(preset, 0, signal)[1].warp, (i+1)/10, places=6)
+            self.assertEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0], 3)
+        for name in ("bass", "mid", "treb", "bass_att"):
+            self.assertEqual(self.parse(f"[preset00]\nper_frame_1=warp={name};".encode())[0], 3)
+        for bad in (float("nan"), float("inf"), -1, 1.1):
+            signal.values[0] = bad
+            self.assertEqual(self.evaluate(preset, 0, signal)[0], 2)
+
+    def test_music_demo_with_varying_signals(self):
+        code, preset, _ = self.parse((ROOT / "psp-client/presets/music-demo.milk").read_bytes())
+        self.assertEqual(code, 0)
+        state = SignalState()
+        rng = random.Random(55)
+        now = 0
+        for frame in range(12000):
+            now += rng.choice((50_000, 75_000, 100_000))
+            bands = [rng.randrange(101) for _ in range(12)] if frame % 100 < 70 else [0]*12
+            self.update(state, bands, max(bands), now)
+            self.assertEqual(self.evaluate(preset, now/1e6, state.signal)[0], 0)
 
 
 if __name__ == "__main__":

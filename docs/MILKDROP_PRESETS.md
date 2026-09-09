@@ -76,7 +76,7 @@ Readable/writable outputs are `zoom`, `rot`, `warp`, `decay`, `wave_r`,
 `wave_g`, `wave_b`. Note that formula `decay` corresponds to static `fDecay`.
 Warp speed/scale remain static fields. `time` is read-only elapsed seconds
 since visualization activation, not the audio position; it continues while
-music is paused. Stop/restart resets it. No `fps`, `frame`, music variables,
+music is paused. Stop/restart resets it. No `fps`, `frame`, original EEL music variables,
 persistent variables, conditions, loops or per-pixel programs are accepted.
 
 Inputs reset from static values before each rendered frame; assignments in
@@ -92,7 +92,36 @@ source line. Music continues; Square returns to the normal spectrum and the
 built-ins remain available. Stop/restart music to reload a corrected file.
 This is a new arithmetic subset, **not an NS-EEL compatibility claim**.
 
-The bundled example is newly authored for PSPStreamer; no third-party
+## Native music inputs
+
+`music-demo.milk` lets the music drive zoom, warp, rotation, color and decay.
+Copy it as `presets/active.milk`, restart music, then press Square four times.
+All seven new inputs are read-only and bounded to 0–1:
+
+| Variable | Definition |
+| --- | --- |
+| `psp_low` | Mean of existing display bins 0–3, divided by 100 |
+| `psp_mid` | Mean of bins 4–7, divided by 100 |
+| `psp_high` | Mean of bins 8–11, divided by 100 |
+| `psp_level` | Existing mean left/right VU snapshot, divided by 100 |
+| `psp_low_smooth` | Smoothed `psp_low` |
+| `psp_mid_smooth` | Smoothed `psp_mid` |
+| `psp_high_smooth` | Smoothed `psp_high` |
+
+These are gain-biased **display measurements**, not RMS, calibrated frequency
+bands, beat detection or MilkDrop's relative-to-history `bass/mid/treb`.
+The bins' physical frequencies depend on the existing analyzer's sample rate.
+Original music variable names remain unsupported rather than being aliased.
+
+Smoothing uses a 250 ms exponential time constant and the actual time between
+rendered frames, not a fixed FPS. The first custom frame initializes from the
+current snapshot. Pause supplies zero raw inputs; smoothed inputs decay toward
+zero. Stop/restart clears all smoothing state. Fullscreen/output layout changes
+do not restart it. No new analysis, PCM copies or audio-thread work is added:
+only twelve bounded bin reads and one smoothing coefficient per custom frame.
+The original built-in effects are unchanged.
+
+The bundled examples are newly authored for PSPStreamer; no third-party
 presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).
 
 ## Test
@@ -103,6 +132,9 @@ keys, size limits and 300 deterministic malformed byte strings. Formula tests
 cover precedence, sequential assignments, static reset, rejected syntax,
 instruction/depth/line bounds, atomic runtime errors and 30 minutes of demo
 values. The GU harness checks that a failed formula opens no render list.
+Music-input tests cover bin mapping, clamping, read-only variables, invalid
+inputs, rate-independent decay, restart, pause and randomized demo inputs;
+the GU harness checks actual LCD/TV ring colors and throttled-frame behavior.
 
 On PSP, check the cyan example in slot four. Set `wave_r/g/b` to `1/0/0`,
 restart music, and check the red ring. Append `per_pixel_1=zoom=1;` and
@@ -110,3 +142,4 @@ confirm an unsupported-field message without interrupting music.
 Restore the example afterward. The three original effects remain available.
 Also test the time demo in receiver/fullscreen views on LCD and TV, then
 switch to another track/video. Check that audio remains uninterrupted.
+Repeat with the music demo, including pause/resume and a quiet passage.

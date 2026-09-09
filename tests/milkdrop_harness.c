@@ -176,6 +176,31 @@ int main(void) {
     }
     md_stop();
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
+    /* Music inputs reach actual ring vertices; throttling never advances them. */
+    assert(pm_compile(&md_custom_preset.program,
+        "wave_r=psp_low; wave_g=psp_mid; wave_b=psp_high;",2)==PM_OK);
+    for(int tv=0;tv<2;tv++) {
+        expected_left=tv ? 26 : 38; expected_top=tv ? 86 : 74;
+        expected_width=tv ? 508 : 306; expected_height=tv ? 208 : 75;
+        assert(md_start());
+        assert(!md_signal_state.ready);
+        for(int i=0;i<12;i++) bands[i]=i<4 ? 100 : i<8 ? 50 : 0;
+        expected_ring_color=0xff007fffU;
+        test_time+=100000;
+        assert(md_frame(tv,0,bands,75,test_time,3)==1);
+        assert(md_signal_state.signal.values[4]==1);
+        unsigned long long tick=md_signal_state.tick;
+        memset(bands,0,sizeof(bands));
+        assert(md_frame(tv,0,bands,0,test_time,3)==1);
+        assert(md_signal_state.tick==tick && md_signal_state.signal.values[0]==1);
+        test_time+=100000;
+        assert(md_frame(tv,0,bands,0,test_time,3)==1);
+        assert(md_signal_state.signal.values[0]==0);
+        assert(md_signal_state.signal.values[4]>0 && md_signal_state.signal.values[4]<1);
+        md_stop();
+    }
+    expected_left=38; expected_top=74; expected_width=306; expected_height=75;
+    memset(&md_custom_preset.program,0,sizeof(md_custom_preset.program));
     /* A runtime formula failure must happen before opening a GU list. */
     assert(pm_compile(&md_custom_preset.program,"rot=1/(time-time);",7)==PM_OK);
     assert(md_start());
