@@ -33,7 +33,7 @@ and `ns-eel2/nseel-compiler.c`.
 1. Implemented a portable, explicitly documented expression subset, compiling
    into bounded bytecode before music starts. No source parsing or allocation
    during rendering; no native code generation.
-2. Implemented arithmetic, parentheses, `sin/cos/abs`, time and supported static
+2. Implemented arithmetic, parentheses, `sin/cos/abs/sqrt`, `min/max`, time and supported static
    output fields. Limit instructions, nesting and statements. Unknown
    identifiers/functions remain load errors with line/field information.
 3. Per-frame output inputs reset from static preset values. Add persistent
@@ -45,9 +45,12 @@ and `ns-eel2/nseel-compiler.c`.
    adaptive-frame timing separate from the PSP audio worker.
 6. Native display variables now have explicit names (`psp_low/mid/high/level`
    and smoothed band variants), bounded 0–1 inputs and elapsed-time smoothing.
-   They are not aliases for original music variables. Deferred: add the latter
-   only after defining and validating relative-level
-   normalization and smoothing. Reuse analysis snapshots; never retain PCM
+   They are not aliases for original music variables. Original names now use
+   separate relative-level normalization with the reference's attack/release
+   and history equations. Input bins, initialization, silence scale and
+   elapsed-time warm-up remain documented PSP approximations. Host tests
+   compare the equations, not the original FFT or full NS-EEL runtime.
+   Reuse analysis snapshots; never retain PCM
    ownership or move expression evaluation into the decoder/DAC threads.
 
 Shader code, arbitrary EEL, per-pixel expressions and custom waves/shapes

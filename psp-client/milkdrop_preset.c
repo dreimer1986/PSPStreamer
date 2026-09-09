@@ -109,7 +109,7 @@ int md_eval_preset_signal(const MdFilePreset *p, float seconds, const MdSignal *
     memset(error, 0, sizeof(*error));
     if (signal) for (int i = 0; i < MD_SIGNAL_COUNT; i++) {
         float value = signal->values[i];
-        if (!isfinite(value) || value < 0 || value > 1)
+        if (!isfinite(value) || value < 0 || (i < 7 && value > 1))
             return md_file_error(error, MD_FILE_INVALID, 0, "music input");
         v[10+i] = value;
     }

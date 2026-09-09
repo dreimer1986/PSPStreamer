@@ -6,7 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
-enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS };
+enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT };
 int pm_assignment_line(const PmProgram *program, int variable) {
     for (int i = program->count-1; i >= 0; i--)
         if (program->code[i].op == STORE && program->code[i].arg == variable)
@@ -33,7 +33,8 @@ static int name(Parser *p, char text[32]) {
 static int variable(const char *s) {
     static const char *names[PM_VALUES] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
-        "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth"};
+        "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
+        "bass","mid","treb","bass_att","mid_att","treb_att"};
     for (int i = 0; i < PM_VALUES; i++) if (*names[i] && !strcmp(s,names[i])) return i;
     return -1;
 }
@@ -59,10 +60,15 @@ static int unary(Parser *p) {
         space(p);
         if (*p->p == '(') {
             int op = !strcmp(text,"sin") ? SIN : !strcmp(text,"cos") ? COS :
-                     !strcmp(text,"abs") ? ABS : -1;
+                     !strcmp(text,"abs") ? ABS : !strcmp(text,"min") ? MIN :
+                     !strcmp(text,"max") ? MAX : !strcmp(text,"sqrt") ? SQRT : -1;
             if (op < 0) p->error = PM_UNSUPPORTED;
             else {
                 p->p++; ok = expression(p); space(p);
+                if (ok && (op == MIN || op == MAX)) {
+                    if (*p->p != ',') ok = 0;
+                    else { p->p++; ok = expression(p); space(p); }
+                }
                 if (*p->p != ')') ok = 0;
                 else { p->p++; ok = ok && emit(p,op,0,0); }
             }
@@ -138,7 +144,7 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         }
         if (!used) return 0;
         a = stack[--used];
-        if (op->op >= ADD && op->op <= DIV) {
+        if ((op->op >= ADD && op->op <= DIV) || op->op == MIN || op->op == MAX) {
             if (!used) return 0;
             b = a; a = stack[--used];
         }
@@ -148,6 +154,8 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             case DIV: if (b==0) return 0; result=a/b; break;
             case NEG: result=-a; break; case SIN: result=sinf(a); break;
             case COS: result=cosf(a); break; case ABS: result=fabsf(a); break;
+            case MIN: result=fminf(a,b); break; case MAX: result=fmaxf(a,b); break;
+            case SQRT: if (a<0) return 0; result=sqrtf(a); break;
             default: return 0;
         }
         if (!isfinite(result)) return 0;

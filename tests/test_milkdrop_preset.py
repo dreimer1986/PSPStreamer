@@ -33,11 +33,13 @@ class Error(ctypes.Structure):
 
 
 class Signal(ctypes.Structure):
-    _fields_ = [("values", ctypes.c_float * 7)]
+    _fields_ = [("values", ctypes.c_float * 13)]
 
 
 class SignalState(ctypes.Structure):
-    _fields_ = [("signal", Signal), ("tick", ctypes.c_ulonglong), ("ready", ctypes.c_int)]
+    _fields_ = [("signal", Signal), ("tick", ctypes.c_ulonglong), ("ready", ctypes.c_int),
+                ("average", ctypes.c_float * 3), ("long_average", ctypes.c_float * 3),
+                ("origin", ctypes.c_ulonglong)]
 
 
 class PresetTests(unittest.TestCase):
@@ -161,7 +163,7 @@ class PresetTests(unittest.TestCase):
 
     def test_formula_rejections_and_budgets(self):
         for source in ("rot=1", "rot=;", "rot=(1;", "0", "rot=nan;",
-                       "time=0;", "rot=bass;", "rot=sqrt(1);", "rot=1e99;",
+                       "time=0;", "rot=unknown;", "rot=tan(1);", "rot=1e99;",
                        "rot=" + "("*18 + "0" + ")"*18 + ";",
                        "rot=" + "+".join(["0"]*70) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
@@ -198,17 +200,17 @@ class PresetTests(unittest.TestCase):
 
     def update(self, state, bands, level, now):
         self.update_signal(ctypes.byref(state), (ctypes.c_ubyte * 12)(*bands), level, now)
-        for value in state.signal.values:
-            self.assertTrue(math.isfinite(value) and 0 <= value <= 1)
+        for i, value in enumerate(state.signal.values):
+            self.assertTrue(math.isfinite(value) and 0 <= value and (i >= 7 or value <= 1))
 
     def test_native_signal_mapping_clamping_and_reset(self):
         state = SignalState()
         self.update(state, [100]*4 + [50]*4 + [0]*4, 75, 0)
-        self.assertEqual(list(state.signal.values), [1, .5, 0, .75, 1, .5, 0])
+        self.assertEqual(list(state.signal.values)[:7], [1, .5, 0, .75, 1, .5, 0])
         self.update(state, [255]*12, 999, 6_000_000)
-        self.assertEqual(list(state.signal.values), [1]*7)
+        self.assertEqual(list(state.signal.values)[:7], [1]*7)
         self.update(state, [0]*12, -5, 12_000_000)
-        self.assertEqual(list(state.signal.values), [0]*7)
+        self.assertEqual(list(state.signal.values)[:7], [0]*7)
         self.reset_signal(ctypes.byref(state))
         self.assertEqual(bytes(state), bytes(SignalState()))
 
@@ -228,19 +230,19 @@ class PresetTests(unittest.TestCase):
         self.update(state, [100]*12, 100, state.tick)
         self.assertEqual(state.signal.values[4], smooth)
         self.update(state, [50]*12, 50, 1)
-        self.assertEqual(list(state.signal.values), [.5]*7)
+        self.assertEqual(list(state.signal.values)[:7], [.5]*7)
 
     def test_native_formula_inputs_are_read_only_and_not_eel_aliases(self):
         names = ("psp_low", "psp_mid", "psp_high", "psp_level",
                  "psp_low_smooth", "psp_mid_smooth", "psp_high_smooth")
-        signal = Signal((ctypes.c_float * 7)(.1, .2, .3, .4, .5, .6, .7))
+        signal = Signal((ctypes.c_float * 13)(.1, .2, .3, .4, .5, .6, .7))
         for i, name in enumerate(names):
             code, preset, _ = self.parse(f"[preset00]\nper_frame_1=warp={name};".encode())
             self.assertEqual(code, 0)
             self.assertAlmostEqual(self.evaluate(preset, 0, signal)[1].warp, (i+1)/10, places=6)
             self.assertEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0], 3)
-        for name in ("bass", "mid", "treb", "bass_att"):
-            self.assertEqual(self.parse(f"[preset00]\nper_frame_1=warp={name};".encode())[0], 3)
+        for name in ("bass", "mid", "treb", "bass_att", "mid_att", "treb_att"):
+            self.assertEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0], 3)
         for bad in (float("nan"), float("inf"), -1, 1.1):
             signal.values[0] = bad
             self.assertEqual(self.evaluate(preset, 0, signal)[0], 2)
@@ -256,6 +258,45 @@ class PresetTests(unittest.TestCase):
             bands = [rng.randrange(101) for _ in range(12)] if frame % 100 < 70 else [0]*12
             self.update(state, bands, max(bands), now)
             self.assertEqual(self.evaluate(preset, now/1e6, state.signal)[0], 0)
+
+    def test_relative_analysis_against_reference_equations(self):
+        state = SignalState()
+        self.update(state, [20]*12, 20, 0)
+        self.assertEqual(list(state.signal.values)[7:], [1]*6)
+        avg = long_avg = .2
+        rng = random.Random(125)
+        now = 0
+        for _ in range(2000):
+            dt = rng.choice((33333, 50000, 100000))
+            now += dt
+            raw = rng.choice((0, .2, .5, 1))
+            rate = (.2 if raw > avg else .5)**(dt/1e6*30)
+            avg = avg*rate + raw*(1-rate)
+            rate = (.9 if now < 1666667 else .992)**(dt/1e6*30)
+            long_avg = long_avg*rate + raw*(1-rate)
+            self.update(state, [round(raw*100)]*12, 0, now)
+            self.assertAlmostEqual(state.signal.values[7], 1 if long_avg < .001 else raw/long_avg, places=4)
+            self.assertAlmostEqual(state.signal.values[10], 1 if long_avg < .001 else avg/long_avg, places=4)
+        self.reset_signal(ctypes.byref(state))
+        self.update(state, [20]*12, 20, 0)
+        self.update(state, [100]*12, 100, 33333)
+        self.assertGreater(state.signal.values[7], 1)
+        self.assertLess(state.signal.values[10], state.signal.values[7])
+
+    def test_min_max_sqrt_and_relative_demo(self):
+        code, preset, _ = self.parse(b"[preset00]\nper_frame_1=warp=min(3,max(-1,sqrt(4)));\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.evaluate(preset, 0)[1].warp, 2)
+        for expression in ("min(1)", "max(1,2,3)", "sqrt(1,2)", "min(,1)"):
+            self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0], 0)
+        code, preset, _ = self.parse(b"[preset00]\nper_frame_1=warp=sqrt(-1);")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.evaluate(preset, 0)[0], 2)
+        code, preset, _ = self.parse((ROOT / "psp-client/presets/relative-demo.milk").read_bytes())
+        self.assertEqual(code, 0)
+        for value in (0, .5, 1, 2, 10, 1000):
+            signal = Signal((ctypes.c_float * 13)(*([0]*7+[value]*6)))
+            self.assertEqual(self.evaluate(preset, 123, signal)[0], 0)
 
 
 if __name__ == "__main__":

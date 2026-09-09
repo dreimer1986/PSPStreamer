@@ -71,12 +71,14 @@ per_frame_2=wave_r=0.5+0.4*sin(time);
 Use consecutive keys `per_frame_1` through at most `per_frame_16`, in order.
 Each contains one or more assignments ending in semicolons. Supported syntax:
 decimal/scientific constants, parentheses, unary `+/-`, arithmetic `+ - * /`,
-and single-argument `sin`, `cos`, `abs`. Trigonometric arguments are radians.
+single-argument `sin`, `cos`, `abs`, `sqrt`, and two-argument `min`/`max`.
+Trigonometric arguments are radians; negative square roots are runtime errors.
+Use `min(high,max(low,value))` to bound a formula output.
 Readable/writable outputs are `zoom`, `rot`, `warp`, `decay`, `wave_r`,
 `wave_g`, `wave_b`. Note that formula `decay` corresponds to static `fDecay`.
 Warp speed/scale remain static fields. `time` is read-only elapsed seconds
 since visualization activation, not the audio position; it continues while
-music is paused. Stop/restart resets it. No `fps`, `frame`, original EEL music variables,
+music is paused. Stop/restart resets it. No `fps`, `frame`,
 persistent variables, conditions, loops or per-pixel programs are accepted.
 
 Inputs reset from static values before each rendered frame; assignments in
@@ -111,15 +113,47 @@ All seven new inputs are read-only and bounded to 0–1:
 These are gain-biased **display measurements**, not RMS, calibrated frequency
 bands, beat detection or MilkDrop's relative-to-history `bass/mid/treb`.
 The bins' physical frequencies depend on the existing analyzer's sample rate.
-Original music variable names remain unsupported rather than being aliased.
+Original music variable names use the separate relative calculations below,
+not aliases of these 0–1 inputs.
 
 Smoothing uses a 250 ms exponential time constant and the actual time between
 rendered frames, not a fixed FPS. The first custom frame initializes from the
 current snapshot. Pause supplies zero raw inputs; smoothed inputs decay toward
 zero. Stop/restart clears all smoothing state. Fullscreen/output layout changes
 do not restart it. No new analysis, PCM copies or audio-thread work is added:
-only twelve bounded bin reads and one smoothing coefficient per custom frame.
+only twelve bounded bin reads and a fixed number of smoothing coefficients
+per custom frame.
 The original built-in effects are unchanged.
+
+## Relative music inputs (original names)
+
+`bass`, `mid`, `treb` divide the current band value by its long-term average.
+`bass_att`, `mid_att`, `treb_att` divide a faster smoothed band by the same
+average. All are read-only, nonnegative and can exceed 1: 1 is the historical
+baseline, not maximum loudness. Use `relative-demo.milk` to try them.
+
+The envelope equations follow MilkDrop 2's `DoCustomSoundAnalysis` in
+`vis_milk2/plugin.cpp` (revision recorded in the source audit):
+
+- Fast average retention: 0.2 on rises, 0.5 on falls, referenced to 30 Hz.
+- Long average retention: 0.9 during warm-up, then 0.992.
+- Rate conversion: `retention^(elapsed_seconds*30)`.
+- Average update: `old*retention + current*(1-retention)`.
+- Baselines below 0.001 yield neutral relative inputs of 1.
+
+Deliberate PSP differences: input comes from our clipped, gain-biased display
+bins rather than the original FFT; histories initialize from the first
+snapshot; warm-up is 50/30 seconds rather than 50 actual rendered frames.
+The 0.001 silence threshold is therefore on our normalized input scale.
+These reproduce the relative-value concept and envelope equations, **not
+bit-identical MilkDrop audio analysis or unrestricted preset compatibility**.
+During prolonged silence the relative inputs return to 1; `psp_level` is the
+appropriate input when a formula must distinguish silence from average energy.
+
+Tests compare 2,000 updates against independently calculated envelope
+equations, check above-1 impulses and all six read-only names, and exercise
+the relative demo with inputs through 1,000. Bounds on render outputs and
+the 128-instruction budget remain unchanged.
 
 The bundled examples are newly authored for PSPStreamer; no third-party
 presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).

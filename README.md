@@ -183,6 +183,9 @@ For animated rotation and colors, copy `presets/time-demo.milk` over
 For music-reactive transforms and colors, use `presets/music-demo.milk`
 instead. It uses the existing PSP spectrum/VU snapshots, with optional
 time-based smoothing; no additional audio analysis is required.
+`presets/relative-demo.milk` uses the original `bass/mid/treb` and `*_att`
+names with relative-to-history envelopes. Their PSP frequency-analysis
+approximation and `min/max/sqrt` formula support are documented in the subset guide.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

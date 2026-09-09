@@ -1,0 +1,12 @@
+; Relative-to-history music response with explicit safe output limits.
+; Original variable names, PSP spectrum approximation (not the original FFT).
+[preset00]
+zoom=1.018
+rot=0
+warp=1
+fDecay=0.97
+per_frame_1=zoom=1.01+0.015*min(3,bass_att);
+per_frame_2=warp=min(3,max(-3,(bass-1)*2));
+per_frame_3=rot=0.025*sin(time*0.6)*min(3,mid_att);
+per_frame_4=wave_r=min(1,0.2+0.35*bass); wave_g=min(1,0.2+0.35*mid);
+per_frame_5=wave_b=min(1,0.2+0.35*treb); decay=0.96+0.01*min(3,treb_att);
