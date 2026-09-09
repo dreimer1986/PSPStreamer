@@ -8,9 +8,13 @@ SHA-256: `3ae3786e91eb531ab252257a0ceebc13f86a7392d5fa1bd5c389f765c8e48507`.
 This specific file has seven per-frame equations, no per-pixel equations,
 no custom waves/shapes and no programmable warp/composite shader blocks.
 It is a suitable fixed-function milestone, not a reason to abandon broader
-MilkDrop 2 feature support. It is NOT currently supported by our loader.
+MilkDrop 2 feature support. Its required subset is now implemented and host
+tested with the exact file. Hardware and visual comparison remain outstanding.
 
-## Requirements and gaps
+## Original requirements and gaps (before implementation)
+
+This original checklist is retained for comparison; see the implementation
+status below for the new test build.
 
 | Requirement | Current status / required work |
 | --- | --- |
@@ -50,5 +54,29 @@ remain a useful general feature but are not a prerequisite for Hyperdrive.
 - Preserve audio ownership and stable playback; no full compatibility claim
   based solely on successful parsing.
 
-This document records the target and audit only; no new playback build or
-compatibility implementation is introduced by this commit.
+## Implemented test build
+
+- Explicit headerless `presetName` dialect and the target's static fields.
+  Unsupported enabled effects still fail; they are not silently discarded.
+- Writable `dx`/`dy` subtracted from UV after rotation, as in the reference.
+- Mode 0 uses 576 right-channel PCM samples, spatial smoothing, 240 circular
+  points plus a closing vertex and a 24-point seam crossfade. Trigonometric
+  tables are precomputed instead of evaluating sin/cos per point every frame.
+- Sequence-checked snapshots never wait or transfer decoder-buffer ownership.
+  Capture runs only when the circular-wave effect is selected, at the existing
+  decoder analysis point, not at the DAC. Queue depth can affect visual latency.
+- Alpha blending for the wave; additive final-display passes for gamma
+  brightness (two for this preset). Brightness does not feed back.
+- Clamp/repeat selection; legacy RGB clamping at rendering; positive runtime
+  zoom from 0.1 to 64. Strict native PSP presets retain their previous checks.
+- Circle aspect follows the active viewport. Feedback is still 256 square
+  with an 8x8 mesh, not a pixel-identical desktop renderer.
+
+Run the optional exact-file test with:
+
+```sh
+HYPERDRIVE_PRESET='/path/to/Geiss - Hyperdrive.milk' python3 -m unittest discover -s tests -q
+```
+
+No third-party preset is added to Git. Copy the original as `presets/active.milk`,
+restart music and select slot four with Square. Downloads remains untouched.

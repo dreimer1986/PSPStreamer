@@ -20,6 +20,7 @@ static unsigned long long test_time = 1000000;
 static unsigned long long render_cost;
 static uint32_t expected_ring_color;
 static int expected_left, expected_top, expected_width, expected_height, covered_width;
+static int expected_passes=1;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return test_time; }
 static int sceGuInit(void) {
@@ -49,6 +50,12 @@ static void sceGuScissor(int x,int y,int w,int h) {
     assert(!x && !y && w==target_width && h==target_height);
 }
 static void sceGuDisable(int what) { (void)what; }
+enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX };
+static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b) {
+    assert(op==GU_ADD);
+    assert((src==GU_SRC_ALPHA && dst==GU_ONE_MINUS_SRC_ALPHA && !a && !b) ||
+           (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff));
+}
 static void sceGuEnable(int what) { (void)what; }
 static void sceGuTexMode(int p,int a,int b,int c) { assert(p==GU_PSM_8888 && !a && !b && !c); }
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
@@ -59,7 +66,11 @@ static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
 }
 static void sceGuTexFunc(int a,int b) { (void)a; (void)b; }
 static void sceGuTexFilter(int a,int b) { (void)a; (void)b; }
-static void sceGuTexWrap(int a,int b) { (void)a; (void)b; }
+static int feedback_wrap;
+static void sceGuTexWrap(int a,int b) {
+    assert(a==b);
+    if(target_offset) feedback_wrap=a;
+}
 static void sceGuTexScale(float a,float b) { (void)a; (void)b; }
 static void sceGuTexOffset(float a,float b) { (void)a; (void)b; }
 static void sceGuTexFlush(void) {}
@@ -75,15 +86,15 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     assert(format==15 && !indices);
     if(type==GU_TRIANGLES) { assert(count==MD_MESH_VERTICES); mesh_calls++; }
     else if(type==GU_LINE_STRIP) {
-        assert(count==97); ring_calls++;
+        assert(count==97 || count==241); ring_calls++;
         if(expected_ring_color) for(int i=0;i<count;i++) assert(v[i].color==expected_ring_color);
     }
     else {
         assert(type==GU_SPRITES && count==2 && !target_offset); sprite_calls++;
-        assert(v[0].x==expected_left+covered_width && v[0].y==expected_top);
+        assert(v[0].x==expected_left+covered_width%expected_width && v[0].y==expected_top);
         assert(v[1].y==expected_top+expected_height);
         covered_width+=(int)(v[1].x-v[0].x);
-        assert(covered_width<=expected_width);
+        assert(covered_width<=expected_width*expected_passes);
     }
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
@@ -94,7 +105,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 /* GU_ADAPTER */
 int main(void) {
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
-    MdPreset identity={1,0,0,1,1,1};
+    MdPreset identity={1,0,0,1,1,1,0,0};
     unsigned char bands[12];
     unsigned char *vram=(void *)0x44000000;
     assert(mmap(vram,edram_size,PROT_READ|PROT_WRITE,
@@ -104,6 +115,12 @@ int main(void) {
     for(int i=0;i<MD_MESH_VERTICES;i++) {
         assert(fabsf(mesh[i].u-mesh[i].x-.5f)<.0001f);
         assert(fabsf(mesh[i].v-mesh[i].y-.5f)<.0001f);
+    }
+    identity.dx=.01f; identity.dy=-.02f;
+    md_warp_mesh(mesh,&identity,0);
+    for(int i=0;i<MD_MESH_VERTICES;i++) {
+        assert(fabsf(mesh[i].u-(mesh[i].x+.5f-.01f*MD_TEXTURE))<.0001f);
+        assert(fabsf(mesh[i].v-(mesh[i].y+.5f+.02f*MD_TEXTURE))<.0001f);
     }
     edram_size=1024*1024;
     assert(!md_start() && !gu_live);
@@ -210,6 +227,30 @@ int main(void) {
         assert(starts==calls && md_runtime_error.line==7);
         md_stop();
         assert(!gu_live && !md_list);
+    }
+    /* Circular PCM waveform, translation, clamp and two-pass gamma on LCD/TV. */
+    memset(&md_custom_preset.program,0,sizeof(md_custom_preset.program));
+    md_custom_preset.wave_mode=0; md_custom_preset.gamma=2;
+    md_custom_preset.wave_scale=1; md_custom_preset.wave_smoothing=.75f;
+    md_custom_preset.wave_alpha=1; md_custom_preset.wrap=0;
+    md_custom_preset.warp.dx=.01f; md_custom_preset.warp.dy=-.01f;
+    expected_ring_color=0xff007fff; expected_passes=2;
+    for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
+        expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
+        expected_width=full?(tv?720:480):tv?508:306;
+        expected_height=full?(tv?480:272):tv?208:75;
+        assert(md_start());
+        test_time+=100000;
+        assert(md_frame(tv,full,bands,0,test_time,3)==1);
+        assert(md_wave_capture && covered_width==expected_width*2);
+        assert(feedback_wrap==GU_CLAMP);
+        short pcm[1152];
+        for(int i=0;i<1152;i++) pcm[i]=(short)(sin(i*.08)*30000);
+        visualization_pcm_publish(pcm,576);
+        test_time+=100000;
+        assert(md_frame(tv,full,bands,75,test_time,3)==1);
+        assert(md_right[9]==pcm[19]);
+        md_stop(); assert(!md_wave_capture);
     }
     munmap(vram,edram_size);
     return 0;

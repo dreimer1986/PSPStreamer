@@ -60,7 +60,7 @@ The historical LCD-menu/TV-video mode still visualizes music on the LCD.
   viewport. Native GUI artwork and controls are not rescaled.
 
 The selected subset fixes zoom exponent to 1, centre to 0.5/0.5, stretch to 1,
-and translation to zero. A bounded arithmetic/time per-frame interpreter is
+with variable translation (`dx/dy`). A bounded arithmetic/time per-frame interpreter is
 available for the custom slot. Full EEL, per-pixel user programs,
 custom waves/shapes, shader presets and preset blending are not implemented.
 

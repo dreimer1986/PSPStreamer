@@ -1,5 +1,6 @@
 import ctypes
 import math
+import os
 import random
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Warp(ctypes.Structure):
     _fields_ = [(key, ctypes.c_float) for key in
-                ("zoom", "rotation", "warp", "warp_speed", "warp_scale", "decay")]
+                ("zoom", "rotation", "warp", "warp_speed", "warp_scale", "decay", "dx", "dy")]
 
 
 class Op(ctypes.Structure):
@@ -25,7 +26,10 @@ class Program(ctypes.Structure):
 
 class Preset(ctypes.Structure):
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
-                ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program)]
+                ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
+                ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
+                ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
+                ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float)]
 
 
 class Error(ctypes.Structure):
@@ -53,6 +57,7 @@ class PresetTests(unittest.TestCase):
                         str(ROOT / "psp-client/milkdrop_preset.c"),
                         str(ROOT / "psp-client/preset_math.c"),
                         str(ROOT / "psp-client/milkdrop_signal.c"),
+                        str(ROOT / "psp-client/milkdrop_wave.c"),
                         str(ROOT / "psp-client/milkdrop_warp.c"), "-lm", "-o", str(library)],
                        check=True)
         cls.library = ctypes.CDLL(str(library))
@@ -96,7 +101,7 @@ class PresetTests(unittest.TestCase):
 
     def test_unsupported_fields_are_not_ignored(self):
         for key in ("per_pixel_1", "warp_1", "comp_1",
-                    "nWaveMode", "fZoomExponent", "unknown", "wavecode_0_enabled"):
+                    "unknown", "wavecode_0_enabled"):
             result, _, error = self.parse(("[preset00]\nzoom=1\n" + key + "=0\n").encode())
             self.assertEqual(result, 3)
             self.assertEqual(error.line, 3)
@@ -297,6 +302,77 @@ class PresetTests(unittest.TestCase):
         for value in (0, .5, 1, 2, 10, 1000):
             signal = Signal((ctypes.c_float * 13)(*([0]*7+[value]*6)))
             self.assertEqual(self.evaluate(preset, 123, signal)[0], 0)
+
+    def test_legacy_fields_and_output_rules(self):
+        code,preset,_=self.parse(b"presetName=Native test\nnWaveMode=0\nfGammaAdj=2\nbTexWrap=0\n"
+            b"per_frame_1=wave_r=1.35; wave_g=-0.2; zoom=2; dx=.01; dy=-.02;\n")
+        self.assertEqual(code,0)
+        self.assertEqual((preset.wave_mode,preset.wrap,preset.gamma),(0,0,2))
+        result,warp,color,_=self.evaluate(preset,0)
+        self.assertEqual(result,0)
+        self.assertEqual(color&0xffff,255)
+        self.assertEqual(warp.zoom,2)
+        self.assertAlmostEqual(warp.dx,.01)
+        self.assertAlmostEqual(warp.dy,-.02)
+        for field,value in (("fVideoEchoAlpha",1),("ob_alpha",1),("bInvert",1),
+                            ("nWaveMode",2),("cx",.6),("fWaveParam",1)):
+            self.assertEqual(self.parse(f"presetName=test\n{field}={value}".encode())[0],3)
+        for data in (b"presetName=x\npresetName=x",b"[preset00]\ndx=0\ndx=0"):
+            self.assertEqual(self.parse(data)[0],2)
+
+    def test_user_hyperdrive_when_supplied(self):
+        path=os.environ.get("HYPERDRIVE_PRESET")
+        if not path: self.skipTest("Set HYPERDRIVE_PRESET to test the unbundled user preset")
+        code,preset,error=self.parse(Path(path).read_bytes())
+        self.assertEqual(code,0,bytes(error))
+        for time in range(1800):
+            for bass in (0,1,4,10,1000):
+                signal=Signal((ctypes.c_float*13)(*([0]*7+[bass]*6)))
+                self.assertEqual(self.evaluate(preset,time,signal)[0],0)
+
+    def test_wave_snapshot_and_reference_geometry(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[("u",ctypes.c_float),("v",ctypes.c_float),("color",ctypes.c_uint),
+                      ("x",ctypes.c_float),("y",ctypes.c_float),("z",ctypes.c_float)]
+        publish=self.library.visualization_pcm_publish
+        publish.argtypes=[ctypes.POINTER(ctypes.c_short),ctypes.c_int]
+        snapshot=self.library.md_wave_snapshot
+        snapshot.argtypes=[ctypes.POINTER(ctypes.c_short)]
+        capture=ctypes.c_int.in_dll(self.library,"md_wave_capture")
+        capture.value=0
+        pcm=(ctypes.c_short*1152)(*(int(math.sin(i*.08)*30000) for i in range(1152)))
+        right=(ctypes.c_short*576)()
+        self.library.md_wave_forget()
+        publish(pcm,576)
+        self.assertEqual(snapshot(right),0)
+        capture.value=1
+        publish(pcm,576)
+        self.assertEqual(snapshot(right),1)
+        self.assertEqual(list(right),list(pcm)[1::2])
+        self.assertEqual(snapshot(right),0)
+        self.library.md_wave_forget()
+        self.assertEqual(snapshot(right),0)
+        vertices=(Vertex*241)()
+        draw=self.library.md_wave_circle
+        draw.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(ctypes.c_short),
+                       ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_uint]
+        smoothed=[right[0]/32768]
+        for raw in list(right)[1:]: smoothed.append(raw/32768*.25+smoothed[-1]*.75)
+        for aspect in (.25,.5625,2/3):
+            draw(vertices,right,1,.75,7,aspect,0xff123456)
+            for i in range(240):
+                radius=.5+.4*smoothed[i+120]
+                if i<24:
+                    mix=.5-.5*math.cos(i/24*3.1416)
+                    radius=(.5+.4*smoothed[i+360])*(1-mix)+radius*mix
+                angle=i/239*6.28+7*.2
+                self.assertAlmostEqual(vertices[i].x,128+128*radius*math.cos(angle)*aspect,places=4)
+                self.assertAlmostEqual(vertices[i].y,128-128*radius*math.sin(angle),places=4)
+            self.assertEqual(bytes(vertices[0]),bytes(vertices[240]))
+        publish(pcm,2)
+        self.assertEqual(snapshot(right),1)
+        self.assertEqual(list(right)[2:],[0]*574)
+        capture.value=0
 
 
 if __name__ == "__main__":

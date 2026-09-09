@@ -3,7 +3,11 @@
 #include "milkdrop_warp.h"
 #include "preset_math.h"
 #include "milkdrop_signal.h"
-typedef struct { MdPreset warp; float red, green, blue; PmProgram program; } MdFilePreset;
+typedef struct {
+    MdPreset warp; float red, green, blue; PmProgram program;
+    int legacy, wave_mode, wrap;
+    float gamma, wave_scale, wave_smoothing, wave_alpha;
+} MdFilePreset;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;

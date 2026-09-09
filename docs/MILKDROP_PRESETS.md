@@ -15,7 +15,8 @@ field name; it does not silently substitute another preset.
 
 ## Supported fields
 
-Start with exactly one `[preset00]` section. Names are case-sensitive.
+Start with exactly one `[preset00]` section, or a headerless `presetName=...`
+line for the legacy subset below. Names are case-sensitive.
 At least one supported field is required; omitted fields use these defaults:
 
 | Field | Meaning | Range | Default |
@@ -48,8 +49,8 @@ without changing the previously loaded values.
 
 Most ordinary MilkDrop presets contain additional fields and are therefore
 rejected. This includes arbitrary EEL, `per_pixel_*`, shader code,
-`nWaveMode`, custom waves/shapes and currently fixed transform properties
-such as `fZoomExponent`. Removing fields does not guarantee that a preset
+wave modes other than 0, custom waves/shapes and unsupported non-default
+transform properties. Removing fields does not guarantee that a preset
 retains its original appearance.
 
 The [expression source audit](MILKDROP_EXPRESSIONS.md) records the implementation
@@ -75,7 +76,9 @@ single-argument `sin`, `cos`, `abs`, `sqrt`, and two-argument `min`/`max`.
 Trigonometric arguments are radians; negative square roots are runtime errors.
 Use `min(high,max(low,value))` to bound a formula output.
 Readable/writable outputs are `zoom`, `rot`, `warp`, `decay`, `wave_r`,
-`wave_g`, `wave_b`. Note that formula `decay` corresponds to static `fDecay`.
+`wave_g`, `wave_b`, `dx`, `dy`. Translation defaults to zero and is bounded
+to -1..1 in static fields and formula outputs.
+Note that formula `decay` corresponds to static `fDecay`.
 Warp speed/scale remain static fields. `time` is read-only elapsed seconds
 since visualization activation, not the audio position; it continues while
 music is paused. Stop/restart resets it. No `fps`, `frame`,
@@ -159,6 +162,22 @@ The bundled examples are newly authored for PSPStreamer; no third-party
 presets are bundled. See [warp attribution](MILKDROP_PROTOTYPE.md#attribution).
 
 ## Test
+
+### Legacy circular-wave subset
+
+`presetName` or `nWaveMode=0` opts into legacy output rules: finite RGB values
+are clamped at draw time; runtime zoom accepts 0.1–64 instead of 0.8–1.2.
+`nWaveMode=0` selects the real PCM circular wave. With no mode field, the
+existing native spectrum ring remains selected.
+
+Additional fields: `bTexWrap` (0/1), `fGammaAdj` (1–4 display brightness),
+`fWaveScale`, `fWaveSmoothing`, `fWaveAlpha` (0–1). Center/wave position are
+currently supported only at .5/.5, stretch and zoom exponent only at 1,
+wave parameter only at 0. Echo and borders accept their inactive settings;
+enabling them, other wave modes or drawing flags still fails explicitly.
+See [Hyperdrive implementation and test](HYPERDRIVE_TARGET.md).
+
+### Host and hardware checks
 
 The host suite checks the example, all range boundaries, defaults, BOM/CRLF,
 missing files, atomic failures, malformed numbers, duplicate/unsupported

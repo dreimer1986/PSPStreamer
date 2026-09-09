@@ -34,7 +34,7 @@ static int variable(const char *s) {
     static const char *names[PM_VALUES] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
-        "bass","mid","treb","bass_att","mid_att","treb_att"};
+        "bass","mid","treb","bass_att","mid_att","treb_att","dx","dy"};
     for (int i = 0; i < PM_VALUES; i++) if (*names[i] && !strcmp(s,names[i])) return i;
     return -1;
 }
@@ -108,7 +108,7 @@ int pm_compile(PmProgram *program, const char *source, int line) {
         char text[32]; int id;
         if (!name(&p,text)) goto fail;
         id = variable(text);
-        if (id < 0 || id >= 9) { p.error = PM_UNSUPPORTED; goto fail; }
+        if (id < 0 || (id >= 9 && id < 23)) { p.error = PM_UNSUPPORTED; goto fail; }
         space(&p);
         if (*p.p++ != '=') goto fail;
         if (!expression(&p) || !emit(&p,STORE,id,0)) goto fail;
@@ -139,7 +139,8 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             stack[used++] = result; continue;
         }
         if (op->op == STORE) {
-            if (used != 1 || op->arg < 0 || op->arg >= 9) return 0;
+            if (used != 1 || op->arg < 0 || op->arg >= PM_VALUES ||
+                (op->arg >= 9 && op->arg < 23)) return 0;
             local[op->arg] = stack[--used]; continue;
         }
         if (!used) return 0;

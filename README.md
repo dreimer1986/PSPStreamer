@@ -186,6 +186,10 @@ time-based smoothing; no additional audio analysis is required.
 `presets/relative-demo.milk` uses the original `bass/mid/treb` and `*_att`
 names with relative-to-history envelopes. Their PSP frequency-analysis
 approximation and `min/max/sqrt` formula support are documented in the subset guide.
+The [Hyperdrive target subset](docs/HYPERDRIVE_TARGET.md) additionally supports
+the real circular PCM waveform (mode 0), `dx/dy`, texture clamp and gamma
+brightness. Copy your original preset as `presets/active.milk`; third-party
+presets are not bundled in Git. This is not full MilkDrop compatibility.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

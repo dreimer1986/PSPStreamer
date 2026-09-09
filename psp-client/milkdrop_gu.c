@@ -2,6 +2,7 @@
  * PSP adapter, no display-mode changes, no audio/ME calls. */
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
+#include "milkdrop_wave.h"
 #include <pspgu.h>
 #include <pspge.h>
 #include <pspkernel.h>
@@ -21,6 +22,7 @@ static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
 static int md_signal_active;
+static short md_right[MD_WAVE_SAMPLES];
 void md_set_tv_title_bottom(int bottom) {
     int top = bottom + 5;
     md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
@@ -48,9 +50,12 @@ int md_start(void) {
     md_front = 0; md_origin = md_next = 0;
     md_last_tv = md_last_fullscreen = -1;
     md_signal_reset(&md_signal_state); md_signal_active = 0;
+    memset(md_right,0,sizeof(md_right));
+    md_wave_forget();
     return 1;
 }
 void md_stop(void) {
+    md_wave_capture=0;
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     sceGuTerm();
@@ -84,6 +89,12 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
                                   &evaluated, &custom_color, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
     } else md_signal_active = 0;
+    int circular=preset==3 && md_custom_preset.wave_mode==0;
+    md_wave_capture=circular;
+    if(circular) {
+        if(level>0) md_wave_snapshot(md_right);
+        else memset(md_right,0,sizeof(md_right));
+    }
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
@@ -94,14 +105,25 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexMode(GU_PSM_8888, 0, 0, 0);
     sceGuTexImage(0, MD_TEXTURE, MD_TEXTURE, MD_TEXTURE, md_texture(md_front));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
-    sceGuTexFilter(GU_LINEAR, GU_LINEAR); sceGuTexWrap(GU_REPEAT, GU_REPEAT);
+    sceGuTexFilter(GU_LINEAR, GU_LINEAR);
+    int wrap=preset==3 && !md_custom_preset.wrap ? GU_CLAMP : GU_REPEAT;
+    sceGuTexWrap(wrap,wrap);
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
     md_warp_mesh(mesh, preset == 3 ? &evaluated : &md_presets[preset], seconds);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
-    if (level > 0) {
+    if(circular) {
+        ring=sceGuGetMemory(MD_WAVE_VERTICES*sizeof(*ring));
+        unsigned int alpha=(unsigned int)(md_custom_preset.wave_alpha*255);
+        md_wave_circle(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
+                       seconds,(float)height/width,(custom_color&0xffffff)|(alpha<<24));
+        sceGuEnable(GU_BLEND);
+        sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,0,0);
+        sceGuDrawArray(GU_LINE_STRIP,MD_FORMAT,MD_WAVE_VERTICES,NULL,ring);
+        sceGuDisable(GU_BLEND);
+    } else if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
         md_audio_ring(ring, bands, level, seconds, preset);
         if (preset == 3) {
@@ -117,15 +139,23 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexFlush();
     /* Slice the final stretch into narrow sprites, as recommended for PSP
      * texture-cache locality. It never copies the full scanout on the CPU. */
-    for (int x = 0; x < width; x += 32) {
+    float gamma=preset==3 ? md_custom_preset.gamma : 1;
+    for(int pass=0;pass<(int)(gamma+.999f);pass++) {
+      float strength=gamma-pass; if(strength>1) strength=1;
+      unsigned int shade=(unsigned int)(strength*255);
+      unsigned int tint=0xff000000U|shade|(shade<<8)|(shade<<16);
+      if(pass) { sceGuEnable(GU_BLEND); sceGuBlendFunc(GU_ADD,GU_FIX,GU_FIX,0xffffff,0xffffff); }
+      for (int x = 0; x < width; x += 32) {
         int end = x+32 < width ? x+32 : width;
         blit = sceGuGetMemory(2*sizeof(*blit));
-        blit[0] = (MdVertex){(float)x*MD_TEXTURE/width, 0, 0xffffffff,
+        blit[0] = (MdVertex){(float)x*MD_TEXTURE/width, 0, tint,
                               (float)(left+x), (float)top, 0};
-        blit[1] = (MdVertex){(float)end*MD_TEXTURE/width, MD_TEXTURE, 0xffffffff,
+        blit[1] = (MdVertex){(float)end*MD_TEXTURE/width, MD_TEXTURE, tint,
                               (float)(left+end), (float)(top+height), 0};
         sceGuDrawArray(GU_SPRITES, MD_FORMAT, 2, NULL, blit);
     }
+    }
+    sceGuDisable(GU_BLEND);
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;

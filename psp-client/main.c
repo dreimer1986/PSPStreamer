@@ -1376,7 +1376,9 @@ static int play_mjpeg(const char *media_id) {
 }
 #endif
 
+#include "milkdrop_wave.h"
 static void audio_measure_pcm(const short *pcm, int frames) {
+    visualization_pcm_publish(pcm, frames);
     int sample, left_peak = 0, right_peak = 0;
     for (sample = 0; sample < frames * 2; sample += 64) {
         int left = pcm[sample] < 0 ? -pcm[sample] : pcm[sample];
