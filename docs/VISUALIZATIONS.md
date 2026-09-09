@@ -38,6 +38,10 @@ PSP implementation. The repository's Linux instructions currently use Wine.
 
 ## Constraints for any future implementation
 
+Concrete user-selected milestone: [Geiss - Hyperdrive](HYPERDRIVE_TARGET.md).
+Its fixed-function circular waveform and moving feedback transform give us
+a useful visual acceptance target while broader MilkDrop 2 remains the goal.
+
 - Keep audio playback/PCM ownership independent of the visualization renderer.
 - Use bounded copies of the existing PCM analysis data; never block the DAC.
 - Document supported preset features explicitly rather than claiming full
