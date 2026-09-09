@@ -12,6 +12,10 @@ by that cleanup.
 
 ## MilkDrop 2
 
+MilkDrop 1.04b is now an additional inspected reference for fixed-function
+rendering: [source audit and implementation candidates](MILKDROP1_REFERENCE.md).
+It still uses Direct3D 8, and its x86 evaluator is not directly portable to PSP.
+
 - Source mirror: https://github.com/eef2697d62fbe08e2fd927278/milkdrop2
 - Ryan Geiss's 2.25c source archive: https://www.geisswerks.com/milkdrop/milkdrop_225c_src.zip
 
