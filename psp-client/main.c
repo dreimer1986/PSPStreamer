@@ -1241,6 +1241,7 @@ static void present_yuv420(const unsigned char *y, const unsigned char *u,
 
 #include "audio_lease.h"
 #include "sync_trace.h"
+#include "video_watchdog.h"
 
 /* Serialize all ME codec and cache transactions, including initialization.
  * Neither networking, DAC output nor display waits may hold this semaphore. */
@@ -1265,12 +1266,15 @@ static int video_staging_bytes;
 static int prepare_timed_video(TimedPacket *packet) {
     int result, cue_ms, saved_position = playback_position_ms;
     unsigned long long start = sceKernelGetSystemTimeWide();
+    video_watch_ping("ME lock for video");
     if (!codec_enter()) return -1324;
+    video_watch_ping("AVC decode/CSC");
     result = h264_hw_decode_annexb(packet->data, packet->size, video_staging);
     codec_leave();
     sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     if (result < 0) { video_step = h264_hw_last_step(); return result; }
     if (result > 0) {
+        video_watch_ping("subtitle/overlay");
         cue_ms = stream_start_seconds * 1000 + packet->pts - timed_video_origin;
         playback_position_ms = cue_ms;
         playback_draw_target = (u32 *)video_staging;
@@ -1943,8 +1947,10 @@ static int play_h264(const char *media_id) {
     remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, 0x20, 0x3000, 0, NULL);
     if (remote_control_thread_id >= 0) sceKernelStartThread(remote_control_thread_id, 0, NULL);
     video_step = "FLV/PTS stream";
+    video_watch_start();
     while (1) {
         SceCtrlData pad;
+        video_watch_ping("video loop");
         keep_awake();
         sceCtrlPeekBufferPositive(&pad, 1);
         if (remote_control_action) {
@@ -2045,7 +2051,9 @@ static int play_h264(const char *media_id) {
             }
             /* Initialise AVC before starting the DAC, keeping the established
              * MPEG/ME module order. No decoder startup delay enters A/V time. */
+            video_watch_ping("ME lock for init");
             if (!codec_enter()) { result = -1324; break; }
+            video_watch_ping("AVC init");
             result = h264_hw_init_from_annexb(current.data, current.size);
             codec_leave();
             if (result < 0) { video_step = h264_hw_last_step(); break; }
@@ -2093,6 +2101,7 @@ static int play_h264(const char *media_id) {
             if (sync == 1) {
                 /* The complete picture (CSC and subtitles included) is now
                  * ready. Refresh the decision at VBlank before touching VRAM. */
+                video_watch_ping("VBlank");
                 sceDisplayWaitVblankStart();
                 sync = pts_presentation_status(prepared, video_first_presented,
                     timed_has_audio && !timed_audio_done, audio_clock_started,
@@ -2130,6 +2139,7 @@ static int play_h264(const char *media_id) {
         resume_media_id[sizeof(resume_media_id) - 1] = 0; resume_pending = 1;
     }
 done:
+    video_watch_ping("stop: close FLV socket");
     timed_running = 0;
     audio_running = 0; audio_start = 1;
     video_first_presented = 0;
@@ -2138,18 +2148,22 @@ done:
         int fd = timed_socket; timed_socket = -1; sceNetInetClose(fd);
     }
     if (timed_reader_id >= 0) {
+        video_watch_ping("stop: join FLV reader");
         sceKernelWaitThreadEnd(timed_reader_id, NULL);
         sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1;
     }
     if (audio_thread_id >= 0) {
+        video_watch_ping("stop: join MP3 decoder");
         sceKernelWaitThreadEnd(audio_thread_id, NULL);
         sceKernelDeleteThread(audio_thread_id);
     }
     if (audio_output_thread_id >= 0) {
+        video_watch_ping("stop: join DAC");
         sceKernelWaitThreadEnd(audio_output_thread_id, NULL);
         sceKernelDeleteThread(audio_output_thread_id); audio_output_thread_id = -1;
     }
     if (remote_control_thread_id >= 0) {
+        video_watch_ping("stop: join remote HTTP");
         sceKernelWaitThreadEnd(remote_control_thread_id, NULL);
         sceKernelDeleteThread(remote_control_thread_id); remote_control_thread_id = -1;
     }
@@ -2160,10 +2174,13 @@ done:
     timed_queue_destroy(&timed_video); timed_queue_destroy(&timed_audio);
     timed_active = 0;
     audio_queue_destroy();
+    video_watch_ping("stop: MPEG shutdown");
     h264_hw_shutdown(); subtitle_release();
+    video_watch_ping("stop: trace/display restore");
     sync_trace_save(tvout_video_active, result, trace_start_seconds);
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
+    video_watch_stop();
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;

@@ -29,6 +29,24 @@ Rows contain elapsed wall time, video PTS, submitted audio-block PTS, remaining 
 
 The audio PTS describes the submitted block, not an exact sample at the speaker. The video handoff is measured on the PSP, not at the TV panel. The trace can expose internal stalls and timestamp discontinuities; it cannot directly measure a television's processing delay. The staging frame uses approximately 544 KiB on LCD or 1.41 MiB on TV, plus 192 KiB for the trace. The measured copy duration helps assess its cost on real hardware.
 
+### Temporary video-stall diagnostics
+
+The diagnostic build also watches video playback and teardown. If its main
+loop stops responding, or presented PTS stop advancing, for eight seconds,
+it writes `video-stall.txt` in the application's working directory (normally
+`ms0:/PSP/GAME/PSPStreamer/`). It records the current stage, codec step, queues
+and worker state. Healthy playback performs no writes to this file. At most
+four reports are written per playback, at least 30 seconds apart. The first
+report of a new stalled session replaces the previous report; healthy sessions
+leave an older file unchanged. This is diagnostic only, not a claimed hang fix.
+
+After a hang, wait about 10 seconds before leaving via the PS button, then
+copy that file. If there is no file, report that too: a higher-priority CPU
+lockup can prevent the monitor itself from running. Decoder, PTS and subtitle
+preparation timeouts have not been changed. HA app 0.1.21 separately fixes the
+web remote incorrectly treating subtitle index 0 as Off; update the app and
+reload the browser page to receive that fix.
+
 ## Requirements
 
 - Python 3.11 or later
