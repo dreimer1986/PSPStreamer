@@ -1,0 +1,13 @@
+; Original PSPStreamer preset: init seeds, frame-local q expressions.
+[preset00]
+nWaveMode=0
+zoom=1.02
+fDecay=0.97
+fGammaAdj=1.2
+fWaveAlpha=0.8
+bWaveThick=1
+fVideoEchoZoom=1.5
+per_frame_init_1=q1=.7; q2=.02; q3=.12; q32=.5;
+per_frame_1=q1=q1*time; wave_x=q32+q3*sin(q1); wave_y=q32+q3*cos(q1);
+per_frame_2=rot=q2*sin(q1*.5); wave_r=.5+.5*sin(q1); wave_g=.3+.6*psp_mid; wave_b=.9;
+per_frame_3=echo_alpha=.3*sigmoid(bass-1,3); zoom=if(above(bass,1.1),1.035,1.012);

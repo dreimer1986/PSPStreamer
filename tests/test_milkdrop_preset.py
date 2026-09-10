@@ -47,7 +47,12 @@ class Preset(ctypes.Structure):
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
-                ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor)]
+                ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
+                ("init_program",Program)]
+
+
+class PresetState(ctypes.Structure):
+    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32)]
 
 
 class Error(ctypes.Structure):
@@ -448,7 +453,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*55)(*([.5]*55)); before=bytes(values)
+                values=(ctypes.c_float*87)(*([.5]*87)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -467,6 +472,84 @@ class PresetTests(unittest.TestCase):
             result,warp,_,_=self.evaluate(preset,0,signal)
             self.assertEqual(result,0)
             self.assertEqual(warp.warp,expected)
+
+    def evaluate_state(self,preset,state,time,signal=None):
+        fn=self.library.md_eval_preset_state
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),
+                     ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(ctypes.c_uint),
+                     ctypes.POINTER(Decor),ctypes.POINTER(Error)]
+        warp,decor,error=Warp(),Decor(),Error()
+        color=ctypes.c_uint(123)
+        before=bytes(state)
+        result=fn(ctypes.byref(preset),time,ctypes.byref(signal) if signal else None,
+                  ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),
+                  ctypes.byref(decor),ctypes.byref(error))
+        if result:
+            self.assertEqual(bytes(state),before)
+            self.assertEqual(bytes(warp),bytes(Warp()))
+            self.assertEqual(bytes(decor),bytes(Decor()))
+            self.assertEqual(color.value,123)
+        return result,warp,error
+
+    def test_init_q_lifetime_and_output_reset(self):
+        code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=time; q32=.25; zoom=9;\n"
+            b"per_frame_1=q1=q1+1; warp=q1; wave_r=q32;\n")
+        self.assertEqual(code,0)
+        state=PresetState()
+        for time in (1,2,10,300):
+            result,warp,_=self.evaluate_state(preset,state,time)
+            self.assertEqual(result,0)
+            self.assertEqual(warp.warp,2) # init time=1, not a growing accumulator
+            self.assertAlmostEqual(warp.zoom,preset.warp.zoom)
+            self.assertEqual(state.q[0],1)
+            self.assertEqual(state.q[31],.25)
+        # New activation gets new seeds, independent of another instance.
+        other=PresetState()
+        self.assertEqual(self.evaluate_state(preset,other,2)[1].warp,3)
+        self.assertEqual(state.q[0],1)
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[1].warp,1)
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=q1=q1+1; warp=q1;\n")
+        self.assertEqual(code,0)
+        state=PresetState()
+        for time in range(10): self.assertEqual(self.evaluate_state(preset,state,time)[1].warp,1)
+
+    def test_init_q_validation_atomicity_and_budgets(self):
+        for name in ("q0","q33","q01","q999999999999999999999","q1x","Q1","counter"):
+            self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
+        for lines in ("per_frame_init_2=q1=0;",
+                      "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
+                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,18)),
+                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,15))):
+            self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
+        code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=1/0;\n")
+        self.assertEqual(code,0)
+        result,_,error=self.evaluate_state(preset,PresetState(),0)
+        self.assertEqual(result,2); self.assertEqual(error.line,2)
+        self.assertEqual(error.key.decode(),"init formula")
+        code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=2;\nper_frame_1=warp=1/(time-1);\n")
+        self.assertEqual(code,0)
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,1)[0],2)
+        self.assertEqual(state.ready,0)
+        self.assertEqual(self.evaluate_state(preset,state,2)[0],0)
+        self.assertEqual(state.ready,1)
+        self.assertEqual(self.evaluate_state(preset,state,1)[0],2)
+        # Init and frame lines can interleave, with independent numbering.
+        code,_,_=self.parse(b"[preset00]\nper_frame_1=warp=q1;\nper_frame_init_1=q1=1;\n"
+            b"per_frame_2=warp=warp+q2;\nper_frame_init_2=q2=1;\n")
+        self.assertEqual(code,0)
+
+    def test_init_q_demo_long_run(self):
+        code,preset,_=self.parse((ROOT / "psp-client/presets/init-orbit-demo.milk").read_bytes())
+        self.assertEqual(code,0)
+        for activation in range(3):
+            state=PresetState()
+            for frame in range(6000):
+                level=(frame%101)/100
+                signal=Signal((ctypes.c_float*13)(*([level]*7+[level*4]*6)))
+                self.assertEqual(self.evaluate_state(preset,state,frame*.1,signal)[0],0)
+            self.assertAlmostEqual(state.q[0],.7)
 
     def test_feature_demos_and_dynamic_fields(self):
         for name in ("receiver-fx-demo.milk","echo-dots-demo.milk"):

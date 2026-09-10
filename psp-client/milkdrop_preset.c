@@ -143,11 +143,13 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         }
         if (!strncmp(key, "per_frame_", 10)) {
             char expected[32];
-            snprintf(expected, sizeof(expected), "per_frame_%d", next.program.lines+1);
+            int init=!strncmp(key,"per_frame_init_",15);
+            PmProgram *program=init?&next.init_program:&next.program;
+            snprintf(expected, sizeof(expected), init?"per_frame_init_%d":"per_frame_%d", program->lines+1);
             if (strcmp(key, expected)) {
                 result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;
             }
-            int compiled = pm_compile(&next.program, value, number);
+            int compiled = pm_compile(program, value, number);
             if (compiled != PM_OK) {
                 result = md_file_error(error, compiled == PM_UNSUPPORTED ?
                     MD_FILE_UNSUPPORTED : MD_FILE_INVALID, number, key); goto done;
@@ -184,7 +186,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     if(next.decor.wave_mod_alpha && next.decor.wave_mod_end<=next.decor.wave_mod_start)
         result=md_file_error(error,MD_FILE_INVALID,number,"wave alpha range");
     if (next.wave_mode==0) next.legacy=1;
-    if (!section || (!seen && !extra_seen && !next.program.count &&
+    if (!section || (!seen && !extra_seen && !next.program.count && !next.init_program.count &&
         !(shape_seen[0]|shape_seen[1]|shape_seen[2]|shape_seen[3]))) result = md_file_error(error, MD_FILE_INVALID, number, "empty");
 done:
     if (fclose(file) && result == MD_FILE_OK)
@@ -204,6 +206,13 @@ int md_eval_preset_signal(const MdFilePreset *p, float seconds, const MdSignal *
 }
 int md_eval_preset_visual(const MdFilePreset *p, float seconds, const MdSignal *signal,
                           MdPreset *warp, unsigned int *color, MdDecor *decor, MdFileError *error) {
+    /* Stateless convenience API; playback uses an explicit activation state. */
+    MdPresetState state={0};
+    return md_eval_preset_state(p,seconds,signal,&state,warp,color,decor,error);
+}
+int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *signal,
+                          MdPresetState *state, MdPreset *warp, unsigned int *color,
+                          MdDecor *decor, MdFileError *error) {
     float v[PM_VALUES] = {p->warp.zoom, p->warp.rotation, p->warp.warp,
         p->warp.warp_speed, p->warp.warp_scale, p->warp.decay,
         p->red, p->green, p->blue, seconds};
@@ -219,6 +228,18 @@ int md_eval_preset_visual(const MdFilePreset *p, float seconds, const MdSignal *
             return md_file_error(error, MD_FILE_INVALID, 0, "music input");
         v[10+i] = value;
     }
+    MdPresetState next=*state;
+    if (!next.ready) {
+        float initial[PM_VALUES];
+        memcpy(initial,v,sizeof(initial));
+        if (!pm_execute(&p->init_program,initial,&line))
+            return md_file_error(error,MD_FILE_INVALID,line,"init formula");
+        memcpy(next.q,initial+PM_Q_BASE,sizeof(next.q));
+        next.ready=1;
+    }
+    /* Reference LoadPerFrameEvallibVars restores q_values_after_init_code
+     * before every frame. Ordinary output fields also restart from static. */
+    memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
     if (!pm_execute(&p->program, v, &line))
         return md_file_error(error, MD_FILE_INVALID, line, "formula");
     for (int i = 0; i < 9; i++) {
@@ -254,5 +275,6 @@ int md_eval_preset_visual(const MdFilePreset *p, float seconds, const MdSignal *
     *warp = (MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
     *color = 0xff000000U | (unsigned int)(v[6]*255) |
         ((unsigned int)(v[7]*255)<<8) | ((unsigned int)(v[8]*255)<<16);
+    *state=next;
     return MD_FILE_OK;
 }

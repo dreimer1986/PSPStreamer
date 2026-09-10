@@ -67,9 +67,9 @@ still needs a PSP test.
 
 ## Remaining compatibility milestones
 
-- Scoped init/per-frame variables and their reset/lifetime rules. In the
-  reference, `q` values are reseeded from init before each preset frame;
-  treating all `q` values as generic cross-frame accumulators would be wrong.
+- Arbitrary named variables with persistent lifetime. [Init and q variables](MILKDROP_INIT.md)
+  are now implemented: `q` values are reseeded from init before each preset
+  frame, not treated as generic cross-frame accumulators.
 - Per-vertex (`per_pixel_*`) programs with coordinate inputs and a mesh-wide
   execution budget.
 - Independent custom shape and waveform programs, including per-point code;

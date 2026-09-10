@@ -9,7 +9,10 @@ typedef struct {
     int legacy, wave_mode, wrap;
     float gamma, wave_scale, wave_smoothing, wave_alpha;
     MdDecor decor;
+    PmProgram init_program;
 } MdFilePreset;
+/* Per-activation seeds. Frame q writes never accumulate into these seeds. */
+typedef struct { int ready; float q[PM_Q_COUNT]; } MdPresetState;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;
@@ -20,6 +23,9 @@ int md_eval_preset_signal(const MdFilePreset *preset, float seconds, const MdSig
                           MdPreset *warp, unsigned int *color, MdFileError *error);
 int md_eval_preset_visual(const MdFilePreset *preset, float seconds, const MdSignal *signal,
                           MdPreset *warp, unsigned int *color, MdDecor *decor, MdFileError *error);
+int md_eval_preset_state(const MdFilePreset *preset, float seconds, const MdSignal *signal,
+                          MdPresetState *state, MdPreset *warp, unsigned int *color,
+                          MdDecor *decor, MdFileError *error);
 /* Transactional: never change output on failure. Strict, bounded subset. */
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error);
 #endif

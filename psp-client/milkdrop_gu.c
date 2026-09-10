@@ -24,6 +24,7 @@ static int md_last_tv, md_last_fullscreen;
 static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
+static MdPresetState md_preset_state;
 static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
 /* Geometry helpers retain their logical 256-square coordinate system. Only
@@ -61,6 +62,7 @@ int md_start(void) {
     md_front = 0; md_origin = md_next = 0;
     md_last_tv = md_last_fullscreen = -1;
     md_signal_reset(&md_signal_state); md_signal_active = 0;
+    memset(&md_preset_state,0,sizeof(md_preset_state));
     memset(md_right,0,sizeof(md_right));
     md_wave_forget();
     return 1;
@@ -102,11 +104,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
     if (preset == 3) {
-        if (!md_signal_active) md_signal_reset(&md_signal_state);
+        if (!md_signal_active) {
+            md_signal_reset(&md_signal_state);
+            memset(&md_preset_state,0,sizeof(md_preset_state));
+        }
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
-        if (md_eval_preset_visual(&md_custom_preset, seconds, &md_signal_state.signal,
-                                  &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
+        if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
+                                  &md_preset_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
     } else md_signal_active = 0;
     int circular=preset==3 && md_custom_preset.wave_mode==0;

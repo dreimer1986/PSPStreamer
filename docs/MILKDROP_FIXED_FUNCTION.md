@@ -129,3 +129,8 @@ or spectrum snapshots and revised worst-case geometry budgets. Shader presets,
 external textures and preset crossfades need a larger rendering/resource plan.
 Those are not silently approximated by this batch. First validate the combined
 fixed-function features on hardware, then choose the next compatibility step.
+
+Preset-level [initialization and q variables](MILKDROP_INIT.md) are now
+implemented with a separate bounded init program and activation state.
+Independent shape/wave contexts and arbitrary persistent variables remain
+separate work; the existing renderer and resource budgets are unchanged.

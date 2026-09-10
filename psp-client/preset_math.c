@@ -49,7 +49,7 @@ static int name(Parser *p, char text[32]) {
     text[n] = 0; return 1;
 }
 static int variable(const char *s) {
-    static const char *names[PM_VALUES] = {"zoom","rot","warp","","","decay",
+    static const char *names[PM_Q_BASE] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
         "bass","mid","treb","bass_att","mid_att","treb_att","dx","dy",
@@ -58,7 +58,16 @@ static int variable(const char *s) {
         "wave_mod_alpha","wave_mod_start","wave_mod_end","echo_zoom","echo_alpha","echo_orient",
         "ob_size","ob_r","ob_g","ob_b","ob_a","ib_size","ib_r","ib_g","ib_b","ib_a",
         "gamma","wave_a"};
-    for (int i = 0; i < PM_VALUES; i++) if (*names[i] && !strcmp(s,names[i])) return i;
+    for (int i = 0; i < PM_Q_BASE; i++) if (*names[i] && !strcmp(s,names[i])) return i;
+    if (s[0]=='q' && s[1]>='1' && s[1]<='9') {
+        int number=0;
+        for (int i=1;s[i];i++) {
+            if (s[i]<'0' || s[i]>'9') return -1;
+            number=number*10+s[i]-'0';
+            if (number>PM_Q_COUNT) return -1;
+        }
+        return PM_Q_BASE+number-1;
+    }
     return -1;
 }
 static int expression(Parser *p);

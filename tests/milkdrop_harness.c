@@ -137,7 +137,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==2);
+    assert(argc==3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -324,20 +324,25 @@ int main(int argc,char **argv) {
     }
     /* Actual file/parser/interpreter/renderer path with alternating music. */
     MdFileError demo_error;
-    assert(md_load_preset(argv[1],&md_custom_preset,&demo_error)==MD_FILE_OK);
     expected_passes=4; expected_ring_color=0;
+    for(int fixture=1;fixture<argc;fixture++) {
+    assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
         expected_width=full?(tv?720:480):tv?508:306;
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
+        assert(!md_preset_state.ready);
         for(int frame=0;frame<60;frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
+            assert(md_preset_state.ready);
+            if(fixture==2) assert(fabsf(md_preset_state.q[0]-.7f)<.00001f);
         }
         md_stop();
+    }
     }
     /* Layout changes bypass the frame throttle and reset only feedback.
      * Scanout format stays 32-bit even when TV feedback becomes RGB565. */

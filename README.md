@@ -200,6 +200,8 @@ static custom shapes (including feedback-textured shapes). Try
 The [conditional formula subset](docs/MILKDROP_CONDITIONS.md) adds lazy `if`,
 Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.
+The [initialization/q-variable subset](docs/MILKDROP_INIT.md) adds
+`per_frame_init_*` and `q1`–`q32`; try `init-orbit-demo.milk` as the active file.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

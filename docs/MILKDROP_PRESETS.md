@@ -83,6 +83,8 @@ Warp speed/scale remain static fields. `time` is read-only elapsed seconds
 since visualization activation, not the audio position; it continues while
 music is paused. Stop/restart resets it. No `fps`, `frame`,
 persistent variables, loops or per-pixel programs are accepted.
+`q1`–`q32` are supported with reference-style per-frame reseeding, not as
+cross-frame accumulators; see [initialization and q variables](MILKDROP_INIT.md).
 Conditional expressions and additional math are documented in
 [conditional formulas](MILKDROP_CONDITIONS.md) and the
 [extended subset](MILKDROP_FIXED_FUNCTION.md).

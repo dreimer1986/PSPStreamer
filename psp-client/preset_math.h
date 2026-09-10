@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef PSPSTREAMER_PRESET_MATH_H
 #define PSPSTREAMER_PRESET_MATH_H
-enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16, PM_VALUES = 55 };
+enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16,
+       PM_Q_BASE = 55, PM_Q_COUNT = 32, PM_VALUES = PM_Q_BASE + PM_Q_COUNT };
 typedef struct { int op, arg, line; float value; } PmOp;
 typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;
 enum { PM_OK, PM_INVALID, PM_UNSUPPORTED };
