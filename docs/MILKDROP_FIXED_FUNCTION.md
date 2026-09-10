@@ -97,8 +97,9 @@ Comparisons produce 0 or 1; `equal` uses absolute difference below 0.00001.
 `sign` returns −1/0/1. Invalid domains, division by zero and nonfinite results
 remain errors. This single-precision implementation does not claim full EEL
 compatibility. [Conditional formulas](MILKDROP_CONDITIONS.md) now add lazy
-`if`, `band/bor/bnot`, `tan/asin/acos` and `sigmoid`. Arbitrary assignment
-targets, looping and persistent state remain unsupported.
+`if`, `band/bor/bnot`, `tan/asin/acos` and `sigmoid`.
+[Named persistent variables](MILKDROP_VARIABLES.md) are also supported;
+looping and independent shape/wave execution contexts remain unsupported.
 
 ## Resource and test boundary
 
@@ -132,5 +133,5 @@ fixed-function features on hardware, then choose the next compatibility step.
 
 Preset-level [initialization and q variables](MILKDROP_INIT.md) are now
 implemented with a separate bounded init program and activation state.
-Independent shape/wave contexts and arbitrary persistent variables remain
-separate work; the existing renderer and resource budgets are unchanged.
+Preset-level named persistent variables are implemented as well. Independent
+shape/wave contexts remain separate work; rendering resource budgets are unchanged.

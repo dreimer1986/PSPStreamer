@@ -31,7 +31,7 @@ int pm_assignment_line(const PmProgram *program, int variable) {
             return program->code[i].line;
     return 0;
 }
-typedef struct { const char *p; PmProgram *code; int line, depth, error; } Parser;
+typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; } Parser;
 static void space(Parser *p) { while (isspace((unsigned char)*p->p)) p->p++; }
 static int emit(Parser *p, int op, int arg, float value) {
     if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
@@ -48,7 +48,7 @@ static int name(Parser *p, char text[32]) {
     }
     text[n] = 0; return 1;
 }
-static int variable(const char *s) {
+static int builtin_variable(const char *s) {
     static const char *names[PM_Q_BASE] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
@@ -68,6 +68,29 @@ static int variable(const char *s) {
         }
         return PM_Q_BASE+number-1;
     }
+    return -1;
+}
+static int variable(Parser *p,const char *s) {
+    int id=builtin_variable(s);
+    if(id>=0) return id;
+    /* Do not silently turn unsupported engine inputs or misspelled q/t/reg
+     * registers into user state. Built-in function names are reserved too. */
+    static const char *reserved[]={"nan","inf","infinity","fps","frame","progress",
+        "monitor","x","y","rad","ang","sample","samples","value1","value2",
+        "meshx","meshy","pixelsx","pixelsy","aspectx","aspecty"};
+    if(!p->symbols || function(s)>=0) goto unsupported;
+    for(unsigned int i=0;i<sizeof(reserved)/sizeof(reserved[0]);i++)
+        if(!strcmp(s,reserved[i])) goto unsupported;
+    if(((s[0]=='q' || s[0]=='Q' || s[0]=='t') && isdigit((unsigned char)s[1])) ||
+       (!strncmp(s,"reg",3) && isdigit((unsigned char)s[3]))) goto unsupported;
+    for(int i=0;i<p->symbols->count;i++)
+        if(!strcmp(s,p->symbols->names[i])) return PM_USER_BASE+i;
+    if(p->symbols->count>=PM_USER_COUNT) { p->error=PM_INVALID; return -1; }
+    id=p->symbols->count++;
+    strcpy(p->symbols->names[id],s); /* tokenizer bounds names to 31 bytes */
+    return PM_USER_BASE+id;
+unsupported:
+    p->error=PM_UNSUPPORTED;
     return -1;
 }
 static int expression(Parser *p);
@@ -127,9 +150,8 @@ static int unary(Parser *p) {
                 else { p->p++; ok = ok && emit(p,op,0,0); }
             }
         } else {
-            int id = variable(text);
-            if (id < 0) p->error = PM_UNSUPPORTED;
-            else ok = emit(p,LOAD,id,0);
+            int id = variable(p,text);
+            if (id >= 0) ok = emit(p,LOAD,id,0);
         }
     }
     p->depth--;
@@ -154,15 +176,24 @@ static int expression(Parser *p) {
     }
 }
 int pm_compile(PmProgram *program, const char *source, int line) {
+    return pm_compile_symbols(program,source,line,NULL);
+}
+int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbols *symbols) {
     int before = program->count;
-    Parser p = {source,program,line,0,PM_INVALID};
+    PmSymbols saved;
+    if(symbols) {
+        if(symbols->count<0 || symbols->count>PM_USER_COUNT) return PM_INVALID;
+        saved=*symbols;
+    }
+    Parser p = {source,program,line,0,PM_INVALID,symbols};
     space(&p);
     if (!*p.p || program->lines >= 16 || before < 0 || before > PM_MAX_OPS) return PM_INVALID;
     while (*p.p) {
         char text[32]; int id;
         if (!name(&p,text)) goto fail;
-        id = variable(text);
-        if (id < 0 || (id >= 9 && id < 23)) { p.error = PM_UNSUPPORTED; goto fail; }
+        id = variable(&p,text);
+        if (id < 0) goto fail;
+        if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
         space(&p);
         if (*p.p++ != '=') goto fail;
         if (!expression(&p) || !emit(&p,STORE,id,0)) goto fail;
@@ -174,6 +205,7 @@ int pm_compile(PmProgram *program, const char *source, int line) {
     return PM_OK;
 fail:
     program->count = before;
+    if(symbols) *symbols=saved;
     return p.error;
 }
 int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line) {

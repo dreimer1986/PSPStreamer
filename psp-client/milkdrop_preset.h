@@ -10,9 +10,10 @@ typedef struct {
     float gamma, wave_scale, wave_smoothing, wave_alpha;
     MdDecor decor;
     PmProgram init_program;
+    PmSymbols symbols;
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
-typedef struct { int ready; float q[PM_Q_COUNT]; } MdPresetState;
+typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT]; } MdPresetState;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;

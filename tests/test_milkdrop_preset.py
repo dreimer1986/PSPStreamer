@@ -42,17 +42,21 @@ class Program(ctypes.Structure):
     _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * 128)]
 
 
+class Symbols(ctypes.Structure):
+    _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*16)]
+
+
 class Preset(ctypes.Structure):
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
-                ("init_program",Program)]
+                ("init_program",Program),("symbols",Symbols)]
 
 
 class PresetState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32)]
+    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16)]
 
 
 class Error(ctypes.Structure):
@@ -192,7 +196,7 @@ class PresetTests(unittest.TestCase):
 
     def test_formula_rejections_and_budgets(self):
         for source in ("rot=1", "rot=;", "rot=(1;", "0", "rot=nan;",
-                       "time=0;", "rot=unknown;", "rot=unknown_func(1);", "rot=1e99;",
+                       "time=0;", "rot=fps;", "rot=unknown_func(1);", "rot=1e99;",
                        "rot=" + "("*18 + "0" + ")"*18 + ";",
                        "rot=" + "+".join(["0"]*70) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
@@ -424,7 +428,7 @@ class PresetTests(unittest.TestCase):
 
     def test_conditional_syntax_budgets_and_bytecode_safety(self):
         for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
-                           "if(1,,3)","if(1,2,)","if(1,2,unknown)",
+                           "if(1,,3)","if(1,2,)","if(1,2,fps)",
                            "if(1,2,rand(1))","if(1,2,warp=3)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
         expression="0"
@@ -453,7 +457,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*87)(*([.5]*87)); before=bytes(values)
+                values=(ctypes.c_float*103)(*([.5]*103)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -515,7 +519,7 @@ class PresetTests(unittest.TestCase):
         for time in range(10): self.assertEqual(self.evaluate_state(preset,state,time)[1].warp,1)
 
     def test_init_q_validation_atomicity_and_budgets(self):
-        for name in ("q0","q33","q01","q999999999999999999999","q1x","Q1","counter"):
+        for name in ("q0","q33","q01","q999999999999999999999","q1x","Q1","fps"):
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
                       "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
@@ -550,6 +554,58 @@ class PresetTests(unittest.TestCase):
                 signal=Signal((ctypes.c_float*13)(*([level]*7+[level*4]*6)))
                 self.assertEqual(self.evaluate_state(preset,state,frame*.1,signal)[0],0)
             self.assertAlmostEqual(state.q[0],.7)
+
+    def test_named_variables_persist_but_q_and_outputs_reset(self):
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=counter=counter+1; q1=q1+1; warp=counter;\n"
+            b"per_frame_init_1=counter=0; q1=2;\n")
+        self.assertEqual(code,0)
+        self.assertEqual(preset.symbols.count,1)
+        state=PresetState()
+        for frame in range(4):
+            result,warp,_=self.evaluate_state(preset,state,frame)
+            self.assertEqual(result,0)
+            self.assertEqual(warp.warp,frame+1)
+            self.assertEqual(state.user[0],frame+1)
+            self.assertEqual(state.q[0],2)
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,1)
+        # An output-range failure must not advance persistent state.
+        self.assertEqual(self.evaluate_state(preset,state,5)[0],2)
+        self.assertEqual(state.user[0],4)
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=warp=unset_value;\n")
+        self.assertEqual(code,0)
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,0)
+
+    def test_named_variable_limits_and_namespace_rollback(self):
+        lines="\n".join(f"per_frame_{i+1}=custom_{i}={i};" for i in range(16))
+        code,preset,_=self.parse(f"[preset00]\n{lines}".encode())
+        self.assertEqual(code,0)
+        self.assertEqual(preset.symbols.count,16)
+        self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1=extra=1;\n{lines}".encode())[0],2)
+        for name in ("fps","frame","x","rad","t1","reg00","sin","q33"):
+            self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0],0)
+        self.assertEqual(self.parse(("[preset00]\nper_frame_1="+"a"*31+"=1;").encode())[0],0)
+        self.assertNotEqual(self.parse(("[preset00]\nper_frame_1="+"a"*32+"=1;").encode())[0],0)
+        program,symbols=Program(),Symbols()
+        fn=self.library.pm_compile_symbols
+        fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols)]
+        self.assertEqual(fn(ctypes.byref(program),b"existing=1;",2,ctypes.byref(symbols)),0)
+        before=bytes(symbols); count=program.count
+        self.assertNotEqual(fn(ctypes.byref(program),b"new_name=if(1,2,);",3,ctypes.byref(symbols)),0)
+        self.assertEqual(bytes(symbols),before)
+        self.assertEqual(program.count,count)
+
+    def test_named_memory_demo_long_run_and_release(self):
+        code,preset,_=self.parse((ROOT / "psp-client/presets/memory-pulse-demo.milk").read_bytes())
+        self.assertEqual(code,0)
+        state=PresetState()
+        held_index=next(i for i in range(preset.symbols.count)
+                        if bytes(preset.symbols.names[i]).split(b"\0")[0]==b"held")
+        for frame in range(18000):
+            level=1 if frame%100==0 else 0
+            signal=Signal((ctypes.c_float*13)(*([level]*7+[level*4]*6)))
+            self.assertEqual(self.evaluate_state(preset,state,frame*.1,signal)[0],0)
+            if frame%100==1: self.assertGreater(state.user[held_index],.7)
+            if frame%100==99: self.assertLess(state.user[held_index],.00001)
 
     def test_feature_demos_and_dynamic_fields(self):
         for name in ("receiver-fx-demo.milk","echo-dots-demo.milk"):

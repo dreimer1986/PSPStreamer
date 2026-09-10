@@ -149,7 +149,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if (strcmp(key, expected)) {
                 result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;
             }
-            int compiled = pm_compile(program, value, number);
+            int compiled = pm_compile_symbols(program, value, number, &next.symbols);
             if (compiled != PM_OK) {
                 result = md_file_error(error, compiled == PM_UNSUPPORTED ?
                     MD_FILE_UNSUPPORTED : MD_FILE_INVALID, number, key); goto done;
@@ -235,11 +235,13 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         if (!pm_execute(&p->init_program,initial,&line))
             return md_file_error(error,MD_FILE_INVALID,line,"init formula");
         memcpy(next.q,initial+PM_Q_BASE,sizeof(next.q));
+        memcpy(next.user,initial+PM_USER_BASE,sizeof(next.user));
         next.ready=1;
     }
     /* Reference LoadPerFrameEvallibVars restores q_values_after_init_code
      * before every frame. Ordinary output fields also restart from static. */
     memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
+    memcpy(v+PM_USER_BASE,next.user,sizeof(next.user));
     if (!pm_execute(&p->program, v, &line))
         return md_file_error(error, MD_FILE_INVALID, line, "formula");
     for (int i = 0; i < 9; i++) {
@@ -275,6 +277,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     *warp = (MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
     *color = 0xff000000U | (unsigned int)(v[6]*255) |
         ((unsigned int)(v[7]*255)<<8) | ((unsigned int)(v[8]*255)<<16);
+    memcpy(next.user,v+PM_USER_BASE,sizeof(next.user));
     *state=next;
     return MD_FILE_OK;
 }

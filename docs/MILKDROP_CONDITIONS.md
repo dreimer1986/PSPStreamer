@@ -31,7 +31,8 @@ per_frame_2=wave_r=if(above(bass,1.1),1,0.2);
 Silence takes the first formula's zero branch without dividing by zero.
 Nested conditions work inside ordinary arithmetic and other functions.
 Assignments within branches, statement blocks, `&&/||`, comparisons written
-as operators, loops and arbitrary variable names are still unsupported.
+as operators and loops are still unsupported. Up to 16
+[named variables](MILKDROP_VARIABLES.md) are now supported.
 Both branches must contain valid supported syntax even when one is never run.
 
 ## Bounds and failure behavior
@@ -67,9 +68,9 @@ still needs a PSP test.
 
 ## Remaining compatibility milestones
 
-- Arbitrary named variables with persistent lifetime. [Init and q variables](MILKDROP_INIT.md)
-  are now implemented: `q` values are reseeded from init before each preset
-  frame, not treated as generic cross-frame accumulators.
+- Independent variable contexts for shapes/waves. Preset-level
+  [named variables](MILKDROP_VARIABLES.md) and [init/q variables](MILKDROP_INIT.md)
+  are implemented, with separate persistence and reseeding rules.
 - Per-vertex (`per_pixel_*`) programs with coordinate inputs and a mesh-wide
   execution budget.
 - Independent custom shape and waveform programs, including per-point code;

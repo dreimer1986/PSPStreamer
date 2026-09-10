@@ -1,0 +1,14 @@
+; Original PSPStreamer example: hold musical impulses, then decay over time.
+[preset00]
+nWaveMode=0
+zoom=1.02
+fDecay=0.97
+fGammaAdj=1.2
+fWaveAlpha=0.8
+bWaveThick=1
+fVideoEchoZoom=1.5
+per_frame_init_1=last_time=time; held=0; phase=0; q1=.12;
+per_frame_1=dt=min(.25,max(0,time-last_time)); last_time=time;
+per_frame_2=held=max(psp_low,held*exp(-dt*3)); phase=phase+dt*(.4+held);
+per_frame_3=phase=phase-6.283185*floor(phase/6.283185); wave_x=.5+q1*sin(phase); wave_y=.5+q1*cos(phase);
+per_frame_4=wave_r=.2+.7*held; wave_g=.7-.5*held; wave_b=.9; echo_alpha=.1+.25*held; rot=.025*sin(phase);

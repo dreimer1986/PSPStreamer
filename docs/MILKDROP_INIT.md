@@ -29,8 +29,8 @@ that frame. `q1=q1+1` alone would not count frames. This is deliberate:
 MilkDrop 2's `LoadPerFrameEvallibVars` reloads `q_values_after_init_code`
 before each frame. Ordinary output assignments made by init are not retained
 as new static defaults either; use q values to carry init results into the
-frame program. Arbitrary named persistent variables and `monitor` remain
-unsupported. q values are finite floats; existing output-range validation
+frame program. [Named persistent variables](MILKDROP_VARIABLES.md) are now
+supported separately; `monitor` remains unsupported. q values are finite floats; existing output-range validation
 still applies when assigning them to renderer outputs.
 
 The reference executes init during preset compilation/loading. Our bounded
@@ -50,8 +50,9 @@ the playback adapter owns one state and resets it on activation.
 The stateless convenience evaluation APIs use a fresh state per call; playback
 uses `md_eval_preset_state` to avoid re-running init on every frame.
 
-Additional storage: one 2,056-byte init program per parsed preset, 132 bytes
-of activation state, and 32 more float slots in evaluation arrays. No extra
+Current storage including named variables: one 2,056-byte init program and
+516-byte name table per parsed preset, 196 bytes of activation state, and
+48 extra float slots (q plus user variables) in evaluation arrays. No extra
 VRAM, textures, GU commands, waveform copying or audio-worker processing.
 
 ## Test

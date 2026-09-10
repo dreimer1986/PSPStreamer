@@ -35,9 +35,11 @@ and `ns-eel2/nseel-compiler.c`.
    during rendering; no native code generation.
 2. Implemented arithmetic, parentheses, `sin/cos/abs/sqrt`, `min/max`, time and supported static
    output fields. Limit instructions, nesting and statements. Unknown
-   identifiers/functions remain load errors with line/field information.
-3. Per-frame output inputs reset from static preset values. Add persistent
-   variables only with explicit lifetime/reset tests.
+   functions remain load errors with line/field information. Ordinary unknown
+   variable names can now use the bounded persistent namespace described below.
+3. Per-frame output inputs reset from static preset values. Init/q reseeding
+   and named persistent variables now have explicit lifetime/reset tests;
+   see [named variables](MILKDROP_VARIABLES.md).
 4. Non-finite results, out-of-range outputs and division errors are rejected with a visible diagnostic;
    do not pass invalid transforms to GU or silently substitute an effect.
 5. Deferred: compare supported operations against original NS-EEL on a supported host
