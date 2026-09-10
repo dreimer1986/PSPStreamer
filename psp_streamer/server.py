@@ -692,19 +692,20 @@ class AppServer(ThreadingHTTPServer):
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
         self.remote_lock = threading.Lock()
         self.remote_sequence = 0
+        self.remote_session = os.urandom(16).hex()
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
 
     def set_remote_command(self, command: dict[str, object]) -> dict[str, object]:
         with self.remote_lock:
             self.remote_sequence += 1
-            self.remote_command = {"seq": self.remote_sequence, **command}
+            self.remote_command = {**command, "seq": self.remote_sequence, "session": self.remote_session}
             return dict(self.remote_command)
 
     def remote_after(self, sequence: int) -> dict[str, object]:
         with self.remote_lock:
             if self.remote_sequence > sequence:
                 return dict(self.remote_command)
-            return {"seq": self.remote_sequence, "action": "idle"}
+            return {"seq": self.remote_sequence, "session": self.remote_session, "action": "idle"}
 
 
 def main() -> None:

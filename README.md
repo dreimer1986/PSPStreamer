@@ -29,21 +29,30 @@ Rows contain elapsed wall time, video PTS, submitted audio-block PTS, remaining 
 
 The audio PTS describes the submitted block, not an exact sample at the speaker. The video handoff is measured on the PSP, not at the TV panel. The trace can expose internal stalls and timestamp discontinuities; it cannot directly measure a television's processing delay. The staging frame uses approximately 544 KiB on LCD or 1.41 MiB on TV, plus 192 KiB for the trace. The measured copy duration helps assess its cost on real hardware.
 
-### Temporary video-stall diagnostics
+### Temporary playback-stall diagnostics
 
-The diagnostic build also watches video playback and teardown. If its main
-loop stops responding, or presented PTS stop advancing, for eight seconds,
-it writes `video-stall.txt` in the application's working directory (normally
-`ms0:/PSP/GAME/PSPStreamer/`). It records the current stage, codec step, queues
-and worker state. Healthy playback performs no writes to this file. At most
-four reports are written per playback, at least 30 seconds apart. The first
-report of a new stalled session replaces the previous report; healthy sessions
-leave an older file unchanged. This is diagnostic only, not a claimed hang fix.
+The diagnostic build watches both music and video, including teardown. Before
+playback it creates `ms0:/PSP/SYSTEM/PSPStreamer-watch-music.txt` or
+`ms0:/PSP/SYSTEM/PSPStreamer-watch-video.txt` and checks that its worker can append
+`monitor running`. A failed storage/monitor check stops playback with a
+`Diagnostic file` error instead of silently losing diagnostics. Each new playback
+replaces that media kind's previous file: copy evidence before starting another.
+After eight seconds without a main-loop heartbeat, playback progress or a
+successful remote poll, the
+monitor records the stage, queues, codec state and remote HTTP phase/counters.
+Music progress is counted in DAC blocks, video progress in presented PTS.
+At most four reports are written, at least 30 seconds apart. Healthy playback
+only writes at startup and shutdown, not on rendering/audio ticks.
 
 After a hang, wait about 10 seconds before leaving via the PS button, then
-copy that file. If there is no file, report that too: a higher-priority CPU
-lockup can prevent the monitor itself from running. Decoder, PTS and subtitle
-preparation timeouts have not been changed. HA app 0.1.21 separately fixes the
+copy both files. A higher-priority CPU lockup can still prevent a stall report,
+but the startup record should already exist. This is diagnosis, not a claim
+that every hang is fixed. Decoder, PTS and subtitle preparation timeouts remain
+unchanged. Remote commands alone use a cancellable two-second HTTP budget and
+the already resolved server address. HA app 0.1.22 adds server-session identity
+so restarting the server cannot strand the client's command counter. This is
+separate from investigating commands that only execute after a PSP app restart.
+HA app 0.1.21 fixes the
 web remote incorrectly treating subtitle index 0 as Off; update the app and
 reload the browser page to receive that fix.
 

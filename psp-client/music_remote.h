@@ -17,8 +17,9 @@ static int music_remote_worker(SceSize args, void *argp) {
         int next, event = MUSIC_REMOTE_NONE;
         if (music_remote_action) { sceKernelDelayThread(10000); continue; }
         snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
-        if (http_get_wait(path, reply, sizeof(reply), 500) >= 0 &&
+        if (remote_http_get(path, reply, sizeof(reply), &music_remote_running) >= 0 &&
             music_remote_running && json_value(reply, "action", action, sizeof(action))) {
+            if (remote_state_reset(reply, &sequence)) continue;
             next = json_integer(reply, "seq", sequence);
             if (next > sequence) {
                 /* Leave Play unconsumed for the library dispatcher, which

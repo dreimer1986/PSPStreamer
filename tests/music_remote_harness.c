@@ -24,14 +24,15 @@ static void sceKernelDeleteThread(int id) { assert(id == 123); deleted++; }
 static void sceKernelWaitThreadEnd(int id, void *timeout) {
     assert(id == 123 && !timeout); joined++;
 }
-static int http_get_wait(const char *path, char *reply, int capacity, int timeout);
+static int remote_http_get(const char *path, char *reply, int capacity, volatile int *running);
+#include "remote_state.h"
 #include "music_remote.h"
 /* VIDEO_REMOTE_WORKER */
-static int http_get_wait(const char *path, char *reply, int capacity, int timeout) {
+static int remote_http_get(const char *path, char *reply, int capacity, volatile int *running) {
     int after = -1;
     assert(sscanf(path, "/api/remote/next?after=%d", &after) == 1);
-    assert(after == remote_control_sequence && timeout == 500);
-    if (cancel_during_http) music_remote_running = 0;
+    assert(after == remote_control_sequence);
+    if (cancel_during_http) *running = 0;
     if (fail_http_once) { fail_http_once = 0; return -1; }
     assert(index_reply < count_reply);
     snprintf(reply, capacity, "%s", replies[index_reply++]); return (int)strlen(reply);
@@ -49,10 +50,17 @@ static void reset(void) {
     create_failure = start_failure = cancel_during_http = fail_http_once = 0;
     deleted = joined = index_reply = count_events = 0;
     remote_control_sequence = 10;
+    remote_session[0] = 0;
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
 }
 int main(void) {
+    reset();
+    strcpy(remote_session,"old");
+    int seq=10;
+    assert(remote_state_reset("{\"seq\":10,\"session\":\"new\"}",&seq) && seq==0);
+    seq=10;
+    assert(remote_state_reset("{\"seq\":1}",&seq) && seq==0);
     reset();
     create_failure = 1;
     assert(music_remote_start() == -10 && !music_remote_running);

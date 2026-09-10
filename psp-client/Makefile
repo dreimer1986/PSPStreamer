@@ -26,7 +26,7 @@ main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h preset_math.h milkdrop_signal.h
 milkdrop_signal.o: milkdrop_signal.h
 preset_math.o: preset_math.h
-main.o: music_preset_ui.h
+main.o: music_preset_ui.h remote_http.h remote_state.h video_watchdog.h
 main.o milkdrop_gu.o milkdrop_wave.o: milkdrop_wave.h milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_wave.o milkdrop_preset.o milkdrop_decor.o: milkdrop_decor.h
 milkdrop_gu.o: milkdrop_decor_gu.h

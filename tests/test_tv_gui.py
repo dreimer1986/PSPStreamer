@@ -35,7 +35,9 @@ class TvGuiTests(unittest.TestCase):
         self.assertLess(music.index("lcd_draw_music(title, 0);"),
                         music.index('sceKernelCreateThread("PSPStreamerMusic"'))
         # Both exit paths restore the caller's priority, including create failure.
-        self.assertEqual(music.count("return "), 2)
+        self.assertEqual(music.count("return "), 3)
+        self.assertLess(music.index('video_step = "Diagnostic file"'),
+                        music.index("previous_ui_priority = music_ui_lower_priority();"))
         self.assertEqual(music.count("music_ui_restore_priority(previous_ui_priority);"), 2)
         self.assertNotIn("tv_draw_view(TV_VIEW_MUSIC", music)
 

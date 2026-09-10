@@ -9,6 +9,44 @@ from psp_streamer.server import AppServer, Library, MediaItem, ffmpeg_command, l
 
 
 class LibraryTests(unittest.TestCase):
+    def test_remote_http_commands_survive_polling_and_have_session_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "song.mp3").touch()
+            (root / "video.mkv").touch()
+            library = Library([root])
+            with AppServer(("127.0.0.1", 0), library) as server:
+                thread = threading.Thread(target=server.serve_forever)
+                thread.start()
+                connection = http.client.HTTPConnection(*server.server_address, timeout=3)
+                try:
+                    commands = [
+                        {"action": "play", "id": library.encode(MediaItem(0, "song.mp3"))},
+                        {"action": "pause"}, {"action": "resume"},
+                        {"action": "seek", "seconds": 45}, {"action": "stop"},
+                        {"action": "play", "id": library.encode(MediaItem(0, "video.mkv")), "subtitle": 0},
+                    ]
+                    for seq, command in enumerate(commands, 1):
+                        connection.request("POST", "/api/remote/command", json.dumps(command),
+                                           {"Content-Type": "application/json"})
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 200)
+                        posted = json.loads(response.read())
+                        self.assertEqual(posted["seq"], seq)
+                        self.assertEqual(posted["session"], server.remote_session)
+                        for _ in range(2):
+                            connection.request("GET", f"/api/remote/next?after={seq-1}")
+                            self.assertEqual(json.loads(connection.getresponse().read()), posted)
+                        self.assertEqual(server.remote_after(seq)["action"], "idle")
+                    self.assertEqual(posted["subtitle"], 0)
+                    with AppServer(("127.0.0.1", 0), library) as restarted:
+                        self.assertNotEqual(restarted.remote_session, server.remote_session)
+                        self.assertEqual(restarted.remote_after(seq)["seq"], 0)
+                finally:
+                    connection.close()
+                    server.shutdown()
+                    thread.join()
+
     def test_successor_stays_in_folder_and_media_kind(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "library"

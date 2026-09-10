@@ -600,6 +600,8 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
     return http_get_wait(path, buffer, buffer_size, 20000);
 }
 
+#include "remote_http.h"
+
 static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body;
@@ -1672,6 +1674,7 @@ cleanup:
 #include "lcd_music.h"
 static int json_value(const char *from, const char *key, char *destination, size_t length);
 static int json_integer(const char *from, const char *key, int fallback);
+#include "remote_state.h"
 #include "music_remote.h"
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
@@ -1687,6 +1690,8 @@ static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
+    start_result = video_watch_start(1);
+    if (start_result < 0) { video_step = "Diagnostic file"; video_watch_stop(); return start_result; }
     int visual_preset = music_saved_visual_preset;
     MdFileError preset_error;
     int preset_result;
@@ -1738,10 +1743,12 @@ static int play_audio(const char *media_id, const char *title) {
         audio_running = 0;
         md_stop(); music_visual_active = 0;
         music_ui_restore_priority(previous_ui_priority);
+        video_watch_stop();
         return start_result;
     }
     remote_result = music_remote_start();
     while (audio_running && remote_result >= 0) {
+        video_watch_ping("music loop");
         SceCtrlData pad;
         int action = music_remote_action;
         int seek_seconds = music_remote_seconds;
@@ -1764,10 +1771,12 @@ static int play_audio(const char *media_id, const char *title) {
         /* A true visualizer fullscreen owns all visible pixels. Do not draw
          * receiver controls between GU frames (including throttled frames). */
         if (!(music_visual_active && fullscreen)) {
+            video_watch_ping("music GUI");
             if (tv_ui_active) tv_draw_music(title, fullscreen);
             else lcd_draw_music(title, fullscreen);
         }
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
+            video_watch_ping("music visualization");
             if (tv_ui_active) md_set_tv_title_bottom(tv_music_title_bottom);
             unsigned char bands[SPECTRUM_BANDS];
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
@@ -1834,12 +1843,15 @@ static int play_audio(const char *media_id, const char *title) {
         sceKernelDelayThread(MUSIC_UI_INPUT_POLL_US);
     }
     music_remote_running = 0;
+    video_watch_ping("music stop: close socket");
     audio_running = 0; audio_start = 1;
     if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
+    video_watch_ping("music stop: join producer");
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
     sceKernelDeleteThread(audio_thread_id);
     if (audio_output_thread_id >= 0) {
         int output_thread_id = audio_output_thread_id;
+        video_watch_ping("music stop: join DAC");
         sceKernelWaitThreadEnd(output_thread_id, NULL);
         sceKernelDeleteThread(output_thread_id);
         audio_output_thread_id = -1;
@@ -1847,7 +1859,9 @@ static int play_audio(const char *media_id, const char *title) {
     audio_queue_destroy();
     /* An EOF racing a terminal remote command must not trigger autoplay. */
     if (music_remote_action >= MUSIC_REMOTE_STOP) stopped_by_user = 1;
+    video_watch_ping("music stop: join remote");
     music_remote_stop();
+    video_watch_ping("music stop: GU");
     md_stop();
     music_visual_active = 0;
     /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
@@ -1859,6 +1873,7 @@ static int play_audio(const char *media_id, const char *title) {
         stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
     music_ui_restore_priority(previous_ui_priority);
+    video_watch_stop();
     return remote_result < 0 ? remote_result : audio_state < 0 ? audio_state : 0;
 }
 
@@ -1945,9 +1960,18 @@ static int play_h264(const char *media_id) {
     remote_control_seek_seconds = -1;
     remote_control_running = 1;
     remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, 0x20, 0x3000, 0, NULL);
-    if (remote_control_thread_id >= 0) sceKernelStartThread(remote_control_thread_id, 0, NULL);
+    result = remote_control_thread_id < 0 ? remote_control_thread_id :
+        sceKernelStartThread(remote_control_thread_id, 0, NULL);
+    if (result < 0) {
+        if (remote_control_thread_id >= 0) sceKernelDeleteThread(remote_control_thread_id);
+        remote_control_thread_id = -1;
+        remote_control_running = 0;
+        video_step = "Remote worker";
+        goto done;
+    }
     video_step = "FLV/PTS stream";
-    video_watch_start();
+    result = video_watch_start(0);
+    if (result < 0) { video_step = "Diagnostic file"; goto done; }
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
@@ -2264,8 +2288,9 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     char *field;
     int result;
     snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
-    result = http_get_wait(path, response, sizeof(response), 1000);
+    result = remote_http_get(path, response, sizeof(response), NULL);
     if (result < 0 || !json_value(response, "action", action, sizeof(action))) return 0;
+    if (remote_state_reset(response, &sequence)) return 0;
     field = strstr(response, "\"seq\":");
     if (field) remote_control_sequence = sequence = atoi(field + 6);
     if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
@@ -2281,12 +2306,18 @@ static int remote_control_thread(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
     (void)args; (void)argp;
     while (remote_control_running) {
-        char path[64], reply[1024], action[16];
+        char path[64], reply[2048], action[16];
         char *field;
+        if (remote_control_action || remote_control_seek_seconds >= 0) {
+            sceKernelDelayThread(10000); continue;
+        }
         snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
-        if (http_get_wait(path, reply, sizeof(reply), 500) >= 0 &&
+        if (remote_http_get(path, reply, sizeof(reply), &remote_control_running) >= 0 &&
+            remote_control_running &&
             json_value(reply, "action", action, sizeof(action))) {
+            if (remote_state_reset(reply, &sequence)) continue;
             field = strstr(reply, "\"seq\":");
+            if (!field || atoi(field + 6) <= sequence) { sceKernelDelayThread(500000); continue; }
             if (remote_control_running && field && atoi(field + 6) > sequence &&
                 !strcmp(action, "play")) {
                 /* Do not consume Play: exit through normal video teardown,
@@ -2298,7 +2329,10 @@ static int remote_control_thread(SceSize args, void *argp) {
             if (!strcmp(action, "pause")) remote_control_action = 1;
             else if (!strcmp(action, "resume")) remote_control_action = 2;
             else if (!strcmp(action, "stop")) remote_control_action = 3;
-            else if (!strcmp(action, "seek")) remote_control_seek_seconds = json_integer(reply, "seconds", -1);
+            else if (!strcmp(action, "seek")) {
+                int seconds = json_integer(reply, "seconds", -1);
+                if (seconds >= 0 && seconds <= 86400) remote_control_seek_seconds = seconds;
+            }
         }
         sceKernelDelayThread(500000);
     }
