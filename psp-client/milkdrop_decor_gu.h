@@ -12,13 +12,14 @@ static void md_shapes(const MdDecor *decor,float aspect) {
         MdVertex *v=sceGuGetMemory(((int)p->sides+2)*sizeof(*v));
         int count=md_shape_vertices(v,p,aspect);
         if(!count) continue;
+        md_expand(v,count,0);
         md_blend(p->additive!=0);
         if(p->textured) {
             sceGuEnable(GU_TEXTURE_2D);
             /* Original fixed-function shapes take alpha from vertex color,
              * not the feedback texture's alpha channel. */
             sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGB);
-            sceGuTexImage(0,MD_TEXTURE,MD_TEXTURE,MD_TEXTURE,md_texture(md_front));
+            sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_texture(md_front));
             sceGuTexFlush();
         } else sceGuDisable(GU_TEXTURE_2D);
         sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,v);
@@ -44,6 +45,7 @@ static void md_border(const MdBorder *p,float inset) {
         MdVertex *v=sceGuGetMemory(2*sizeof(*v));
         v[0]=(MdVertex){0,0,color,rectangles[i][0],rectangles[i][1],0};
         v[1]=(MdVertex){0,0,color,rectangles[i][2],rectangles[i][3],0};
+        md_expand(v,2,0);
         sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
     }
     sceGuDisable(GU_BLEND);
@@ -66,6 +68,7 @@ static void md_present(int left,int top,int width,int height,float gamma,
                 v[1]=(MdVertex){0,0,tint,(float)(left+end),(float)(top+height),0};
                 md_echo_uv((float)x/width,0,zoom,orient,&v[0].u,&v[0].v);
                 md_echo_uv((float)end/width,1,zoom,orient,&v[1].u,&v[1].v);
+                v[0].u*=2; v[1].u*=2;
                 sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
             }
         }

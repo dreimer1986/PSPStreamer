@@ -21,7 +21,8 @@ visualization fullscreen: 480×272 on LCD, 720×480 on native TV output.
 The receiver is hidden in visualization fullscreen, including between
 throttled graphics frames; returning redraws the receiver once. Without an
 active effect, the previous enlarged spectrum/receiver remains unchanged.
-Feedback textures stay 256×256; only the final GPU stretch covers more pixels.
+Feedback textures are 512×256: 32-bit on LCD, RGB565 on TV. The final GPU
+stretch covers the selected viewport. See [presentation/memory layout](MILKDROP_PRESENTATION.md).
 The receiver apertures were adjusted on 2026-09-09 using the user's edge
 offsets (right/bottom are exclusive pixel boundaries):
 
@@ -51,7 +52,7 @@ The historical LCD-menu/TV-video mode still visualizes music on the LCD.
 ## What is original and what is new
 
 - Adapted original MilkDrop zoom/rotation/warp equations and multiplicative
-  feedback decay, with an 8×8 grid and two 256×256 feedback textures.
+  feedback decay, with an 8×8 grid and two 512×256 feedback textures.
 - Three new fixed parameter configurations. These are not imported presets.
 - New PSP-native, spectrum-driven colored ring, using snapshots of the
   existing twelve frequency bands and VU peaks. It is **not** MilkDrop's
@@ -78,8 +79,11 @@ audited mirror revision is `b5e4136c2f050eafa10aa199bb72c8e5c12c9320`.
 - GU is initialized only on first activation and terminated on disabling,
   Stop, seek, track replacement or EOF, before the next media starts.
 - 64 KiB RAM command list, allocated only while enabled; small stack mesh.
-- 512 KiB EDRAM textures at offsets 1,474,560 and 1,736,704. Their end,
-  1,998,848, is below the real 2 MiB limit and above native TV scanout.
+- TV: 512 KiB RGB565 textures at offsets 1,474,560 and 1,736,704.
+  LCD: 1 MiB RGBA8888 textures at offsets 557,056 and 1,081,344.
+  Both layouts fit real 2 MiB EDRAM without overlapping active scanout.
+  Echo/gamma reuse the consumed old feedback surface for offscreen composition;
+  only the completed image is stretched to scanout, in one opaque pass.
   The adapter checks available EDRAM and allocation/init/start failures.
 - No DVE switch, display-buffer swap or display stride change. Rendering
   targets change inside the GU list only; final writes use the current

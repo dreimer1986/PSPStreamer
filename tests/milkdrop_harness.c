@@ -11,7 +11,9 @@ enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
        GU_TEXTURE_2D, GU_PSM_8888, GU_TFX_MODULATE, GU_TCC_RGBA, GU_LINEAR,
-       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES };
+       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650 };
+static int target_bpp, composition_width, target_changes, texture_offset;
+static int raw_target, raw_source;
 static int gu_live, starts, syncs, target_offset, target_width, target_height, stride;
 static int fail_init, fail_start;
 static int edram_size = 2*1024*1024, mesh_calls, ring_calls, sprite_calls;
@@ -33,20 +35,24 @@ static void sceGuTerm(void) { assert(gu_live); gu_live=0; }
 static int sceGuStart(int mode, void *list) {
     if(fail_start) return -1;
     assert(gu_live && mode==GU_DIRECT); starts++; list_base=list; list_used=0;
-    covered_width=0;
+    covered_width=composition_width=target_changes=0;
     return 0;
 }
 static void sceGuSync(int a,int b) { assert(a==GU_SYNC_FINISH && b==GU_SYNC_WHAT_DONE); syncs++; }
 static void sceGuFinish(void) { test_time += render_cost; }
 static void sceGuDrawBufferList(int format,void *offset,int width) {
-    assert(format==GU_PSM_8888);
+    assert(format==GU_PSM_8888 || format==GU_PSM_5650);
+    target_bpp=format==GU_PSM_8888?4:2;
+    target_changes++;
     target_offset=(int)(uintptr_t)offset; stride=width;
-    assert(target_offset==0 || target_offset==1474560 || target_offset==1736704);
+    assert(target_offset==0 || target_offset==1474560 || target_offset==1736704 ||
+           target_offset==557056 || target_offset==1081344);
+    if (!target_offset) assert(format==GU_PSM_8888 && target_changes==3);
 }
 static void sceGuOffset(int x,int y) { (void)x; (void)y; }
 static void sceGuViewport(int x,int y,int w,int h) {
     assert(x==2048 && y==2048); target_width=w; target_height=h;
-    assert(target_offset + stride*h*4 <= edram_size);
+    assert(target_offset + stride*h*target_bpp <= edram_size);
 }
 static void sceGuScissor(int x,int y,int w,int h) {
     assert(!x && !y && w==target_width && h==target_height);
@@ -60,12 +66,13 @@ static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b)
            (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff));
 }
 static void sceGuEnable(int what) { (void)what; }
-static void sceGuTexMode(int p,int a,int b,int c) { assert(p==GU_PSM_8888 && !a && !b && !c); }
+static void sceGuTexMode(int p,int a,int b,int c) { assert((p==GU_PSM_8888 || p==GU_PSM_5650) && !a && !b && !c); }
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
     uintptr_t offset=(uintptr_t)texture-0x04000000;
-    assert(!level && w==256 && h==256 && s==256);
-    assert(offset==1474560 || offset==1736704);
+    assert(!level && w==512 && h==256 && s==512);
+    assert(offset==1474560 || offset==1736704 || offset==557056 || offset==1081344);
     assert(offset!=(uintptr_t)target_offset);
+    texture_offset=(int)offset;
 }
 static void sceGuTexFunc(int a,int b) { (void)a; (void)b; }
 static void sceGuTexFilter(int a,int b) { (void)a; (void)b; }
@@ -88,7 +95,16 @@ static void *sceGuGetMemory(int bytes) {
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     const MdVertex *v=data;
     assert(format==15 && !indices);
-    if(type==GU_TRIANGLES) { assert(count==MD_MESH_VERTICES); mesh_calls++; }
+    if(type==GU_TRIANGLES) {
+        assert(count==MD_MESH_VERTICES && target_changes==1);
+        assert(target_width==512 && target_height==256);
+        raw_target=target_offset; raw_source=texture_offset;
+        assert(raw_target!=raw_source);
+        float right=0;
+        for(int i=0;i<count;i++) if(v[i].x>right) right=v[i].x;
+        assert(right==512);
+        mesh_calls++;
+    }
     else if(type==GU_TRIANGLE_FAN) { assert(count>=5 && count<=34); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
         assert(count==97 || count==241 || (count>=4 && count<=33)); ring_calls++;
@@ -96,11 +112,22 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else {
         assert(type==GU_SPRITES && count==2); sprite_calls++;
-        if(target_offset) return; /* feedback border rectangles */
+        if(target_offset) {
+            if(target_changes==2) {
+                assert(texture_offset!=target_offset);
+                assert(target_offset==raw_source && texture_offset==raw_target);
+                assert(v[0].x==composition_width%512 && v[0].y==0 && v[1].y==256);
+                composition_width+=(int)(v[1].x-v[0].x);
+                assert(composition_width<=512*expected_passes);
+            }
+            return; /* feedback borders or offscreen composition */
+        }
+        assert(composition_width==512*expected_passes);
+        assert(texture_offset==raw_source);
         assert(v[0].x==expected_left+covered_width%expected_width && v[0].y==expected_top);
         assert(v[1].y==expected_top+expected_height);
         covered_width+=(int)(v[1].x-v[0].x);
-        assert(covered_width<=expected_width*expected_passes);
+        assert(covered_width<=expected_width);
     }
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
@@ -154,7 +181,7 @@ int main(void) {
         expected_width=full ? (tv ? 720 : 480) : tv ? 508 : 306;
         expected_height=full ? (tv ? 480 : 272) : tv ? 208 : 75;
         assert(md_start() && md_start());
-        for(int i=0;i<1474560;i++) assert(vram[i]==0xa5);
+        for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
         for(int preset=0;preset<4;preset++) {
             expected_ring_color=preset==3 ? 0xff007fffU : 0;
             for(int frame=0;frame<120;frame++) {
@@ -258,7 +285,7 @@ int main(void) {
         assert(md_start());
         test_time+=100000;
         assert(md_frame(tv,full,bands,0,test_time,3)==1);
-        assert(md_wave_capture && covered_width==expected_width*2);
+        assert(md_wave_capture && covered_width==expected_width);
         assert(feedback_wrap==GU_CLAMP);
         short pcm[1152];
         for(int i=0;i<1152;i++) pcm[i]=(short)(sin(i*.08)*30000);
@@ -290,10 +317,29 @@ int main(void) {
             decor->echo_orient=orientation;
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
-            assert(covered_width==expected_width*expected_passes);
+            assert(covered_width==expected_width);
         }
         md_stop();
     }
+    /* Layout changes bypass the frame throttle and reset only feedback.
+     * Scanout format stays 32-bit even when TV feedback becomes RGB565. */
+    expected_passes=1;
+    assert(md_start());
+    for(int i=0;i<12;i++) {
+        int tv=i%2;
+        expected_left=expected_top=0;
+        expected_width=tv?720:480; expected_height=tv?480:272;
+        int calls=starts;
+        assert(md_frame(tv,1,bands,0,test_time,0)==1 && starts==calls+1);
+        assert(md_texture_base==(tv?1474560:557056));
+        assert(md_texture_bytes==(tv?262144:524288));
+        assert(md_pixel_format==(tv?GU_PSM_5650:GU_PSM_8888));
+        assert(md_front==1 && raw_source==md_texture_base);
+        assert(target_offset==0 && target_bpp==4);
+    }
+    md_stop();
+    for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
+    for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
     printf("Visualization maximum vertex storage: %zu / 65536 bytes\n",list_peak);
     munmap(vram,edram_size);
     return 0;

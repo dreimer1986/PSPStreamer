@@ -11,8 +11,11 @@
 #include <stdint.h>
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
-#define MD_TEXTURE_BYTES (MD_TEXTURE * MD_TEXTURE * 4)
-#define MD_TEXTURE_BASE (768 * 480 * 4)
+#define MD_WIDTH 512
+#define MD_HEIGHT 256
+static int md_texture_base, md_texture_bytes, md_pixel_format;
+#define MD_TEXTURE_BYTES md_texture_bytes
+#define MD_TEXTURE_BASE md_texture_base
 #define MD_LIST_BYTES 65536
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
@@ -23,6 +26,14 @@ static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
 static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
+/* Geometry helpers retain their logical 256-square coordinate system. Only
+ * this adapter maps it to the rectangular physical feedback surface. */
+static void md_expand(MdVertex *v, int count, int half_texel) {
+    for (int i=0;i<count;i++) {
+        v[i].x *= 2;
+        v[i].u = half_texel ? (v[i].u-.5f)*2+.5f : v[i].u*2;
+    }
+}
 void md_set_tv_title_bottom(int bottom) {
     int top = bottom + 5;
     md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
@@ -32,7 +43,7 @@ static void *md_texture(int index) {
     return (void *)(uintptr_t)(0x04000000 + MD_TEXTURE_BASE + index*MD_TEXTURE_BYTES);
 }
 static void md_target(int offset, int stride, int width, int height) {
-    sceGuDrawBufferList(GU_PSM_8888, (void *)(uintptr_t)offset, stride);
+    sceGuDrawBufferList(offset ? md_pixel_format : GU_PSM_8888, (void *)(uintptr_t)offset, stride);
     sceGuOffset(2048-width/2, 2048-height/2);
     sceGuViewport(2048, 2048, width, height);
     sceGuScissor(0, 0, width, height);
@@ -40,10 +51,9 @@ static void md_target(int offset, int stride, int width, int height) {
 #include "milkdrop_decor_gu.h"
 int md_start(void) {
     if (md_list) return 1;
-    if (MD_TEXTURE_BASE + 2*MD_TEXTURE_BYTES > sceGeEdramGetSize()) return 0;
+    if (sceGeEdramGetSize() < 2*1024*1024) return 0;
     md_list = memalign(64, MD_LIST_BYTES);
     if (!md_list) return 0;
-    memset((void *)(uintptr_t)(0x44000000 + MD_TEXTURE_BASE), 0, 2*MD_TEXTURE_BYTES);
     if (sceGuInit() < 0) {
         free(md_list); md_list = NULL;
         return 0;
@@ -81,6 +91,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     if (!md_list || preset < 0 || preset > 3) return 0;
     if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
         top == md_last_top) return 1;
+    if (tv != md_last_tv) {
+        md_texture_base = tv ? 768*480*4 : 512*272*4;
+        md_texture_bytes = MD_WIDTH*MD_HEIGHT*(tv ? 2 : 4);
+        md_pixel_format = tv ? GU_PSM_5650 : GU_PSM_8888;
+        if ((unsigned int)(MD_TEXTURE_BASE + 2*MD_TEXTURE_BYTES) > sceGeEdramGetSize()) return 0;
+        memset((void *)(uintptr_t)(0x44000000 + MD_TEXTURE_BASE), 0, 2*MD_TEXTURE_BYTES);
+        md_front=0; target=1;
+    }
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
     if (preset == 3) {
@@ -103,9 +121,9 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuDisable(GU_LIGHTING); sceGuDisable(GU_BLEND);
     sceGuDisable(GU_ALPHA_TEST); sceGuDisable(GU_STENCIL_TEST);
     sceGuEnable(GU_SCISSOR_TEST); sceGuEnable(GU_TEXTURE_2D);
-    md_target(MD_TEXTURE_BASE + target*MD_TEXTURE_BYTES, MD_TEXTURE, MD_TEXTURE, MD_TEXTURE);
-    sceGuTexMode(GU_PSM_8888, 0, 0, 0);
-    sceGuTexImage(0, MD_TEXTURE, MD_TEXTURE, MD_TEXTURE, md_texture(md_front));
+    md_target(MD_TEXTURE_BASE + target*MD_TEXTURE_BYTES, MD_WIDTH, MD_WIDTH, MD_HEIGHT);
+    sceGuTexMode(md_pixel_format, 0, 0, 0);
+    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(md_front));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(GU_LINEAR, GU_LINEAR);
     int wrap=preset==3 && !md_custom_preset.wrap ? GU_CLAMP : GU_REPEAT;
@@ -114,6 +132,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
     md_warp_mesh(mesh, preset == 3 ? &evaluated : &md_presets[preset], seconds);
+    md_expand(mesh, MD_MESH_VERTICES, 1);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
     if(preset==3) md_shapes(&frame_decor,(float)height/width);
@@ -133,6 +152,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
         md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
                        seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
+        md_expand(ring, MD_WAVE_VERTICES, 0);
         md_blend(d->wave_additive!=0);
         int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
         sceGuDrawArray(primitive,MD_FORMAT,MD_WAVE_VERTICES,NULL,ring);
@@ -148,6 +168,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     } else if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
         md_audio_ring(ring, bands, level, seconds, preset);
+        md_expand(ring, 97, 0);
         if (preset == 3) {
             for (int i = 0; i < 97; i++) ring[i].color = custom_color;
         }
@@ -158,16 +179,26 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         md_border(&frame_decor.inner,frame_decor.outer.size);
     }
     sceGuTexSync();
+    /* The old feedback is no longer needed. Compose echo/gamma into that
+     * surface, keeping the new RAW feedback intact for the next frame.
+     * Never expose the dark base or intermediate additive passes on screen. */
+    md_target(MD_TEXTURE_BASE + md_front*MD_TEXTURE_BYTES, MD_WIDTH, MD_WIDTH, MD_HEIGHT);
+    sceGuEnable(GU_TEXTURE_2D);
+    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(target));
+    sceGuTexWrap(GU_CLAMP, GU_CLAMP);
+    sceGuTexFlush();
+    const MdDecor *d=&frame_decor;
+    md_present(0,0,MD_WIDTH,MD_HEIGHT,preset==3?d->gamma:1,
+        preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0);
+    sceGuTexSync();
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
     sceGuEnable(GU_TEXTURE_2D);
-    sceGuTexImage(0, MD_TEXTURE, MD_TEXTURE, MD_TEXTURE, md_texture(target));
+    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(md_front));
     sceGuTexWrap(GU_CLAMP, GU_CLAMP);
     sceGuTexFlush();
     /* Slice the final stretch into narrow sprites, as recommended for PSP
      * texture-cache locality. It never copies the full scanout on the CPU. */
-    const MdDecor *d=&frame_decor;
-    md_present(left,top,width,height,preset==3?d->gamma:1,
-        preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0);
+    md_present(left,top,width,height,1,1,0,0);
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;

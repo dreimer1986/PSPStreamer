@@ -53,7 +53,7 @@ feedback coordinates; it is not the desktop renderer's aspect-adjusted mesh.
 
 Borders are drawn into feedback after waves; the inner border is inset by the
 outer border width. Echo combines two views of the completed feedback texture
-on scanout, one ordinary and one zoomed/flipped. It does not create a third
+offscreen, one ordinary and one zoomed/flipped. It does not create a third
 texture or compound the gamma in feedback. Wave thickness is measured in
 feedback texels, so its apparent output width depends on viewport size.
 
@@ -99,10 +99,11 @@ looping or persistent state yet.
 
 ## Resource and test boundary
 
-- Existing 64 KiB GU list and two 256-square textures; no extra EDRAM.
+- Existing 64 KiB GU list and two 512×256 textures. LCD uses 32-bit color;
+  TV uses RGB565. See [memory layout and presentation](MILKDROP_PRESENTATION.md).
 - Worst tested combination: four 32-sided textured/outlined shapes, thick
   dotted wave, both borders, echo, gamma 4 and TV fullscreen. Vertex storage
-  peaks at 48,064 bytes, leaving 17,472 bytes for GU commands/alignment.
+  peaks at 46,480 bytes, leaving 19,056 bytes for GU commands/alignment.
   Host mocks verify data bounds, blending calls and texture ownership; they
   do not emulate PSP rasterization or prove hardware frame time.
 - Existing adaptive frame throttling remains in place; no catch-up rendering.
