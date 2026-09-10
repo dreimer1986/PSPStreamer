@@ -14,7 +14,9 @@ volume-modulated opacity, zoom exponent and rotating echo orientations.
 
 Check receiver/fullscreen on LCD and TV, pause/resume, track changes, disabling
 the visualization and switching to video. Recheck your original Hyperdrive
-file afterward. Existing controls and default-off behavior are unchanged.
+file afterward. Controls are unchanged. Visualization defaults to off when
+the app starts; effect/fullscreen selection now persists across music tracks
+within the session (see [controls and lifetime](MILKDROP_PROTOTYPE.md)).
 
 ## Transforms
 

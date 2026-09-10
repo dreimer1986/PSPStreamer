@@ -41,8 +41,15 @@ so one- and two-line titles each retain five blank rows before visualization.
 The top is defensively bounded to 70–102. Other edges remain fixed.
 
 Pause, volume,
-Stop and web controls remain available. Each new track starts with the
-original receiver; the prototype choice is intentionally not saved.
+Stop and web controls remain available. Effect selection (including off) and
+fullscreen are remembered for music during the current application session,
+including autoplay/shuffle, remote or manual track changes and seek restarts.
+Each track still releases and recreates GU resources and reloads the custom
+file before music workers start. A bad custom file shows the normal diagnostic;
+resource failure falls back to the receiver without discarding the preference.
+Video keeps its independent presentation mode. Restarting the application
+resets music to the original receiver with visualization off; no config key
+or persistent file is added.
 
 No server/add-on change or configuration key is required. Copy the supplied
 `presets/active.milk` example to enable the custom slot.

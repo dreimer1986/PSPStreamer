@@ -207,8 +207,11 @@ the existing enlarged spectrum/receiver layout is unchanged.
 This adapts MilkDrop 2's no-shader
 warp equations to PSP GU, not its complete engine: arbitrary `.milk` files,
 full EEL and shader presets are not supported. A bounded arithmetic/time
-subset is available in the custom slot. Each track starts
-with visualization off. No server update is required.
+subset is available in the custom slot. Music remembers the selected effect
+and fullscreen across track changes, including autoplay/shuffle and remote
+selection. Resources are still released and recreated per track. Video uses
+its own presentation mode; restarting the app resets music visualization to
+off. No configuration change or server update is required.
 Further references are in [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md).
 
 ## Build the PSP client

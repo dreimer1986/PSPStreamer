@@ -1673,11 +1673,17 @@ static int json_integer(const char *from, const char *key, int fallback);
 #include "milkdrop_preset.h"
 #include "music_preset_ui.h"
 
+/* Music-only session preferences, not GU/decoder state. Keep them across
+ * autoplay, shuffle, remote replacement, seek and manual track selection.
+ * Video uses its own presentation state; application restart resets these. */
+static int music_saved_visual_preset;
+static int music_saved_fullscreen;
+
 static int play_audio(const char *media_id, const char *title) {
-    int audio_thread_id, paused = 0, fullscreen = 0, stopped_by_user = 0;
+    int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
-    int visual_preset = 0;
+    int visual_preset = music_saved_visual_preset;
     MdFileError preset_error;
     int preset_result;
     unsigned long long preset_notice_tick = ~0ULL;
@@ -1714,11 +1720,19 @@ static int play_audio(const char *media_id, const char *title) {
         lcd_music_reset();
         lcd_draw_music(title, 0);
     }
+    /* Recreate resources before audio workers start. A missing/broken custom
+     * file retains slot 4's normal diagnostic, never an active invalid effect.
+     * Allocation failure falls back locally without erasing the preference. */
+    if (visual_preset && (visual_preset != 4 || preset_result == MD_FILE_OK)) {
+        if (md_start()) music_visual_active = 1;
+        else visual_preset = 0;
+    }
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
         if (audio_thread_id >= 0) sceKernelDeleteThread(audio_thread_id);
         audio_running = 0;
+        md_stop(); music_visual_active = 0;
         music_ui_restore_priority(previous_ui_priority);
         return start_result;
     }
@@ -1796,6 +1810,7 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
             (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) {
             fullscreen = !fullscreen;
+            music_saved_fullscreen = fullscreen;
             lcd_music_reset(); tv_music_reset();
         }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
@@ -1807,6 +1822,7 @@ static int play_audio(const char *media_id, const char *title) {
             } else if (visual_preset || md_start()) {
                 visual_preset++; music_visual_active = 1;
             }
+            music_saved_visual_preset = visual_preset;
             preset_notice_tick = ~0ULL;
             lcd_music_reset(); tv_music_reset();
         }

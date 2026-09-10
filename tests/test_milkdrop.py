@@ -48,6 +48,25 @@ class MilkDropTests(unittest.TestCase):
         for forbidden in ("sceDisplaySet", "sceGuDispBuffer", "sceGuSwapBuffers", "sceAudio", "sceMpeg"):
             self.assertNotIn(forbidden, adapter)
 
+    def test_music_view_survives_track_replacement_without_retaining_gu(self):
+        source = (ROOT / "psp-client/main.c").read_text()
+        music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        self.assertIn("fullscreen = music_saved_fullscreen", music)
+        self.assertIn("visual_preset = music_saved_visual_preset", music)
+        self.assertIn("music_saved_fullscreen = fullscreen;", music)
+        self.assertIn("music_saved_visual_preset = visual_preset;", music)
+        self.assertIn("visual_preset != 4 || preset_result == MD_FILE_OK", music)
+        self.assertLess(music.index("md_load_preset("), music.index("if (md_start())"))
+        self.assertLess(music.index("if (md_start())"), music.index("sceKernelCreateThread("))
+        failure = music[music.index("if (start_result < 0)"):music.index("remote_result = music_remote_start()")]
+        self.assertIn("md_stop(); music_visual_active = 0;", failure)
+        teardown = music[music.index("music_remote_stop();"):]
+        self.assertIn("md_stop();", teardown)
+        self.assertIn("music_visual_active = 0;", teardown)
+        self.assertNotIn("music_saved_", teardown)
+        video = source[source.index("static int play_h264("):]
+        self.assertNotIn("music_saved_", video)
+
 
 if __name__ == "__main__":
     unittest.main()
