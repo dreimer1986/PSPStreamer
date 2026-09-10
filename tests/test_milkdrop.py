@@ -28,7 +28,8 @@ class MilkDropTests(unittest.TestCase):
                             "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary),str(ROOT / "psp-client/presets/branch-beat-demo.milk"),
                             str(ROOT / "psp-client/presets/init-orbit-demo.milk"),
-                            str(ROOT / "psp-client/presets/memory-pulse-demo.milk")],
+                            str(ROOT / "psp-client/presets/memory-pulse-demo.milk"),
+                            str(ROOT / "psp-client/presets/grid-twist-demo.milk")],
                            check=True, timeout=20)
 
     def test_opt_in_and_teardown(self):

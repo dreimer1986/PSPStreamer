@@ -36,6 +36,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * Audio ring below is new PSPStreamer code, NOT MilkDrop's waveform engine. */
 #include "milkdrop_warp.h"
 #include <math.h>
+#include <stddef.h>
 
 const MdPreset md_presets[3] = {
     {1.025f,  0.015f, 0.8f, 1.0f, 1.0f, 0.97f, 0, 0, .5f,.5f,1,1,1},
@@ -44,6 +45,9 @@ const MdPreset md_presets[3] = {
 };
 
 void md_warp_mesh(MdVertex *vertices, const MdPreset *p, float seconds) {
+    md_warp_mesh_varying(vertices,p,NULL,seconds);
+}
+void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset *points, float seconds) {
     MdVertex grid[(MD_GRID + 1) * (MD_GRID + 1)];
     float time = seconds * p->warp_speed, inv_scale = 1.0f / p->warp_scale;
     float f[4] = {11.68f + 4*cosf(time*1.413f + 10),
@@ -54,6 +58,10 @@ void md_warp_mesh(MdVertex *vertices, const MdPreset *p, float seconds) {
     unsigned int decay = (unsigned int)(p->decay * 255);
     int x, y, n = 0;
     for (y = 0; y <= MD_GRID; y++) for (x = 0; x <= MD_GRID; x++) {
+        if(points) {
+            p=&points[y*(MD_GRID+1)+x];
+            c=cosf(p->rotation); s=sinf(p->rotation);
+        }
         float px = 2.0f*x/MD_GRID - 1, py = 1 - 2.0f*y/MD_GRID;
         float zoom=p->zoom;
         if(p->zoomexp!=1) {

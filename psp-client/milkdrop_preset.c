@@ -141,15 +141,17 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(k<22) memcpy((char *)&next.decor.shapes[slot]+k*sizeof(float),&parsed,sizeof(parsed));
             shape_seen[slot]|=1U<<k; continue;
         }
-        if (!strncmp(key, "per_frame_", 10)) {
+        if (!strncmp(key, "per_frame_", 10) || !strncmp(key,"per_pixel_",10)) {
             char expected[32];
             int init=!strncmp(key,"per_frame_init_",15);
-            PmProgram *program=init?&next.init_program:&next.program;
-            snprintf(expected, sizeof(expected), init?"per_frame_init_%d":"per_frame_%d", program->lines+1);
+            int pixel=!strncmp(key,"per_pixel_",10);
+            PmProgram *program=pixel?&next.pixel_program:init?&next.init_program:&next.program;
+            snprintf(expected, sizeof(expected), pixel?"per_pixel_%d":init?"per_frame_init_%d":"per_frame_%d", program->lines+1);
             if (strcmp(key, expected)) {
                 result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;
             }
-            int compiled = pm_compile_symbols(program, value, number, &next.symbols);
+            int compiled = pixel?pm_compile_pixel(program,value,number):
+                pm_compile_symbols(program, value, number, &next.symbols);
             if (compiled != PM_OK) {
                 result = md_file_error(error, compiled == PM_UNSUPPORTED ?
                     MD_FILE_UNSUPPORTED : MD_FILE_INVALID, number, key); goto done;
@@ -186,7 +188,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     if(next.decor.wave_mod_alpha && next.decor.wave_mod_end<=next.decor.wave_mod_start)
         result=md_file_error(error,MD_FILE_INVALID,number,"wave alpha range");
     if (next.wave_mode==0) next.legacy=1;
-    if (!section || (!seen && !extra_seen && !next.program.count && !next.init_program.count &&
+    if (!section || (!seen && !extra_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
         !(shape_seen[0]|shape_seen[1]|shape_seen[2]|shape_seen[3]))) result = md_file_error(error, MD_FILE_INVALID, number, "empty");
 done:
     if (fclose(file) && result == MD_FILE_OK)
@@ -278,6 +280,40 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     *color = 0xff000000U | (unsigned int)(v[6]*255) |
         ((unsigned int)(v[7]*255)<<8) | ((unsigned int)(v[8]*255)<<16);
     memcpy(next.user,v+PM_USER_BASE,sizeof(next.user));
+    memcpy(next.frame_q,v+PM_Q_BASE,sizeof(next.frame_q));
     *state=next;
+    return MD_FILE_OK;
+}
+
+int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float seconds,
+                      const MdSignal *signal, const MdPresetState *state,
+                      MdPreset points[MD_GRID_POINTS], MdFileError *error) {
+    MdPreset next[MD_GRID_POINTS];
+    memset(error,0,sizeof(*error));
+    if(p->pixel_program.count<0 || p->pixel_program.count>PM_PIXEL_OPS)
+        return md_file_error(error,MD_FILE_INVALID,0,"pixel budget");
+    for(int y=0;y<=MD_GRID;y++) for(int x=0;x<=MD_GRID;x++) {
+        float v[PM_VALUES]={frame->zoom,frame->rotation,frame->warp,frame->warp_speed,
+            frame->warp_scale,frame->decay,0,0,0,seconds};
+        v[23]=frame->dx; v[24]=frame->dy; v[25]=frame->cx; v[26]=frame->cy;
+        v[27]=frame->sx; v[28]=frame->sy; v[29]=frame->zoomexp;
+        if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
+        memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
+        float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
+        v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
+        v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);
+        v[PM_COORD_BASE+3]=(px==0 && py==0)?0:atan2f(py,px);
+        int line=0;
+        if(!pm_execute(&p->pixel_program,v,&line))
+            return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");
+        const int ids[]={0,1,2,23,24,25,26,27,28,29};
+        const float lo[]={.1f,-.2f,-4,-1,-1,0,0,.25f,.25f,.5f};
+        const float hi[]={64,.2f,4,1,1,1,1,4,4,2};
+        for(int i=0;i<10;i++) if(!isfinite(v[ids[i]]) || v[ids[i]]<lo[i] || v[ids[i]]>hi[i])
+            return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
+        next[y*(MD_GRID+1)+x]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
+            v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
+    }
+    memcpy(points,next,sizeof(next));
     return MD_FILE_OK;
 }

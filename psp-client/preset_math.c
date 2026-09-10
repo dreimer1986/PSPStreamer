@@ -31,7 +31,7 @@ int pm_assignment_line(const PmProgram *program, int variable) {
             return program->code[i].line;
     return 0;
 }
-typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; } Parser;
+typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; int pixel; } Parser;
 static void space(Parser *p) { while (isspace((unsigned char)*p->p)) p->p++; }
 static int emit(Parser *p, int op, int arg, float value) {
     if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
@@ -71,8 +71,16 @@ static int builtin_variable(const char *s) {
     return -1;
 }
 static int variable(Parser *p,const char *s) {
+    if(p->pixel) {
+        static const char *coords[]={"x","y","rad","ang"};
+        for(int i=0;i<4;i++) if(!strcmp(s,coords[i])) return PM_COORD_BASE+i;
+    }
     int id=builtin_variable(s);
-    if(id>=0) return id;
+    if(id>=0) {
+        if(p->pixel && !(id<3 || id==5 || (id>=9 && id<=29) ||
+                        (id>=PM_Q_BASE && id<PM_USER_BASE))) goto unsupported;
+        return id;
+    }
     /* Do not silently turn unsupported engine inputs or misspelled q/t/reg
      * registers into user state. Built-in function names are reserved too. */
     static const char *reserved[]={"nan","inf","infinity","fps","frame","progress",
@@ -175,17 +183,14 @@ static int expression(Parser *p) {
         if (!term(p) || !emit(p,op,0,0)) return 0;
     }
 }
-int pm_compile(PmProgram *program, const char *source, int line) {
-    return pm_compile_symbols(program,source,line,NULL);
-}
-int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbols *symbols) {
+static int compile_context(PmProgram *program, const char *source, int line, PmSymbols *symbols, int pixel) {
     int before = program->count;
     PmSymbols saved;
     if(symbols) {
         if(symbols->count<0 || symbols->count>PM_USER_COUNT) return PM_INVALID;
         saved=*symbols;
     }
-    Parser p = {source,program,line,0,PM_INVALID,symbols};
+    Parser p = {source,program,line,0,PM_INVALID,symbols,pixel};
     space(&p);
     if (!*p.p || program->lines >= 16 || before < 0 || before > PM_MAX_OPS) return PM_INVALID;
     while (*p.p) {
@@ -194,6 +199,9 @@ int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbo
         id = variable(&p,text);
         if (id < 0) goto fail;
         if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
+        if(pixel && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
+            p.error=PM_UNSUPPORTED; goto fail;
+        }
         space(&p);
         if (*p.p++ != '=') goto fail;
         if (!expression(&p) || !emit(&p,STORE,id,0)) goto fail;
@@ -201,12 +209,22 @@ int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbo
         if (*p.p != ';') goto fail;
         p.p++; space(&p);
     }
+    if(pixel && program->count>PM_PIXEL_OPS) { p.error=PM_INVALID; goto fail; }
     program->lines++;
     return PM_OK;
 fail:
     program->count = before;
     if(symbols) *symbols=saved;
     return p.error;
+}
+int pm_compile(PmProgram *program, const char *source, int line) {
+    return compile_context(program,source,line,NULL,0);
+}
+int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbols *symbols) {
+    return compile_context(program,source,line,symbols,0);
+}
+int pm_compile_pixel(PmProgram *program, const char *source, int line) {
+    return compile_context(program,source,line,NULL,1);
 }
 int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line) {
     float local[PM_VALUES], stack[PM_STACK];
@@ -235,7 +253,7 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         }
         if (op->op == STORE) {
             if (used != 1 || op->arg < 0 || op->arg >= PM_VALUES ||
-                (op->arg >= 9 && op->arg < 23)) return 0;
+                (op->arg >= 9 && op->arg < 23) || op->arg>=PM_COORD_BASE) return 0;
             local[op->arg] = stack[--used]; continue;
         }
         if (!used) return 0;

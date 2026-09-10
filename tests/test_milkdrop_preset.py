@@ -52,11 +52,12 @@ class Preset(ctypes.Structure):
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
-                ("init_program",Program),("symbols",Symbols)]
+                ("init_program",Program),("symbols",Symbols),("pixel_program",Program)]
 
 
 class PresetState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16)]
+    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
+              ("frame_q",ctypes.c_float*32)]
 
 
 class Error(ctypes.Structure):
@@ -128,7 +129,7 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.decay, .97, places=5)
 
     def test_unsupported_fields_are_not_ignored(self):
-        for key in ("per_pixel_1", "warp_1", "comp_1",
+        for key in ("per_point_1", "warp_1", "comp_1",
                     "unknown", "wavecode_0_enabled"):
             result, _, error = self.parse(("[preset00]\nzoom=1\n" + key + "=0\n").encode())
             self.assertEqual(result, 3)
@@ -457,7 +458,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*103)(*([.5]*103)); before=bytes(values)
+                values=(ctypes.c_float*107)(*([.5]*107)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -606,6 +607,39 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(self.evaluate_state(preset,state,frame*.1,signal)[0],0)
             if frame%100==1: self.assertGreater(state.user[held_index],.7)
             if frame%100==99: self.assertLess(state.user[held_index],.00001)
+
+    def test_pixel_grid_coordinates_q_and_atomic_failure(self):
+        fn=self.library.md_eval_pixel_grid
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                     ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=q1=.1;\nper_pixel_1=dx=x*q1; dy=y*q1; rot=ang*.01;\n")
+        self.assertEqual(code,0)
+        state=PresetState()
+        result,frame,_=self.evaluate_state(preset,state,0)
+        self.assertEqual(result,0)
+        points=(Warp*81)(); error=Error()
+        self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,ctypes.byref(state),points,ctypes.byref(error)),0)
+        for y in range(9):
+            for x in range(9):
+                self.assertAlmostEqual(points[y*9+x].dx,x/8*.1,places=6)
+                self.assertAlmostEqual(points[y*9+x].dy,y/8*.1,places=6)
+        self.assertEqual(points[40].rotation,0)
+        # A late grid-point failure cannot partially replace a prepared grid.
+        code,preset,_=self.parse(b"[preset00]\nper_pixel_1=dx=.01/(1-x);\n")
+        self.assertEqual(code,0)
+        before=bytes(points)
+        self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,ctypes.byref(state),points,ctypes.byref(error)),2)
+        self.assertEqual(bytes(points),before)
+
+    def test_pixel_restrictions_and_demo(self):
+        for formula in ("x=0;","q1=1;","counter=1;","wave_r=1;","dx=counter;","dx=wave_r;"):
+            self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
+        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,10))
+        self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
+        self.assertEqual(self.parse(b"[preset00]\nper_pixel_2=dx=0;")[0],2)
+        code,preset,_=self.parse((ROOT / "psp-client/presets/grid-twist-demo.milk").read_bytes())
+        self.assertEqual(code,0)
+        self.assertLessEqual(preset.pixel_program.count,64)
 
     def test_feature_demos_and_dynamic_fields(self):
         for name in ("receiver-fx-demo.milk","echo-dots-demo.milk"):

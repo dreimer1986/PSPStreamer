@@ -25,6 +25,7 @@ static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
 static MdPresetState md_preset_state;
+static MdPreset md_pixel_points[MD_GRID_POINTS];
 static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
 /* Geometry helpers retain their logical 256-square coordinate system. Only
@@ -110,9 +111,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         }
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
+        MdPresetState candidate=md_preset_state;
         if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
-                                  &md_preset_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
+                                  &candidate, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
+        if(md_custom_preset.pixel_program.count &&
+           md_eval_pixel_grid(&md_custom_preset,&evaluated,seconds,&md_signal_state.signal,
+                             &candidate,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
+        md_preset_state=candidate;
     } else md_signal_active = 0;
     int circular=preset==3 && md_custom_preset.wave_mode==0;
     md_wave_capture=circular;
@@ -136,7 +142,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
-    md_warp_mesh(mesh, preset == 3 ? &evaluated : &md_presets[preset], seconds);
+    md_warp_mesh_varying(mesh, preset == 3 ? &evaluated : &md_presets[preset],
+        preset==3 && md_custom_preset.pixel_program.count?md_pixel_points:NULL, seconds);
     md_expand(mesh, MD_MESH_VERTICES, 1);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);

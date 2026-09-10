@@ -1,0 +1,13 @@
+; Original PSPStreamer demo: local rotation changes across the warp grid.
+[preset00]
+nWaveMode=0
+zoom=1.025
+fDecay=0.97
+fGammaAdj=1.2
+fWaveAlpha=0.8
+bWaveThick=1
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=0.15
+per_frame_1=q1=.04+.04*psp_low; wave_r=.3+.6*psp_low; wave_g=.5; wave_b=.9;
+per_pixel_1=rot=rot+q1*sin(ang+time*.5)*min(1,rad);
+per_pixel_2=dx=dx+.008*sin(y*6.283185+time); dy=dy+.008*cos(x*6.283185+time);
