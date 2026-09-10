@@ -7,16 +7,20 @@
 #include <math.h>
 #include <errno.h>
 enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT,
-       FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL };
+       FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL,
+       TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP };
 static int binary(int op) {
-    return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL);
+    return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL) ||
+           op==BAND || op==BOR || op==SIGMOID;
 }
 static int function(const char *name) {
     static const struct {const char *name; int op;} list[]={
         {"sin",SIN},{"cos",COS},{"abs",ABS},{"min",MIN},{"max",MAX},{"sqrt",SQRT},
         {"floor",FLOOR},{"ceil",CEIL},{"atan",ATAN},{"exp",EXP},{"log",LOG},
         {"log10",LOG10},{"sqr",SQR},{"sign",SIGN},{"pow",POW},{"atan2",ATAN2},
-        {"above",ABOVE},{"below",BELOW},{"equal",EQUAL}};
+        {"above",ABOVE},{"below",BELOW},{"equal",EQUAL},
+        {"tan",TAN},{"asin",ASIN},{"acos",ACOS},{"bnot",BNOT},
+        {"band",BAND},{"bor",BOR},{"sigmoid",SIGMOID},{"if",IF}};
     for(unsigned int i=0;i<sizeof(list)/sizeof(list[0]);i++)
         if(!strcmp(name,list[i].name)) return list[i].op;
     return -1;
@@ -58,6 +62,29 @@ static int variable(const char *s) {
     return -1;
 }
 static int expression(Parser *p);
+/* Forward-only branches: exactly one expression is evaluated at runtime.
+ * Both branches still compile and count against the same instruction budget. */
+static int conditional(Parser *p) {
+    p->p++; /* '(' */
+    if (!expression(p)) return 0;
+    space(p);
+    if (*p->p!=',') return 0;
+    p->p++;
+    int otherwise=p->code->count;
+    if (!emit(p,JZ,0,0) || !expression(p)) return 0;
+    space(p);
+    if (*p->p!=',') return 0;
+    p->p++;
+    int finish=p->code->count;
+    if (!emit(p,JUMP,0,0)) return 0;
+    p->code->code[otherwise].arg=p->code->count;
+    if (!expression(p)) return 0;
+    space(p);
+    if (*p->p!=')') return 0;
+    p->p++;
+    p->code->code[finish].arg=p->code->count;
+    return 1;
+}
 static int unary(Parser *p) {
     char text[32], *end;
     int ok = 0;
@@ -80,6 +107,7 @@ static int unary(Parser *p) {
         if (*p->p == '(') {
             int op = function(text);
             if (op < 0) p->error = PM_UNSUPPORTED;
+            else if (op == IF) ok = conditional(p);
             else {
                 p->p++; ok = expression(p); space(p);
                 if (ok && binary(op)) {
@@ -148,6 +176,15 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         const PmOp *op = &program->code[i];
         float a, b = 0, result = 0;
         *error_line = op->line;
+        if (op->op==JZ || op->op==JUMP) {
+            /* Corrupt bytecode must not introduce loops or escape the program. */
+            if (op->arg<=i || op->arg>program->count) return 0;
+            if (op->op==JUMP) { i=op->arg-1; continue; }
+            if (!used) return 0;
+            a=stack[--used];
+            if (fabsf(a)<.00001f) i=op->arg-1;
+            continue;
+        }
         if (op->op == PUSH || op->op == LOAD) {
             if (used >= PM_STACK) return 0;
             if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
@@ -182,6 +219,22 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             case POW: result=powf(a,b); break; case ATAN2: result=atan2f(a,b); break;
             case ABOVE: result=a>b; break; case BELOW: result=a<b; break;
             case EQUAL: result=fabsf(a-b)<.00001f; break;
+            case TAN: result=tanf(a); break;
+            case ASIN: if(fabsf(a)>1) return 0; result=asinf(a); break;
+            case ACOS: if(fabsf(a)>1) return 0; result=acosf(a); break;
+            case BNOT: result=fabsf(a)<.00001f; break;
+            /* EEL's named band/bor functions evaluate both arguments, and use
+             * > epsilon (unlike if/bnot's < epsilon false test). */
+            case BAND: result=fabsf(a)>.00001f && fabsf(b)>.00001f; break;
+            case BOR: result=fabsf(a)>.00001f || fabsf(b)>.00001f; break;
+            case SIGMOID: {
+                /* Algebraically 1/(1+exp(-a*b)); avoid exponential overflow.
+                 * Overflow of the finite-input product correctly saturates. */
+                float z=a*b;
+                if(z>=0) result=1/(1+expf(-z));
+                else { float e=expf(z); result=e/(1+e); }
+                break;
+            }
             default: return 0;
         }
         if (!isfinite(result)) return 0;

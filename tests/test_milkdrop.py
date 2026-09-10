@@ -26,7 +26,8 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/milkdrop_wave.c"),
                             str(ROOT / "psp-client/milkdrop_decor.c"),
                             "-lm", "-o", str(binary)], check=True)
-            subprocess.run([str(binary)], check=True, timeout=20)
+            subprocess.run([str(binary),str(ROOT / "psp-client/presets/branch-beat-demo.milk")],
+                           check=True, timeout=20)
 
     def test_opt_in_and_teardown(self):
         source = (ROOT / "psp-client/main.c").read_text()

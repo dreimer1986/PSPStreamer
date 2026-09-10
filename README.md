@@ -197,6 +197,9 @@ The [extended fixed-function subset](docs/MILKDROP_FIXED_FUNCTION.md) adds
 animated transform centers/stretch, wave styling, echo, borders and four
 static custom shapes (including feedback-textured shapes). Try
 `receiver-fx-demo.milk` and `echo-dots-demo.milk` as the active preset.
+The [conditional formula subset](docs/MILKDROP_CONDITIONS.md) adds lazy `if`,
+Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
+music-reactive changes of wave style, color, zoom and echo intensity.
 **Cross + Triangle** toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,

@@ -187,7 +187,7 @@ class PresetTests(unittest.TestCase):
 
     def test_formula_rejections_and_budgets(self):
         for source in ("rot=1", "rot=;", "rot=(1;", "0", "rot=nan;",
-                       "time=0;", "rot=unknown;", "rot=tan(1);", "rot=1e99;",
+                       "time=0;", "rot=unknown;", "rot=unknown_func(1);", "rot=1e99;",
                        "rot=" + "("*18 + "0" + ")"*18 + ";",
                        "rot=" + "+".join(["0"]*70) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
@@ -390,6 +390,83 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
         self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
+
+    def test_conditional_lazy_nested_and_boolean_math(self):
+        cases = (("if(1,2,1/0)",2), ("if(0,sqrt(-1),3)",3),
+            ("if(-1,2,3)",2), ("if(.000001,2,3)",3),
+            ("if(.00001,2,3)",2), ("bnot(.00001)",0),
+            ("band(.00001,1)",0), ("bor(.00001,0)",0),
+            ("bnot(-.000001)",1), ("band(-2,3)",1), ("bor(0,-2)",1),
+            ("1+if(0,0,if(1,2,log(0)))*.5",2),
+            ("if(if(0,1,0),2,3)",3), ("if(1,if(0,1,2),3)",2),
+            ("tan(.2)",math.tan(.2)), ("asin(.5)",math.asin(.5)),
+            ("acos(.5)",math.acos(.5)), ("sigmoid(0,2)",.5),
+            ("sigmoid(2,3)",1/(1+math.exp(-6))),
+            ("sigmoid(-2,3)",1/(1+math.exp(6))),
+            ("sigmoid(3e38,3e38)",1), ("sigmoid(-3e38,3e38)",0))
+        for expression, expected in cases:
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())
+            self.assertEqual(code,0,expression)
+            result,warp,_,_=self.evaluate(preset,0)
+            self.assertEqual(result,0,expression)
+            self.assertAlmostEqual(warp.warp,expected,places=5)
+        # Named band/bor are deliberately eager, unlike if().
+        for expression in ("if(1,1/0,2)","if(0,2,log(0))",
+                           "band(0,1/0)","bor(1,1/0)","asin(2)","acos(-2)"):
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())
+            self.assertEqual(code,0)
+            self.assertEqual(self.evaluate(preset,0)[0],2,expression)
+
+    def test_conditional_syntax_budgets_and_bytecode_safety(self):
+        for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
+                           "if(1,,3)","if(1,2,)","if(1,2,unknown)",
+                           "if(1,2,rand(1))","if(1,2,warp=3)"):
+            self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
+        expression="0"
+        for _ in range(18): expression=f"if(0,0,{expression})"
+        self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
+        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,17))
+        self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
+        # A failed append never changes the previously compiled instructions.
+        program=Program()
+        compile_fn=self.library.pm_compile
+        compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int]
+        self.assertEqual(compile_fn(ctypes.byref(program),b"warp=1;",2),0)
+        previous=b"".join(bytes(op) for op in program.code[:program.count])
+        count=program.count
+        self.assertNotEqual(compile_fn(ctypes.byref(program),b"warp=if(1,2,);",3),0)
+        self.assertEqual(program.count,count)
+        self.assertEqual(program.lines,1)
+        self.assertEqual(b"".join(bytes(op) for op in program.code[:program.count]),previous)
+        # Corrupt forward-jump destinations must fail atomically, never loop.
+        self.assertEqual(compile_fn(ctypes.byref(program),b"warp=if(0,2,3);",3),0)
+        branch_index=count+1  # PUSH condition, then JZ.
+        execute=self.library.pm_execute
+        execute.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int)]
+        for index in (branch_index,branch_index+2):
+            for destination in (-1,index,program.count+1):
+                damaged=Program.from_buffer_copy(program)
+                damaged.code[count].value=1  # also exercise unconditional jump
+                damaged.code[index].arg=destination
+                values=(ctypes.c_float*55)(*([.5]*55)); before=bytes(values)
+                error=ctypes.c_int()
+                self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
+                self.assertEqual(bytes(values),before)
+
+    def test_conditional_music_branches_long_run(self):
+        code,preset,_=self.parse((ROOT / "psp-client/presets/branch-beat-demo.milk").read_bytes())
+        self.assertEqual(code,0)
+        for frame in range(18000):
+            level=(frame%101)/100
+            signal=Signal((ctypes.c_float*13)(*([level]*7+[level*4]*6)))
+            self.assertEqual(self.evaluate(preset,frame*.1,signal)[0],0)
+        code,preset,_=self.parse(b"[preset00]\nper_frame_1=warp=if(above(psp_low,0),1/psp_low,0);\n")
+        self.assertEqual(code,0)
+        for level,expected in ((0,0),(.5,2),(0,0),(1,1)):
+            signal=Signal((ctypes.c_float*13)(level))
+            result,warp,_,_=self.evaluate(preset,0,signal)
+            self.assertEqual(result,0)
+            self.assertEqual(warp.warp,expected)
 
     def test_feature_demos_and_dynamic_fields(self):
         for name in ("receiver-fx-demo.milk","echo-dots-demo.milk"):

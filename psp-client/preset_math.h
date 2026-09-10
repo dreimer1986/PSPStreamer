@@ -12,7 +12,9 @@ int pm_compile(PmProgram *program, const char *source, int line);
  * Then bass,mid,treb,bass_att,mid_att,treb_att (read-only relative inputs).
  * Indices 23..29: translation, center, stretch, zoom exponent.
  * Indices 30..54: MdDecor scalar prefix (wave/echo/border/gamma/alpha outputs).
- * Execution commits all values only on success. No heap/recursion at runtime. */
+ * Execution commits all values only on success. if() uses bounded forward-only
+ * branches; both paths consume compile budget, only the selected path executes.
+ * No heap/recursion at runtime. */
 int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line);
 int pm_assignment_line(const PmProgram *program, int variable);
 #endif

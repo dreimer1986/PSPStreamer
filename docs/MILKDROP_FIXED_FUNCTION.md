@@ -94,8 +94,9 @@ These supplement `sin/cos/abs/sqrt/min/max` and arithmetic.
 Comparisons produce 0 or 1; `equal` uses absolute difference below 0.00001.
 `sign` returns −1/0/1. Invalid domains, division by zero and nonfinite results
 remain errors. This single-precision implementation does not claim full EEL
-compatibility. There is no `if` short-circuiting, arbitrary assignment target,
-looping or persistent state yet.
+compatibility. [Conditional formulas](MILKDROP_CONDITIONS.md) now add lazy
+`if`, `band/bor/bnot`, `tan/asin/acos` and `sigmoid`. Arbitrary assignment
+targets, looping and persistent state remain unsupported.
 
 ## Resource and test boundary
 

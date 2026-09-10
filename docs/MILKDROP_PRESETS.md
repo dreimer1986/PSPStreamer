@@ -82,7 +82,10 @@ Note that formula `decay` corresponds to static `fDecay`.
 Warp speed/scale remain static fields. `time` is read-only elapsed seconds
 since visualization activation, not the audio position; it continues while
 music is paused. Stop/restart resets it. No `fps`, `frame`,
-persistent variables, conditions, loops or per-pixel programs are accepted.
+persistent variables, loops or per-pixel programs are accepted.
+Conditional expressions and additional math are documented in
+[conditional formulas](MILKDROP_CONDITIONS.md) and the
+[extended subset](MILKDROP_FIXED_FUNCTION.md).
 
 Inputs reset from static values before each rendered frame; assignments in
 that frame execute sequentially. The program is compiled once before music

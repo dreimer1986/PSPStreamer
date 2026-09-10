@@ -53,6 +53,8 @@ and `ns-eel2/nseel-compiler.c`.
    Reuse analysis snapshots; never retain PCM
    ownership or move expression evaluation into the decoder/DAC threads.
 
-Shader code, arbitrary EEL, per-pixel expressions and custom waves/shapes
+Forward-only conditional expressions and additional Boolean/math functions
+are documented in [conditional formulas](MILKDROP_CONDITIONS.md).
+Shader code, arbitrary EEL, per-pixel expressions and custom wave/shape programs
 remain separate later milestones. The supported-subset table must expand
 only alongside implementation and tests.
