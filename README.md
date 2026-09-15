@@ -283,6 +283,12 @@ Custom PCM waves support separate init/frame/point formulas, stereo inputs,
 per-point colors, dots, thick lines and additive drawing. Try
 `custom-wave-demo.milk` and `custom-wave-fft-demo.milk`; see
 [custom-wave controls and compatibility limits](docs/MILKDROP_CUSTOM_WAVES.md).
+Custom waves also accept stereo FFT data (`bSpectrum=1`). Line waves now use
+MilkDrop-style spline subdivision; dots retain their original points. The
+fixed-function image effects (brighten, darken, solarize, invert and darken
+center) are available as static fields and frame formulas. See the
+[spectrum, smoothing and image-effects batch](docs/MILKDROP_SPECTRUM_EFFECTS.md)
+for test presets, memory changes and the remaining compatibility gaps.
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.

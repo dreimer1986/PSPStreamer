@@ -5,10 +5,10 @@ They use the original keys `wave_0_init1`, `wave_0_per_frame1` and
 `wave_0_per_point1` (slots 0–3, consecutive lines starting at 1).
 
 Static `wavecode_0_*` fields: `enabled`, `samples` (2–64), `sep` (0–128),
-`bSpectrum` (currently only 0), `bUseDots`, `bDrawThick`, `bAdditive`,
+`bSpectrum` (0: PCM, 1: stereo FFT), `bUseDots`, `bDrawThick`, `bAdditive`,
 `scaling` (0–4), `smoothing` (0–1), and `r/g/b/a` (0–1). Integer fields must be
-integers. Disabled waves do not execute. Unsupported spectrum requests fail
-explicitly rather than being interpreted as PCM.
+integers. Disabled waves do not execute. Spectrum waves receive each channel's
+own magnitude bins, not a PCM substitute or duplicated mono spectrum.
 
 Frame formulas set `samples`, `r/g/b/a` and local variables. Point formulas set
 `x/y` and `r/g/b/a`, with read-only `sample` (0–1), `value1` (left PCM), `value2`
@@ -28,9 +28,10 @@ This lifetime and two-pass audio smoothing follow MilkDrop 2's
 `LoadCustomWavePerFrameEvallibVars`/`DrawCustomWaves`, inspected at revision
 `b5e4136c2f050eafa10aa199bb72c8e5c12c9320`. The PSP adapter uses normalized
 signed 16-bit PCM and strict output bounds, not desktop amplitude calibration
-or wrapping. It selects a centered PCM window with channel separation, smooths
-forward and backward, and draws a line strip or points. Desktop spline
-subdivision, custom spectrum waves and 512-point waves are not implemented.
+or wrapping. It selects a centered PCM window with channel separation (or FFT
+bins), smooths forward and backward, and draws a line strip or points. Line
+geometry uses MilkDrop's spline subdivision with bounded overshoot; dots do not.
+512-point formula waves remain unsupported.
 
 ## Resource limits
 
@@ -49,9 +50,10 @@ snapshot. It adds copying only when custom PCM waves coexist with built-in mode
 8; it does not run an FFT or formulas in the producer. Other capture paths remain
 unchanged. Silence clears cached audio samples.
 
-The existing 128 KiB GU list and feedback/display allocations remain unchanged.
-The maximum layer test, including all four thick waves, uses 112,656 bytes of
-vertex storage, leaving 18,416 bytes for command words and alignment. Host tests
+The subsequent spectrum/effects batch increases the GU list to 192 KiB and
+adds a small EDRAM effect tile. The maximum combined layer test now uses
+138,656 bytes of vertex storage, leaving 57,952 bytes for commands/alignment.
+See [updated memory and test notes](MILKDROP_SPECTRUM_EFFECTS.md). Host tests
 do not guarantee timing on hardware; the renderer retains its adaptive throttle.
 There are no changes to DAC timing, video sync, network timeouts or the server.
 
@@ -68,7 +70,8 @@ During music open the Circle browser and select them. Check LCD/TV, embedded
 and fullscreen, sustained playback, pauses, track and preset changes, and return
 to video. Listen especially for crackling. No server update is necessary.
 
-Remaining work includes custom spectrum waves, larger/spline-smoothed waves,
-shape instances, full NS-EEL semantics and additional engine inputs, image
-adjustment passes, automatic preset changes and blending. Shaders and external
+Remaining work includes larger formula waves,
+shape instances, full NS-EEL semantics and additional engine inputs,
+automatic preset changes and blending. Image effects are described in the
+[later batch](MILKDROP_SPECTRUM_EFFECTS.md). Shaders and external
 textures remain deferred. This is not arbitrary MilkDrop 2 preset compatibility.

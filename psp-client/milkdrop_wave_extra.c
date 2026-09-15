@@ -7,6 +7,19 @@
 /* UI-thread-only scratch, never shared with the PCM producer. */
 static float real_part[1024],imag_part[1024],window[1024];
 static int fft_ready;
+/* MilkDrop SmoothWave coefficients. Preserve endpoints and input colors;
+ * clamp interpolation overshoot to the valid feedback rectangle. */
+int md_wave_smooth(MdVertex *out,const MdVertex *in,int count) {
+    if(count<2 || count>64) return 0;
+    for(int i=0;i<count-1;i++) {
+        int below=i?i-1:0,above=i+2<count?i+2:count-1;
+        out[2*i]=in[i]; out[2*i+1]=in[i];
+        float x=(-.15f*in[below].x+1.15f*in[i].x+1.15f*in[i+1].x-.15f*in[above].x)*.5f;
+        float y=(-.15f*in[below].y+1.15f*in[i].y+1.15f*in[i+1].y-.15f*in[above].y)*.5f;
+        out[2*i+1].x=fminf(256,fmaxf(0,x)); out[2*i+1].y=fminf(256,fmaxf(0,y));
+    }
+    out[2*count-2]=in[count-1]; return 2*count-1;
+}
 void md_wave_spectrum(const short *samples,float bins[512]) {
     if(!fft_ready) {
         for(int i=0;i<1024;i++) window[i]=.5f-.5f*cosf(6.283185307f*i/1023);

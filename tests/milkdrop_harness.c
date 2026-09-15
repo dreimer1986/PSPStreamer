@@ -11,7 +11,10 @@ enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
        GU_TEXTURE_2D, GU_PSM_8888, GU_TFX_MODULATE, GU_TCC_RGBA, GU_LINEAR,
-       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES };
+       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES, GU_NEAREST, GU_OTHER_COLOR, GU_ONE_MINUS_OTHER_COLOR };
+static int effect_texture,filter_src,filter_dst,filter_fix;
+static float filter_values[8],filter_source;
+static int copy_tile;
 static int target_bpp, composition_width, target_changes, texture_offset;
 static int raw_target, raw_source;
 static int gu_live, starts, syncs, target_offset, target_width, target_height, stride;
@@ -38,6 +41,7 @@ static int sceGuStart(int mode, void *list) {
     if(fail_start) return -1;
     assert(gu_live && mode==GU_DIRECT); starts++; list_base=list; list_used=0;
     covered_width=composition_width=target_changes=0;
+    for(int i=0;i<8;i++) filter_values[i]=.25f;
     return 0;
 }
 static void sceGuSync(int a,int b) { assert(a==GU_SYNC_FINISH && b==GU_SYNC_WHAT_DONE); syncs++; }
@@ -65,14 +69,18 @@ static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b)
     assert(op==GU_ADD);
     assert((src==GU_SRC_ALPHA && dst==GU_ONE_MINUS_SRC_ALPHA && !a && !b) ||
            (src==GU_SRC_ALPHA && dst==GU_FIX && !a && b==0xffffff) ||
-           (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff));
+           (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff) ||
+           (src==GU_OTHER_COLOR && dst==GU_FIX && !a && !b) ||
+           (src==GU_ONE_MINUS_OTHER_COLOR && (dst==GU_FIX || dst==GU_ONE_MINUS_OTHER_COLOR)));
+    filter_src=src; filter_dst=dst;filter_fix=b;
 }
 static void sceGuEnable(int what) { (void)what; }
 static void sceGuTexMode(int p,int a,int b,int c) { assert((p==GU_PSM_8888 || p==GU_PSM_5650) && !a && !b && !c); }
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
     uintptr_t offset=(uintptr_t)texture-0x04000000;
-    assert(!level && w==512 && h==256 && s==512);
-    assert(offset==1474560 || offset==1736704 || offset==557056 || offset==1081344);
+    assert(!level && (w==512 || w==64) && h==256 && s==w);
+    effect_texture=w==64;
+    assert(offset==1474560 || offset==1736704 || offset==557056 || offset==1081344 || offset==1998848 || offset==1605632);
     assert(offset!=(uintptr_t)target_offset);
     texture_offset=(int)offset;
 }
@@ -87,11 +95,21 @@ static void sceGuTexScale(float a,float b) { (void)a; (void)b; }
 static void sceGuTexOffset(float a,float b) { (void)a; (void)b; }
 static void sceGuTexFlush(void) {}
 static void sceGuTexSync(void) {}
+static void sceGuCopyImage(int format,int sx,int sy,int w,int h,int stride,const void *source,
+                          int dx,int dy,int ds,void *dest) {
+    uintptr_t src=(uintptr_t)source-0x04000000,dst=(uintptr_t)dest-0x04000000;
+    assert(format==GU_PSM_8888 || format==GU_PSM_5650);
+    assert(!sy && !dx && !dy && w==64 && h==256 && stride==512 && ds==64 && sx>=0 && sx<=448);
+    assert(src==(uintptr_t)target_offset && src==(uintptr_t)raw_source && target_changes==2);
+    assert(dst==1998848 || dst==1605632);
+    assert(dst+64*256*(format==GU_PSM_8888?4:2)<=2097152);
+    copy_tile=sx/64; filter_source=filter_values[copy_tile];
+}
 static void *sceGuGetMemory(int bytes) {
     void *result=list_base+list_used;
     list_used+=(bytes+15)&~15;
     if(list_used>list_peak) list_peak=list_used;
-    assert(list_used<116000); /* reserve at least 15 KiB for command words */
+    assert(list_used<170000); /* reserve at least 26 KiB for command words */
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
@@ -113,8 +131,8 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(type==GU_LINES) { assert(count<=384 && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==64 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
-        if(count<=33) {
+        assert(count==64 || count==127 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
+        if(count<=33 && count!=16 && count!=31) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
             for(int i=0;i<count;i++) {
@@ -130,6 +148,14 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     else {
         assert(type==GU_SPRITES && count==2); sprite_calls++;
         if(target_offset) {
+            if(effect_texture && target_changes==2) {
+                float d=filter_values[copy_tile],s=filter_source;
+                if(filter_src==GU_ONE_MINUS_OTHER_COLOR && filter_dst==GU_FIX && !filter_fix) s=1; /* invert, untextured */
+                float sf=filter_src==GU_OTHER_COLOR?d:1-d;
+                float df=filter_dst==GU_ONE_MINUS_OTHER_COLOR?1-s:filter_fix?1:0;
+                filter_values[copy_tile]=s*sf+d*df;
+                return;
+            }
             if(target_changes==2) {
                 assert(texture_offset!=target_offset);
                 assert(target_offset==raw_source && texture_offset==raw_target);
@@ -163,7 +189,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==19);
+    assert(argc==22);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -323,6 +349,7 @@ int main(int argc,char **argv) {
         md_stop(); assert(!md_wave_capture);
     }
     /* Maximum static layer combination: stays within one fixed GU list. */
+    for(int i=0;i<5;i++) md_custom_preset.effects[i]=1;
     for(int i=0;i<MD_CUSTOM_WAVES;i++) md_custom_preset.waves[i]=(MdCustomWave){.enabled=1,.samples=64,.thick=1,.scaling=.1f,.r=1,.g=1,.b=1,.a=1};
     expected_ring_color=0; expected_passes=8;
     md_custom_preset.gamma=4;
@@ -349,6 +376,12 @@ int main(int argc,char **argv) {
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
+            float reference=.25f;
+            if(md_preset_state.effects[1]) reference=1-(1-reference)*(1-reference);
+            if(md_preset_state.effects[2]) reference*=reference;
+            if(md_preset_state.effects[3]) reference=2*reference*(1-reference);
+            if(md_preset_state.effects[4]) reference=1-reference;
+            for(int i=0;i<8;i++) assert(fabsf(filter_values[i]-reference)<.00001f);
         }
         md_stop();
     }
@@ -381,6 +414,21 @@ int main(int argc,char **argv) {
                 assert(md_wave_capture==2 && md_custom_geometry[0].count==64 && md_custom_geometry[1].count==64);
                 for(int i=0;i<1152;i++) pcm[i]=(short)(sin(i*.05)*20000);
                 visualization_pcm_publish(pcm,576);
+            }
+            if(fixture==19 || fixture==20) {
+                short pcm[2048];
+                assert(md_wave_capture==(fixture==19?5:2));
+                for(int i=0;i<1024;i++) {pcm[2*i]=(short)(sin(i*.19634954)*20000);pcm[2*i+1]=(short)(sin(i*.39269908)*18000);}
+                visualization_pcm_publish(pcm,1024);
+                if(fixture==19 && frame) {assert(md_bins_left[32]>.5f);assert(md_bins_right[64]>.5f);}
+            }
+            if(fixture==21) {
+                float reference=.25f;
+                if(md_preset_state.effects[1]) reference=1-(1-reference)*(1-reference);
+                if(md_preset_state.effects[2]) reference*=reference;
+                if(md_preset_state.effects[3]) reference=2*reference*(1-reference);
+                if(md_preset_state.effects[4]) reference=1-reference;
+                for(int i=0;i<8;i++) assert(fabsf(filter_values[i]-reference)<.00001f);
             }
             if(fixture==2) assert(fabsf(md_preset_state.q[0]-.7f)<.00001f);
             if(md_custom_preset.wave_mode==4 || md_custom_preset.wave_mode==1) {
@@ -419,7 +467,7 @@ int main(int argc,char **argv) {
     md_stop();
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
-    printf("Visualization maximum vertex storage: %zu / 131072 bytes\n",list_peak);
+    printf("Visualization maximum vertex storage: %zu / 196608 bytes\n",list_peak);
     assert(thick_outline_draws>0);
     munmap(vram,edram_size);
     return 0;

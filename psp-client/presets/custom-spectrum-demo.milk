@@ -1,0 +1,23 @@
+[preset00]
+nWaveMode=0
+fWaveAlpha=0
+fDecay=.94
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wavecode_0_enabled=1
+wavecode_0_bSpectrum=1
+wavecode_0_samples=64
+wavecode_0_scaling=2
+wavecode_0_smoothing=.15
+wavecode_0_bDrawThick=1
+wave_0_per_frame1=r=1; g=.6; b=.1;
+wave_0_per_point1=x=.05+.9*sample; y=.42-.3*min(1,value1);
+wavecode_1_enabled=1
+wavecode_1_bSpectrum=1
+wavecode_1_samples=64
+wavecode_1_scaling=2
+wavecode_1_smoothing=.15
+wavecode_1_bDrawThick=1
+wave_1_per_frame1=r=.1; g=.5; b=1;
+wave_1_per_point1=x=.05+.9*sample; y=.85-.3*min(1,value2);

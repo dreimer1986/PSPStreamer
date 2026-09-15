@@ -6,7 +6,8 @@ enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16,
        PM_USER_COUNT = 16, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
        PM_META_BASE = PM_COORD_BASE + 4, PM_DYNAMIC_BASE = PM_META_BASE + 2,
        PM_SHAPE_BASE = PM_DYNAMIC_BASE + 10, PM_T_BASE = PM_SHAPE_BASE + 23,
-       PM_WAVE_BASE = PM_T_BASE + 8, PM_VALUES = PM_WAVE_BASE + 4, PM_PIXEL_OPS = 64 };
+       PM_WAVE_BASE = PM_T_BASE + 8, PM_EFFECT_BASE = PM_WAVE_BASE + 4,
+       PM_VALUES = PM_EFFECT_BASE + 5, PM_PIXEL_OPS = 64 };
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
 typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;

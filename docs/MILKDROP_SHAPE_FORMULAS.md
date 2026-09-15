@@ -56,8 +56,9 @@ path for 600 frames per display/layout combination. PSP performance still
 requires the hardware test above.
 
 Custom PCM wave programs have since been added; see
-[custom waves](MILKDROP_CUSTOM_WAVES.md). Remaining major gaps include custom
-spectrum waves, shape instances,
-complete NS-EEL semantics, extra engine inputs, additional image passes and
+[custom waves](MILKDROP_CUSTOM_WAVES.md). Stereo spectrum and image effects are
+also available in the [later batch](MILKDROP_SPECTRUM_EFFECTS.md).
+Remaining major gaps include shape instances,
+complete NS-EEL semantics, extra engine inputs and
 automatic preset transitions/blending. Shaders and external textures remain
 deferred.

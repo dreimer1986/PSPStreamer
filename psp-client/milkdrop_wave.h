@@ -6,7 +6,7 @@
 enum { MD_WAVE_SAMPLES=576, MD_WAVE_VERTICES=241 };
 enum { MD_WAVE_MAX_VERTICES=480, MD_SPECTRUM_SAMPLES=1024 };
 /* 0: disabled, 1: right only, 2: coherent stereo, 3: 1024 left FFT samples,
- * 4: stereo PCM plus left FFT source in the same publication. */
+ * 4: stereo PCM plus left FFT source, 5: PCM plus both FFT channels. */
 extern volatile int md_wave_capture;
 /* One decoder producer, one lower-priority UI consumer; neither waits. */
 void visualization_pcm_publish(const short *stereo, int frames);
@@ -15,6 +15,9 @@ int md_wave_snapshot_stereo(short right[MD_WAVE_SAMPLES], short left[MD_WAVE_SAM
 int md_spectrum_snapshot(short left[MD_SPECTRUM_SAMPLES]);
 /* Kind 4 carries both stereo PCM and FFT source in one coherent snapshot. */
 int md_wave_snapshot_combined(short *right,short *left,short *spectrum);
+int md_wave_snapshot_full(short *right,short *left,short *spectrum,short *spectrum_right);
+void md_wave_spectrum(const short *samples,float bins[512]);
+int md_wave_smooth(MdVertex *out,const MdVertex *in,int count);
 int md_wave_extra(MdVertex *vertices,int mode,const short *right,const short *left,
                   const short *spectrum,float scale,float smoothing,float seconds,
                   float aspect,unsigned int color,const MdDecor *decor,int *split);

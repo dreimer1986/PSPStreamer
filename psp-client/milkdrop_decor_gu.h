@@ -1,6 +1,9 @@
 /* PSP-only fixed-function layers. Included after the GU adapter helpers. */
 #ifndef PSPSTREAMER_MILKDROP_DECOR_GU_H
 #define PSPSTREAMER_MILKDROP_DECOR_GU_H
+/* Filled below the existing helpers; declarations keep adapter ordering clear. */
+static void md_darken_center(float aspect);
+static void md_image_effects(const float effects[5]);
 static void md_blend(int additive) {
     sceGuEnable(GU_BLEND);
     sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,additive?GU_FIX:GU_ONE_MINUS_SRC_ALPHA,0,additive?0xffffff:0);
@@ -87,5 +90,37 @@ static void md_present(int left,int top,int width,int height,float gamma,
         }
     }
     sceGuDisable(GU_BLEND);
+}
+static void md_darken_center(float aspect) {
+    MdVertex *v=sceGuGetMemory(6*sizeof(*v));
+    const float x[]={0,-1,0,1,0,-1},y[]={0,0,-1,0,1,0};
+    for(int i=0;i<6;i++) v[i]=(MdVertex){.x=256+x[i]*12.8f*aspect,.y=128+y[i]*6.4f,.color=i?0:0x18000000};
+    sceGuDisable(GU_TEXTURE_2D); md_blend(0);
+    sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,6,NULL,v); sceGuDisable(GU_BLEND);
+}
+/* PSP lacks a destination-times-itself blend factor. Copy one 64x256 tile
+ * of the composed image into spare EDRAM, then use it as the source operand.
+ * Never sample the active render target or modify the raw feedback surface. */
+static void md_image_effects(const float effects[5]) {
+    for(int effect=1;effect<5;effect++) if(effects[effect]) {
+        for(int x=0;x<MD_WIDTH;x+=64) {
+            sceGuTexSync();
+            sceGuCopyImage(md_pixel_format,x,0,64,MD_HEIGHT,MD_WIDTH,md_texture(md_front),
+                           0,0,64,md_texture(2));
+            sceGuTexSync(); sceGuTexFlush();
+            sceGuTexImage(0,64,MD_HEIGHT,64,md_texture(2));
+            sceGuTexFilter(GU_NEAREST,GU_NEAREST);
+            sceGuEnable(GU_TEXTURE_2D); sceGuEnable(GU_BLEND);
+            if(effect==1) sceGuBlendFunc(GU_ADD,GU_ONE_MINUS_OTHER_COLOR,GU_FIX,0,0xffffff);
+            if(effect==2) sceGuBlendFunc(GU_ADD,GU_OTHER_COLOR,GU_FIX,0,0);
+            if(effect==3) sceGuBlendFunc(GU_ADD,GU_ONE_MINUS_OTHER_COLOR,GU_ONE_MINUS_OTHER_COLOR,0,0);
+            if(effect==4) {sceGuDisable(GU_TEXTURE_2D);sceGuBlendFunc(GU_ADD,GU_ONE_MINUS_OTHER_COLOR,GU_FIX,0,0);}
+            MdVertex *v=sceGuGetMemory(2*sizeof(*v));
+            v[0]=(MdVertex){0,0,0xffffffff,(float)x,0,0};
+            v[1]=(MdVertex){64,MD_HEIGHT,0xffffffff,(float)(x+64),MD_HEIGHT,0};
+            sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
+        }
+    }
+    sceGuDisable(GU_BLEND); sceGuTexFilter(GU_LINEAR,GU_LINEAR);
 }
 #endif

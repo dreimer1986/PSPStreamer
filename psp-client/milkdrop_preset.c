@@ -66,9 +66,9 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"bAdditiveWaves",0,1,&next.decor.wave_additive},
         {"bMaximizeWaveColor",0,1,&next.decor.wave_brighten},
         {"bWaveScaleAtLeft",0,0,NULL}, {"bWaveWaveformAtLeft",0,0,NULL},
-        {"bMaxContrast",0,0,NULL}, {"bRoundWarp",0,0,NULL}, {"bDarkenCenter",0,0,NULL},
-        {"bRedBlueStereo",0,0,NULL}, {"bBrighten",0,0,NULL}, {"bDarken",0,0,NULL},
-        {"bSolarize",0,0,NULL}, {"bInvert",0,0,NULL}, {"fShader",0,0,NULL},
+        {"bMaxContrast",0,0,NULL}, {"bRoundWarp",0,0,NULL}, {"bDarkenCenter",0,1,&next.effects[0]},
+        {"bRedBlueStereo",0,0,NULL}, {"bBrighten",0,1,&next.effects[1]}, {"bDarken",0,1,&next.effects[2]},
+        {"bSolarize",0,1,&next.effects[3]}, {"bInvert",0,1,&next.effects[4]}, {"fShader",0,0,NULL},
         {"fModWaveAlphaStart",0,4,&next.decor.wave_mod_start},
         {"fModWaveAlphaEnd",0,4,&next.decor.wave_mod_end},
         {"bModWaveAlphaByVolume",0,1,&next.decor.wave_mod_alpha},
@@ -130,7 +130,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             int k; for(k=0;k<13 && strcmp(key+11,names[k]);k++) {}
             if(k==13) {result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;}
             errno=0; parsed=strtof(value,&end);
-            float lo=k==1?2:0, hi=k==1?MD_CUSTOM_POINTS:k==2?128:k==3?0:k==7?4:1;
+            float lo=k==1?2:0, hi=k==1?MD_CUSTOM_POINTS:k==2?128:k==7?4:1;
             if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed) || (wave_seen[slot]&(1U<<k))) {result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;}
             if(parsed<lo || parsed>hi || (k<7 && parsed!=floorf(parsed))) {result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;}
             memcpy((char *)&next.waves[slot]+k*sizeof(float),&parsed,sizeof(parsed));
@@ -276,6 +276,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     v[53]=p->gamma; v[54]=p->wave_alpha;
     v[PM_DYNAMIC_BASE]=(float)p->wave_mode;
     memcpy(v+PM_DYNAMIC_BASE+1,p->motion,sizeof(p->motion));
+    memcpy(v+PM_EFFECT_BASE,p->effects,sizeof(p->effects));
     memset(error, 0, sizeof(*error));
     if (signal) for (int i = 0; i < MD_SIGNAL_COUNT; i++) {
         float value = signal->values[i];
@@ -342,6 +343,11 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,PM_DYNAMIC_BASE+1+i),"motion vectors");
     }
     next.wave_mode=(int)mode;
+    for(int i=0;i<5;i++) {
+        float value=v[PM_EFFECT_BASE+i];
+        if(!isfinite(value) || (value!=0 && value!=1)) return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,PM_EFFECT_BASE+i),"image effect");
+        next.effects[i]=value;
+    }
     memcpy(next.motion,v+PM_DYNAMIC_BASE+1,sizeof(next.motion));
     MdDecor evaluated=p->decor;
     for(int slot=0;slot<MD_SHAPES;slot++) {
@@ -391,7 +397,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
 }
 
 int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *signal,
-    const short *right,const short *left,MdPresetState *state,
+    const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error) {
     MdPresetState next=*state;
     MdWaveGeometry geometry[MD_CUSTOM_WAVES]={0};
@@ -399,6 +405,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
         const MdCustomWave *w=&p->waves[slot];
         if(!w->enabled) continue;
+        if(w->spectrum && (!spectrum_left || !spectrum_right)) return md_file_error(error,MD_FILE_INVALID,0,"spectrum unavailable");
         MdWaveState *ws=&next.waves[slot];
         float v[PM_VALUES]={0};
         v[9]=seconds;
@@ -424,7 +431,11 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         float a[MD_CUSTOM_POINTS],b[MD_CUSTOM_POINTS];
         float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*p->wave_scale/32768.0f;
         for(int i=0;i<count;i++) {
-            a[i]=left[offset+i-sep/2]*gain; b[i]=right[offset+i+sep/2]*gain;
+            if(w->spectrum) {
+                int bin=i*(512-sep)/count;
+                float sg=w->scaling*p->wave_scale;
+                a[i]=spectrum_left[bin]*sg; b[i]=spectrum_right[bin]*sg;
+            } else {a[i]=left[offset+i-sep/2]*gain; b[i]=right[offset+i+sep/2]*gain;}
             if(i) {a[i]=a[i]*(1-mix)+a[i-1]*mix; b[i]=b[i]*(1-mix)+b[i-1]*mix;}
         }
         for(int i=count-2;i>=0;i--) {a[i]=a[i]*(1-mix)+a[i+1]*mix; b[i]=b[i]*(1-mix)+b[i+1]*mix;}
@@ -466,6 +477,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         v[PM_META_BASE+1]=state->fps;
         v[PM_DYNAMIC_BASE]=(float)state->wave_mode;
         memcpy(v+PM_DYNAMIC_BASE+1,state->motion,sizeof(state->motion));
+        memcpy(v+PM_EFFECT_BASE,state->effects,sizeof(state->effects));
         float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
         v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);

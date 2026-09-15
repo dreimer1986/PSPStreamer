@@ -49,6 +49,8 @@ static int name(Parser *p, char text[32]) {
     text[n] = 0; return 1;
 }
 static int builtin_variable(const char *s) {
+    static const char *effects[]={"darken_center","brighten","darken","solarize","invert"};
+    for(int i=0;i<5;i++) if(!strcmp(s,effects[i])) return PM_EFFECT_BASE+i;
     if(!strcmp(s,"frame")) return PM_META_BASE;
     if(!strcmp(s,"fps")) return PM_META_BASE+1;
     static const char *dynamic[]={"wave_mode","mv_a","mv_r","mv_g","mv_b","mv_x","mv_y","mv_dx","mv_dy","mv_l"};
@@ -221,7 +223,7 @@ static int compile_context(PmProgram *program, const char *source, int line, PmS
         if (!name(&p,text)) goto fail;
         id = variable(&p,text);
         if (id < 0) goto fail;
-        if(id>PM_WAVE_BASE || (pixel==4 && id==PM_WAVE_BASE)) { p.error=PM_UNSUPPORTED; goto fail; }
+        if((id>PM_WAVE_BASE && id<PM_EFFECT_BASE) || (pixel==4 && id==PM_WAVE_BASE)) { p.error=PM_UNSUPPORTED; goto fail; }
         if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
         if (id >= PM_META_BASE && id < PM_DYNAMIC_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
         if(pixel==1 && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
@@ -283,7 +285,7 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             stack[used++] = result; continue;
         }
         if (op->op == STORE) {
-            if (used != 1 || op->arg < 0 || op->arg > PM_WAVE_BASE ||
+            if (used != 1 || op->arg < 0 || op->arg>=PM_VALUES || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
                 (op->arg >= 9 && op->arg < 23) ||
                 (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
             local[op->arg] = stack[--used]; continue;

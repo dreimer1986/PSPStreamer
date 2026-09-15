@@ -41,8 +41,9 @@ failure; actual PSP performance still requires hardware testing.
 Custom-shape init/frame programs have since been added; see
 [shape formulas](MILKDROP_SHAPE_FORMULAS.md). Custom PCM wave programs are also
 available in a bounded subset; see [custom waves](MILKDROP_CUSTOM_WAVES.md).
-Custom spectrum waves,
-full NS-EEL semantics, persistent per-grid contexts, additional engine inputs,
-image adjustment passes and automatic preset transitions/blending remain absent.
+Stereo spectrum and image effects are now available in the
+[later batch](MILKDROP_SPECTRUM_EFFECTS.md). Full NS-EEL semantics, persistent
+per-grid contexts, additional engine inputs and automatic preset
+transitions/blending remain absent.
 Shaders and external textures are still deferred. This is a bounded compatibility
 extension, not support for arbitrary MilkDrop 2 presets.

@@ -1,0 +1,16 @@
+[preset00]
+nWaveMode=0
+fWaveAlpha=.8
+fDecay=.94
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+shapecode_0_enabled=1
+shapecode_0_sides=6
+shapecode_0_rad=.3
+shapecode_0_r=.8
+shapecode_0_g=.3
+shapecode_0_b=.1
+shapecode_0_a=.7
+per_frame_1=phase=floor(time/4)-6*floor(time/24);
+per_frame_2=brighten=equal(phase,1); darken=equal(phase,2); solarize=equal(phase,3); invert=equal(phase,4); darken_center=equal(phase,5);
