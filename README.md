@@ -279,6 +279,10 @@ Try `wave-switch-demo.milk` in the preset browser; see
 Custom shapes now have separate bounded init/frame formula contexts, including
 `t1`–`t8`, current preset `q` inputs and persistent named variables. Try
 `shape-orbits-demo.milk`; see [shape formulas and limits](docs/MILKDROP_SHAPE_FORMULAS.md).
+Custom PCM waves support separate init/frame/point formulas, stereo inputs,
+per-point colors, dots, thick lines and additive drawing. Try
+`custom-wave-demo.milk` and `custom-wave-fft-demo.milk`; see
+[custom-wave controls and compatibility limits](docs/MILKDROP_CUSTOM_WAVES.md).
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.

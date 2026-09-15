@@ -18,12 +18,13 @@ void visualization_pcm_publish(const short *stereo, int frames) {
     wave_sequence++;
     __sync_synchronize();
     wave_published_kind=capture;
-    if(capture==3) {
+    if(capture==3 || capture==4) {
         for(int i=0;i<MD_SPECTRUM_SAMPLES;i++) spectrum_left[i]=i<frames?stereo[i*2]:0;
-    } else {
+    }
+    if(capture!=3) {
     for (int i=0;i<MD_WAVE_SAMPLES;i++) {
         wave_right[i] = i<frames ? stereo[i*2+1] : 0;
-        if(capture==2) wave_left[i] = i<frames ? stereo[i*2] : 0;
+        if(capture==2 || capture==4) wave_left[i] = i<frames ? stereo[i*2] : 0;
     }
     }
     __sync_synchronize();
@@ -31,6 +32,20 @@ void visualization_pcm_publish(const short *stereo, int frames) {
 }
 int md_wave_snapshot(short right[MD_WAVE_SAMPLES]) {
     return md_wave_snapshot_stereo(right,NULL);
+}
+int md_wave_snapshot_combined(short *right,short *left,short *spectrum) {
+    short r[MD_WAVE_SAMPLES],l[MD_WAVE_SAMPLES],s[MD_SPECTRUM_SAMPLES];
+    unsigned int before=wave_sequence;
+    if(!before || (before&1) || before==wave_consumed) return 0;
+    __sync_synchronize();
+    if(wave_published_kind!=4) return 0;
+    for(int i=0;i<MD_WAVE_SAMPLES;i++) {r[i]=wave_right[i];l[i]=wave_left[i];}
+    for(int i=0;i<MD_SPECTRUM_SAMPLES;i++) s[i]=spectrum_left[i];
+    __sync_synchronize();
+    if(before!=wave_sequence) return 0;
+    for(int i=0;i<MD_WAVE_SAMPLES;i++) {right[i]=r[i];left[i]=l[i];}
+    for(int i=0;i<MD_SPECTRUM_SAMPLES;i++) spectrum[i]=s[i];
+    wave_consumed=before; return 1;
 }
 int md_spectrum_snapshot(short left[MD_SPECTRUM_SAMPLES]) {
     short candidate[MD_SPECTRUM_SAMPLES];

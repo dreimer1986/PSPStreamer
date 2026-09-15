@@ -1,0 +1,22 @@
+[preset00]
+nWaveMode=0
+fWaveAlpha=0
+fDecay=.94
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wavecode_0_enabled=1
+wavecode_0_samples=64
+wavecode_0_bDrawThick=1
+wavecode_0_scaling=.4
+wave_0_init1=t1=.25; phase=0;
+wave_0_per_frame1=phase=phase+.02; t2=sin(phase); r=1; g=.6; b=.1;
+wave_0_per_point1=x=.08+.84*sample; y=.3+t1*value1+.04*t2; g=.3+.7*sample;
+wavecode_1_enabled=1
+wavecode_1_samples=64
+wavecode_1_bUseDots=1
+wavecode_1_bDrawThick=1
+wavecode_1_bAdditive=1
+wavecode_1_scaling=.4
+wave_1_per_frame1=r=.1; g=.6; b=1;
+wave_1_per_point1=x=.08+.84*sample; y=.7+.25*value2;

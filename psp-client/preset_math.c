@@ -75,6 +75,19 @@ static int builtin_variable(const char *s) {
     return -1;
 }
 static int variable(Parser *p,const char *s) {
+    if(p->pixel>=3) {
+        static const char *names[]={"r","g","b","a"};
+        for(int i=0;i<4;i++) if(!strcmp(s,names[i])) return PM_SHAPE_BASE+10+i;
+        if(!strcmp(s,"samples")) return PM_WAVE_BASE;
+        if(p->pixel==4) {
+            if(!strcmp(s,"x")) return PM_SHAPE_BASE+4;
+            if(!strcmp(s,"y")) return PM_SHAPE_BASE+5;
+            if(!strcmp(s,"sample")) return PM_WAVE_BASE+1;
+            if(!strcmp(s,"value1")) return PM_WAVE_BASE+2;
+            if(!strcmp(s,"value2")) return PM_WAVE_BASE+3;
+        }
+        if(s[0]=='t' && s[1]>='1' && s[1]<='8' && !s[2]) return PM_T_BASE+s[1]-'1';
+    }
     if(p->pixel==2) {
         static const char *names[]={"enabled","sides","additive","textured","x","y","rad","ang","tex_ang","tex_zoom","r","g","b","a","r2","g2","b2","a2","border_r","border_g","border_b","border_a","thick"};
         for(int i=0;i<23;i++) if(!strcmp(s,names[i])) return PM_SHAPE_BASE+i;
@@ -86,7 +99,7 @@ static int variable(Parser *p,const char *s) {
     }
     int id=builtin_variable(s);
     if(id>=0) {
-        if(p->pixel==2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE))) goto unsupported;
+        if(p->pixel>=2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE))) goto unsupported;
         if(p->pixel==1 && !(id<3 || id==5 || (id>=9 && id<=29) ||
                         (id>=PM_Q_BASE && id<PM_USER_BASE) || id>=PM_META_BASE)) goto unsupported;
         return id;
@@ -208,6 +221,7 @@ static int compile_context(PmProgram *program, const char *source, int line, PmS
         if (!name(&p,text)) goto fail;
         id = variable(&p,text);
         if (id < 0) goto fail;
+        if(id>PM_WAVE_BASE || (pixel==4 && id==PM_WAVE_BASE)) { p.error=PM_UNSUPPORTED; goto fail; }
         if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
         if (id >= PM_META_BASE && id < PM_DYNAMIC_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
         if(pixel==1 && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
@@ -220,7 +234,7 @@ static int compile_context(PmProgram *program, const char *source, int line, PmS
         if (*p.p != ';') goto fail;
         p.p++; space(&p);
     }
-    if(pixel==1 && program->count>PM_PIXEL_OPS) { p.error=PM_INVALID; goto fail; }
+    if((pixel==1 || pixel==4) && program->count>PM_PIXEL_OPS) { p.error=PM_INVALID; goto fail; }
     program->lines++;
     return PM_OK;
 fail:
@@ -239,6 +253,9 @@ int pm_compile_pixel(PmProgram *program, const char *source, int line) {
 }
 int pm_compile_shape(PmProgram *program, const char *source, int line, PmSymbols *symbols) {
     return compile_context(program,source,line,symbols,2);
+}
+int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols *symbols, int point) {
+    return compile_context(program,source,line,symbols,point?4:3);
 }
 int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line) {
     float local[PM_VALUES], stack[PM_STACK];
@@ -266,7 +283,7 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             stack[used++] = result; continue;
         }
         if (op->op == STORE) {
-            if (used != 1 || op->arg < 0 || op->arg >= PM_VALUES ||
+            if (used != 1 || op->arg < 0 || op->arg > PM_WAVE_BASE ||
                 (op->arg >= 9 && op->arg < 23) ||
                 (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
             local[op->arg] = stack[--used]; continue;

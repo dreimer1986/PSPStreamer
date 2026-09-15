@@ -6,7 +6,7 @@ enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16,
        PM_USER_COUNT = 16, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
        PM_META_BASE = PM_COORD_BASE + 4, PM_DYNAMIC_BASE = PM_META_BASE + 2,
        PM_SHAPE_BASE = PM_DYNAMIC_BASE + 10, PM_T_BASE = PM_SHAPE_BASE + 23,
-       PM_VALUES = PM_T_BASE + 8, PM_PIXEL_OPS = 64 };
+       PM_WAVE_BASE = PM_T_BASE + 8, PM_VALUES = PM_WAVE_BASE + 4, PM_PIXEL_OPS = 64 };
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
 typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;
@@ -17,6 +17,7 @@ int pm_compile(PmProgram *program, const char *source, int line);
 int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbols *symbols);
 int pm_compile_pixel(PmProgram *program, const char *source, int line);
 int pm_compile_shape(PmProgram *program, const char *source, int line, PmSymbols *symbols);
+int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols *symbols, int point);
 /* values: zoom,rot,warp,warp speed,warp scale,decay,r,g,b,time,
  * psp_low,psp_mid,psp_high,psp_level,psp_low_smooth,psp_mid_smooth,psp_high_smooth.
  * Then bass,mid,treb,bass_att,mid_att,treb_att (read-only relative inputs).

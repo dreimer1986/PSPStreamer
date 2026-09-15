@@ -52,6 +52,12 @@ class ShapeProgram(ctypes.Structure):
 class ShapeState(ctypes.Structure):
     _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*16)]
 
+class CustomWave(ctypes.Structure):
+    _fields_=[(n,ctypes.c_float) for n in ("enabled","samples","sep","spectrum","dots","thick","additive","scaling","smoothing","r","g","b","a")]+[("init",Program),("frame",Program),("point",Program),("symbols",Symbols),("point_symbols",Symbols)]
+
+class WaveState(ctypes.Structure):
+    _fields_=[("frame",ShapeState),("point_user",ctypes.c_float*16)]
+
 class Preset(ctypes.Structure):
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
@@ -59,14 +65,14 @@ class Preset(ctypes.Structure):
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
                 ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
-                ("shape_program",ShapeProgram*4)]
+                ("shape_program",ShapeProgram*4),("waves",CustomWave*4)]
 
 
 class PresetState(ctypes.Structure):
     _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
               ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
               ("last_seconds",ctypes.c_float),("fps",ctypes.c_float),
-              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4)]
+              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4),("waves",WaveState*4)]
 
 
 class Error(ctypes.Structure):
@@ -140,7 +146,7 @@ class PresetTests(unittest.TestCase):
 
     def test_unsupported_fields_are_not_ignored(self):
         for key in ("per_point_1", "warp_1", "comp_1",
-                    "unknown", "wavecode_0_enabled"):
+                    "unknown", "wavecode_0_unknown"):
             result, _, error = self.parse(("[preset00]\nzoom=1\n" + key + "=0\n").encode())
             self.assertEqual(result, 3)
             self.assertEqual(error.line, 3)
@@ -644,7 +650,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*150)(*([.5]*150)); before=bytes(values)
+                values=(ctypes.c_float*154)(*([.5]*154)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -716,6 +722,55 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
         for expr in ('time=2;','zoom=1;','t9=1;'):
             self.assertNotEqual(self.parse(('[preset00]\nshape_0_per_frame1='+expr).encode())[0],0)
+
+    def test_custom_wave_context_and_geometry(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        class Geometry(ctypes.Structure):
+            _fields_=[('count',ctypes.c_int),('vertices',Vertex*64)]
+        code,preset,_=self.parse(b'''[preset00]
+wavecode_0_enabled=1
+wavecode_0_samples=64
+wavecode_0_smoothing=0
+wave_0_init1=t1=.2; counter=0;
+wave_0_per_frame1=counter=counter+1; t2=t1; t1=.9;
+wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
+''')
+        self.assertEqual(code,0)
+        fn=self.library.md_eval_custom_waves
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(PresetState),ctypes.POINTER(Geometry),ctypes.POINTER(Error)]
+        state=PresetState(); out=(Geometry*4)(); error=Error()
+        left=(ctypes.c_short*576)(*([16384]*576)); right=(ctypes.c_short*576)()
+        for frame in range(3):
+            self.assertEqual(self.evaluate_state(preset,state,frame)[0],0)
+            self.assertEqual(fn(ctypes.byref(preset),frame,None,right,left,ctypes.byref(state),out,ctypes.byref(error)),0)
+            self.assertEqual(out[0].count,64)
+            self.assertAlmostEqual(out[0].vertices[0].y,.25*256,places=4)
+            self.assertEqual(out[0].vertices[63].x,256)
+            self.assertEqual(state.waves[0].frame.user[0],frame+1)
+            self.assertAlmostEqual(state.waves[0].frame.t[0],.2)
+        code,bad,_=self.parse(b'[preset00]\nwavecode_0_enabled=1\nwave_0_per_point1=x=sample; y=1/(1-sample);')
+        self.assertEqual(code,0)
+        before=bytes(state),bytes(out)
+        self.assertNotEqual(fn(ctypes.byref(bad),1,None,right,left,ctypes.byref(state),out,ctypes.byref(error)),0)
+        self.assertEqual((bytes(state),bytes(out)),before)
+        for key,value in [('samples','65'),('bSpectrum','1'),('sep','129')]:
+            self.assertNotEqual(self.parse(f'[preset00]\nwavecode_0_{key}={value}'.encode())[0],0)
+        for expr in ('sample=1;','value1=0;','samples=4;','time=0;'):
+            self.assertNotEqual(self.parse(('[preset00]\nwave_0_per_point1='+expr).encode())[0],0)
+
+    def test_combined_pcm_fft_snapshot(self):
+        capture=ctypes.c_int.in_dll(self.library,'md_wave_capture')
+        pcm=(ctypes.c_short*2048)(*range(2048))
+        right,left=(ctypes.c_short*576)(),(ctypes.c_short*576)()
+        spectrum=(ctypes.c_short*1024)()
+        capture.value=2; self.library.visualization_pcm_publish(pcm,1024)
+        self.assertEqual(self.library.md_wave_snapshot_combined(right,left,spectrum),0)
+        capture.value=4; self.library.visualization_pcm_publish(pcm,1024)
+        self.assertEqual(self.library.md_wave_snapshot_combined(right,left,spectrum),1)
+        self.assertEqual((right[100],left[100],spectrum[900]),(201,200,1800))
+        self.assertEqual(self.library.md_wave_snapshot_combined(right,left,spectrum),0)
+        capture.value=0
 
     def test_init_q_lifetime_and_output_reset(self):
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=time; q32=.25; zoom=9;\n"

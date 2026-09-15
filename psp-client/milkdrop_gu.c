@@ -30,6 +30,7 @@ static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
 static short md_left[MD_WAVE_SAMPLES];
 static short md_spectrum[MD_SPECTRUM_SAMPLES];
+static MdWaveGeometry md_custom_geometry[MD_CUSTOM_WAVES];
 /* Geometry helpers retain their logical 256-square coordinate system. Only
  * this adapter maps it to the rectangular physical feedback surface. */
 static void md_expand(MdVertex *v, int count, int half_texel) {
@@ -108,6 +109,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     }
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
+    MdPresetState next_state=md_preset_state;
     if (preset == 3) {
         if (!md_signal_active) {
             md_signal_reset(&md_signal_state);
@@ -122,24 +124,30 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if(md_custom_preset.pixel_program.count &&
            md_eval_pixel_grid(&md_custom_preset,&evaluated,seconds,&md_signal_state.signal,
                              &candidate,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
-        md_preset_state=candidate;
+        next_state=candidate;
     } else md_signal_active = 0;
-    int waveform=preset==3 && md_preset_state.wave_mode>=0;
-    int mode=waveform?md_preset_state.wave_mode:0;
+    int waveform=preset==3 && next_state.wave_mode>=0;
+    int mode=waveform?next_state.wave_mode:0;
     int script=waveform && mode==4;
     int spiral=waveform && mode==1;
-    int capture=waveform ? (mode==8?3:mode?2:1) : 0;
+    int custom_waves=0;
+    if(preset==3) for(int i=0;i<MD_CUSTOM_WAVES;i++) custom_waves|=md_custom_preset.waves[i].enabled!=0;
+    int capture=custom_waves?(waveform && mode==8?4:2):waveform ? (mode==8?3:mode?2:1) : 0;
     if(capture!=md_wave_capture) {
         memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum));
         md_wave_forget();
     }
     md_wave_capture=capture;
-    if(waveform) {
+    if(waveform || custom_waves) {
         if(level>0) {
-            if(mode==8) md_spectrum_snapshot(md_spectrum);
-            else md_wave_snapshot_stereo(md_right,mode?md_left:NULL);
+            if(capture==4) md_wave_snapshot_combined(md_right,md_left,md_spectrum);
+            else if(capture==3) md_spectrum_snapshot(md_spectrum);
+            else md_wave_snapshot_stereo(md_right,capture==2?md_left:NULL);
         } else { memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum)); }
     }
+    if(custom_waves && md_eval_custom_waves(&md_custom_preset,seconds,&md_signal_state.signal,
+            md_right,md_left,&next_state,md_custom_geometry,&md_runtime_error)!=MD_FILE_OK) return -1;
+    if(preset==3) md_preset_state=next_state;
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
@@ -168,6 +176,22 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         sceGuDisable(GU_BLEND);
     }
     if(preset==3) md_shapes(&frame_decor,(float)height/width);
+    if(custom_waves) for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
+        const MdCustomWave *w=&md_custom_preset.waves[slot];
+        int count=md_custom_geometry[slot].count;
+        if(!count) continue;
+        MdVertex *vertices=sceGuGetMemory(count*sizeof(*vertices));
+        memcpy(vertices,md_custom_geometry[slot].vertices,count*sizeof(*vertices));
+        md_expand(vertices,count,0); md_blend(w->additive!=0);
+        sceGuDisable(GU_TEXTURE_2D);
+        sceGuDrawArray(w->dots?GU_POINTS:GU_LINE_STRIP,MD_FORMAT,count,NULL,vertices);
+        if(w->thick) for(int pass=0;pass<3;pass++) {
+            MdVertex *copy=sceGuGetMemory(count*sizeof(*copy));
+            for(int i=0;i<count;i++) {copy[i]=vertices[i];copy[i].x+=pass<2?1:0;copy[i].y+=pass>0?1:0;}
+            sceGuDrawArray(w->dots?GU_POINTS:GU_LINE_STRIP,MD_FORMAT,count,NULL,copy);
+        }
+        sceGuDisable(GU_BLEND);
+    }
     if(waveform) {
         const MdDecor *d=&frame_decor;
         ring=sceGuGetMemory(MD_WAVE_MAX_VERTICES*sizeof(*ring));

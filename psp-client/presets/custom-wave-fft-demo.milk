@@ -1,0 +1,14 @@
+[preset00]
+nWaveMode=8
+fWaveAlpha=.4
+wave_y=.5
+fDecay=.94
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wavecode_0_enabled=1
+wavecode_0_samples=64
+wavecode_0_scaling=.3
+wavecode_0_bDrawThick=1
+wave_0_per_frame1=r=.2; g=1; b=.5;
+wave_0_per_point1=x=.5+(.22+.1*value1)*cos(sample*6.283185); y=.5+(.22+.1*value2)*sin(sample*6.283185);

@@ -91,7 +91,7 @@ static void *sceGuGetMemory(int bytes) {
     void *result=list_base+list_used;
     list_used+=(bytes+15)&~15;
     if(list_used>list_peak) list_peak=list_used;
-    assert(list_used<112000); /* reserve at least 19 KiB for command words */
+    assert(list_used<116000); /* reserve at least 15 KiB for command words */
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
@@ -113,7 +113,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(type==GU_LINES) { assert(count<=384 && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
+        assert(count==64 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
         if(count<=33) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
@@ -163,7 +163,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==17);
+    assert(argc==19);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -323,6 +323,7 @@ int main(int argc,char **argv) {
         md_stop(); assert(!md_wave_capture);
     }
     /* Maximum static layer combination: stays within one fixed GU list. */
+    for(int i=0;i<MD_CUSTOM_WAVES;i++) md_custom_preset.waves[i]=(MdCustomWave){.enabled=1,.samples=64,.thick=1,.scaling=.1f,.r=1,.g=1,.b=1,.a=1};
     expected_ring_color=0; expected_passes=8;
     md_custom_preset.gamma=4;
     MdDecor *decor=&md_custom_preset.decor;
@@ -375,6 +376,12 @@ int main(int argc,char **argv) {
                 for(int i=0;i<1024;i++) { pcm[i*2]=(short)(sin(i*.07)*20000); pcm[i*2+1]=(short)(cos(i*.05)*18000); }
                 visualization_pcm_publish(pcm,1024);
             }
+            if(fixture==17) {
+                short pcm[1152];
+                assert(md_wave_capture==2 && md_custom_geometry[0].count==64 && md_custom_geometry[1].count==64);
+                for(int i=0;i<1152;i++) pcm[i]=(short)(sin(i*.05)*20000);
+                visualization_pcm_publish(pcm,576);
+            }
             if(fixture==2) assert(fabsf(md_preset_state.q[0]-.7f)<.00001f);
             if(md_custom_preset.wave_mode==4 || md_custom_preset.wave_mode==1) {
                 short pcm[1152];
@@ -384,7 +391,7 @@ int main(int argc,char **argv) {
                 visualization_pcm_publish(pcm,576);
             }
             if(md_custom_preset.wave_mode==8) {
-                short pcm[2048]; assert(md_wave_capture==3);
+                short pcm[2048]; assert(md_wave_capture==(fixture==18?4:3));
                 if(frame) assert(md_spectrum[9]==4321);
                 for(int i=0;i<1024;i++) { pcm[2*i]=4321; pcm[2*i+1]=-123; }
                 visualization_pcm_publish(pcm,1024);

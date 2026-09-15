@@ -75,8 +75,10 @@ The music-only GU list grows from 64 to 128 KiB in ordinary RAM. Textures stay
 512x256 with the established LCD/TV formats and EDRAM layout. The maximum
 tested layer combination (all nine wave modes, thick/dotted waves, four thick
 textured shapes, echo/gamma/borders and motion vectors) uses **88,080 bytes**
-for vertices, leaving **42,992 bytes** for command words/alignment. The harness
-enforces a 112,000-byte vertex ceiling. No new external textures are loaded.
+for vertices, leaving **42,992 bytes** for command words/alignment. With the later
+four thick custom PCM waves added, the maximum is **112,656 bytes**, leaving
+**18,416 bytes**. The harness enforces a 116,000-byte vertex ceiling. No new
+external textures are loaded; the GU list remains 128 KiB.
 
 Mode 8 alone requests 1024 left-channel PCM samples; other modes retain the
 existing right-only/stereo snapshot paths. FFT scratch is UI-thread-owned,
@@ -97,7 +99,8 @@ No server update is required. Stream timeouts and A/V synchronization are unchan
 ## Still separate architectural work
 
 Custom-shape init/frame contexts are now supported in a bounded subset; see
-[shape formulas](MILKDROP_SHAPE_FORMULAS.md). Custom-wave frame/point contexts,
+[shape formulas](MILKDROP_SHAPE_FORMULAS.md). Bounded custom PCM wave contexts
+are also available: [custom waves](MILKDROP_CUSTOM_WAVES.md). Custom spectrum waves,
 complete NS-EEL compatibility (including memory/loops), larger/persistent
 per-grid contexts and preset blending are not minor switches. They remain
 unimplemented rather than silently approximated. Shader execution and external
