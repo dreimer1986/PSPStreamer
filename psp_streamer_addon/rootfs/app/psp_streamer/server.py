@@ -215,7 +215,7 @@ class Library:
 def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
                    subtitle_track: int = -1, audio_bitrate: str = "160k", subtitle_source: Path | None = None,
                    start_seconds: float = 0, bitmap_subtitle: bool = False,
-                   tv_output: bool = False) -> list[str]:
+                   tv_output: bool = False, video_fps: str = "20") -> list[str]:
     """Conservative AVC/AAC profile for a PSP-3000 over an 802.11b LAN."""
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
@@ -247,7 +247,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         # limits decoder workload; playback is paced by container timestamps.
         # Keep the raw H.264 endpoint's old cadence for older clients only.
         target_width, target_height = (720, 480) if tv_output else (480, 272)
-        frame_rate = "20" if container == "flv" else ("101/5" if tv_output else "201/10")
+        frame_rate = video_fps if container == "flv" else ("101/5" if tv_output else "201/10")
         video_filter = (f"fps={frame_rate},scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
                         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
@@ -289,7 +289,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
                 # use an infinite apad filter: on a short track it can keep a
                 # live FLV process running after video EOF.
                 "-af", "aresample=44100:first_pts=0",
-                "-ac", "2", "-b:a", audio_bitrate, "-flvflags", "no_duration_filesize",
+                "-ac", "2", *( ["-q:a", audio_bitrate[1:]] if audio_bitrate.startswith("v") else ["-b:a", audio_bitrate] ), "-flvflags", "no_duration_filesize",
                 "-f", "flv", "pipe:1"]),
         ]
         if bitmap_filter:
@@ -310,7 +310,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             # metallic artefacts from music.  Do not add gain here: TV/anime music already reaches
             # full scale and extra gain produces audible clipping on PSP.
             "-ar", "44100",
-            "-c:a", "libmp3lame", "-b:a", audio_bitrate,
+            "-c:a", "libmp3lame", *( ["-q:a", audio_bitrate[1:]] if audio_bitrate.startswith("v") else ["-b:a", audio_bitrate] ),
             "-write_xing", "0", "-id3v2_version", "0", "-f", "mp3", "pipe:1",
         ]
     if container == "mpegts":
@@ -444,6 +444,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
                 audio_bitrate = query.get("audio_quality", ["160k"])[0]
+                video_fps = query.get("video_fps", ["20"])[0]
                 start_seconds = float(query.get("start", ["0"])[0])
                 container = query.get("container", ["mp4"])[0]
                 profile = query.get("profile", ["normal"])[0]
@@ -451,9 +452,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError("Unsupported stream container")
                 if profile not in {"normal", "low", "tv"}:
                     raise ValueError("Unsupported stream profile")
-                if subtitle < -1 or subtitle > 31 or audio_bitrate not in {"96k", "128k", "160k"} or not 0 <= start_seconds <= 86400:
+                if subtitle < -1 or subtitle > 31 or audio_bitrate not in {"96k", "128k", "160k", "v6", "v5", "v4", "v3"} or video_fps not in {"20", "24000/1001"} or not 0 <= start_seconds <= 86400:
                     raise ValueError("Unsupported stream option")
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv")
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -497,6 +498,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
                 clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
                 clean["start"] = max(0, min(86400, int(command.get("start", 0))))
+                for name, allowed in (("audio_quality", {"96k", "128k", "160k", "v6", "v5", "v4", "v3"}),
+                                      ("video_fps", {"20", "24000/1001"})):
+                    if name in command:
+                        if not isinstance(command[name], str) or command[name] not in allowed:
+                            raise ValueError("Invalid " + name)
+                        clean[name] = command[name]
             elif action == "seek":
                 clean["seconds"] = max(0, min(86400, int(command.get("seconds", 0))))
             return self.send_json(self.server.set_remote_command(clean))
@@ -650,7 +657,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
-                  tv_output: bool = False) -> None:
+                  tv_output: bool = False, video_fps: str = "20") -> None:
         calibration_duration = CALIBRATION_MEDIA.get(token, ("", 0))[1]
         source = None if calibration_duration else self.server.library.decode(token)[1]
         if not self.server.transcode_slots.acquire(blocking=False):
@@ -682,7 +689,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     os.symlink(source, subtitle_source)
             process = subprocess.Popen(
                 (calibration_command(calibration_duration, container, tv_output) if calibration_duration else
-                 ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output)),
+                 ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)),
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on

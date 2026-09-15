@@ -39,7 +39,7 @@ function option(){}
         script = """
 const assert=require('assert');
 let selected={id:'example'}, sent;
-const elements={'#subtitle':{value:'0'},'#audio':{value:'0'},'#seek':{value:'0'},'#status':{}};
+const elements={'#subtitle':{value:'0'},'#audio':{value:'0'},'#seek':{value:'0'},'#status':{},'#audio_quality':{value:'v5'},'#video_fps':{value:'24000/1001'}};
 function $(id){return elements[id]}
 async function api(path,options){sent=JSON.parse(options.body)}
 """ + command + """
@@ -48,6 +48,8 @@ async function api(path,options){sent=JSON.parse(options.body)}
   elements['#subtitle'].value=value;
   await command('play');
   assert.strictEqual(sent.subtitle,value===''?-1:Number(value));
+  assert.strictEqual(sent.audio_quality,'v5');
+  assert.strictEqual(sent.video_fps,'24000/1001');
  }
  selected.kind='audio'; elements['#audio'].value='3'; elements['#subtitle'].value='7';
  await command('play');

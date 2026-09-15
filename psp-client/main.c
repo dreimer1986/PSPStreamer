@@ -298,7 +298,8 @@ static char audio_media_id[ID_SIZE];
 #define AUDIO_QUEUE_BLOCKS 8
 #define SPECTRUM_BANDS 12
 #define MP3_INPUT_BUFFER_BYTES 4096
-#define MP3_MAX_FRAME_BYTES 576
+/* MPEG-1 Layer III, 320 kbit/s at 44.1 kHz, including padding. */
+#define MP3_MAX_FRAME_BYTES 1045
 /* Producer/consumer queue: network jitter is absorbed here while the output
  * thread feeds the DSP on time. */
 static short audio_samples[AUDIO_BLOCK_SAMPLES * 2 * AUDIO_QUEUE_BLOCKS] __attribute__((aligned(64)));
@@ -337,6 +338,7 @@ static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
+static int selected_video_fps;
 static int audio_shuffle;
 /* 0..30 maps cleanly to the 30 LED detents in the receiver UI. */
 static int playback_volume = 24;
@@ -366,7 +368,7 @@ static struct in_addr cached_server_address;
 static int have_cached_server_address;
 
 static const char *audio_quality_name(void) {
-    static const char *names[] = {"96k", "128k", "160k"};
+    static const char *names[] = {"96k", "128k", "160k", "v6", "v5", "v4", "v3"};
     return names[selected_audio_quality];
 }
 
@@ -409,6 +411,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
+            else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
@@ -417,7 +420,7 @@ static void load_playback_settings(void) {
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
     if (selected_subtitle_track < -1 || selected_subtitle_track > 7) selected_subtitle_track = -1;
-    if (selected_audio_quality < 0 || selected_audio_quality > 2) selected_audio_quality = 2;
+    if (selected_audio_quality < 0 || selected_audio_quality > 6) selected_audio_quality = 2;
     audio_shuffle = audio_shuffle != 0;
     if (playback_volume < 0 || playback_volume > 30) playback_volume = 24;
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
@@ -430,6 +433,7 @@ static void save_playback_settings(void) {
     char data[1024];
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
+    length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1980,10 +1984,10 @@ static int play_h264(const char *media_id) {
     codec_sema = sceKernelCreateSema("PSPStreamerME", 0, 1, 1, NULL);
     if (codec_sema < 0) { result = codec_sema; goto done; }
     snprintf(timed_request, sizeof(timed_request),
-        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",
+        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&video_fps=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
-        audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
+        audio_quality_name(), selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
     timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x5000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
     if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {
@@ -2369,6 +2373,15 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     remote_control_sequence = sequence;
     *audio = json_integer(response, "audio", 0);
     *subtitle = json_integer(response, "subtitle", -1);
+    {
+        char setting[20];
+        int i;
+        static const char *qualities[] = {"96k", "128k", "160k", "v6", "v5", "v4", "v3"};
+        if (json_value(response, "audio_quality", setting, sizeof(setting)))
+            for (i = 0; i < 7; i++) if (!strcmp(setting, qualities[i])) selected_audio_quality = i;
+        if (json_value(response, "video_fps", setting, sizeof(setting)))
+            selected_video_fps = !strcmp(setting, "24000/1001");
+    }
     *start_seconds = json_integer(response, "start", 0);
     *is_audio = json_value(response, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
     return 1;
@@ -2704,6 +2717,8 @@ static int playback_options(int audio_only) {
                 if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
                 if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
                 if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
+                if (row == 3) gui_rect((u32 *)0x44000000, 36, 124, 310, 9, 0x004A5A32);
+                gui_text(38, 124, 0x00FFFFFF, "%s: %s", tr(TXT_FRAME_RATE), selected_video_fps ? "23.976 fps" : "20 fps");
                 gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
                                      audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                                      audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
@@ -2725,11 +2740,11 @@ static int playback_options(int audio_only) {
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
         if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
         if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % 3;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 3;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 3) % 4;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 4;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
-            if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
+            if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
             else if (audio_only) audio_shuffle = !audio_shuffle;
             else if (row == 0 && audio_track_count)
                 selected_audio_track = (selected_audio_track + delta + audio_track_count) % audio_track_count;
@@ -2739,7 +2754,8 @@ static int playback_options(int audio_only) {
                     if (selected_subtitle_track < -1) selected_subtitle_track = subtitle_track_count - 1;
                     if (selected_subtitle_track >= subtitle_track_count) selected_subtitle_track = -1;
                 }
-            } else selected_audio_quality = (selected_audio_quality + delta + 3) % 3;
+            } else if (row == 2) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
+            else if (row == 3) selected_video_fps = !selected_video_fps;
             save_playback_settings();
         }
         old = pad.Buttons;

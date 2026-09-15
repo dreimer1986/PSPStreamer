@@ -1,5 +1,6 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    [TXT_FRAME_RATE] = "Frame rate",
     /* Fullscreen transport overlay */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Play",

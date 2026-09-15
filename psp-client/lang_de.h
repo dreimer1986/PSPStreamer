@@ -1,6 +1,7 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    [TXT_FRAME_RATE] = "Bildrate",
     /* Vollbild-Steuerung */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Weiter",

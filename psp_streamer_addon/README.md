@@ -18,3 +18,10 @@ proxy for any public browser access. Keep the backend private. See the main
 README's Security section for details.
 
 Update the add-on to **0.1.20 or later for the current PSP client**. Version 0.1.19 introduced the FLV endpoint; 0.1.20 adds same-folder successor lookup so playback started through the web remote can continue to the next episode or music track. Install the matching PSP client as well. Restart the add-on after updating. No media mount or configuration changes are needed; older PSP clients can still use the legacy endpoints.
+# Version 0.1.25: stream options
+
+Update the PSP client together with this app to use MP3 VBR V6/V5/V4/V3 and
+optional 23.976 fps video. Both settings are available in the browser remote
+and the PSP playback dialog. Existing CBR and 20 fps defaults are preserved.
+The browser remembers its choices locally and includes them with Play.
+No additional Home Assistant app configuration is required for these options.

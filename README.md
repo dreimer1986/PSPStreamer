@@ -169,13 +169,37 @@ server_password=
 audio=0
 subtitle=-1
 quality=2
+video_fps=20
 volume=24
 shuffle=0
 language=en
 tv_ui=off
 ```
 
-`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
+`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k`, `3=V6`, `4=V5`, `5=V4`, `6=V3` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
+
+### Audio quality and film frame rate (server/HA app 0.1.25)
+
+The PSP playback-options dialog and browser remote offer CBR 96/128/160 kbit/s
+and VBR V6/V5/V4/V3 for music and video. V5 is the balanced VBR choice; V6
+favours smaller streams and V4/V3 favour quality. VBR controls average quality,
+not a strict bandwidth ceiling; individual frames can reach 320 kbit/s.
+Existing installations keep their CBR preference (default: 160 kbit/s).
+
+For videos, choose **20 fps** (compatibility/default) or **23.976 fps**
+(`24000/1001`, film/anime). The config key is `video_fps=20` or
+`video_fps=24000/1001`. This applies to both LCD and TV output, without changing
+the audio clock or container-timestamp synchronization. Matching a 23.976 fps
+source avoids the frame dropping needed for 20 fps, but requires about 20%
+more video decoding and presentation work. It does not eliminate 60 Hz display
+cadence or network stalls. Video bitrate limits remain unchanged.
+
+Local PSP choices are saved for subsequent playback. The browser saves its own
+preferences in local storage and sends them with Play; those choices also apply
+to following files in that remote playback session. Commands from older remotes
+without these fields retain the PSP's current choices. Update both the server
+and PSP application before using the new options. Music hides the frame-rate
+selector, just as it hides video-track/subtitle selectors.
 
 `language` selects the PSP interface language: `en` (default) or `de`. The PSP's bundled Latin-1 font supports direct German `ä`, `ö`, `ü`, and `ß` characters.
 
