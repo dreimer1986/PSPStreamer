@@ -163,7 +163,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==15);
+    assert(argc==16);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -362,12 +362,19 @@ int main(int argc,char **argv) {
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
         assert(!md_preset_state.ready);
-        for(int frame=0;frame<60;frame++) {
+        for(int frame=0;frame<600;frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
+            if(fixture==15) {
+                short pcm[2048];
+                assert(md_preset_state.wave_mode>=0 && md_preset_state.wave_mode<=8);
+                assert(md_wave_capture==(md_preset_state.wave_mode==8?3:md_preset_state.wave_mode?2:1));
+                for(int i=0;i<1024;i++) { pcm[i*2]=(short)(sin(i*.07)*20000); pcm[i*2+1]=(short)(cos(i*.05)*18000); }
+                visualization_pcm_publish(pcm,1024);
+            }
             if(fixture==2) assert(fabsf(md_preset_state.q[0]-.7f)<.00001f);
             if(md_custom_preset.wave_mode==4 || md_custom_preset.wave_mode==1) {
                 short pcm[1152];

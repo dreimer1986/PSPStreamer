@@ -58,7 +58,8 @@ class Preset(ctypes.Structure):
 class PresetState(ctypes.Structure):
     _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
               ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
-              ("last_seconds",ctypes.c_float),("fps",ctypes.c_float)]
+              ("last_seconds",ctypes.c_float),("fps",ctypes.c_float),
+              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9)]
 
 
 class Error(ctypes.Structure):
@@ -523,6 +524,52 @@ class PresetTests(unittest.TestCase):
             if mode==7: self.assertNotEqual(vertices[0].y,vertices[170].y)
         for mode in range(9): self.assertEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
 
+    def test_dynamic_wave_and_motion_fields(self):
+        code,preset,_=self.parse(b'[preset00]\nnWaveMode=0\nmv_a=.5\nper_frame_1=wave_mode=floor(time); mv_l=1+time;')
+        self.assertEqual(code,0)
+        state=PresetState()
+        for mode in range(9):
+            self.assertEqual(self.evaluate_state(preset,state,mode)[0],0)
+            self.assertEqual(state.wave_mode,mode)
+            self.assertAlmostEqual(state.motion[8],mode+1)
+        before=bytes(state)
+        self.assertNotEqual(self.evaluate_state(preset,state,9)[0],0)
+        self.assertEqual(bytes(state),before)
+        for expression in ('wave_mode=2.5;','wave_mode=-1;','mv_x=17;','mv_y=13;','mv_a=2;','mv_l=11;','mv_dx=2;'):
+            code,preset,_=self.parse(f'[preset00]\nper_frame_1={expression}'.encode())
+            self.assertEqual(code,0)
+            self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        code,preset,_=self.parse(b'[preset00]\nper_frame_1=wave_mode=4; mv_a=.5;\nper_pixel_1=rot=.01*wave_mode*mv_a;')
+        self.assertEqual(code,0)
+        state=PresetState(); result,warp,_=self.evaluate_state(preset,state,1)
+        self.assertEqual(result,0)
+        grid=(Warp*81)(); error=Error()
+        self.library.md_eval_pixel_grid.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        self.assertEqual(self.library.md_eval_pixel_grid(ctypes.byref(preset),ctypes.byref(warp),1,None,ctypes.byref(state),grid,ctypes.byref(error)),0)
+        self.assertAlmostEqual(grid[0].rotation,.02,places=6)
+        self.assertNotEqual(self.parse(b'[preset00]\nper_pixel_1=wave_mode=1;')[0],0)
+
+    def test_snapshot_kind_switch_rejects_old_payload(self):
+        capture=ctypes.c_int.in_dll(self.library,'md_wave_capture')
+        pcm=(ctypes.c_short*2048)(*range(2048))
+        right=(ctypes.c_short*576)(*([123]*576)); left=(ctypes.c_short*576)(*([456]*576))
+        spectrum=(ctypes.c_short*1024)(*([789]*1024))
+        capture.value=1; self.library.visualization_pcm_publish(pcm,1024)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),0)
+        self.assertEqual(left[0],456)
+        self.assertEqual(self.library.md_spectrum_snapshot(spectrum),0)
+        self.assertEqual(spectrum[0],789)
+        capture.value=3; self.library.visualization_pcm_publish(pcm,1024)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),0)
+        self.assertEqual(right[0],123)
+        self.assertEqual(self.library.md_spectrum_snapshot(spectrum),1)
+        self.assertEqual(spectrum[100],200)
+        capture.value=2; self.library.visualization_pcm_publish(pcm,1024)
+        self.assertEqual(self.library.md_spectrum_snapshot(spectrum),0)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),1)
+        self.assertEqual((right[100],left[100]),(201,200))
+        capture.value=0
+
     def test_thick_shape_outline_flags(self):
         for slot in range(4):
             for value in (0,1):
@@ -590,7 +637,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*109)(*([.5]*109)); before=bytes(values)
+                values=(ctypes.c_float*119)(*([.5]*119)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)

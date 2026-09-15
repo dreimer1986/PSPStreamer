@@ -1,0 +1,23 @@
+; PSPStreamer original: all nine modes, switching every three seconds.
+[preset00]
+nWaveMode=0
+fWaveScale=1
+fWaveSmoothing=.35
+fWaveAlpha=1
+wave_y=.5
+bWaveThick=1
+zoom=1.012
+fDecay=.96
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+mv_a=.5
+mv_x=12
+mv_y=9
+mv_l=2
+per_frame_1=wave_mode=floor(time/3)-9*floor(time/27);
+per_frame_2=mv_x=10+4*sin(time*.3); mv_y=7+3*cos(time*.2); mv_l=1+2*psp_low;
+per_frame_3=mv_a=.3+.4*psp_low; mv_r=.3; mv_g=.8; mv_b=1;
+per_frame_4=mv_dx=.02*sin(time); mv_dy=.02*cos(time); wave_r=.2+.7*psp_low; wave_g=.6; wave_b=1;
+per_frame_5=wave_y=if(equal(wave_mode,7),.2,.5);
+per_pixel_1=rot=rot+.002*wave_mode*sin(ang+time);

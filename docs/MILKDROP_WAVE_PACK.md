@@ -56,11 +56,12 @@ delay opening/loading; there is no claim of asynchronous filesystem I/O.
 ## Motion vectors and formula clock
 
 `mv_a`, `mv_r`, `mv_g`, `mv_b`, `mv_x`, `mv_y`, `mv_dx`, `mv_dy`, `mv_l` are
-supported as static fields. Limits: alpha/RGB 0–1, grid X 0–16, grid Y 0–12,
+supported as static fields and in per-frame formulas. Limits: alpha/RGB 0–1, grid X 0–16, grid Y 0–12,
 offsets -1–1, length 0–10. Zero opacity disables them. Vectors sample the actual
 warp triangles, including per-grid formulas, with a minimum visible segment.
 Segments are clipped to feedback bounds before submission. This is a bounded
-motion-vector subset, not the desktop 64x48 grid or per-frame `mv_*` variables.
+motion-vector subset, not the desktop 64x48 grid. See the
+[dynamic waveform update](MILKDROP_DYNAMIC_WAVES.md) for formula controls.
 
 Read-only `frame` and `fps` are available in init/frame/grid formulas. `frame`
 counts successfully evaluated visualization frames starting at zero; `fps`
@@ -101,7 +102,7 @@ per-grid contexts and preset blending are not minor switches. They remain
 unimplemented rather than silently approximated. Shader execution and external
 textures remain explicitly deferred. Therefore this pack completes the built-in
 waveform modes, not all MilkDrop 2 features or all shader-free presets.
-Other remaining gaps include per-frame waveform-mode and motion-vector control,
-`progress`/additional engine inputs, inversion/brighten/darken/solarize passes,
+Other remaining gaps include `progress`/additional engine inputs,
+inversion/brighten/darken/solarize passes,
 automatic timed preset switching, ratings and playlists. Our FFT, limited grid
 and single-precision evaluator are also not a bit-exact desktop implementation.

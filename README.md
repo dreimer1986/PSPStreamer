@@ -273,6 +273,9 @@ is no longer required. The browser lists up to 128 `.milk` files and warns when
 that limit is exceeded. All built-in waveform modes 0–8, a real FFT waveform,
 bounded motion vectors and `frame`/`fps` inputs are now available. See the
 [waveform pack, controls and test presets](docs/MILKDROP_WAVE_PACK.md).
+Frame formulas can also animate `wave_mode` and all nine `mv_*` fields.
+Try `wave-switch-demo.milk` in the preset browser; see
+[dynamic waveforms and motion vectors](docs/MILKDROP_DYNAMIC_WAVES.md).
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.

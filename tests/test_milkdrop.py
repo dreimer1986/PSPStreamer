@@ -35,7 +35,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/presets/script-wave-demo.milk"),
                             str(ROOT / "psp-client/presets/spiral-wave-demo.milk"),
                             *[str(ROOT / ("psp-client/presets/"+name+"-demo.milk")) for name in
-                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock")]],
+                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch")]],
                            check=True, timeout=20)
 
     def test_opt_in_and_teardown(self):

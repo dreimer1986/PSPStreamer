@@ -6,6 +6,7 @@
 #include <stddef.h>
 volatile int md_wave_capture;
 static volatile unsigned int wave_sequence;
+static volatile int wave_published_kind;
 static volatile short wave_right[MD_WAVE_SAMPLES];
 static volatile short wave_left[MD_WAVE_SAMPLES];
 static volatile short spectrum_left[MD_SPECTRUM_SAMPLES];
@@ -16,6 +17,7 @@ void visualization_pcm_publish(const short *stereo, int frames) {
     if (!capture || frames<=0) return;
     wave_sequence++;
     __sync_synchronize();
+    wave_published_kind=capture;
     if(capture==3) {
         for(int i=0;i<MD_SPECTRUM_SAMPLES;i++) spectrum_left[i]=i<frames?stereo[i*2]:0;
     } else {
@@ -35,6 +37,7 @@ int md_spectrum_snapshot(short left[MD_SPECTRUM_SAMPLES]) {
     unsigned int before=wave_sequence;
     if(!before || (before&1) || before==wave_consumed) return 0;
     __sync_synchronize();
+    if(wave_published_kind!=3) return 0;
     for(int i=0;i<MD_SPECTRUM_SAMPLES;i++) candidate[i]=spectrum_left[i];
     __sync_synchronize();
     if(before!=wave_sequence) return 0;
@@ -47,6 +50,7 @@ int md_wave_snapshot_stereo(short right[MD_WAVE_SAMPLES], short left[MD_WAVE_SAM
     unsigned int before=wave_sequence;
     if (!before || (before&1) || before==wave_consumed) return 0;
     __sync_synchronize();
+    if(left ? wave_published_kind!=2 : (wave_published_kind!=1 && wave_published_kind!=2)) return 0;
     for (int i=0;i<MD_WAVE_SAMPLES;i++) {
         candidate[i]=wave_right[i];
         if(left) candidate_left[i]=wave_left[i];

@@ -51,6 +51,8 @@ static int name(Parser *p, char text[32]) {
 static int builtin_variable(const char *s) {
     if(!strcmp(s,"frame")) return PM_META_BASE;
     if(!strcmp(s,"fps")) return PM_META_BASE+1;
+    static const char *dynamic[]={"wave_mode","mv_a","mv_r","mv_g","mv_b","mv_x","mv_y","mv_dx","mv_dy","mv_l"};
+    for(int i=0;i<10;i++) if(!strcmp(s,dynamic[i])) return PM_DYNAMIC_BASE+i;
     static const char *names[PM_Q_BASE] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
@@ -201,7 +203,7 @@ static int compile_context(PmProgram *program, const char *source, int line, PmS
         id = variable(&p,text);
         if (id < 0) goto fail;
         if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
-        if (id >= PM_META_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
+        if (id >= PM_META_BASE && id < PM_DYNAMIC_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
         if(pixel && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
             p.error=PM_UNSUPPORTED; goto fail;
         }
@@ -256,7 +258,8 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         }
         if (op->op == STORE) {
             if (used != 1 || op->arg < 0 || op->arg >= PM_VALUES ||
-                (op->arg >= 9 && op->arg < 23) || op->arg>=PM_COORD_BASE) return 0;
+                (op->arg >= 9 && op->arg < 23) ||
+                (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
             local[op->arg] = stack[--used]; continue;
         }
         if (!used) return 0;

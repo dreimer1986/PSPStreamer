@@ -229,6 +229,8 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     v[25]=p->warp.cx; v[26]=p->warp.cy; v[27]=p->warp.sx; v[28]=p->warp.sy; v[29]=p->warp.zoomexp;
     memcpy(v+30,&p->decor,MD_DECOR_VALUES*sizeof(float));
     v[53]=p->gamma; v[54]=p->wave_alpha;
+    v[PM_DYNAMIC_BASE]=(float)p->wave_mode;
+    memcpy(v+PM_DYNAMIC_BASE+1,p->motion,sizeof(p->motion));
     memset(error, 0, sizeof(*error));
     if (signal) for (int i = 0; i < MD_SIGNAL_COUNT; i++) {
         float value = signal->values[i];
@@ -284,6 +286,18 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     }
     if(v[37] && v[39]<=v[38])
         return md_file_error(error,MD_FILE_INVALID,0,"wave alpha range");
+    float mode=v[PM_DYNAMIC_BASE];
+    int mode_line=pm_assignment_line(&p->program,PM_DYNAMIC_BASE);
+    if(!isfinite(mode) || mode!=floorf(mode) || mode>8 || mode<(mode_line?0:-1))
+        return md_file_error(error,MD_FILE_INVALID,mode_line,"wave mode");
+    for(int i=0;i<9;i++) {
+        float lo=(i==6 || i==7)?-1:0, hi=i==4?16:i==5?12:i==8?10:1;
+        float value=v[PM_DYNAMIC_BASE+1+i];
+        if(!isfinite(value) || value<lo || value>hi)
+            return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,PM_DYNAMIC_BASE+1+i),"motion vectors");
+    }
+    next.wave_mode=(int)mode;
+    memcpy(next.motion,v+PM_DYNAMIC_BASE+1,sizeof(next.motion));
     *decor=p->decor;
     memcpy(decor,v+30,MD_DECOR_VALUES*sizeof(float));
     *warp = (MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
@@ -312,6 +326,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
         v[PM_META_BASE]=state->frames?(float)(state->frames-1):0;
         v[PM_META_BASE+1]=state->fps;
+        v[PM_DYNAMIC_BASE]=(float)state->wave_mode;
+        memcpy(v+PM_DYNAMIC_BASE+1,state->motion,sizeof(state->motion));
         float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
         v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);

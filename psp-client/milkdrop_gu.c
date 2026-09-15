@@ -124,11 +124,16 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
                              &candidate,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
         md_preset_state=candidate;
     } else md_signal_active = 0;
-    int waveform=preset==3 && md_custom_preset.wave_mode>=0;
-    int script=waveform && md_custom_preset.wave_mode==4;
-    int spiral=waveform && md_custom_preset.wave_mode==1;
-    int mode=waveform?md_custom_preset.wave_mode:0;
-    md_wave_capture=waveform ? (mode==8?3:mode?2:1) : 0;
+    int waveform=preset==3 && md_preset_state.wave_mode>=0;
+    int mode=waveform?md_preset_state.wave_mode:0;
+    int script=waveform && mode==4;
+    int spiral=waveform && mode==1;
+    int capture=waveform ? (mode==8?3:mode?2:1) : 0;
+    if(capture!=md_wave_capture) {
+        memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum));
+        md_wave_forget();
+    }
+    md_wave_capture=capture;
     if(waveform) {
         if(level>0) {
             if(mode==8) md_spectrum_snapshot(md_spectrum);
@@ -156,9 +161,9 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_expand(mesh, MD_MESH_VERTICES, 1);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
-    if(preset==3 && md_custom_preset.motion[0]>0) {
+    if(preset==3 && md_preset_state.motion[0]>0) {
         MdVertex *vectors=sceGuGetMemory(16*12*2*sizeof(*vectors));
-        int count=md_motion_vertices(vectors,mesh,md_custom_preset.motion);
+        int count=md_motion_vertices(vectors,mesh,md_preset_state.motion);
         if(count) { md_blend(0); sceGuDisable(GU_TEXTURE_2D); sceGuDrawArray(GU_LINES,MD_FORMAT,count,NULL,vectors); }
         sceGuDisable(GU_BLEND);
     }
