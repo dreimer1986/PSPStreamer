@@ -2,7 +2,7 @@
 #ifndef PSPSTREAMER_MILKDROP_DECOR_H
 #define PSPSTREAMER_MILKDROP_DECOR_H
 #include "milkdrop_warp.h"
-enum { MD_SHAPES=4, MD_SHAPE_SIDES=32, MD_DECOR_VALUES=25 };
+enum { MD_SHAPES=4, MD_SHAPE_INSTANCES=8, MD_RENDER_SHAPES=32, MD_SHAPE_SIDES=32, MD_DECOR_VALUES=25 };
 typedef struct {
     float enabled,sides,additive,textured;
     float x,y,rad,ang,tex_ang,tex_zoom;
@@ -16,7 +16,7 @@ typedef struct {
     float echo_zoom,echo_alpha,echo_orient;
     MdBorder outer,inner;
     float gamma,wave_alpha;
-    MdShape shapes[MD_SHAPES];
+    MdShape shapes[MD_RENDER_SHAPES];
 } MdDecor;
 unsigned int md_rgba(float r,float g,float b,float a);
 int md_shape_vertices(MdVertex *out,const MdShape *shape,float aspect);

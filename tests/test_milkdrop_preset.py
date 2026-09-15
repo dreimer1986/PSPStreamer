@@ -30,7 +30,7 @@ class Decor(ctypes.Structure):
     _fields_=[(key,ctypes.c_float) for key in ("wave_x","wave_y","wave_param","wave_dots",
         "wave_thick","wave_additive","wave_brighten","wave_mod_alpha","wave_mod_start","wave_mod_end",
         "echo_zoom","echo_alpha","echo_orient")]+[("outer",Border),("inner",Border),
-        ("gamma",ctypes.c_float),("wave_alpha",ctypes.c_float),("shapes",Shape*4)]
+        ("gamma",ctypes.c_float),("wave_alpha",ctypes.c_float),("shapes",Shape*32)]
 
 
 class Op(ctypes.Structure):
@@ -65,7 +65,7 @@ class Preset(ctypes.Structure):
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
                 ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
-                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5)]
+                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4)]
 
 
 class PresetState(ctypes.Structure):
@@ -621,7 +621,7 @@ class PresetTests(unittest.TestCase):
 
     def test_conditional_syntax_budgets_and_bytecode_safety(self):
         for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
-                           "if(1,,3)","if(1,2,)","if(1,2,progress)",
+                           "if(1,,3)","if(1,2,)","if(1,2,monitor)",
                            "if(1,2,rand(1))","if(1,2,warp=3)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
         expression="0"
@@ -650,7 +650,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*159)(*([.5]*159)); before=bytes(values)
+                values=(ctypes.c_float*162)(*([.5]*162)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -727,7 +727,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         class Vertex(ctypes.Structure):
             _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
         class Geometry(ctypes.Structure):
-            _fields_=[('count',ctypes.c_int),('vertices',Vertex*64)]
+            _fields_=[('count',ctypes.c_int),('vertices',Vertex*512)]
         code,preset,_=self.parse(b'''[preset00]
 wavecode_0_enabled=1
 wavecode_0_samples=64
@@ -761,7 +761,7 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         self.assertFalse(fresh.waves[0].frame.ready)
         self.assertEqual(fn(ctypes.byref(preset),1,None,right,left,spectral,spectral,ctypes.byref(fresh),out,ctypes.byref(error)),0)
         self.assertAlmostEqual(out[0].vertices[0].y,.25*256,places=4)
-        for key,value in [('samples','65'),('bSpectrum','2'),('sep','129')]:
+        for key,value in [('samples','513'),('bSpectrum','2'),('sep','129')]:
             self.assertNotEqual(self.parse(f'[preset00]\nwavecode_0_{key}={value}'.encode())[0],0)
         for expr in ('sample=1;','value1=0;','samples=4;','time=0;'):
             self.assertNotEqual(self.parse(('[preset00]\nwave_0_per_point1='+expr).encode())[0],0)
@@ -808,7 +808,7 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         for v in output:
             self.assertTrue(0<=v.x<=256 and 0<=v.y<=256)
         self.assertEqual(self.library.md_wave_smooth(output,source,1),0)
-        self.assertEqual(self.library.md_wave_smooth(output,source,65),0)
+        self.assertEqual(self.library.md_wave_smooth(output,source,513),0)
 
     def test_image_effect_flags(self):
         for key in ('bDarkenCenter','bBrighten','bDarken','bSolarize','bInvert'):
@@ -821,6 +821,26 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         code,preset,_=self.parse(b'[preset00]\nper_frame_1=invert=time;')
         self.assertEqual(code,0)
         self.assertNotEqual(self.evaluate_state(preset,state,.5)[0],0)
+
+    def test_shape_instances_and_progress(self):
+        code,preset,_=self.parse(b'''[preset00]
+shapecode_0_enabled=1
+shapecode_0_num_inst=8
+shape_0_per_frame1=x=instance/instances; y=.5; rad=.02;
+per_frame_1=wave_r=progress;
+''')
+        self.assertEqual(code,0);state=PresetState()
+        duration=ctypes.c_float.in_dll(self.library,'md_preset_duration');old=duration.value;duration.value=60
+        try:
+            self.assertEqual(self.evaluate_state(preset,state,30)[0],0)
+            for i,index in enumerate([0,4,5,6,7,8,9,10]):
+                self.assertEqual(self.last_decor.shapes[index].enabled,1)
+                self.assertAlmostEqual(self.last_decor.shapes[index].x,i/8)
+            for key in ('instance','instances'):
+                self.assertNotEqual(self.parse(f'[preset00]\nshape_0_per_frame1={key}=1;'.encode())[0],0)
+            self.assertNotEqual(self.parse(b'[preset00]\nshapecode_0_num_inst=9')[0],0)
+            self.assertNotEqual(self.parse(b'[preset00]\nper_frame_1=progress=1;')[0],0)
+        finally: duration.value=old
 
     def test_init_q_lifetime_and_output_reset(self):
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=time; q32=.25; zoom=9;\n"

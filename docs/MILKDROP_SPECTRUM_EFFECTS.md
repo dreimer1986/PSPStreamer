@@ -94,6 +94,11 @@ update is needed.
 
 ## Still missing besides shaders and external textures
 
+This was the status of the spectrum/effects batch. The later
+[automation batch](MILKDROP_AUTOMATION.md) implements 512-point waves, eight
+shape instances, progress, timed/rated/playlist selection and snapshot crossfades.
+It also documents the remaining bounded-renderer differences from desktop.
+
 - Larger custom-wave sample counts and complete desktop audio analysis/scaling.
 - Multiple instances of one custom shape and additional legacy rendering flags.
 - Full NS-EEL: unrestricted programs, loops, memory/register facilities and

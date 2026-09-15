@@ -340,7 +340,9 @@ static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static int selected_video_fps;
 static char music_preset_file[256]="active.milk";
+static int music_preset_auto=0,music_preset_seconds=60,music_preset_fade_ms=1500;
 #include "preset_catalog.h"
+#include "preset_sequence.h"
 static int audio_shuffle;
 /* 0..30 maps cleanly to the 30 LED detents in the receiver UI. */
 static int playback_volume = 24;
@@ -414,6 +416,9 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
             else if (!strncmp(line, "music_preset=", 13) && preset_name_valid(line+13)) strcpy(music_preset_file,line+13);
+            else if (!strncmp(line,"preset_auto=",12)) music_preset_auto=atoi(line+12);
+            else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
+            else if (!strncmp(line,"preset_fade_ms=",15)) music_preset_fade_ms=atoi(line+15);
             else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
@@ -429,6 +434,9 @@ static void load_playback_settings(void) {
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
     if (!server_host[0]) strcpy(server_host, PSP_STREAMER_HOST);
     server_auth_update();
+    if(music_preset_auto<0 || music_preset_auto>3) music_preset_auto=0;
+    if(music_preset_seconds<30 || music_preset_seconds>600) music_preset_seconds=60;
+    if(music_preset_fade_ms<0 || music_preset_fade_ms>5000) music_preset_fade_ms=1500;
 }
 
 static void save_playback_settings(void) {
@@ -438,6 +446,7 @@ static void save_playback_settings(void) {
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
+    length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1732,6 +1741,10 @@ static int play_audio(const char *media_id, const char *title) {
     unsigned long long preset_notice_tick = ~0ULL;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
+    PresetSequence *sequence=music_preset_auto?malloc(sizeof(*sequence)):NULL;
+    if(sequence) preset_sequence_load(sequence,"presets",(unsigned int)sceKernelGetSystemTimeWide());
+    unsigned long long next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+    md_preset_duration=(float)music_preset_seconds;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
     audio_queue_read = audio_queue_write = audio_played_blocks = 0;
@@ -1780,6 +1793,7 @@ static int play_audio(const char *media_id, const char *title) {
         md_stop(); music_visual_active = 0;
         music_ui_restore_priority(previous_ui_priority);
         video_watch_stop();
+        free(sequence);
         return start_result;
     }
     remote_result = music_remote_start();
@@ -1815,6 +1829,24 @@ static int play_audio(const char *media_id, const char *title) {
             else lcd_draw_music(title, fullscreen);
         }
         if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
+        if(!audio_start) next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+        if(sequence && music_preset_auto && visual_preset==4 && (music_visual_active || preset_result!=MD_FILE_OK) && audio_start &&
+           (unsigned long long)sceKernelGetSystemTimeWide()>=next_preset_tick) {
+            int index=preset_sequence_next(sequence,music_preset_file,music_preset_auto);
+            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            if(index>=0) {
+                char path[272];MdFileError error;
+                snprintf(path,sizeof(path),"presets/%s",sequence->catalog.names[index]);
+                video_watch_ping("automatic preset load");
+                int result=md_load_preset(path,&md_custom_preset,&error);
+                if(result==MD_FILE_OK) {
+                    strcpy(music_preset_file,sequence->catalog.names[index]);
+                    md_preset_duration=(float)music_preset_seconds;md_begin_preset(music_preset_fade_ms);
+                    preset_result=MD_FILE_OK;
+                    if(!music_visual_active) music_visual_active=md_start();
+                } else {sequence->rating[index]=-1;next_preset_tick=sceKernelGetSystemTimeWide()+250000;}
+            }
+        }
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
             video_watch_ping("music visualization");
             if (tv_ui_active) md_set_tv_title_bottom(tv_music_title_bottom);
@@ -1827,6 +1859,10 @@ static int play_audio(const char *media_id, const char *title) {
             if (rendered <= 0) {
                 md_stop(); music_visual_active = visual_preset = 0;
                 if (rendered < 0) {
+                    if(sequence && music_preset_auto) {
+                        for(int i=0;i<sequence->catalog.count;i++) if(!strcmp(sequence->catalog.names[i],music_preset_file)) sequence->rating[i]=-1;
+                        next_preset_tick=sceKernelGetSystemTimeWide()+250000;
+                    }
                     preset_error = md_runtime_error;
                     preset_result = preset_error.code;
                     visual_preset = 4;
@@ -1850,6 +1886,13 @@ static int play_audio(const char *media_id, const char *title) {
                 visual_preset=4; music_saved_visual_preset=4;
                 save_playback_settings();
             }
+            md_preset_duration=(float)music_preset_seconds;
+            if(music_preset_auto && !sequence) {
+                sequence=malloc(sizeof(*sequence));
+                if(sequence) {video_watch_ping("preset playlist load");preset_sequence_load(sequence,"presets",(unsigned int)sceKernelGetSystemTimeWide());}
+            }
+            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            save_playback_settings();
             if(visual_preset && (visual_preset!=4 || preset_result==MD_FILE_OK) && md_start()) music_visual_active=1;
             preset_notice_tick=~0ULL;
             paused=!audio_start;
@@ -1890,6 +1933,8 @@ static int play_audio(const char *media_id, const char *title) {
                 visual_preset++; music_visual_active = 1;
             }
             music_saved_visual_preset = visual_preset;
+            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            if(visual_preset==4 && music_visual_active) md_begin_preset(0);
             preset_notice_tick = ~0ULL;
             lcd_music_reset(); tv_music_reset();
         }
@@ -1918,6 +1963,7 @@ static int play_audio(const char *media_id, const char *title) {
     video_watch_ping("music stop: GU");
     md_stop();
     music_visual_active = 0;
+    free(sequence);
     /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song

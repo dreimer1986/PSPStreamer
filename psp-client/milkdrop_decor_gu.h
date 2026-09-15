@@ -9,8 +9,10 @@ static void md_blend(int additive) {
     sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,additive?GU_FIX:GU_ONE_MINUS_SRC_ALPHA,0,additive?0xffffff:0);
 }
 static void md_shapes(const MdDecor *decor,float aspect) {
-    for(int i=0;i<MD_SHAPES;i++) {
-        const MdShape *p=&decor->shapes[i];
+    for(int i=0;i<MD_RENDER_SHAPES;i++) {
+        int slot=i/MD_SHAPE_INSTANCES,instance=i%MD_SHAPE_INSTANCES;
+        int index=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
+        const MdShape *p=&decor->shapes[index];
         if(!p->enabled) continue;
         MdVertex *v=sceGuGetMemory(((int)p->sides+2)*sizeof(*v));
         int count=md_shape_vertices(v,p,aspect);

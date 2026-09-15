@@ -1,0 +1,15 @@
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=.3
+fDecay=.94
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+shapecode_0_enabled=1
+shapecode_0_num_inst=8
+shapecode_0_sides=5
+shapecode_0_border_a=1
+shape_0_per_frame1=phase=time*.4+instance*6.283185/instances;
+shape_0_per_frame2=x=.5+.3*cos(phase); y=.5+.3*sin(phase); rad=.04+.04*psp_low; ang=sin(time)*3;
+shape_0_per_frame3=r=instance/instances; g=1-r; b=.7; a=.7;

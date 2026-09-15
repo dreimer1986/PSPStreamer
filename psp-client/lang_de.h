@@ -5,6 +5,12 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_PRESETS] = "MILKDROP PRESETS",
     [TXT_PRESET_CONTROLS] = "HOCH/RUNTER  L/R SEITE  X WAHL  O ZURÜCK",
     [TXT_PRESET_LIMIT] = "Max. 128",
+    [TXT_PRESET_AUTO_STATUS] = "Auto: %s | %ds",
+    [TXT_PRESET_AUTO_HELP] = "QUADRAT: MODUS   DREIECK: ZEIT",
+    [TXT_PRESET_AUTO_OFF] = "Aus",
+    [TXT_PRESET_AUTO_ORDER] = "Reihe",
+    [TXT_PRESET_AUTO_RANDOM] = "Zufall",
+    [TXT_PRESET_AUTO_RATED] = "Gewichtet",
     /* Vollbild-Steuerung */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Weiter",

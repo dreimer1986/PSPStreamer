@@ -16,6 +16,7 @@ _Static_assert(offsetof(MdCustomWave,a)==12*sizeof(float),"custom wave field lay
 MdFilePreset md_custom_preset={.wave_mode=-1,.wrap=1,.gamma=1,
     .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1}};
 MdFileError md_runtime_error;
+float md_preset_duration=60;
 static const float low[] = {.8f, -.2f, -4, 0, .1f, .8f, 0, 0, 0};
 static const float high[] = {1.2f, .2f, 4, 4, 8, 1, 1, 1, 1};
 static char *md_trim(char *text) {
@@ -41,6 +42,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         .sides=4,.x=.5f,.y=.5f,.rad=.1f,.tex_zoom=1,.r=1,.g=1,.b=1,.a=1,
         .r2=1,.g2=1,.b2=1,.border_r=1,.border_g=1,.border_b=1};
     unsigned int shape_seen[MD_SHAPES]={0};
+    for(int i=0;i<MD_SHAPES;i++) next.shape_instances[i]=1;
     unsigned int wave_seen[MD_CUSTOM_WAVES]={0};
     for(int i=0;i<MD_CUSTOM_WAVES;i++) next.waves[i]=(MdCustomWave){.samples=64,.scaling=1,.smoothing=.5f,.r=1,.g=1,.b=1,.a=1};
     float wave_mode = -1, wrap = 1;
@@ -172,6 +174,11 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(strlen(key)<13 || slot<0 || slot>=MD_SHAPES || key[11]!='_') {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }
+            if(!strcmp(key+12,"num_inst")) {
+                errno=0; parsed=strtof(value,&end);
+                if(end==value || *md_trim(end) || errno || !isfinite(parsed) || parsed<1 || parsed>MD_SHAPE_INSTANCES || parsed!=floorf(parsed) || (shape_seen[slot]&(1U<<30))) {result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;}
+                next.shape_instances[slot]=(int)parsed;shape_seen[slot]|=1U<<30;continue;
+            }
             int k; for(k=0;k<23 && strcmp(key+12,names[k]);k++) {}
             if(k==23) { result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done; }
             errno=0; parsed=strtof(value,&end);
@@ -277,6 +284,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     v[PM_DYNAMIC_BASE]=(float)p->wave_mode;
     memcpy(v+PM_DYNAMIC_BASE+1,p->motion,sizeof(p->motion));
     memcpy(v+PM_EFFECT_BASE,p->effects,sizeof(p->effects));
+    v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
     memset(error, 0, sizeof(*error));
     if (signal) for (int i = 0; i < MD_SIGNAL_COUNT; i++) {
         float value = signal->values[i];
@@ -352,11 +360,15 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     MdDecor evaluated=p->decor;
     for(int slot=0;slot<MD_SHAPES;slot++) {
         const MdShapeProgram *program=&p->shape_program[slot];
-        if(!p->decor.shapes[slot].enabled || (!program->init.count && !program->frame.count)) continue;
+        if(!p->decor.shapes[slot].enabled) continue;
+        int instances=p->shape_instances[slot]>0?p->shape_instances[slot]:1;
+        if(instances>MD_SHAPE_INSTANCES) return md_file_error(error,MD_FILE_INVALID,0,"shape instances");
+        for(int instance=0;instance<instances;instance++) {
         MdShapeState *local=&next.shape[slot];
         float sv[PM_VALUES]={0};
         memcpy(sv+9,v+9,14*sizeof(float));
         memcpy(sv+PM_META_BASE,v+PM_META_BASE,2*sizeof(float));
+        sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;sv[PM_ENGINE_BASE+2]=v[PM_ENGINE_BASE+2];
         memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
         memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
         memcpy(sv+PM_USER_BASE,local->user,sizeof(local->user));
@@ -381,8 +393,10 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
             if(!isfinite(value) || value<lo || value>hi || ((k<4 || k==22) && value!=floorf(value)))
                 return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&program->frame,PM_SHAPE_BASE+k),"shape range");
         }
-        memcpy(&evaluated.shapes[slot],sv+PM_SHAPE_BASE,sizeof(MdShape));
+        int output=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
+        memcpy(&evaluated.shapes[output],sv+PM_SHAPE_BASE,sizeof(MdShape));
         memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
+        }
     }
     *decor=evaluated;
     memcpy(decor,v+30,MD_DECOR_VALUES*sizeof(float));
@@ -409,6 +423,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         MdWaveState *ws=&next.waves[slot];
         float v[PM_VALUES]={0};
         v[9]=seconds;
+        v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
         v[PM_META_BASE]=next.frames?(float)(next.frames-1):0; v[PM_META_BASE+1]=next.fps;
         memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
@@ -428,6 +443,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         float colors[4]; memcpy(colors,v+PM_SHAPE_BASE+10,sizeof(colors));
         memcpy(v+PM_USER_BASE,ws->point_user,sizeof(ws->point_user));
         int count=(int)n,offset=(576-count)/2,sep=(int)w->sep;
+        if(!w->spectrum && count+sep>576) return md_file_error(error,MD_FILE_INVALID,0,"wave sample separation");
         float a[MD_CUSTOM_POINTS],b[MD_CUSTOM_POINTS];
         float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*p->wave_scale/32768.0f;
         for(int i=0;i<count;i++) {
@@ -478,6 +494,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         v[PM_DYNAMIC_BASE]=(float)state->wave_mode;
         memcpy(v+PM_DYNAMIC_BASE+1,state->motion,sizeof(state->motion));
         memcpy(v+PM_EFFECT_BASE,state->effects,sizeof(state->effects));
+        v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
         float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
         v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);

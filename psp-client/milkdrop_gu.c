@@ -16,7 +16,7 @@
 static int md_texture_base, md_texture_bytes, md_pixel_format;
 #define MD_TEXTURE_BYTES md_texture_bytes
 #define MD_TEXTURE_BASE md_texture_base
-#define MD_LIST_BYTES 196608
+#define MD_LIST_BYTES 786432
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
 static int md_front;
@@ -33,6 +33,24 @@ static short md_spectrum[MD_SPECTRUM_SAMPLES];
 static short md_spectrum_right[MD_SPECTRUM_SAMPLES];
 static float md_bins_left[512],md_bins_right[512];
 static MdWaveGeometry md_custom_geometry[MD_CUSTOM_WAVES];
+static void *md_fade_image;
+static unsigned long long md_fade_start;
+static unsigned int md_fade_ms;
+static void md_fade_clear(void) {free(md_fade_image);md_fade_image=NULL;md_fade_ms=0;}
+void md_begin_preset(unsigned int fade_ms) {
+    md_fade_clear();
+    if(md_list && md_origin && fade_ms) {
+        sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+        md_fade_image=memalign(64,MD_TEXTURE_BYTES);
+        if(md_fade_image) {
+            memcpy(md_fade_image,(void *)(uintptr_t)(0x44000000+MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES),MD_TEXTURE_BYTES);
+            sceKernelDcacheWritebackRange(md_fade_image,MD_TEXTURE_BYTES);
+            md_fade_ms=fade_ms>5000?5000:fade_ms;md_fade_start=sceKernelGetSystemTimeWide();
+        }
+    }
+    md_origin=md_next=0;md_signal_active=0;
+    memset(&md_preset_state,0,sizeof(md_preset_state));
+}
 /* Geometry helpers retain their logical 256-square coordinate system. Only
  * this adapter maps it to the rectangular physical feedback surface. */
 static void md_expand(MdVertex *v, int count, int half_texel) {
@@ -81,6 +99,7 @@ void md_stop(void) {
     md_wave_capture=0;
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    md_fade_clear();
     sceGuTerm();
     free(md_list); md_list = NULL;
 }
@@ -104,6 +123,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
         top == md_last_top) return 1;
     if (tv != md_last_tv) {
+        md_fade_clear();
         md_texture_base = tv ? 768*480*4 : 512*272*4;
         md_texture_bytes = MD_WIDTH*MD_HEIGHT*(tv ? 2 : 4);
         md_pixel_format = tv ? GU_PSM_5650 : GU_PSM_8888;
@@ -274,6 +294,22 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_present(0,0,MD_WIDTH,MD_HEIGHT,preset==3?d->gamma:1,
         preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0);
     if(preset==3) md_image_effects(md_preset_state.effects);
+    if(md_fade_image) {
+        unsigned long long elapsed=now-md_fade_start;
+        if(preset!=3 || elapsed>=(unsigned long long)md_fade_ms*1000) md_fade_clear();
+        else {
+            unsigned int alpha=255-(unsigned int)(elapsed*255/(md_fade_ms*1000ULL));
+            sceGuEnable(GU_TEXTURE_2D);sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_fade_image);
+            sceGuTexFlush();md_blend(0);
+            for(int x=0;x<MD_WIDTH;x+=64) {
+                MdVertex *v=sceGuGetMemory(2*sizeof(*v));
+                v[0]=(MdVertex){(float)x,0,0xffffff|(alpha<<24),(float)x,0,0};
+                v[1]=(MdVertex){(float)(x+64),MD_HEIGHT,0xffffff|(alpha<<24),(float)(x+64),MD_HEIGHT,0};
+                sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
+            }
+            sceGuDisable(GU_BLEND);
+        }
+    }
     sceGuTexSync();
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
     sceGuEnable(GU_TEXTURE_2D);

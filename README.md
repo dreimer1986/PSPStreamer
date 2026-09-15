@@ -171,6 +171,9 @@ subtitle=-1
 quality=2
 video_fps=20
 music_preset=active.milk
+preset_auto=0
+preset_seconds=60
+preset_fade_ms=1500
 volume=24
 shuffle=0
 language=en
@@ -178,6 +181,16 @@ tv_ui=off
 ```
 
 `server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k`, `3=V6`, `4=V5`, `5=V4`, `6=V3` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
+
+MilkDrop automation: `preset_auto=0` disables automatic changes (default);
+`1` selects in order, `2` randomly and `3` randomly weighted by each preset's
+`fRating`. `preset_seconds` accepts 30–600 seconds (default 60).
+`preset_fade_ms` accepts 0–5000 (default 1500; 0 means a hard cut).
+In the Circle preset browser, **Square** cycles modes and **Triangle** cycles
+30/60/120-second intervals. Settings are saved when leaving the browser.
+An optional `presets/playlist.txt` limits automation to one exact filename per
+line; otherwise it uses the sorted preset directory. See
+[automation, instances and large waves](docs/MILKDROP_AUTOMATION.md).
 
 ### Audio quality and film frame rate (server/HA app 0.1.25)
 
@@ -289,6 +302,11 @@ fixed-function image effects (brighten, darken, solarize, invert and darken
 center) are available as static fields and frame formulas. See the
 [spectrum, smoothing and image-effects batch](docs/MILKDROP_SPECTRUM_EFFECTS.md)
 for test presets, memory changes and the remaining compatibility gaps.
+The next batch adds up to eight instances per shape, 512-point custom waves,
+read-only `instance`/`instances`/`progress` inputs, optional ordered/random/rated
+preset cycling, playlists and snapshot-to-live crossfades. Try
+`shape-instances-demo.milk` and `large-wave-demo.milk`; details and resource
+limits are in the [automation guide](docs/MILKDROP_AUTOMATION.md).
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.

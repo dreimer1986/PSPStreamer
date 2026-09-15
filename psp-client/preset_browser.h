@@ -23,6 +23,8 @@ static int music_choose_preset(void) {
                     tv_text(34,72+(i-first)*27,38,1,i==selected?TV_AMBER:TV_WHITE,"%c %s",i==selected?'>':' ',catalog->names[i]);
                 if(!catalog->count) tv_text(34,72,38,1,TV_WHITE,"%s",tr(TXT_PRESET_MISSING));
                 if(catalog->truncated) tv_text(562,80,10,3,TV_AMBER,"%s",tr(TXT_PRESET_LIMIT));
+                tv_text(34,240,48,1,TV_WHITE,tr(TXT_PRESET_AUTO_STATUS),tr((TextId)(TXT_PRESET_AUTO_OFF+music_preset_auto)),music_preset_seconds);
+                tv_text(34,262,48,1,TV_WHITE,"%s",tr(TXT_PRESET_AUTO_HELP));
                 tv_help(tr(TXT_PRESET_CONTROLS)); tv_present();
             } else {
                 gui_library_shell(tr(TXT_PRESETS));
@@ -31,12 +33,16 @@ static int music_choose_preset(void) {
                 if(!catalog->count) gui_text(38,48,0x00FFFFFF,"%s",tr(TXT_PRESET_MISSING));
                 if(catalog->truncated) gui_text(376,70,0x0000D8FF,"%s",tr(TXT_PRESET_LIMIT));
                 gui_text(38,177,0x00FFFFFF,"%s",tr(TXT_PRESET_CONTROLS));
+                gui_text(38,156,0x00FFFFFF,tr(TXT_PRESET_AUTO_STATUS),tr((TextId)(TXT_PRESET_AUTO_OFF+music_preset_auto)),music_preset_seconds);
+                gui_text(38,166,0x00FFFFFF,"%s",tr(TXT_PRESET_AUTO_HELP));
             }
             dirty=0;
         }
         sceCtrlPeekBufferPositive(&pad,1);
         unsigned int buttons=pad.Buttons;
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if((buttons&PSP_CTRL_SQUARE) && !(old&PSP_CTRL_SQUARE)) {music_preset_auto=(music_preset_auto+1)%4;dirty=1;}
+        if((buttons&PSP_CTRL_TRIANGLE) && !(old&PSP_CTRL_TRIANGLE)) {music_preset_seconds=music_preset_seconds==30?60:music_preset_seconds==60?120:30;dirty=1;}
         if((buttons&PSP_CTRL_CIRCLE) && !(old&PSP_CTRL_CIRCLE)) break;
         if((buttons&PSP_CTRL_START) && !(old&PSP_CTRL_START)) { music_remote_action=MUSIC_REMOTE_STOP; break; }
         if((buttons&PSP_CTRL_CROSS) && !(old&PSP_CTRL_CROSS) && catalog->count) {

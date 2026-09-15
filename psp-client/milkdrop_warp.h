@@ -20,6 +20,8 @@ void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
 
 /* PSP-only adapter: owns GU lists/textures solely during music visualization. */
 int md_start(void);
+/* Snapshot the previous presentation, restart custom state, fade into the new preset. */
+void md_begin_preset(unsigned int fade_ms);
 void md_stop(void);
 void md_set_tv_title_bottom(int bottom);
 /* 1: rendered/throttled, 0: GU failure, -1: invalid custom formula (see md_runtime_error). */

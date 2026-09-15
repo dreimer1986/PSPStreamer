@@ -10,7 +10,7 @@ static int fft_ready;
 /* MilkDrop SmoothWave coefficients. Preserve endpoints and input colors;
  * clamp interpolation overshoot to the valid feedback rectangle. */
 int md_wave_smooth(MdVertex *out,const MdVertex *in,int count) {
-    if(count<2 || count>64) return 0;
+    if(count<2 || count>512) return 0;
     for(int i=0;i<count-1;i++) {
         int below=i?i-1:0,above=i+2<count?i+2:count-1;
         out[2*i]=in[i]; out[2*i+1]=in[i];

@@ -1,0 +1,6 @@
+# Copy to playlist.txt to activate this ordered subset for automatic selection.
+# One exact filename per line. Missing/unsafe names are ignored.
+shape-instances-demo.milk
+large-wave-demo.milk
+custom-spectrum-demo.milk
+image-effects-demo.milk

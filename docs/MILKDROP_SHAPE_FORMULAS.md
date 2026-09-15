@@ -62,3 +62,7 @@ Remaining major gaps include shape instances,
 complete NS-EEL semantics, extra engine inputs and
 automatic preset transitions/blending. Shaders and external textures remain
 deferred.
+
+Update: [the automation batch](MILKDROP_AUTOMATION.md) adds eight instances per
+shape, `instance`/`instances`/`progress` inputs, automatic selection and snapshot
+crossfades. Full NS-EEL, shaders and external textures are still deferred.

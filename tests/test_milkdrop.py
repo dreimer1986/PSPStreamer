@@ -35,8 +35,8 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/presets/script-wave-demo.milk"),
                             str(ROOT / "psp-client/presets/spiral-wave-demo.milk"),
                             *[str(ROOT / ("psp-client/presets/"+name+"-demo.milk")) for name in
-                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch","shape-orbits","custom-wave","custom-wave-fft","custom-spectrum","smooth-wave","image-effects")]],
-                           check=True, timeout=30)
+                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch","shape-orbits","custom-wave","custom-wave-fft","custom-spectrum","smooth-wave","image-effects","shape-instances","large-wave")]],
+                           check=True, timeout=60)
 
     def test_opt_in_and_teardown(self):
         source = (ROOT / "psp-client/main.c").read_text()
@@ -44,7 +44,8 @@ class MilkDropTests(unittest.TestCase):
         self.assertIn("music_visual_active = 0;", music)
         self.assertIn("visual_preset == 4", music)
         self.assertLess(music.index("md_load_preset("), music.index("sceKernelCreateThread("))
-        self.assertEqual(music.count("md_load_preset("), 1)
+        self.assertEqual(music.count("md_load_preset("), 2) # startup and gated automatic switch
+        self.assertIn("next_preset_tick",music)
         self.assertIn("if (rendered <= 0)", music)
         self.assertIn("preset_error = md_runtime_error;", music)
         self.assertIn("PSP_CTRL_SQUARE", music)

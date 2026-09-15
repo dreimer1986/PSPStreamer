@@ -6,7 +6,7 @@
 #include "milkdrop_decor.h"
 typedef struct { PmProgram init, frame; PmSymbols symbols; } MdShapeProgram;
 typedef struct { int ready; float t[8], user[PM_USER_COUNT]; } MdShapeState;
-enum { MD_CUSTOM_WAVES=4, MD_CUSTOM_POINTS=64 };
+enum { MD_CUSTOM_WAVES=4, MD_CUSTOM_POINTS=512 };
 typedef struct {
     float enabled,samples,sep,spectrum,dots,thick,additive,scaling,smoothing,r,g,b,a;
     PmProgram init,frame,point; PmSymbols symbols,point_symbols;
@@ -25,6 +25,7 @@ typedef struct {
     MdShapeProgram shape_program[MD_SHAPES];
     MdCustomWave waves[MD_CUSTOM_WAVES];
     float effects[5]; /* darken center, brighten, darken, solarize, invert */
+    int shape_instances[MD_SHAPES];
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
 typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT];
@@ -38,6 +39,7 @@ enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FIL
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;
 extern MdFileError md_runtime_error;
+extern float md_preset_duration;
 int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *signal,
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error);

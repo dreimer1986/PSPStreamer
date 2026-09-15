@@ -4,6 +4,12 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_PRESETS] = "MILKDROP PRESETS",
     [TXT_PRESET_CONTROLS] = "UP/DN SELECT  L/R PAGE  X APPLY  O BACK",
     [TXT_PRESET_LIMIT] = "128 files max",
+    [TXT_PRESET_AUTO_STATUS] = "Auto: %s | %ds",
+    [TXT_PRESET_AUTO_HELP] = "SQUARE: MODE   TRIANGLE: INTERVAL",
+    [TXT_PRESET_AUTO_OFF] = "Off",
+    [TXT_PRESET_AUTO_ORDER] = "Order",
+    [TXT_PRESET_AUTO_RANDOM] = "Random",
+    [TXT_PRESET_AUTO_RATED] = "Rated",
     /* Fullscreen transport overlay */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Play",

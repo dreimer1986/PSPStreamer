@@ -1,0 +1,15 @@
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=0
+fDecay=.92
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wavecode_0_enabled=1
+wavecode_0_samples=512
+wavecode_0_scaling=.35
+wavecode_0_smoothing=.2
+wavecode_0_bDrawThick=1
+wave_0_per_frame1=r=1-progress; g=.5; b=progress;
+wave_0_per_point1=x=.05+.9*sample; y=.5+.3*value1+.07*sin(sample*25.13274+time);
