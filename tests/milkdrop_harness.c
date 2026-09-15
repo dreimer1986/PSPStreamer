@@ -25,6 +25,8 @@ static unsigned long long render_cost;
 static uint32_t expected_ring_color;
 static int expected_left, expected_top, expected_width, expected_height, covered_width;
 static int expected_passes=1;
+static const MdVertex *shape_fan;
+static int outline_pass, thick_outline_draws;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return test_time; }
 static int sceGuInit(void) {
@@ -105,9 +107,23 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         assert(right==512);
         mesh_calls++;
     }
-    else if(type==GU_TRIANGLE_FAN) { assert(count>=5 && count<=34); }
+    else if(type==GU_TRIANGLE_FAN) {
+        assert(count>=5 && count<=34);
+        shape_fan=v; outline_pass=0;
+    }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
         assert(count==97 || count==241 || (count>=4 && count<=33)); ring_calls++;
+        if(count<=33) {
+            static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
+            assert(shape_fan && outline_pass<4);
+            for(int i=0;i<count;i++) {
+                assert(v[i].x==shape_fan[i+1].x+dx[outline_pass]);
+                assert(v[i].y==shape_fan[i+1].y+dy[outline_pass]);
+            }
+            assert(v[0].x==v[count-1].x && v[0].y==v[count-1].y);
+            if(outline_pass) thick_outline_draws++;
+            outline_pass++;
+        }
         if(expected_ring_color) for(int i=0;i<count;i++) assert(v[i].color==expected_ring_color);
     }
     else {
@@ -137,7 +153,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==5);
+    assert(argc==6);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -308,7 +324,7 @@ int main(int argc,char **argv) {
     for(int i=0;i<MD_SHAPES;i++) decor->shapes[i]=(MdShape){
         .enabled=1,.sides=32,.additive=i%2,.textured=i%2,.x=.5f,.y=.5f,.rad=.4f,
         .tex_zoom=1,.r=1,.g=.3f,.b=.2f,.a=.5f,.r2=.2f,.g2=.3f,.b2=1,.a2=.1f,
-        .border_r=1,.border_g=1,.border_b=1,.border_a=.3f};
+        .border_r=1,.border_g=1,.border_b=1,.border_a=.3f,.thick_outline=1};
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
         expected_width=full?(tv?720:480):tv?508:306;
@@ -364,6 +380,7 @@ int main(int argc,char **argv) {
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
     printf("Visualization maximum vertex storage: %zu / 65536 bytes\n",list_peak);
+    assert(thick_outline_draws>0);
     munmap(vram,edram_size);
     return 0;
 }

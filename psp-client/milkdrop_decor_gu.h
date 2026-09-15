@@ -24,11 +24,24 @@ static void md_shapes(const MdDecor *decor,float aspect) {
         } else sceGuDisable(GU_TEXTURE_2D);
         sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,v);
         if(p->border_a>0) {
-            MdVertex *edge=sceGuGetMemory((count-1)*sizeof(*edge));
+            int passes=p->thick_outline!=0?4:1;
+            /* Four one-feedback-texel offsets, following MilkDrop 2's
+             * fixed-function border. Its positive D3D y is upward; our GU
+             * coordinates are downward. Each pass owns immutable vertices:
+             * the GE consumes this list asynchronously after submission.
+             * One allocation avoids per-pass padding at maximum sides. */
+            static const float dx[4]={0,1,1,0},dy[4]={0,0,-1,-1};
+            MdVertex *edges=sceGuGetMemory(passes*(count-1)*sizeof(*edges));
             unsigned int color=md_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
-            for(int j=1;j<count;j++) { edge[j-1]=v[j]; edge[j-1].color=color; }
             sceGuDisable(GU_TEXTURE_2D);
-            sceGuDrawArray(GU_LINE_STRIP,MD_FORMAT,count-1,NULL,edge);
+            for(int pass=0;pass<passes;pass++) {
+                MdVertex *edge=edges+pass*(count-1);
+                for(int j=1;j<count;j++) {
+                    edge[j-1]=v[j]; edge[j-1].color=color;
+                    edge[j-1].x+=dx[pass]; edge[j-1].y+=dy[pass];
+                }
+                sceGuDrawArray(GU_LINE_STRIP,MD_FORMAT,count-1,NULL,edge);
+            }
         }
     }
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);

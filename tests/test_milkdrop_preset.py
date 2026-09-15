@@ -19,7 +19,7 @@ class Warp(ctypes.Structure):
 class Shape(ctypes.Structure):
     _fields_=[(key,ctypes.c_float) for key in ("enabled","sides","additive","textured",
         "x","y","rad","ang","tex_ang","tex_zoom","r","g","b","a","r2","g2","b2","a2",
-        "border_r","border_g","border_b","border_a")]
+        "border_r","border_g","border_b","border_a","thick_outline")]
 
 
 class Border(ctypes.Structure):
@@ -400,6 +400,16 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
         self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
+
+    def test_thick_shape_outline_flags(self):
+        for slot in range(4):
+            for value in (0,1):
+                code,preset,_=self.parse(f"[preset00]\nshapecode_{slot}_thickOutline={value}".encode())
+                self.assertEqual(code,0)
+                self.assertEqual(preset.decor.shapes[slot].thick_outline,value)
+        for value in ('-1','2','.5','nan','inf'):
+            self.assertNotEqual(self.parse(f"[preset00]\nshapecode_0_thickOutline={value}".encode())[0],0)
+        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_thickOutline=1\nshapecode_0_thickOutline=0")[0],2)
 
     def test_conditional_lazy_nested_and_boolean_math(self):
         cases = (("if(1,2,1/0)",2), ("if(0,sqrt(-1),3)",3),

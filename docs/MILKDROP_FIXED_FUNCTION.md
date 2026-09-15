@@ -77,7 +77,8 @@ Use `shapecode_0_FIELD` through `shapecode_3_FIELD`:
 - `tex_zoom`: 0.1–10 (default 1).
 - `r/g/b/a`: center color; `r2/g2/b2/a2`: edge color, all 0–1.
 - `border_r/g/b/a`: outline color, all 0–1.
-- `thickOutline=0` is accepted; nonzero remains unsupported.
+- `thickOutline`: integer 0/1. Thick outlines use four copies offset by one
+  feedback texel, following MilkDrop 2's fixed-function border path.
 
 Shapes draw before the waveform. Textured shapes sample the previous feedback
 texture, never the texture currently being rendered. Color interpolates from
@@ -107,7 +108,11 @@ looping and independent shape/wave execution contexts remain unsupported.
   TV uses RGB565. See [memory layout and presentation](MILKDROP_PRESENTATION.md).
 - Worst tested combination: four 32-sided textured/outlined shapes, thick
   dotted wave, both borders, echo, gamma 4 and TV fullscreen. Vertex storage
-  peaks at 46,480 bytes, leaving 19,056 bytes for GU commands/alignment.
+  with all four thick shape outlines peaks at 55,952 bytes, leaving 9,584
+  bytes for GU commands/alignment. The harness enforces the existing 56,000-byte
+  vertex-allocation ceiling. Thick outlines allocate their four copies together
+  to avoid unnecessary alignment padding; submitted vertices are never reused
+  or mutated before the GE finishes.
   Host mocks verify data bounds, blending calls and texture ownership; they
   do not emulate PSP rasterization or prove hardware frame time.
 - Existing adaptive frame throttling remains in place; no catch-up rendering.

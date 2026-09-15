@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stddef.h>
 _Static_assert(offsetof(MdShape,border_a)==21*sizeof(float),"shape field layout");
+_Static_assert(offsetof(MdShape,thick_outline)==22*sizeof(float),"shape outline field layout");
 _Static_assert(offsetof(MdDecor,shapes)==MD_DECOR_VALUES*sizeof(float),"decor field layout");
 
 MdFilePreset md_custom_preset={.wave_mode=-1,.wrap=1,.gamma=1,
@@ -129,16 +130,15 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(k==1) {lo=3;hi=MD_SHAPE_SIDES;}
             if(k==7 || k==8) {lo=-100;hi=100;}
             if(k==9) {lo=.1f;hi=10;}
-            if(k==22) hi=0; /* Thick custom-shape outlines need a separate list budget. */
             if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed) ||
                 (shape_seen[slot]&(1U<<k))) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
-            if(parsed<lo || parsed>hi || (k<4 && parsed!=floorf(parsed))) {
+            if(parsed<lo || parsed>hi || ((k<4 || k==22) && parsed!=floorf(parsed))) {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }
             /* All MdShape members are floats; memcpy avoids cross-member pointer arithmetic. */
-            if(k<22) memcpy((char *)&next.decor.shapes[slot]+k*sizeof(float),&parsed,sizeof(parsed));
+            memcpy((char *)&next.decor.shapes[slot]+k*sizeof(float),&parsed,sizeof(parsed));
             shape_seen[slot]|=1U<<k; continue;
         }
         if (!strncmp(key, "per_frame_", 10) || !strncmp(key,"per_pixel_",10)) {

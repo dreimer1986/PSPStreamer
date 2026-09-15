@@ -7,6 +7,7 @@ typedef struct {
     float enabled,sides,additive,textured;
     float x,y,rad,ang,tex_ang,tex_zoom;
     float r,g,b,a,r2,g2,b2,a2,border_r,border_g,border_b,border_a;
+    float thick_outline;
 } MdShape;
 typedef struct { float size,r,g,b,a; } MdBorder;
 typedef struct {

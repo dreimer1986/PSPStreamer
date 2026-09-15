@@ -285,6 +285,10 @@ The [extended fixed-function subset](docs/MILKDROP_FIXED_FUNCTION.md) adds
 animated transform centers/stretch, wave styling, echo, borders and four
 static custom shapes (including feedback-textured shapes). Try
 `receiver-fx-demo.milk` and `echo-dots-demo.milk` as the active preset.
+
+Custom shapes also support `thickOutline=1`. The `outline-demo.milk` preset
+compares thin (left) and thick (right) cyan outlines. See
+[shape-outline rendering and testing](docs/MILKDROP_SHAPE_OUTLINES.md).
 The [conditional formula subset](docs/MILKDROP_CONDITIONS.md) adds lazy `if`,
 Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.
