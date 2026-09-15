@@ -30,6 +30,8 @@ static int video_watch_worker(SceSize args,void *argp) {
     (void)args; (void)argp;
     video_watch_ready=video_watch_write("monitor running\n",0)<0?-1:1;
     while(video_watch_running) {
+        /* Snapshot the other thread's heartbeat before sampling time. */
+        unsigned int heartbeat=video_watch_tick;
         unsigned int now=video_watch_now();
         if(remote_completed!=remote_http_completed) {
             remote_completed=remote_http_completed;
@@ -39,7 +41,7 @@ static int video_watch_worker(SceSize args,void *argp) {
         if(position!=last_position || (video_watch_music?!audio_start:(playback_paused || !timed_playing))) {
             last_position=position; last_progress=now;
         }
-        if(reports<4 && (now-video_watch_tick>=8000 || now-last_progress>=8000 || now-last_remote>=8000) &&
+        if(reports<4 && (now-heartbeat>=8000 || now-last_progress>=8000 || now-last_remote>=8000) &&
            (!reports || now-last_report>=30000)) {
             char text[1024];
             int n=snprintf(text,sizeof(text),
@@ -49,7 +51,7 @@ static int video_watch_worker(SceSize args,void *argp) {
                 "threads: reader=%d dac=%d remote=%d\n"
                 "remote: phase=%s attempts=%u completed=%u result=%d sequence=%d success_age_ms=%u\n\n",
                 now,tvout_video_active,video_watch_stage,h264_hw_last_step(),
-                now-video_watch_tick,now-last_progress,position,playback_paused,
+                now-heartbeat,now-last_progress,position,playback_paused,
                 timed_running,timed_eof,timed_error,timed_audio_done,
                 timed_video.write-timed_video.read,timed_audio.write-timed_audio.read,
                 audio_running,audio_state,(unsigned int)audio_blocks_published,

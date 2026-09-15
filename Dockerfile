@@ -1,6 +1,6 @@
 FROM python:3.14-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core mkvtoolnix \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

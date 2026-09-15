@@ -17,6 +17,8 @@ static int sceNetInetGetErrno(void) { return 104; }
 static int sceNetInetPoll(struct SceNetInetPollfd *p,int n,int timeout) {
     assert(n==1 && timeout==100); tick+=100000;
     p->revents=1;
+    if(mode==6 && tick>100000 && tick<8100000) return 0;
+    if(mode==7) { if(tick>=700000) timed_running=0; return 0; }
     return mode==1?0:mode==2?-1:1;
 }
 static int sceNetInetGetsockopt(int fd,int level,int opt,void *v,socklen_t *size) {
@@ -43,8 +45,16 @@ int main(void) {
     unsigned char data[4];
     stream_diag_reset(); assert(timed_read(data,4)==1 && stream_diag.bytes==4);
     mode=1; tick=0; stream_diag_reset();
-    assert(timed_read(data,4)==-1 && tick==5000000);
+    assert(timed_read(data,4)==-1 && tick==30000000);
     assert(!strcmp(stream_diag.reason,"read inactivity timeout"));
+    timed_playing=0; tick=0;
+    assert(timed_read(data,4)==-1 && tick==180000000);
+    timed_playing=1; mode=6; tick=0; stream_diag_reset();
+    assert(timed_read(data,4)==1 && tick==8300000);
+    assert(stream_diag.received==4 && !memcmp(data,"xxxx",4));
+    mode=7; tick=0;
+    assert(timed_read(data,4)==-1 && tick==700000);
+    timed_running=1;
     mode=2; stream_diag_reset(); assert(timed_read(data,4)==0);
     assert(stream_diag.socket_error==104 && !strcmp(stream_diag.reason,"poll error"));
     mode=3; stream_diag_reset(); assert(timed_read(data,4)==0);

@@ -73,7 +73,9 @@ static int timed_read(unsigned char *out, int size) {
     while (have < size && timed_running) {
         int got = timed_recv(out + have, size - have);
         if (got == -2) {
-            unsigned long long limit = timed_playing ? 5000000ULL : 180000000ULL;
+            /* Preserve partial FLV packets across temporary delivery gaps.
+             * Cancellation still polls every 100 ms; startup is unchanged. */
+            unsigned long long limit = timed_playing ? 30000000ULL : 180000000ULL;
             if (playback_paused) last = sceKernelGetSystemTimeWide();
             if (sceKernelGetSystemTimeWide() - last < limit) continue;
             stream_diag.reason="read inactivity timeout";

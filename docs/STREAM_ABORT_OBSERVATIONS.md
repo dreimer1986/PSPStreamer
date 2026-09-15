@@ -34,3 +34,28 @@ previously sampled clock. Progress age is zero and queues are populated in
 those entries. They are not evidence of multi-day stalls. This diagnostic
 race should be fixed separately; playback timeouts and scheduling remain
 unchanged. The periodic trace cannot identify the cause of every brief pause.
+
+## 2026-09-16: partial FLV body delivery gap
+
+The new error snapshot reports `result=-1320`, `FLV tag body`, 4520 of
+9722 bytes received, and `gap_ms=5012`. AP state is 4; this confirms an
+associated/IP-configured connection, not end-to-end delivery. Remote polling
+also had no recent success. The trace reaches video PTS 181164 and audio PTS
+181185 ms; it does not implicate timestamp parsing or prove a radio problem.
+
+The playing-state inactivity budget is now 30 seconds rather than five.
+This is a bounded tolerance, not a diagnosis or cure for the underlying gap.
+Already received packet bytes remain intact. Each successful read renews the
+budget; genuine EOF/socket errors still fail immediately. The startup/subtitle
+budget remains 180 seconds. Stop can still cancel through the 100 ms poll loop;
+no decoder reset, clock adjustment or audio replay was introduced.
+If buffers empty, playback may pause until data returns; a dead TCP connection
+is not transparently recreated by this change.
+
+Host tests cover recovery after an eight-second gap inside a packet, the
+30-second playback and unchanged 180-second startup limits, cancellation,
+partial EOF and socket errors. A real PSP/long-stream test remains necessary.
+
+The watchdog now snapshots the heartbeat before reading the clock, preventing
+a concurrent newer heartbeat from producing a huge unsigned age and spurious
+Memory Stick writes. Other stall reporting remains enabled.

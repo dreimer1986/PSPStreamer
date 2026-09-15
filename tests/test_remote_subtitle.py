@@ -62,7 +62,9 @@ async function api(path,options){sent=JSON.parse(options.body)}
         watch=(ROOT / "psp-client/video_watchdog.h").read_text()
         for forbidden in ("sceMpeg", "sceAudiocodec", "sceAudioOutput", "TerminateThread", "http_get"):
             self.assertNotIn(forbidden,watch)
-        self.assertIn("now-video_watch_tick>=8000",watch)
+        self.assertIn("now-heartbeat>=8000",watch)
+        self.assertLess(watch.index("unsigned int heartbeat=video_watch_tick;"),
+                        watch.index("unsigned int now=video_watch_now();"))
         self.assertIn("reports<4",watch)
         source=(ROOT / "psp-client/main.c").read_text()
         self.assertIn('video_watch_ping("stop: join remote HTTP")',source)

@@ -1,4 +1,9 @@
-"""Small, dependency-free PGS decoder for PSP subtitle sprite preparation."""
+"""Small, dependency-free PGS decoder for PSP subtitle sprite preparation.
+
+It deliberately handles the common HDMV PGS subset used in MKV files: palette,
+object, presentation and end segments.  The server converts it into compact
+palette-indexed sprites; the PSP never needs to understand Blu-ray packets.
+"""
 
 from __future__ import annotations
 
@@ -84,12 +89,12 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
         offset += 13 + length
         if len(payload) != length:
             break
-        if kind == 0x14 and len(payload) >= 2:
+        if kind == 0x14 and len(payload) >= 2:  # palette
             palette = palettes.setdefault(payload[0], bytearray(256 * 4))
             for index in range(2, len(payload) - 4, 5):
                 entry, y, cr, cb, alpha = payload[index:index + 5]
                 palette[entry * 4:entry * 4 + 4] = _ycbcr(y, cb, cr, alpha)
-        elif kind == 0x15 and len(payload) >= 4:
+        elif kind == 0x15 and len(payload) >= 4:  # object data
             object_id = _u16(payload, 0)
             flags = payload[3]
             cursor = 4
@@ -103,7 +108,7 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
             if flags & 0x40 and object_id in objects:
                 width, height, _ = objects[object_id]
                 objects[object_id] = (width, height, bytes(fragments.pop(object_id, b"")))
-        elif kind == 0x16 and len(payload) >= 11:
+        elif kind == 0x16 and len(payload) >= 11:  # composition
             if active:
                 start, refs, palette_id, canvas_width, canvas_height = active
                 for object_id, x, y in refs:
@@ -124,6 +129,10 @@ def parse_pgs(data: bytes) -> list[PgsCue]:
                 refs.append((object_id, x, y))
                 cursor += 8 + (8 if flags & 0x80 else 0)
             active = (pts, refs, palette_id, canvas_width, canvas_height)
+        elif kind == 0x80 and active:
+            # END merely finalises a display set; its end time is supplied by
+            # the next composition state, above.
+            pass
     if active:
         start, refs, palette_id, canvas_width, canvas_height = active
         for object_id, x, y in refs:

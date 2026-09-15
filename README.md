@@ -437,3 +437,9 @@ browser endpoint needs HTTPS and a hardened reverse proxy with rate limiting;
 preserve Host and Authorization headers and keep the HTTP backend private.
 HTTPS at the browser proxy alone does not encrypt a PSP's separate HTTP path.
 This change adds access control, not native PSP TLS or Internet-service hardening.
+
+The [settings, deployment parity and HTTPS review](docs/SETTINGS_TLS_REVIEW.md)
+records the proposed on-device settings/WebUI password workflow and TLS trust
+model. These interfaces and native PSP HTTPS are not implemented yet. Docker
+and HA media sources/web assets are checked for equality in the test suite;
+both images include mkvtoolnix for MKV PGS subtitle extraction.
