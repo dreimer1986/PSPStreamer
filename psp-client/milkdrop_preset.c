@@ -43,7 +43,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     float wave_mode = -1, wrap = 1;
     struct { const char *key; float low, high; float *out; } extra[] = {
         {"dx",-1,1,&next.warp.dx}, {"dy",-1,1,&next.warp.dy},
-        {"nWaveMode",0,0,&wave_mode}, {"bTexWrap",0,1,&wrap},
+        {"nWaveMode",0,4,&wave_mode}, {"bTexWrap",0,1,&wrap},
         {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",0,1,&next.wave_scale},
         {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",0,1,&next.wave_alpha},
         {"fRating",0,5,NULL}, {"fZoomExponent",.5f,2,&next.warp.zoomexp},
@@ -171,6 +171,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
             if (parsed<extra[k].low || parsed>extra[k].high ||
+                (!strcmp(key,"nWaveMode") && parsed!=0 && parsed!=4) ||
                 ((key[0]=='b' || !strcmp(key,"nVideoEchoOrientation")) && parsed!=floorf(parsed))) {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }
@@ -187,7 +188,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     next.wave_mode=(int)wave_mode; next.wrap=(int)wrap;
     if(next.decor.wave_mod_alpha && next.decor.wave_mod_end<=next.decor.wave_mod_start)
         result=md_file_error(error,MD_FILE_INVALID,number,"wave alpha range");
-    if (next.wave_mode==0) next.legacy=1;
+    if (next.wave_mode>=0) next.legacy=1;
     if (!section || (!seen && !extra_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
         !(shape_seen[0]|shape_seen[1]|shape_seen[2]|shape_seen[3]))) result = md_file_error(error, MD_FILE_INVALID, number, "empty");
 done:

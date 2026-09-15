@@ -289,6 +289,10 @@ static custom shapes (including feedback-textured shapes). Try
 Custom shapes also support `thickOutline=1`. The `outline-demo.milk` preset
 compares thin (left) and thick (right) cyan outlines. See
 [shape-outline rendering and testing](docs/MILKDROP_SHAPE_OUTLINES.md).
+
+`nWaveMode=4` adds the stereo-driven horizontal script waveform alongside
+the existing mode 0 circle. Try `script-wave-demo.milk`; see
+[waveform behavior and hardware checks](docs/MILKDROP_SCRIPT_WAVE.md).
 The [conditional formula subset](docs/MILKDROP_CONDITIONS.md) adds lazy `if`,
 Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.

@@ -62,7 +62,7 @@ feedback texels, so its apparent output width depends on viewport size.
 The new fields are reset to static values before each per-frame program.
 After validation, all evaluated values are committed together. Invalid values
 disable the custom effect with the existing error notice, not audio playback.
-Wave styling applies to the real mode-0 waveform; it does not change our
+Wave styling applies to the real mode-0 and mode-4 waveforms; it does not change our
 original spectrum ring when `nWaveMode` is absent.
 
 ## Four static custom shapes

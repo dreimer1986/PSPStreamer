@@ -1,33 +1,72 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * New PSP implementation of the circular-wave geometry described by
- * MilkDrop 1/2 DrawWave mode 0. No original source copied. */
+ * New PSP implementation of MilkDrop 1/2 DrawWave modes 0 and 4.
+ * No original source copied. */
 #include "milkdrop_wave.h"
 #include <math.h>
+#include <stddef.h>
 volatile int md_wave_capture;
 static volatile unsigned int wave_sequence;
 static volatile short wave_right[MD_WAVE_SAMPLES];
+static volatile short wave_left[MD_WAVE_SAMPLES];
 static unsigned int wave_consumed;
 void md_wave_forget(void) { wave_consumed=wave_sequence; }
 void visualization_pcm_publish(const short *stereo, int frames) {
-    if (!md_wave_capture || frames<=0) return;
+    int capture=md_wave_capture;
+    if (!capture || frames<=0) return;
     wave_sequence++;
     __sync_synchronize();
-    for (int i=0;i<MD_WAVE_SAMPLES;i++)
+    for (int i=0;i<MD_WAVE_SAMPLES;i++) {
         wave_right[i] = i<frames ? stereo[i*2+1] : 0;
+        if(capture==2) wave_left[i] = i<frames ? stereo[i*2] : 0;
+    }
     __sync_synchronize();
     wave_sequence++;
 }
 int md_wave_snapshot(short right[MD_WAVE_SAMPLES]) {
-    short candidate[MD_WAVE_SAMPLES];
+    return md_wave_snapshot_stereo(right,NULL);
+}
+int md_wave_snapshot_stereo(short right[MD_WAVE_SAMPLES], short left[MD_WAVE_SAMPLES]) {
+    short candidate[MD_WAVE_SAMPLES], candidate_left[MD_WAVE_SAMPLES];
     unsigned int before=wave_sequence;
     if (!before || (before&1) || before==wave_consumed) return 0;
     __sync_synchronize();
-    for (int i=0;i<MD_WAVE_SAMPLES;i++) candidate[i]=wave_right[i];
+    for (int i=0;i<MD_WAVE_SAMPLES;i++) {
+        candidate[i]=wave_right[i];
+        if(left) candidate_left[i]=wave_left[i];
+    }
     __sync_synchronize();
     if (before!=wave_sequence) return 0;
-    for (int i=0;i<MD_WAVE_SAMPLES;i++) right[i]=candidate[i];
+    for (int i=0;i<MD_WAVE_SAMPLES;i++) {
+        right[i]=candidate[i];
+        if(left) left[i]=candidate_left[i];
+    }
     wave_consumed=before;
     return 1;
+}
+/* MilkDrop mode 4: left-channel script with delayed right-channel X motion.
+ * The 512-wide feedback texture limits the original path to 512/3 points.
+ * These are open lines, not the closed circle used by mode 0. */
+int md_wave_script(MdVertex *v,const short *right,const short *left,
+                   float scale,float smoothing,unsigned int color,const MdDecor *d) {
+    float r[MD_WAVE_SAMPLES],l[MD_WAVE_SAMPLES];
+    const int count=512/3, offset=(MD_WAVE_SAMPLES-count)/2;
+    float weight=.45f+.5f*(d->wave_param*.5f+.5f);
+    float gain=scale/32768.0f;
+    r[0]=right[0]*gain; l[0]=left[0]*gain;
+    for(int i=1;i<MD_WAVE_SAMPLES;i++) {
+        r[i]=right[i]*gain*(1-smoothing)+r[i-1]*smoothing;
+        l[i]=left[i]*gain*(1-smoothing)+l[i-1]*smoothing;
+    }
+    for(int i=0;i<count;i++) {
+        float x=d->wave_x*256-128+256.0f*i/count+128*.44f*r[i+offset+25];
+        float y=(1-d->wave_y)*256-128*.47f*l[i+offset];
+        if(i>1) {
+            x=x*(1-weight)+weight*(2*v[i-1].x-v[i-2].x);
+            y=y*(1-weight)+weight*(2*v[i-1].y-v[i-2].y);
+        }
+        v[i]=(MdVertex){0,0,color,x,y,0};
+    }
+    return count;
 }
 void md_wave_circle(MdVertex *vertices, const short *right, float scale,
                     float smoothing, float seconds, float aspect, unsigned int color) {

@@ -401,6 +401,49 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
         self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
 
+    def test_stereo_script_wave(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        capture=ctypes.c_int.in_dll(self.library,'md_wave_capture')
+        capture.value=2
+        pcm=(ctypes.c_short*1152)(*(int(24000*math.sin(i*(.07 if i%2 else .023))) for i in range(1152)))
+        left,right=(ctypes.c_short*576)(),(ctypes.c_short*576)()
+        self.library.md_wave_forget()
+        self.library.visualization_pcm_publish(pcm,576)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),1)
+        self.assertEqual(list(left),list(pcm)[::2])
+        self.assertEqual(list(right),list(pcm)[1::2])
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),0)
+        self.library.visualization_pcm_publish(pcm,2)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),1)
+        self.assertEqual(list(left)[2:],[0]*574)
+        self.assertEqual(list(right)[2:],[0]*574)
+        self.library.visualization_pcm_publish(pcm,576)
+        self.assertEqual(self.library.md_wave_snapshot_stereo(right,left),1)
+        capture.value=0
+        vertices=(Vertex*241)()
+        draw=self.library.md_wave_script
+        draw.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),
+                       ctypes.c_float,ctypes.c_float,ctypes.c_uint,ctypes.POINTER(Decor)]
+        for mystery in (-1,0,1):
+            decor=Decor(); decor.wave_x=.5; decor.wave_y=.5; decor.wave_param=mystery
+            self.assertEqual(draw(vertices,right,left,1,0,0xff123456,ctypes.byref(decor)),170)
+            expected=[]; w=.45+.5*(mystery*.5+.5)
+            for i in range(170):
+                x=256*i/170+128*.44*right[i+228]/32768
+                y=128-128*.47*left[i+203]/32768
+                if i>1:
+                    x=x*(1-w)+w*(2*expected[-1][0]-expected[-2][0])
+                    y=y*(1-w)+w*(2*expected[-1][1]-expected[-2][1])
+                expected.append((x,y))
+                self.assertAlmostEqual(vertices[i].x,x,delta=.003)
+                self.assertAlmostEqual(vertices[i].y,y,delta=.003)
+                self.assertEqual(vertices[i].color,0xff123456)
+        self.assertEqual(self.parse(b'[preset00]\nnWaveMode=4')[0],0)
+        for mode in (1,2,3,4.5,5,6,7,8):
+            self.assertNotEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
+
     def test_thick_shape_outline_flags(self):
         for slot in range(4):
             for value in (0,1):
