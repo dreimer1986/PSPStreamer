@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * New PSP implementation of MilkDrop 1/2 DrawWave modes 0 and 4.
+ * New PSP implementation of MilkDrop 1/2 DrawWave modes 0, 1 and 4.
  * No original source copied. */
 #include "milkdrop_wave.h"
 #include <math.h>
@@ -72,6 +72,26 @@ void md_wave_circle(MdVertex *vertices, const short *right, float scale,
                     float smoothing, float seconds, float aspect, unsigned int color) {
     MdDecor decor={.wave_x=.5f,.wave_y=.5f};
     md_wave_circle_style(vertices,right,scale,smoothing,seconds,aspect,color,&decor);
+}
+/* Mode 1: right-channel radius, delayed left-channel angle and time rotation.
+ * Keep the original 240-point open path: unlike mode 0 it has no seam. */
+int md_wave_spiral(MdVertex *v,const short *right,const short *left,
+                   float scale,float smoothing,float seconds,float aspect,
+                   unsigned int color,const MdDecor *d) {
+    float r=0,l=0, left_samples[272];
+    float gain=scale/32768.0f;
+    for(int i=0;i<272;i++) {
+        l=i ? left[i]*gain*(1-smoothing)+l*smoothing : left[i]*gain;
+        left_samples[i]=l;
+    }
+    for(int i=0;i<240;i++) {
+        r=i ? right[i]*gain*(1-smoothing)+r*smoothing : right[i]*gain;
+        float radius=.53f+.43f*r+d->wave_param;
+        float angle=left_samples[i+32]*1.57f+seconds*2.3f;
+        v[i]=(MdVertex){0,0,color,d->wave_x*256+128*radius*cosf(angle)*aspect,
+                       (1-d->wave_y)*256-128*radius*sinf(angle),0};
+    }
+    return 240;
 }
 void md_wave_circle_style(MdVertex *vertices, const short *right, float scale,
                     float smoothing, float seconds, float aspect, unsigned int color,

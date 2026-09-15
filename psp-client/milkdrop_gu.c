@@ -124,9 +124,10 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     } else md_signal_active = 0;
     int waveform=preset==3 && md_custom_preset.wave_mode>=0;
     int script=waveform && md_custom_preset.wave_mode==4;
-    md_wave_capture=waveform ? (script ? 2 : 1) : 0;
+    int spiral=waveform && md_custom_preset.wave_mode==1;
+    md_wave_capture=waveform ? ((script || spiral) ? 2 : 1) : 0;
     if(waveform) {
-        if(level>0) md_wave_snapshot_stereo(md_right,script?md_left:NULL);
+        if(level>0) md_wave_snapshot_stereo(md_right,(script || spiral)?md_left:NULL);
         else { memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); }
     }
     if (fullscreen) left = top = 0;
@@ -155,6 +156,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         const MdDecor *d=&frame_decor;
         ring=sceGuGetMemory(MD_WAVE_VERTICES*sizeof(*ring));
         float alpha=d->wave_alpha;
+        if(spiral) alpha*=1.25f;
         if(d->wave_mod_alpha) {
             float relative=(md_signal_state.signal.values[7]+md_signal_state.signal.values[8]+
                             md_signal_state.signal.values[9])/3;
@@ -163,11 +165,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
             if(mix>1) mix=1;
             alpha*=mix;
         }
+        if(alpha>1) alpha=1;
         float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
         int wave_count=MD_WAVE_VERTICES;
         if(script) wave_count=md_wave_script(ring,md_right,md_left,md_custom_preset.wave_scale,
                                             md_custom_preset.wave_smoothing,md_rgba(r,g,b,alpha),d);
+        else if(spiral) wave_count=md_wave_spiral(ring,md_right,md_left,md_custom_preset.wave_scale,
+                         md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         else md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
                        seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         md_expand(ring, wave_count, 0);

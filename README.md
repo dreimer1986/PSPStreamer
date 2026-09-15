@@ -293,6 +293,9 @@ compares thin (left) and thick (right) cyan outlines. See
 `nWaveMode=4` adds the stereo-driven horizontal script waveform alongside
 the existing mode 0 circle. Try `script-wave-demo.milk`; see
 [waveform behavior and hardware checks](docs/MILKDROP_SCRIPT_WAVE.md).
+
+`nWaveMode=1` adds the stereo spiral; try `spiral-wave-demo.milk`.
+See [spiral waveform details](docs/MILKDROP_SPIRAL_WAVE.md).
 The [conditional formula subset](docs/MILKDROP_CONDITIONS.md) adds lazy `if`,
 Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.

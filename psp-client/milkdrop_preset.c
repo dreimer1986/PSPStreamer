@@ -171,7 +171,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
             if (parsed<extra[k].low || parsed>extra[k].high ||
-                (!strcmp(key,"nWaveMode") && parsed!=0 && parsed!=4) ||
+                (!strcmp(key,"nWaveMode") && parsed!=0 && parsed!=1 && parsed!=4) ||
                 ((key[0]=='b' || !strcmp(key,"nVideoEchoOrientation")) && parsed!=floorf(parsed))) {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }

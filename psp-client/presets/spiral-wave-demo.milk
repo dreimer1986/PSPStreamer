@@ -1,0 +1,17 @@
+; PSPStreamer original: MilkDrop mode 1 stereo spiral.
+[preset00]
+nWaveMode=1
+fWaveScale=1
+fWaveSmoothing=.5
+fWaveParam=0
+fWaveAlpha=.8
+bWaveThick=1
+zoom=1.015
+fDecay=.96
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wave_r=.9
+wave_g=.5
+wave_b=.15
+per_frame_1=rot=.004*sin(time*.4); wave_g=.3+.5*psp_low;

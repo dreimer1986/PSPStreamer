@@ -112,7 +112,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         shape_fan=v; outline_pass=0;
     }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==97 || count==170 || count==241 || (count>=4 && count<=33)); ring_calls++;
+        assert(count==97 || count==170 || count==240 || count==241 || (count>=4 && count<=33)); ring_calls++;
         if(count<=33) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
@@ -148,7 +148,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
         assert(isfinite(v[i].x) && isfinite(v[i].y));
-        if(count==170) {
+        if(count==170 || count==240) {
             /* Mode 4 intentionally moves its line beyond the texture edge;
              * the viewport scissor clips it, not coordinate clamping. */
             assert(target_width==512 && target_height==256 && target_changes==1);
@@ -162,7 +162,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==7);
+    assert(argc==8);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -365,7 +365,7 @@ int main(int argc,char **argv) {
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
             if(fixture==2) assert(fabsf(md_preset_state.q[0]-.7f)<.00001f);
-            if(md_custom_preset.wave_mode==4) {
+            if(md_custom_preset.wave_mode==4 || md_custom_preset.wave_mode==1) {
                 short pcm[1152];
                 assert(md_wave_capture==2);
                 if(frame) { assert(md_right[9]==1234); assert(md_left[9]==-2345); }

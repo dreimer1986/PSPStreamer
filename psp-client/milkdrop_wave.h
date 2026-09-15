@@ -12,6 +12,9 @@ int md_wave_snapshot(short right[MD_WAVE_SAMPLES]);
 int md_wave_snapshot_stereo(short right[MD_WAVE_SAMPLES], short left[MD_WAVE_SAMPLES]);
 int md_wave_script(MdVertex *vertices, const short *right, const short *left,
                    float scale, float smoothing, unsigned int color, const MdDecor *decor);
+int md_wave_spiral(MdVertex *vertices, const short *right, const short *left,
+                   float scale, float smoothing, float seconds, float aspect,
+                   unsigned int color, const MdDecor *decor);
 void md_wave_forget(void);
 void md_wave_circle(MdVertex *vertices, const short *right, float scale,
                     float smoothing, float seconds, float aspect, unsigned int color);

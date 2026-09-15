@@ -1,7 +1,8 @@
 # Built-in waveform mode 4
 
 `nWaveMode=4` enables MilkDrop's horizontal "script" waveform. Mode 0 remains
-the existing circular waveform; other numbered modes still fail explicitly.
+the existing circular waveform. Mode 1 is now supported too (see
+[stereo spiral](MILKDROP_SPIRAL_WAVE.md)); other numbered modes still fail explicitly.
 
 The implementation follows MilkDrop 2 `DrawWave` case 4 in the inspected
 `milkdropfs.cpp` reference: 170 points (512 feedback texels / 3), a centered
@@ -20,7 +21,7 @@ switching is not yet implemented.
 
 ## Cost and ownership
 
-Only mode 4 requests a stereo snapshot. Mode 0 continues to publish the right
+Modes 1 and 4 request a stereo snapshot. Mode 0 continues to publish the right
 channel only; disabled wave capture still returns immediately. A single
 sequence counter guards both channels, so the renderer accepts or rejects
 the pair together. There are no new audio-thread allocations, waits or locks.

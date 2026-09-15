@@ -441,8 +441,33 @@ class PresetTests(unittest.TestCase):
                 self.assertAlmostEqual(vertices[i].y,y,delta=.003)
                 self.assertEqual(vertices[i].color,0xff123456)
         self.assertEqual(self.parse(b'[preset00]\nnWaveMode=4')[0],0)
-        for mode in (1,2,3,4.5,5,6,7,8):
+        for mode in (2,3,4.5,5,6,7,8):
             self.assertNotEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
+
+    def test_spiral_wave_geometry(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        right=(ctypes.c_short*576)(*(int(24000*math.sin(i*.09)) for i in range(576)))
+        left=(ctypes.c_short*576)(*(int(18000*math.cos(i*.03)) for i in range(576)))
+        vertices=(Vertex*241)(); vertices[240].color=0xdeadbeef
+        draw=self.library.md_wave_spiral
+        draw.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),
+                       ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_uint,ctypes.POINTER(Decor)]
+        for smoothing in (0,.5,1):
+            r=[right[0]/32768]; l=[left[0]/32768]
+            for i in range(1,576):
+                r.append(right[i]/32768*(1-smoothing)+r[-1]*smoothing)
+                l.append(left[i]/32768*(1-smoothing)+l[-1]*smoothing)
+            for aspect in (.25,.5625,2/3):
+                decor=Decor(); decor.wave_x=.5; decor.wave_y=.5; decor.wave_param=.1
+                self.assertEqual(draw(vertices,right,left,1,smoothing,3,aspect,0xff112233,ctypes.byref(decor)),240)
+                for i in range(240):
+                    rad=.53+.43*r[i]+.1; angle=l[i+32]*1.57+3*2.3
+                    self.assertAlmostEqual(vertices[i].x,128+128*rad*math.cos(angle)*aspect,delta=.0002)
+                    self.assertAlmostEqual(vertices[i].y,128-128*rad*math.sin(angle),delta=.0002)
+                self.assertEqual(vertices[240].color,0xdeadbeef)
+        self.assertEqual(self.parse(b'[preset00]\nnWaveMode=1')[0],0)
 
     def test_thick_shape_outline_flags(self):
         for slot in range(4):
