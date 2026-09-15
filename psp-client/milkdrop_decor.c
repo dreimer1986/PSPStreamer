@@ -25,3 +25,35 @@ void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v) {
     *u=((orientation&1)?1-a:a)*256;
     *v=((orientation&2)?1-b:b)*256;
 }
+/* Reverse sample the same two triangles used by the warp, including its
+ * per-grid equations. Positions and UVs here are physical feedback texels. */
+int md_motion_vertices(MdVertex *out,const MdVertex *mesh,const float p[9]) {
+    int nx=(int)p[4],ny=(int)p[5],count=0;
+    if(p[0]<=0 || nx<1 || ny<1 || nx>16 || ny>12) return 0;
+    unsigned int color=md_rgba(p[1],p[2],p[3],p[0]);
+    for(int y=0;y<ny;y++) for(int x=0;x<nx;x++) {
+        float px=(x+.25f)/(p[4]-.75f)+p[6],py=(y+.25f)/(p[5]-.75f)-p[7];
+        if(px<=.0001f || px>=.9999f || py<=.0001f || py>=.9999f) continue;
+        int gx=(int)(px*8),gy=(int)(py*8);
+        float fx=px*8-gx,fy=py*8-gy,w[3];
+        const MdVertex *tri=mesh+(gy*8+gx)*6;
+        if(fx+fy<=1) { w[0]=1-fx-fy; w[1]=fx; w[2]=fy; }
+        else { tri+=3; w[0]=1-fy; w[1]=fx+fy-1; w[2]=1-fx; }
+        float u=0,v=0;
+        for(int i=0;i<3;i++) { u+=tri[i].u*w[i]; v+=tri[i].v*w[i]; }
+        float dx=(u-.5f-px*512)*p[8],dy=(v-.5f-py*256)*p[8];
+        float length=sqrtf(dx*dx+dy*dy);
+        if(length<1) { if(length>1e-8f) { dx/=length; dy/=length; } else { dx=1; dy=1; } }
+        /* Clip the segment, not each coordinate independently, before GU's
+         * finite 2D coordinate range can wrap a long motion vector. */
+        float t=1;
+        if(dx>0) t=fminf(t,(512-px*512)/dx);
+        if(dx<0) t=fminf(t,-px*512/dx);
+        if(dy>0) t=fminf(t,(256-py*256)/dy);
+        if(dy<0) t=fminf(t,-py*256/dy);
+        dx*=t; dy*=t;
+        out[count++]=(MdVertex){0,0,color,px*512,py*256,0};
+        out[count++]=(MdVertex){0,0,color,px*512+dx,py*256+dy,0};
+    }
+    return count;
+}

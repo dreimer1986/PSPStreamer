@@ -1,0 +1,18 @@
+; PSPStreamer original: built-in waveform 6.
+[preset00]
+nWaveMode=6
+fWaveScale=1
+fWaveSmoothing=.35
+fWaveParam=.2
+fWaveAlpha=1
+bWaveThick=1
+zoom=1.012
+fDecay=.97
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+wave_r=.3
+wave_g=.8
+wave_b=1
+wave_y=.5
+per_frame_1=rot=.003*sin(time*.2); wave_r=.2+.6*psp_low;

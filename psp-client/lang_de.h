@@ -2,6 +2,9 @@
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
     [TXT_FRAME_RATE] = "Bildrate",
+    [TXT_PRESETS] = "MILKDROP PRESETS",
+    [TXT_PRESET_CONTROLS] = "HOCH/RUNTER  L/R SEITE  X WAHL  O ZURÜCK",
+    [TXT_PRESET_LIMIT] = "Max. 128",
     /* Vollbild-Steuerung */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Weiter",
@@ -74,7 +77,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_NOW_PLAYING] = "WIRD ABGESPIELT",
     [TXT_VOLUME_LINE] = "MP3  %d%% LAUTSTÄRKE  SELECT PAUSE",
     [TXT_FULLSCREEN_MUSIC] = "MUSIK // %.48s",
-    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  HOCH/RUNTER LAUTST.  X+TRI VOLLBILD  START ZURÜCK",
+    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  HOCH/RUNTER VOL  O PRESETS  X+TRI VOLL  START ZURÜCK",
     [TXT_MUSIC_SETUP_CONTROLS] = "HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK",
     [TXT_VIDEO_SETUP_CONTROLS] = "HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK",
     [TXT_LIBRARY_CONTROLS] = "HOCH/RUNTER NAV  X ÖFFNEN  TRI INFO  L/R SEITE  [] LADEN",

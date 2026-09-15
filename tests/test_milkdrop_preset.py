@@ -52,12 +52,13 @@ class Preset(ctypes.Structure):
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
-                ("init_program",Program),("symbols",Symbols),("pixel_program",Program)]
+                ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9)]
 
 
 class PresetState(ctypes.Structure):
     _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
-              ("frame_q",ctypes.c_float*32)]
+              ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
+              ("last_seconds",ctypes.c_float),("fps",ctypes.c_float)]
 
 
 class Error(ctypes.Structure):
@@ -86,6 +87,7 @@ class PresetTests(unittest.TestCase):
                         str(ROOT / "psp-client/preset_math.c"),
                         str(ROOT / "psp-client/milkdrop_signal.c"),
                         str(ROOT / "psp-client/milkdrop_wave.c"),
+                        str(ROOT / "psp-client/milkdrop_wave_extra.c"),
                         str(ROOT / "psp-client/milkdrop_decor.c"),
                         str(ROOT / "psp-client/milkdrop_warp.c"), "-lm", "-o", str(library)],
                        check=True)
@@ -197,7 +199,7 @@ class PresetTests(unittest.TestCase):
 
     def test_formula_rejections_and_budgets(self):
         for source in ("rot=1", "rot=;", "rot=(1;", "0", "rot=nan;",
-                       "time=0;", "rot=fps;", "rot=unknown_func(1);", "rot=1e99;",
+                       "time=0;", "fps=1;", "rot=unknown_func(1);", "rot=1e99;",
                        "rot=" + "("*18 + "0" + ")"*18 + ";",
                        "rot=" + "+".join(["0"]*70) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
@@ -344,7 +346,7 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(warp.dx,.01)
         self.assertAlmostEqual(warp.dy,-.02)
         for field,value in (("fVideoEchoAlpha",2),("ob_alpha",2),("bInvert",1),
-                            ("nWaveMode",2),("cx",1.6),("fWaveParam",2)):
+                            ("nWaveMode",9),("cx",1.6),("fWaveParam",2)):
             self.assertEqual(self.parse(f"presetName=test\n{field}={value}".encode())[0],3)
         for data in (b"presetName=x\npresetName=x",b"[preset00]\ndx=0\ndx=0"):
             self.assertEqual(self.parse(data)[0],2)
@@ -441,7 +443,7 @@ class PresetTests(unittest.TestCase):
                 self.assertAlmostEqual(vertices[i].y,y,delta=.003)
                 self.assertEqual(vertices[i].color,0xff123456)
         self.assertEqual(self.parse(b'[preset00]\nnWaveMode=4')[0],0)
-        for mode in (2,3,4.5,5,6,7,8):
+        for mode in (-1,4.5,9):
             self.assertNotEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
 
     def test_spiral_wave_geometry(self):
@@ -468,6 +470,58 @@ class PresetTests(unittest.TestCase):
                     self.assertAlmostEqual(vertices[i].y,128-128*rad*math.sin(angle),delta=.0002)
                 self.assertEqual(vertices[240].color,0xdeadbeef)
         self.assertEqual(self.parse(b'[preset00]\nnWaveMode=1')[0],0)
+
+    def test_frame_clock_inputs(self):
+        code,preset,_=self.parse(b'[preset00]\nper_frame_1=q1=frame; q2=fps;')
+        self.assertEqual(code,0)
+        state=PresetState()
+        for index,seconds in enumerate((0,.1,.2,.4)):
+            self.assertEqual(self.evaluate_state(preset,state,seconds)[0],0)
+            self.assertEqual(state.frame_q[0],index)
+            self.assertAlmostEqual(state.frame_q[1],(0,10,10,5)[index],places=4)
+
+    def test_fft_and_remaining_waveforms(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        spectrum=(ctypes.c_short*1024)(*(int(16384*math.sin(2*math.pi*32*i/1024)) for i in range(1024)))
+        bins=(ctypes.c_float*512)()
+        fft=self.library.md_wave_spectrum
+        fft.argtypes=[ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_float)]
+        fft(spectrum,bins)
+        self.assertEqual(max(range(512),key=lambda i:bins[i]),32)
+        self.assertAlmostEqual(bins[32],.5,delta=.003)
+        silence=(ctypes.c_short*1024)(); fft(silence,bins)
+        self.assertEqual(list(bins),[0]*512)
+        capture=ctypes.c_int.in_dll(self.library,'md_wave_capture'); capture.value=3
+        pcm=(ctypes.c_short*2048)()
+        for i in range(1024): pcm[2*i]=spectrum[i]; pcm[2*i+1]=123
+        self.library.visualization_pcm_publish(pcm,1024)
+        snapshot=(ctypes.c_short*1024)()
+        self.assertEqual(self.library.md_spectrum_snapshot(snapshot),1)
+        self.assertEqual(list(snapshot),list(spectrum))
+        self.assertEqual(self.library.md_spectrum_snapshot(snapshot),0)
+        capture.value=0
+        left=(ctypes.c_short*576)(*[int(20000*math.sin(i*.05)) for i in range(576)])
+        right=(ctypes.c_short*576)(*[int(10000*math.cos(i*.08)) for i in range(576)])
+        vertices=(Vertex*481)(); vertices[480].color=0xdeadbeef
+        decor=Decor(); decor.wave_x=.5; decor.wave_y=.2; decor.wave_param=.2
+        fn=self.library.md_wave_extra
+        fn.argtypes=[ctypes.POINTER(Vertex),ctypes.c_int,ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),
+                     ctypes.POINTER(ctypes.c_short),ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_float,
+                     ctypes.c_uint,ctypes.POINTER(Decor),ctypes.POINTER(ctypes.c_int)]
+        for mode,count in ((2,480),(3,480),(5,480),(6,170),(7,340),(8,256)):
+            split=ctypes.c_int()
+            self.assertEqual(fn(vertices,mode,right,left,spectrum,1,0,1,.5,0xffaabbcc,ctypes.byref(decor),ctypes.byref(split)),count)
+            self.assertEqual(split.value,170 if mode==7 else 0)
+            self.assertEqual(vertices[480].color,0xdeadbeef)
+            for vertex in vertices[:count]: self.assertTrue(math.isfinite(vertex.x) and math.isfinite(vertex.y))
+            if mode in (2,3):
+                for i in (0,32,479):
+                    self.assertAlmostEqual(vertices[i].x,128+64*right[i]/32768,places=4)
+                    self.assertAlmostEqual(vertices[i].y,.8*256-128*left[i+32]/32768,delta=.00003)
+            if mode==7: self.assertNotEqual(vertices[0].y,vertices[170].y)
+        for mode in range(9): self.assertEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
 
     def test_thick_shape_outline_flags(self):
         for slot in range(4):
@@ -507,7 +561,7 @@ class PresetTests(unittest.TestCase):
 
     def test_conditional_syntax_budgets_and_bytecode_safety(self):
         for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
-                           "if(1,,3)","if(1,2,)","if(1,2,fps)",
+                           "if(1,,3)","if(1,2,)","if(1,2,progress)",
                            "if(1,2,rand(1))","if(1,2,warp=3)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
         expression="0"
@@ -536,7 +590,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*107)(*([.5]*107)); before=bytes(values)
+                values=(ctypes.c_float*109)(*([.5]*109)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)

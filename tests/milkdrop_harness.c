@@ -11,7 +11,7 @@ enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
        GU_TEXTURE_2D, GU_PSM_8888, GU_TFX_MODULATE, GU_TCC_RGBA, GU_LINEAR,
-       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650 };
+       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES };
 static int target_bpp, composition_width, target_changes, texture_offset;
 static int raw_target, raw_source;
 static int gu_live, starts, syncs, target_offset, target_width, target_height, stride;
@@ -91,7 +91,7 @@ static void *sceGuGetMemory(int bytes) {
     void *result=list_base+list_used;
     list_used+=(bytes+15)&~15;
     if(list_used>list_peak) list_peak=list_used;
-    assert(list_used<56000); /* reserve at least 9 KiB for command words */
+    assert(list_used<112000); /* reserve at least 19 KiB for command words */
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
@@ -111,8 +111,9 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         assert(count>=5 && count<=34);
         shape_fan=v; outline_pass=0;
     }
+    else if(type==GU_LINES) { assert(count<=384 && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==97 || count==170 || count==240 || count==241 || (count>=4 && count<=33)); ring_calls++;
+        assert(count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
         if(count<=33) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
@@ -148,7 +149,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
         assert(isfinite(v[i].x) && isfinite(v[i].y));
-        if(count==170 || count==240) {
+        if(type==GU_LINES || count==170 || count==240 || count==256 || count==480) {
             /* Mode 4 intentionally moves its line beyond the texture edge;
              * the viewport scissor clips it, not coordinate clamping. */
             assert(target_width==512 && target_height==256 && target_changes==1);
@@ -162,7 +163,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==8);
+    assert(argc==15);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -339,7 +340,10 @@ int main(int argc,char **argv) {
         expected_width=full?(tv?720:480):tv?508:306;
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
-        for(int orientation=0;orientation<4;orientation++) {
+        for(int mode=0;mode<=8;mode++) for(int orientation=0;orientation<4;orientation++) {
+            md_custom_preset.wave_mode=mode;
+            float motion[]={.5f,1,1,1,16,12,0,0,2};
+            memcpy(md_custom_preset.motion,motion,sizeof(motion));
             decor->echo_orient=orientation;
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
@@ -372,6 +376,12 @@ int main(int argc,char **argv) {
                 for(int i=0;i<576;i++) { pcm[2*i]=-2345; pcm[2*i+1]=1234; }
                 visualization_pcm_publish(pcm,576);
             }
+            if(md_custom_preset.wave_mode==8) {
+                short pcm[2048]; assert(md_wave_capture==3);
+                if(frame) assert(md_spectrum[9]==4321);
+                for(int i=0;i<1024;i++) { pcm[2*i]=4321; pcm[2*i+1]=-123; }
+                visualization_pcm_publish(pcm,1024);
+            }
         }
         md_stop();
     }
@@ -395,7 +405,7 @@ int main(int argc,char **argv) {
     md_stop();
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
-    printf("Visualization maximum vertex storage: %zu / 65536 bytes\n",list_peak);
+    printf("Visualization maximum vertex storage: %zu / 131072 bytes\n",list_peak);
     assert(thick_outline_draws>0);
     munmap(vram,edram_size);
     return 0;

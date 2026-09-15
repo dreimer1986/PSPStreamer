@@ -339,6 +339,8 @@ static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static int selected_video_fps;
+static char music_preset_file[256]="active.milk";
+#include "preset_catalog.h"
 static int audio_shuffle;
 /* 0..30 maps cleanly to the 30 LED detents in the receiver UI. */
 static int playback_volume = 24;
@@ -411,6 +413,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
+            else if (!strncmp(line, "music_preset=", 13) && preset_name_valid(line+13)) strcpy(music_preset_file,line+13);
             else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
@@ -434,6 +437,7 @@ static void save_playback_settings(void) {
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
+    length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -1706,6 +1710,7 @@ static int json_integer(const char *from, const char *key, int fallback);
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
 #include "music_preset_ui.h"
+#include "preset_browser.h"
 
 /* Music-only session preferences, not GU/decoder state. Keep them across
  * autoplay, shuffle, remote replacement, seek and manual track selection.
@@ -1745,7 +1750,8 @@ static int play_audio(const char *media_id, const char *title) {
     resume_pending = seek_requested = 0;
     video_first_presented = 1;
     /* Read once, before either music worker exists. Never parse on a draw tick. */
-    preset_result = md_load_preset("presets/active.milk", &md_custom_preset, &preset_error);
+    { char path[272]; snprintf(path,sizeof(path),"presets/%s",music_preset_file);
+      preset_result = md_load_preset(path, &md_custom_preset, &preset_error); }
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     /* Neither music GUI may outrank the existing 0x3D DAC worker. Restore
      * the caller's priority before returning to menus or subsequent video. */
@@ -1837,6 +1843,20 @@ static int play_audio(const char *media_id, const char *title) {
             }
         }
         sceCtrlPeekBufferPositive(&pad, 1);
+        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
+            md_stop(); music_visual_active=0;
+            if(music_choose_preset()) {
+                preset_result=music_load_selected(&preset_error);
+                visual_preset=4; music_saved_visual_preset=4;
+                save_playback_settings();
+            }
+            if(visual_preset && (visual_preset!=4 || preset_result==MD_FILE_OK) && md_start()) music_visual_active=1;
+            preset_notice_tick=~0ULL;
+            paused=!audio_start;
+            lcd_music_reset(); tv_music_reset(); spectrum_fullscreen_reset();
+            sceCtrlPeekBufferPositive(&pad,1); old=pad.Buttons;
+            continue;
+        }
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
             break;

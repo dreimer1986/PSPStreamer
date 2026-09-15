@@ -8,7 +8,7 @@ static void music_preset_notice(const MdFileError *error, int fullscreen) {
                 error->code == MD_FILE_IO ? TXT_PRESET_IO : TXT_PRESET_INVALID;
     char detail[48];
     if (error->line) snprintf(detail, sizeof(detail), "L%d: %.27s", error->line, error->key);
-    else strcpy(detail, "presets/active.milk");
+    else snprintf(detail,sizeof(detail),"%.47s",music_preset_file);
     if (tv_ui_active) {
         u32 *vram = (u32 *)0x44000000;
         int y;

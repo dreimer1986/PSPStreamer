@@ -4,7 +4,7 @@
 enum { PM_MAX_OPS = 128, PM_STACK = 24, PM_DEPTH = 16,
        PM_Q_BASE = 55, PM_Q_COUNT = 32, PM_USER_BASE = PM_Q_BASE + PM_Q_COUNT,
        PM_USER_COUNT = 16, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
-       PM_VALUES = PM_COORD_BASE + 4, PM_PIXEL_OPS = 64 };
+       PM_META_BASE = PM_COORD_BASE + 4, PM_VALUES = PM_META_BASE + 2, PM_PIXEL_OPS = 64 };
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
 typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;

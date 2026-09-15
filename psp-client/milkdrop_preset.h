@@ -12,9 +12,12 @@ typedef struct {
     PmProgram init_program;
     PmSymbols symbols;
     PmProgram pixel_program;
+    float motion[9]; /* alpha, RGB, grid X/Y, offsets X/Y, length */
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
-typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT]; } MdPresetState;
+typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT];
+    unsigned int frames; float last_seconds, fps;
+} MdPresetState;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;

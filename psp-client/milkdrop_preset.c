@@ -34,7 +34,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                                  "fDecay", "wave_r", "wave_g", "wave_b"};
     MdFilePreset next = {.warp = md_presets[0], .red = 1, .green = .6f, .blue = .2f,
         .wave_mode = -1, .wrap = 1, .gamma = 1, .wave_scale = 1, .wave_smoothing = .75f,
-        .wave_alpha = 1, .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1,
+        .wave_alpha = 1, .motion={0,1,1,1,12,9,0,0,1}, .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1,
             .wave_mod_start=.75f,.wave_mod_end=.95f}};
     for(int i=0;i<MD_SHAPES;i++) next.decor.shapes[i]=(MdShape){
         .sides=4,.x=.5f,.y=.5f,.rad=.1f,.tex_zoom=1,.r=1,.g=1,.b=1,.a=1,
@@ -42,8 +42,13 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     unsigned int shape_seen[MD_SHAPES]={0};
     float wave_mode = -1, wrap = 1;
     struct { const char *key; float low, high; float *out; } extra[] = {
+        {"mv_a",0,1,&next.motion[0]}, {"mv_r",0,1,&next.motion[1]},
+        {"mv_g",0,1,&next.motion[2]}, {"mv_b",0,1,&next.motion[3]},
+        {"mv_x",0,16,&next.motion[4]}, {"mv_y",0,12,&next.motion[5]},
+        {"mv_dx",-1,1,&next.motion[6]}, {"mv_dy",-1,1,&next.motion[7]},
+        {"mv_l",0,10,&next.motion[8]},
         {"dx",-1,1,&next.warp.dx}, {"dy",-1,1,&next.warp.dy},
-        {"nWaveMode",0,4,&wave_mode}, {"bTexWrap",0,1,&wrap},
+        {"nWaveMode",0,8,&wave_mode}, {"bTexWrap",0,1,&wrap},
         {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",0,1,&next.wave_scale},
         {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",0,1,&next.wave_alpha},
         {"fRating",0,5,NULL}, {"fZoomExponent",.5f,2,&next.warp.zoomexp},
@@ -171,7 +176,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
             if (parsed<extra[k].low || parsed>extra[k].high ||
-                (!strcmp(key,"nWaveMode") && parsed!=0 && parsed!=1 && parsed!=4) ||
+                (!strcmp(key,"nWaveMode") && parsed!=floorf(parsed)) ||
                 ((key[0]=='b' || !strcmp(key,"nVideoEchoOrientation")) && parsed!=floorf(parsed))) {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }
@@ -232,6 +237,10 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         v[10+i] = value;
     }
     MdPresetState next=*state;
+    float dt=seconds-next.last_seconds;
+    next.fps=next.frames && dt>0?1.0f/dt:0;
+    v[PM_META_BASE]=(float)next.frames;
+    v[PM_META_BASE+1]=next.fps;
     if (!next.ready) {
         float initial[PM_VALUES];
         memcpy(initial,v,sizeof(initial));
@@ -282,6 +291,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         ((unsigned int)(v[7]*255)<<8) | ((unsigned int)(v[8]*255)<<16);
     memcpy(next.user,v+PM_USER_BASE,sizeof(next.user));
     memcpy(next.frame_q,v+PM_Q_BASE,sizeof(next.frame_q));
+    next.frames++; next.last_seconds=seconds;
     *state=next;
     return MD_FILE_OK;
 }
@@ -300,6 +310,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         v[27]=frame->sx; v[28]=frame->sy; v[29]=frame->zoomexp;
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
         memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
+        v[PM_META_BASE]=state->frames?(float)(state->frames-1):0;
+        v[PM_META_BASE+1]=state->fps;
         float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
         v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);

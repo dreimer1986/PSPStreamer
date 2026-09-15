@@ -1,0 +1,19 @@
+; PSPStreamer original: motion vectors and actual visualization frame clock.
+[preset00]
+nWaveMode=7
+fWaveAlpha=.8
+wave_y=.2
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+zoom=1.02
+fDecay=.96
+mv_a=.7
+mv_r=.3
+mv_g=.9
+mv_b=1
+mv_x=12
+mv_y=9
+mv_l=2
+per_frame_1=rot=.015*sin(time); q1=frame; wave_r=.4+.2*sin(frame*.03); wave_g=min(1,fps/30);
+per_pixel_1=rot=rot+.01*sin(ang+time);

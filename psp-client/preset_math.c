@@ -49,6 +49,8 @@ static int name(Parser *p, char text[32]) {
     text[n] = 0; return 1;
 }
 static int builtin_variable(const char *s) {
+    if(!strcmp(s,"frame")) return PM_META_BASE;
+    if(!strcmp(s,"fps")) return PM_META_BASE+1;
     static const char *names[PM_Q_BASE] = {"zoom","rot","warp","","","decay",
         "wave_r","wave_g","wave_b","time","psp_low","psp_mid","psp_high",
         "psp_level","psp_low_smooth","psp_mid_smooth","psp_high_smooth",
@@ -78,7 +80,7 @@ static int variable(Parser *p,const char *s) {
     int id=builtin_variable(s);
     if(id>=0) {
         if(p->pixel && !(id<3 || id==5 || (id>=9 && id<=29) ||
-                        (id>=PM_Q_BASE && id<PM_USER_BASE))) goto unsupported;
+                        (id>=PM_Q_BASE && id<PM_USER_BASE) || id>=PM_META_BASE)) goto unsupported;
         return id;
     }
     /* Do not silently turn unsupported engine inputs or misspelled q/t/reg
@@ -199,6 +201,7 @@ static int compile_context(PmProgram *program, const char *source, int line, PmS
         id = variable(&p,text);
         if (id < 0) goto fail;
         if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
+        if (id >= PM_META_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
         if(pixel && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
             p.error=PM_UNSUPPORTED; goto fail;
         }

@@ -16,7 +16,7 @@
 static int md_texture_base, md_texture_bytes, md_pixel_format;
 #define MD_TEXTURE_BYTES md_texture_bytes
 #define MD_TEXTURE_BASE md_texture_base
-#define MD_LIST_BYTES 65536
+#define MD_LIST_BYTES 131072
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
 static int md_front;
@@ -29,6 +29,7 @@ static MdPreset md_pixel_points[MD_GRID_POINTS];
 static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
 static short md_left[MD_WAVE_SAMPLES];
+static short md_spectrum[MD_SPECTRUM_SAMPLES];
 /* Geometry helpers retain their logical 256-square coordinate system. Only
  * this adapter maps it to the rectangular physical feedback surface. */
 static void md_expand(MdVertex *v, int count, int half_texel) {
@@ -67,6 +68,7 @@ int md_start(void) {
     memset(&md_preset_state,0,sizeof(md_preset_state));
     memset(md_right,0,sizeof(md_right));
     memset(md_left,0,sizeof(md_left));
+    memset(md_spectrum,0,sizeof(md_spectrum));
     md_wave_forget();
     return 1;
 }
@@ -125,10 +127,13 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     int waveform=preset==3 && md_custom_preset.wave_mode>=0;
     int script=waveform && md_custom_preset.wave_mode==4;
     int spiral=waveform && md_custom_preset.wave_mode==1;
-    md_wave_capture=waveform ? ((script || spiral) ? 2 : 1) : 0;
+    int mode=waveform?md_custom_preset.wave_mode:0;
+    md_wave_capture=waveform ? (mode==8?3:mode?2:1) : 0;
     if(waveform) {
-        if(level>0) md_wave_snapshot_stereo(md_right,(script || spiral)?md_left:NULL);
-        else { memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); }
+        if(level>0) {
+            if(mode==8) md_spectrum_snapshot(md_spectrum);
+            else md_wave_snapshot_stereo(md_right,mode?md_left:NULL);
+        } else { memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum)); }
     }
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
@@ -151,12 +156,20 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_expand(mesh, MD_MESH_VERTICES, 1);
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
+    if(preset==3 && md_custom_preset.motion[0]>0) {
+        MdVertex *vectors=sceGuGetMemory(16*12*2*sizeof(*vectors));
+        int count=md_motion_vertices(vectors,mesh,md_custom_preset.motion);
+        if(count) { md_blend(0); sceGuDisable(GU_TEXTURE_2D); sceGuDrawArray(GU_LINES,MD_FORMAT,count,NULL,vectors); }
+        sceGuDisable(GU_BLEND);
+    }
     if(preset==3) md_shapes(&frame_decor,(float)height/width);
     if(waveform) {
         const MdDecor *d=&frame_decor;
-        ring=sceGuGetMemory(MD_WAVE_VERTICES*sizeof(*ring));
+        ring=sceGuGetMemory(MD_WAVE_MAX_VERTICES*sizeof(*ring));
         float alpha=d->wave_alpha;
         if(spiral) alpha*=1.25f;
+        if(mode==2 || mode==5) alpha*=.09f;
+        if(mode==3) { float treb=md_signal_state.signal.values[9]; alpha=.15f*1.3f*treb*treb; }
         if(d->wave_mod_alpha) {
             float relative=(md_signal_state.signal.values[7]+md_signal_state.signal.values[8]+
                             md_signal_state.signal.values[9])/3;
@@ -168,24 +181,28 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if(alpha>1) alpha=1;
         float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
-        int wave_count=MD_WAVE_VERTICES;
+        int wave_count=MD_WAVE_VERTICES,split=0;
         if(script) wave_count=md_wave_script(ring,md_right,md_left,md_custom_preset.wave_scale,
                                             md_custom_preset.wave_smoothing,md_rgba(r,g,b,alpha),d);
         else if(spiral) wave_count=md_wave_spiral(ring,md_right,md_left,md_custom_preset.wave_scale,
                          md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
+        else if(mode) wave_count=md_wave_extra(ring,mode,md_right,md_left,md_spectrum,md_custom_preset.wave_scale,
+                          md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d,&split);
         else md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
                        seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         md_expand(ring, wave_count, 0);
         md_blend(d->wave_additive!=0);
         int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
-        sceGuDrawArray(primitive,MD_FORMAT,wave_count,NULL,ring);
+        sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,ring);
+        if(split) sceGuDrawArray(primitive,MD_FORMAT,wave_count-split,NULL,ring+split);
         if(d->wave_thick) for(int pass=0;pass<3;pass++) {
             MdVertex *copy=sceGuGetMemory(wave_count*sizeof(*copy));
             for(int i=0;i<wave_count;i++) {
                 copy[i]=ring[i];
                 copy[i].x+=pass<2?1:0; copy[i].y+=pass>0?1:0;
             }
-            sceGuDrawArray(primitive,MD_FORMAT,wave_count,NULL,copy);
+            sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,copy);
+            if(split) sceGuDrawArray(primitive,MD_FORMAT,wave_count-split,NULL,copy+split);
         }
         sceGuDisable(GU_BLEND);
     } else if (level > 0) {

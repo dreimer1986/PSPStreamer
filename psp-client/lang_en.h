@@ -1,6 +1,9 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
     [TXT_FRAME_RATE] = "Frame rate",
+    [TXT_PRESETS] = "MILKDROP PRESETS",
+    [TXT_PRESET_CONTROLS] = "UP/DN SELECT  L/R PAGE  X APPLY  O BACK",
+    [TXT_PRESET_LIMIT] = "128 files max",
     /* Fullscreen transport overlay */
     [TXT_TRANSPORT_PAUSE] = "Pause",
     [TXT_TRANSPORT_RESUME] = "Play",
@@ -69,7 +72,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_NOW_PLAYING] = "NOW PLAYING",
     [TXT_VOLUME_LINE] = "MP3  %d%% VOLUME  SELECT PAUSE",
     [TXT_FULLSCREEN_MUSIC] = "MUSIC // %.48s",
-    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  UP/DN VOL  X+TRI FULLSCREEN  START EXIT",
+    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  UP/DN VOL  O PRESETS  X+TRI FULL  START EXIT",
     [TXT_MUSIC_SETUP_CONTROLS] = "UP/DN ROW  L/R CHANGE  X START  O BACK",
     [TXT_VIDEO_SETUP_CONTROLS] = "UP/DN ROW  L/R CHANGE  X START  O BACK",
     [TXT_LIBRARY_CONTROLS] = "UP/DN NAV  X OPEN  TRI INFO  L/R PAGE  [] RLD",
