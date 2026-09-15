@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class StreamDiagnosticTests(unittest.TestCase):
     def test_stream_errors_and_native_fullscreen_bounds(self):
-        for name in ("stream_diagnostic", "spectrum_fullscreen"):
+        for name in ("stream_diagnostic", "spectrum_fullscreen", "video_controls"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
                 code=(ROOT / f"tests/{name}_harness.c").read_text()
                 if name=="stream_diagnostic":

@@ -6,6 +6,7 @@ services:
     environment:
       MEDIA_ROOTS: /media
       MAX_TRANSCODES: "4"
+      PSP_STREAMER_PASSWORD: "${PSP_STREAMER_PASSWORD:-}"
     volumes:
       # SMB mount on the host; exposed read-only inside the container.
       - ${MEDIA_ROOT_PATH:-/media}:/media:ro

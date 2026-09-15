@@ -84,6 +84,8 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(second, {"id": token("Episode 2.mp4"), "kind": "video"})
             third = library.next_media(second["id"])
             self.assertEqual(third["id"], token("Episode 10.mkv"))
+            self.assertEqual(library.next_media(third["id"], previous=True)["id"],second["id"])
+            self.assertEqual(library.next_media(current, previous=True),{})
             self.assertEqual(library.next_media(third["id"]), {})
             self.assertEqual(library.next_media(token("Episode 3.mp3")),
                              {"id": token("Episode 4.flac"), "kind": "audio"})

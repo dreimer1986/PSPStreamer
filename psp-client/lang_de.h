@@ -1,6 +1,10 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Vollbild-Steuerung */
+    [TXT_TRANSPORT_PAUSE] = "Pause",
+    [TXT_TRANSPORT_RESUME] = "Weiter",
+
     /* Eigene Visualisierung: darunter folgen Zeile und Feldname. */
     [TXT_PRESET_MISSING] = "Preset-Datei fehlt",
     [TXT_PRESET_INVALID] = "Ungültiger Preset-Wert",

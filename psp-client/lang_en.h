@@ -1,5 +1,9 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Fullscreen transport overlay */
+    [TXT_TRANSPORT_PAUSE] = "Pause",
+    [TXT_TRANSPORT_RESUME] = "Play",
+
     /* Custom visualization: two compact lines, with field/line below. */
     [TXT_PRESET_MISSING] = "Preset file missing",
     [TXT_PRESET_INVALID] = "Invalid preset value",

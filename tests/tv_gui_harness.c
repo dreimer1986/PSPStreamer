@@ -90,6 +90,16 @@ int main(int argc, char **argv) {
     int i, language, view, variant, before;
     FILE *input = fopen("assets/subtitle_font.raw", "rb");
     assert(input && fread(font, 1, sizeof(font), input) == sizeof(font)); fclose(input);
+    {
+        const char *s="ÄÖÜäöüß";
+        const int expected[]={196,214,220,228,246,252,223};
+        for(int g=0;g<7;g++) assert(tv_utf8_char(&s)==expected[g]);
+        assert(!*s);
+        /* The formerly cropped right and bottom pixels must survive. */
+        unsigned char cell[20*256]={0};
+        cell[19*256+15]=255;
+        assert(tv_glyph_alpha(cell,11,15)==255);
+    }
     assert(mmap((void *)0x44000000, TV_GUI_BYTES, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == (void *)0x44000000);
     /* off/no cable/composite/module error all preserve LCD and allocate nothing. */

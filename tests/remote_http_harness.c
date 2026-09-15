@@ -31,6 +31,7 @@ static unsigned long long sceKernelGetSystemTimeWide(void) {
 static int have_cached_server_address=1,server_port;
 static struct in_addr cached_server_address;
 static const char *server_host="localhost";
+static const char *server_auth_header="";
 #include "remote_http.h"
 int main(int argc,char **argv) {
     char result[2048]; volatile int running=1;

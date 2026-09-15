@@ -15,7 +15,7 @@ static int remote_http_get(const char *path,char *buffer,int capacity,volatile i
     memset(&server,0,sizeof(server));
     server.sin_family=AF_INET; server.sin_port=htons((unsigned short)server_port);
     server.sin_addr=cached_server_address;
-    int wanted=snprintf(request,sizeof(request),"GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",path,server_host);
+    int wanted=snprintf(request,sizeof(request),"GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",path,server_host, server_auth_header);
     if(wanted<0 || wanted>=(int)sizeof(request)) { result=-1002; goto done; }
     fd=sceNetInetSocket(AF_INET,SOCK_STREAM,0);
     if(fd<0) { result=fd; goto done; }

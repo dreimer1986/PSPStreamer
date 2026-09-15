@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 from collections import OrderedDict
 import hashlib
+import hmac
+import binascii
 import json
 import mimetypes
 import os
@@ -136,7 +138,7 @@ class Library:
             raise ValueError("Media item is unavailable")
         return item, target
 
-    def next_media(self, token: str, shuffle: bool = False) -> dict:
+    def next_media(self, token: str, shuffle: bool = False, previous: bool = False) -> dict:
         """Resolve a same-folder successor independently of PSP menu state.
 
         Video stops at the folder's end. Music may shuffle, excluding the
@@ -166,7 +168,11 @@ class Library:
                         if entry.name == Path(item.relative).name), None)
         if current is None:
             return {}
-        if is_audio and shuffle:
+        if previous:
+            if current == 0:
+                return {}
+            following = candidates[current - 1]
+        elif is_audio and shuffle:
             choices = candidates[:current] + candidates[current + 1:]
             if not choices:
                 return {}
@@ -352,9 +358,39 @@ def calibration_command(duration: int, container: str, tv_output: bool) -> list[
 class AppHandler(BaseHTTPRequestHandler):
     server: "AppServer"
 
+    def authorized(self) -> bool:
+        if not self.server.password:
+            return True
+        supplied = b""
+        try:
+            scheme, token = self.headers.get("Authorization", "").split(" ", 1)
+            if scheme.lower() == "basic":
+                credentials = base64.b64decode(token, validate=True)
+                user, separator, password = credentials.partition(b":")
+                if separator and user == b"psp":
+                    supplied = password
+        except (ValueError, binascii.Error):
+            pass
+        if hmac.compare_digest(supplied, self.server.password):
+            return True
+        self.close_connection = True  # Do not interpret an unread POST body as another request.
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("WWW-Authenticate", 'Basic realm="PSP Streamer", charset="UTF-8"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        return False
+
     def log_message(self, fmt: str, *args: object) -> None:
         if os.environ.get("ACCESS_LOG") == "1":
             super().log_message(fmt, *args)
+
+    def end_headers(self) -> None:
+        if self.server.password:
+            self.send_header("Cache-Control", "private, no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        super().end_headers()
 
     def send_json(self, body: object, status: HTTPStatus = HTTPStatus.OK) -> None:
         # Compact output is friendlier to the PSP's small response buffer and parser.
@@ -369,6 +405,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_json({"error": message}, status)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self.authorized():
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
@@ -382,7 +420,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.library.browse(root, query.get("path", [""])[0]))
             if parsed.path.startswith("/api/media-next/"):
                 return self.send_json(self.server.library.next_media(
-                    parsed.path.rsplit("/", 1)[-1], query.get("shuffle", ["0"])[0] == "1"))
+                    parsed.path.rsplit("/", 1)[-1], query.get("shuffle", ["0"])[0] == "1",
+                    query.get("direction", ["next"])[0] == "previous"))
             if parsed.path.startswith("/api/metadata/"):
                 return self.metadata(parsed.path.rsplit("/", 1)[-1])
             if parsed.path.startswith("/api/subtitles/"):
@@ -425,6 +464,15 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self.authorized():
+            return
+        # Native PSP clients only GET. Browser commands must be same-origin
+        # JSON; reject form POSTs that could reuse cached Basic credentials.
+        origin = self.headers.get("Origin")
+        if (self.headers.get_content_type() != "application/json" or
+                (origin is not None and urlparse(origin).netloc != self.headers.get("Host"))):
+            self.close_connection = True
+            return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
             if parsed.path != "/api/remote/command":
@@ -693,6 +741,7 @@ class AppServer(ThreadingHTTPServer):
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
         self.remote_lock = threading.Lock()
         self.remote_sequence = 0
+        self.password = os.environ.get("PSP_STREAMER_PASSWORD", "").encode("utf-8")
         self.remote_deadline = 0.0
         self.remote_session = os.urandom(16).hex()
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}

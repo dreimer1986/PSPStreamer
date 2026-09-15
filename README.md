@@ -165,6 +165,7 @@ The server is configurable without recompiling. Edit the file on a PC:
 ```ini
 server=streamer.example.net
 port=8091
+server_password=
 audio=0
 subtitle=-1
 quality=2
@@ -201,7 +202,16 @@ Create `psp-client/lang_xx.h` by copying `lang_en.h`. Each visible text has its 
 
 Browser controls: Cross opens a folder or playback options; Triangle opens the media information page for a file; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
 
-Playback controls: Select pauses/resumes, L/R seek ±10 seconds, and Start returns to the browser. Track titles such as `Forced` or `Full` appear beside language labels when the source provides them.
+Playback controls: In fullscreen video (including TV), Select opens/closes the
+transport overlay without pausing. Left/Right selects a button, Cross activates
+it and Circle closes the overlay. Buttons are previous file, -30 seconds,
+-10 seconds, Pause/Play, +10 seconds, +30 seconds and next file. File switches
+use the existing complete decoder/audio teardown, stay in the same folder and
+do not wrap; at a folder boundary the player returns to the browser. They also
+work for remotely started video with server/HA app 0.1.24 or newer. Outside
+fullscreen, Select retains direct pause/resume. Music controls are unchanged.
+L/R still seek ±10 seconds and Start returns to the browser. Track titles such
+as `Forced` or `Full` appear beside language labels when available.
 
 Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and stores volume (hold either direction for a slow repeat), and Cross+Triangle toggles fullscreen. Fullscreen works for video and for the audio spectrum display.
 
@@ -319,4 +329,34 @@ redistributing binaries containing the prototype.
 
 ## Security
 
-The server has no authentication. Do not expose it directly to the public internet; DynDNS access should use a VPN, a trusted firewall rule, or a separate home network.
+### One shared password (server/HA app 0.1.24)
+
+Set the HA app option `password`, or set `PSP_STREAMER_PASSWORD` in the server's
+environment (also supported by `compose.yaml`). Restart the server after a
+change. All GET/POST routes, including media, metadata, subtitles, the website
+and remote control, require authentication when the password is nonempty.
+An empty password preserves unauthenticated LAN use; it is **not safe for WAN**.
+
+Put the identical password in `server_password=` in
+`ms0:/PSP/SYSTEM/PSPStreamer.cfg` and restart the PSP app. Use a single-line
+password of at most 128 UTF-8 bytes; a long random ASCII password is easiest to
+enter consistently. The client preserves this setting when saving volume or
+other preferences. The password is stored in plaintext on the Memory Stick.
+Do not commit your real config or put credentials into URLs.
+
+The website uses the browser's HTTP Basic login dialog: username **psp**, plus
+the shared password. There are no user accounts; `psp` is a fixed protocol
+label. Wrong/missing credentials return HTTP 401 before any library/transcode
+work. Browser control commands require same-origin JSON. Protected responses
+are marked non-cacheable. Clear the browser's saved authentication or restart
+its session after changing passwords.
+
+**A password is not transport encryption.** This PSP client still speaks HTTP;
+Basic credentials are only Base64 encoded and can be read/replayed on an
+untrusted path ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). Do not expose
+port 8091 directly to the Internet. For portable use, put the PSP behind a
+VPN-capable router/hotspot and reach the server over that tunnel. A public
+browser endpoint needs HTTPS and a hardened reverse proxy with rate limiting;
+preserve Host and Authorization headers and keep the HTTP backend private.
+HTTPS at the browser proxy alone does not encrypt a PSP's separate HTTP path.
+This change adds access control, not native PSP TLS or Internet-service hardening.

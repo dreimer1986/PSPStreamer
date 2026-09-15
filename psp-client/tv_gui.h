@@ -49,6 +49,8 @@ static int tv_text(int x, int y, int columns, int lines, u32 color, const char *
     static unsigned char ink_height[256];
     int bottom = y;
     int row = 0, offset = 0, new_word = 1, limit = columns * 13;
+    if(limit>TV_GUI_WIDTH-x-8) limit=TV_GUI_WIDTH-x-8;
+    if(limit<=0 || lines<=0) return y;
     va_list args;
     va_start(args, format);
     vsnprintf(text, sizeof(text), format, args);
@@ -61,7 +63,7 @@ static int tv_text(int x, int y, int columns, int lines, u32 color, const char *
             const unsigned char *bitmap = subtitle_font + (g >> 4) * 20 * 256 + (g & 15) * 16;
             advance[g] = 6;
             for (yy = 0; yy < 16; yy++) for (xx = 0; xx < 12; xx++)
-                if (bitmap[yy * 256 + xx]) {
+                if (tv_glyph_alpha(bitmap,xx,yy)) {
                     if (advance[g] < xx + 2) advance[g] = xx + 2;
                     ink_height[g] = yy + 1;
                 }

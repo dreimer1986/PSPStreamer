@@ -36,8 +36,15 @@ static void tv_line(TvCanvas *canvas, int x, int y, int end_x, int end_y, uint32
         if (twice <= dx) { error += dx; y += sy; }
     }
 }
-/* Font atlas already contains native 12x16 glyphs in 16x20 cells.
- * LCD downsamples them; TV uses their original pixels and antialiasing. */
+/* Sample the entire 16x20 cell into 12x16, rather than cropping its right
+ * and bottom edges. Max coverage preserves umlaut dots and thin strokes. */
+static unsigned int tv_glyph_alpha(const unsigned char *bitmap,int x,int y) {
+    int xx,yy; unsigned int a=0;
+    for(yy=y*20/16;yy<(y+1)*20/16;yy++)
+        for(xx=x*16/12;xx<(x+1)*16/12;xx++)
+            if(bitmap[yy*256+xx]>a) a=bitmap[yy*256+xx];
+    return a;
+}
 static void tv_glyph(TvCanvas *canvas, const unsigned char *font, int glyph,
                      int x, int y, uint32_t color) {
     int xx, yy;
@@ -45,7 +52,7 @@ static void tv_glyph(TvCanvas *canvas, const unsigned char *font, int glyph,
     if (!font || glyph < 0 || glyph > 255) return;
     bitmap = font + (glyph >> 4) * 20 * 256 + (glyph & 15) * 16;
     for (yy = 0; yy < 16; yy++) for (xx = 0; xx < 12; xx++) {
-        unsigned int a = bitmap[yy * 256 + xx];
+        unsigned int a = tv_glyph_alpha(bitmap,xx,yy);
         int px = x + xx, py = y + yy;
         uint32_t old, blended = 0;
         int shift;

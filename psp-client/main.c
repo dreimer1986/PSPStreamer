@@ -361,6 +361,7 @@ static int seek_requested;
 #define SETTINGS_PATH "ms0:/PSP/SYSTEM/PSPStreamer.cfg"
 static char server_host[64] = PSP_STREAMER_HOST;
 static int server_port = PSP_STREAMER_PORT;
+#include "server_auth.h"
 static struct in_addr cached_server_address;
 static int have_cached_server_address;
 
@@ -371,7 +372,7 @@ static const char *audio_quality_name(void) {
 
 static void load_playback_settings(void) {
     SceUID file = sceIoOpen(SETTINGS_PATH, PSP_O_RDONLY, 0);
-    char data[512], *line;
+    char data[1024], *line;
     int count;
     if (file < 0) return;
     count = sceIoRead(file, data, sizeof(data) - 1);
@@ -401,6 +402,10 @@ static void load_playback_settings(void) {
                     }
                 }
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
+            else if (!strncmp(line, "server_password=", 16)) {
+                strncpy(server_password,line+16,sizeof(server_password)-1);
+                server_password[sizeof(server_password)-1]=0;
+            }
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
@@ -417,13 +422,14 @@ static void load_playback_settings(void) {
     if (playback_volume < 0 || playback_volume > 30) playback_volume = 24;
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
     if (!server_host[0]) strcpy(server_host, PSP_STREAMER_HOST);
+    server_auth_update();
 }
 
 static void save_playback_settings(void) {
     SceUID file;
-    char data[512];
-    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
-                          server_host, server_port, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
+    char data[1024];
+    int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
+                          server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
     if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
 }
@@ -561,7 +567,7 @@ static int http_get_wait(const char *path, char *buffer, int buffer_size, int id
         sceNetInetClose(socket_fd);
         return error ? -error : -1001;
     }
-    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, server_host);
+    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
     if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1002; }
     while (received < buffer_size - 1) {
         read_size = stream_recv(socket_fd, buffer + received, buffer_size - 1 - received, 250);
@@ -609,7 +615,7 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0 || prepare_server(&server) < 0) return -1;
     if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { sceNetInetClose(socket_fd); return -1; }
-    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, server_host);
+    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
     if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1; }
     while (header_size < (int)sizeof(header) - 1) {
         int got = stream_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 250);
@@ -1312,7 +1318,7 @@ static int play_mjpeg(const char *media_id) {
     result = load_video_modules();
     if (result < 0) return result;
     video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mjpeg HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", media_id, server_host);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mjpeg HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", media_id, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return socket_fd;
     if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); return -1206; }
@@ -1533,7 +1539,7 @@ static int audio_thread(SceSize args, void *argp) {
     if (!timed_active) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
@@ -1673,6 +1679,7 @@ cleanup:
 #include "tv_gui.h"
 #include "lcd_music.h"
 #include "spectrum_fullscreen.h"
+#include "video_controls.h"
 
 static void draw_fullscreen_spectrum(void) {
     unsigned char bands[SPECTRUM_BANDS];
@@ -1703,6 +1710,7 @@ static int music_saved_visual_preset;
 static int music_saved_fullscreen;
 
 static int play_audio(const char *media_id, const char *title) {
+    video_file_direction=0;
     int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
@@ -1900,6 +1908,9 @@ static int play_audio(const char *media_id, const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    video_controls.visible=video_controls.saved=0;
+    video_controls.selected=3;
+    video_file_direction=0;
     int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
     int prepared = 0, trace_start_seconds = stream_start_seconds;
     int video_only_origin = 0;
@@ -1969,10 +1980,10 @@ static int play_h264(const char *media_id) {
     codec_sema = sceKernelCreateSema("PSPStreamerME", 0, 1, 1, NULL);
     if (codec_sema < 0) { result = codec_sema; goto done; }
     snprintf(timed_request, sizeof(timed_request),
-        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
-        audio_quality_name(), stream_start_seconds, server_host);
+        audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
     timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x5000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
     if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {
@@ -2019,6 +2030,39 @@ static int play_h264(const char *media_id) {
             break;
         }
         if (pad.Buttons & PSP_CTRL_START) { result = frames; break; }
+        {
+            unsigned int pressed=pad.Buttons & ~previous_buttons;
+            int was_visible=video_controls.visible;
+            if((pressed & PSP_CTRL_SELECT) && (video_fullscreen || tvout_video_active || was_visible) && video_first_presented) {
+                if(was_visible) video_controls_hide();
+                else video_controls_show(tvout_video_active,paused);
+                /* Select opens controls without changing the playback clock. */
+                previous_buttons |= PSP_CTRL_SELECT;
+            }
+            if(was_visible && (pressed & PSP_CTRL_CIRCLE)) {
+                video_controls_hide(); previous_buttons |= PSP_CTRL_CIRCLE;
+            }
+            if(video_controls.visible) {
+                if(pressed & PSP_CTRL_LEFT) video_controls.selected=(video_controls.selected+6)%7;
+                if(pressed & PSP_CTRL_RIGHT) video_controls.selected=(video_controls.selected+1)%7;
+                if((pressed & PSP_CTRL_CROSS) && !(pad.Buttons & PSP_CTRL_TRIANGLE)) {
+                    static const int deltas[]={0,-30,-10,0,10,30,0};
+                    if(video_controls.selected==0 || video_controls.selected==6) {
+                        video_file_direction=video_controls.selected==0?-1:1;
+                        result=frames; break;
+                    } else if(video_controls.selected==3) {
+                        paused=!paused; playback_paused=paused; audio_start=paused?0:buffered;
+                    } else {
+                        stream_start_seconds += timed_position_ms/1000+deltas[video_controls.selected];
+                        if(stream_start_seconds<0) stream_start_seconds=0;
+                        strncpy(resume_media_id,media_id,sizeof(resume_media_id)-1);
+                        resume_media_id[sizeof(resume_media_id)-1]=0;
+                        resume_pending=seek_requested=1; result=frames; break;
+                    }
+                }
+                if(pressed) video_controls_draw(paused);
+            }
+        }
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(previous_buttons & PSP_CTRL_SELECT)) {
             paused = !paused;
             playback_paused = paused;
@@ -2157,6 +2201,7 @@ static int play_h264(const char *media_id) {
                 if (sync == 1) {
                     unsigned long long copy_start = sceKernelGetSystemTimeWide();
                     memcpy((void *)0x44000000, video_staging, video_staging_bytes);
+                    video_controls_present(paused);
                     result = sceDisplaySetFrameBuf((void *)0x04000000,
                         tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                         PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
@@ -2457,11 +2502,11 @@ static int next_media_index(int selected, int is_audio) {
 
 /* Remote playback has no relationship to the PSP's currently browsed folder.
  * Resolve successors from the media ID on the server, only after natural EOF. */
-static int remote_next_media(char *media_id, size_t capacity, int is_audio) {
+static int remote_next_media(char *media_id, size_t capacity, int is_audio, int direction) {
     char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16];
     int result;
-    snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d", media_id,
-             is_audio && audio_shuffle);
+    snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d&direction=%s", media_id,
+             is_audio && audio_shuffle, direction<0?"previous":"next");
     result = http_get(path, response, sizeof(response));
     if (result < 0) return result;
     if (!json_value(response, "id", next_id, sizeof(next_id))) return 0;
@@ -2769,9 +2814,10 @@ int main(void) {
                         sceKernelDelayThread(250000);
                         continue;
                     }
-                    if (!playback_reached_end || resume_pending) break;
+                    if (!video_file_direction && (!playback_reached_end || resume_pending)) break;
                     {
-                        int following = remote_next_media(remote_media_id, sizeof(remote_media_id), remote_is_audio);
+                        int following = remote_next_media(remote_media_id, sizeof(remote_media_id), remote_is_audio,
+                            video_file_direction?video_file_direction:1);
                         if (following < 0) { result = following; video_step = "Next media"; break; }
                         if (!following) break;
                     }
@@ -2882,7 +2928,11 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                next = playback_reached_end ? next_media_index(selected, items[selected].is_audio) : -1;
+                next = (playback_reached_end || video_file_direction>0) ? next_media_index(selected, items[selected].is_audio) : -1;
+                if(video_file_direction<0) {
+                    for(next=selected-1;next>=0;next--)
+                        if(!items[next].is_folder && items[next].is_audio==items[selected].is_audio) break;
+                }
                 if (next < 0) {
                     if (items[selected].is_audio)
                         snprintf(status, sizeof(status), tr(TXT_MUSIC_ENDED), audio_state);
