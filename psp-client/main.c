@@ -1672,6 +1672,22 @@ cleanup:
 #include "music_ui.h"
 #include "tv_gui.h"
 #include "lcd_music.h"
+#include "spectrum_fullscreen.h"
+
+static void draw_fullscreen_spectrum(void) {
+    unsigned char bands[SPECTRUM_BANDS];
+    int i,tv=tv_ui_active;
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    if(tvout_video_active || display_output.tv!=tv) return;
+    if(spectrum_fullscreen.valid && now<spectrum_fullscreen.next_tick) return;
+    for(i=0;i<SPECTRUM_BANDS;i++) bands[i]=spectrum_levels[i];
+    sceDisplayWaitVblankStart();
+    spectrum_fullscreen_render((u32 *)0x44000000,tv?720:480,tv?480:272,
+        tv?TV_GUI_STRIDE:VIDEO_STRIDE,bands,audio_running && audio_start);
+    spectrum_fullscreen.next_tick=sceKernelGetSystemTimeWide()+MUSIC_UI_INTERVAL_US;
+    if(tv) tv_music.next_tick=spectrum_fullscreen.next_tick;
+    else lcd_music.next_tick=spectrum_fullscreen.next_tick;
+}
 static int json_value(const char *from, const char *key, char *destination, size_t length);
 static int json_integer(const char *from, const char *key, int fallback);
 #include "remote_state.h"
@@ -1690,6 +1706,7 @@ static int play_audio(const char *media_id, const char *title) {
     int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
+    spectrum_fullscreen_reset();
     start_result = video_watch_start(1);
     if (start_result < 0) { video_step = "Diagnostic file"; video_watch_stop(); return start_result; }
     int visual_preset = music_saved_visual_preset;
@@ -1736,6 +1753,7 @@ static int play_audio(const char *media_id, const char *title) {
         if (md_start()) music_visual_active = 1;
         else visual_preset = 0;
     }
+    if (fullscreen && !music_visual_active) draw_fullscreen_spectrum();
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
@@ -1770,11 +1788,15 @@ static int play_audio(const char *media_id, const char *title) {
         keep_awake();
         /* A true visualizer fullscreen owns all visible pixels. Do not draw
          * receiver controls between GU frames (including throttled frames). */
-        if (!(music_visual_active && fullscreen)) {
+        if (fullscreen && !music_visual_active) {
+            video_watch_ping("fullscreen spectrum");
+            draw_fullscreen_spectrum();
+        } else if (!(music_visual_active && fullscreen)) {
             video_watch_ping("music GUI");
             if (tv_ui_active) tv_draw_music(title, fullscreen);
             else lcd_draw_music(title, fullscreen);
         }
+        if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
             video_watch_ping("music visualization");
             if (tv_ui_active) md_set_tv_title_bottom(tv_music_title_bottom);
@@ -2175,6 +2197,11 @@ done:
         video_watch_ping("stop: join FLV reader");
         sceKernelWaitThreadEnd(timed_reader_id, NULL);
         sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1;
+    }
+    if (timed_error) {
+        video_watch_ping("stop: stream error report");
+        if (stream_diag_save(timed_error) < 0)
+            video_watch_write("stream error report: write failed\n",0);
     }
     if (audio_thread_id >= 0) {
         video_watch_ping("stop: join MP3 decoder");

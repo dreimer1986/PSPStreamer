@@ -3,12 +3,27 @@ import http.client
 import json
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from psp_streamer.server import AppServer, Library, MediaItem, ffmpeg_command, load_roots, natural_name_key, parse_srt_cues, psp_subtitle_text, track_label
 
 
 class LibraryTests(unittest.TestCase):
+    def test_remote_command_expires_at_fifteen_seconds_without_refresh_on_poll(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with AppServer(("127.0.0.1", 0), Library([Path(temporary)])) as server:
+                with patch("psp_streamer.server.time.monotonic", return_value=100):
+                    command=server.set_remote_command({"action":"stop"})
+                with patch("psp_streamer.server.time.monotonic", return_value=114.999):
+                    self.assertEqual(server.remote_after(0),command)
+                with patch("psp_streamer.server.time.monotonic", return_value=115):
+                    expired=server.remote_after(0)
+                    self.assertEqual(expired["action"],"idle")
+                    self.assertEqual(expired["seq"],command["seq"])
+                    fresh=server.set_remote_command({"action":"pause"})
+                    self.assertEqual(server.remote_after(command["seq"]),fresh)
+
     def test_remote_http_commands_survive_polling_and_have_session_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

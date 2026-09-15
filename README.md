@@ -31,6 +31,19 @@ The audio PTS describes the submitted block, not an exact sample at the speaker.
 
 ### Temporary playback-stall diagnostics
 
+An FLV reader failure (including `FFFFFAD8` / `-1320`) also creates
+`ms0:/PSP/SYSTEM/PSPStreamer-stream-error.txt`. This does not wait for the
+eight-second stall threshold: the reader captures the failure in RAM, and
+the UI saves it after joining that reader, before the remaining teardown.
+It records the failing phase, TCP EOF versus socket error versus inactivity
+timeout, socket errno/poll events, partial-read sizes, received bytes, last
+audio/video tag timestamps, time since received data and APCTL state at failure.
+Parser/allocation failures are reported separately from network read failures.
+No video bytes, credentials or media filenames are included. A new FLV error
+replaces the previous report; healthy playback does not erase it. Save it with
+the sync CSV and watchdog file after an unexpected video stop. These changes
+do not adjust streaming/startup/subtitle timeouts or implement new recovery.
+
 The diagnostic build watches both music and video, including teardown. Before
 playback it creates `ms0:/PSP/SYSTEM/PSPStreamer-watch-music.txt` or
 `ms0:/PSP/SYSTEM/PSPStreamer-watch-video.txt` and checks that its worker can append
@@ -191,6 +204,20 @@ Browser controls: Cross opens a folder or playback options; Triangle opens the m
 Playback controls: Select pauses/resumes, L/R seek ±10 seconds, and Start returns to the browser. Track titles such as `Forced` or `Full` appear beside language labels when the source provides them.
 
 Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and stores volume (hold either direction for a slow repeat), and Cross+Triangle toggles fullscreen. Fullscreen works for video and for the audio spectrum display.
+
+With the normal spectrum selected (Square cycles back from MilkDrop),
+Cross+Triangle now fills the LCD or native TV canvas with spectrum bars, without
+the receiver strip. The existing 20-Hz visual update limit and changed-area-only
+writes remain in place. Pause lets the bars decay; volume and Stop still work.
+Fullscreen preference remains active across music tracks.
+
+Server/HA app **0.1.23** hides audio-track and subtitle selectors for music and
+uses their neutral values when sending a music Play command. Video selectors
+return when selecting a video. Update the HA app and reload the browser page.
+Remote commands have a **15-second validity window from submission**; polling
+does not extend it. After expiry, the server returns Idle with the current
+sequence number, so starting the PSP app cannot replay an old command. Expiry
+does not stop playback that has already started, nor limit subtitle preparation.
 
 ## Subtitles and limitations
 

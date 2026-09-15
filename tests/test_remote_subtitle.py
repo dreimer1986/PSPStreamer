@@ -6,6 +6,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteSubtitleTests(unittest.TestCase):
+    def test_browser_hides_music_tracks_and_restores_video_tracks(self):
+        html=(ROOT / "static/index.html").read_text()
+        choose=next(line for line in html.splitlines() if line.startswith("async function choose("))
+        addon=(ROOT / "psp_streamer_addon/rootfs/app/static/index.html").read_text()
+        self.assertIn(choose,addon)
+        script="""
+const assert=require('assert'); let selected;
+const elements={};
+function $(key){return elements[key]||(elements[key]={parentElement:{style:{}}})}
+const document={querySelectorAll:()=>[]};
+const button={classList:{add:()=>{}}};
+async function api(){return {a:[],s:[],d:60}}
+function option(){}
+"""+choose+"""
+(async()=>{
+ await choose({id:'music',name:'Music',kind:'audio'},button);
+ assert.strictEqual($('#audio').parentElement.style.display,'none');
+ assert.strictEqual($('#subtitle').parentElement.style.display,'none');
+ await choose({id:'video',name:'Video',kind:'video'},button);
+ assert.strictEqual($('#audio').parentElement.style.display,'');
+ assert.strictEqual($('#subtitle').parentElement.style.display,'');
+})().catch(e=>{console.error(e);process.exit(1)});
+"""
+        subprocess.run(["node","-e",script],check=True,timeout=5)
+
     def test_actual_browser_command_preserves_first_subtitle(self):
         html = (ROOT / "static/index.html").read_text()
         command = next(line for line in html.splitlines() if line.startswith("async function command("))
@@ -24,6 +49,9 @@ async function api(path,options){sent=JSON.parse(options.body)}
   await command('play');
   assert.strictEqual(sent.subtitle,value===''?-1:Number(value));
  }
+ selected.kind='audio'; elements['#audio'].value='3'; elements['#subtitle'].value='7';
+ await command('play');
+ assert.strictEqual(sent.audio,0); assert.strictEqual(sent.subtitle,-1);
 })().catch(e=>{console.error(e);process.exit(1)});
 """
         subprocess.run(["node","-e",script],check=True,timeout=10)
