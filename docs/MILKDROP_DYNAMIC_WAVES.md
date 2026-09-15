@@ -38,7 +38,8 @@ failure; actual PSP performance still requires hardware testing.
 
 ## Remaining work
 
-Independent custom-shape init/frame programs, custom-wave frame/point programs,
+Custom-shape init/frame programs have since been added; see
+[shape formulas](MILKDROP_SHAPE_FORMULAS.md). Custom-wave frame/point programs,
 full NS-EEL semantics, persistent per-grid contexts, additional engine inputs,
 image adjustment passes and automatic preset transitions/blending remain absent.
 Shaders and external textures are still deferred. This is a bounded compatibility

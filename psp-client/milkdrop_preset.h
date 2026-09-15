@@ -4,6 +4,8 @@
 #include "preset_math.h"
 #include "milkdrop_signal.h"
 #include "milkdrop_decor.h"
+typedef struct { PmProgram init, frame; PmSymbols symbols; } MdShapeProgram;
+typedef struct { int ready; float t[8], user[PM_USER_COUNT]; } MdShapeState;
 typedef struct {
     MdPreset warp; float red, green, blue; PmProgram program;
     int legacy, wave_mode, wrap;
@@ -13,11 +15,13 @@ typedef struct {
     PmSymbols symbols;
     PmProgram pixel_program;
     float motion[9]; /* alpha, RGB, grid X/Y, offsets X/Y, length */
+    MdShapeProgram shape_program[MD_SHAPES];
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
 typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT];
     unsigned int frames; float last_seconds, fps;
     int wave_mode; float motion[9];
+    MdShapeState shape[MD_SHAPES];
 } MdPresetState;
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;

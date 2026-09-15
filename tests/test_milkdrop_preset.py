@@ -46,20 +46,27 @@ class Symbols(ctypes.Structure):
     _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*16)]
 
 
+class ShapeProgram(ctypes.Structure):
+    _fields_=[("init",Program),("frame",Program),("symbols",Symbols)]
+
+class ShapeState(ctypes.Structure):
+    _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*16)]
+
 class Preset(ctypes.Structure):
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
-                ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9)]
+                ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
+                ("shape_program",ShapeProgram*4)]
 
 
 class PresetState(ctypes.Structure):
     _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
               ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
               ("last_seconds",ctypes.c_float),("fps",ctypes.c_float),
-              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9)]
+              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4)]
 
 
 class Error(ctypes.Structure):
@@ -637,7 +644,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*119)(*([.5]*119)); before=bytes(values)
+                values=(ctypes.c_float*150)(*([.5]*150)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -673,7 +680,42 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(bytes(warp),bytes(Warp()))
             self.assertEqual(bytes(decor),bytes(Decor()))
             self.assertEqual(color.value,123)
+        self.last_decor=decor
         return result,warp,error
+
+    def test_shape_contexts_and_atomic_failure(self):
+        code,preset,error=self.parse(b'''[preset00]
+per_frame_1=q1=.25;
+shapecode_0_enabled=1
+shapecode_1_enabled=1
+shape_0_init1=t1=.2; counter=0;
+shape_0_per_frame1=counter=counter+1; x=q1; rad=t1; t1=.9; q1=.8;
+shape_1_init1=t1=.3; counter=10;
+shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
+''')
+        self.assertEqual(code,0)
+        state=PresetState()
+        for i in range(1,5):
+            self.assertEqual(self.evaluate_state(preset,state,i)[0],0)
+            self.assertAlmostEqual(state.shape[0].t[0],.2)
+            self.assertAlmostEqual(state.shape[1].t[0],.3)
+            self.assertEqual(state.shape[0].user[0],i)
+            self.assertEqual(state.shape[1].user[0],10+2*i)
+            self.assertAlmostEqual(state.frame_q[0],.25)
+            self.assertAlmostEqual(self.last_decor.shapes[0].rad,.2)
+            self.assertAlmostEqual(self.last_decor.shapes[1].rad,.3)
+            self.assertAlmostEqual(self.last_decor.shapes[1].x,.25)
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        preset.decor.shapes[0].enabled=0
+        disabled=PresetState()
+        self.assertEqual(self.evaluate_state(preset,disabled,0)[0],0)
+        self.assertFalse(disabled.shape[0].ready)
+        for expr in ('rad=2;','sides=100;','x=1/0;','textured=.5;'):
+            code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
+            self.assertEqual(code,0)
+            self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        for expr in ('time=2;','zoom=1;','t9=1;'):
+            self.assertNotEqual(self.parse(('[preset00]\nshape_0_per_frame1='+expr).encode())[0],0)
 
     def test_init_q_lifetime_and_output_reset(self):
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=time; q32=.25; zoom=9;\n"

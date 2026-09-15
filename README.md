@@ -276,6 +276,9 @@ bounded motion vectors and `frame`/`fps` inputs are now available. See the
 Frame formulas can also animate `wave_mode` and all nine `mv_*` fields.
 Try `wave-switch-demo.milk` in the preset browser; see
 [dynamic waveforms and motion vectors](docs/MILKDROP_DYNAMIC_WAVES.md).
+Custom shapes now have separate bounded init/frame formula contexts, including
+`t1`–`t8`, current preset `q` inputs and persistent named variables. Try
+`shape-orbits-demo.milk`; see [shape formulas and limits](docs/MILKDROP_SHAPE_FORMULAS.md).
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).
 For animated rotation and colors, copy `presets/time-demo.milk` over
 `presets/active.milk` on the PSP, then stop and restart music.

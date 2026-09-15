@@ -120,6 +120,22 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             named=1; section=1; next.legacy=1; continue;
         }
         if (!section) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
+        if (!strncmp(key,"shape_",6)) {
+            int slot=key[6]-'0';
+            if(strlen(key)<9 || slot<0 || slot>=MD_SHAPES || key[7]!='_') {
+                result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
+            }
+            MdShapeProgram *shape=&next.shape_program[slot];
+            int init=!strncmp(key+8,"init",4);
+            PmProgram *program=init?&shape->init:&shape->frame;
+            char expected[40];
+            snprintf(expected,sizeof(expected),init?"shape_%d_init%d":"shape_%d_per_frame%d",slot,program->lines+1);
+            if(strcmp(key,expected)) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
+            int code=pm_compile_shape(program,value,number,&shape->symbols);
+            if(code!=PM_OK) { result=md_file_error(error,code==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,number,key); goto done; }
+            shape_seen[slot]|=1U<<31;
+            continue;
+        }
         if (!strncmp(key,"shapecode_",10)) {
             int slot=key[10]-'0';
             static const char *names[]={"enabled","sides","additive","textured","x","y",
@@ -298,7 +314,42 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     }
     next.wave_mode=(int)mode;
     memcpy(next.motion,v+PM_DYNAMIC_BASE+1,sizeof(next.motion));
-    *decor=p->decor;
+    MdDecor evaluated=p->decor;
+    for(int slot=0;slot<MD_SHAPES;slot++) {
+        const MdShapeProgram *program=&p->shape_program[slot];
+        if(!p->decor.shapes[slot].enabled || (!program->init.count && !program->frame.count)) continue;
+        MdShapeState *local=&next.shape[slot];
+        float sv[PM_VALUES]={0};
+        memcpy(sv+9,v+9,14*sizeof(float));
+        memcpy(sv+PM_META_BASE,v+PM_META_BASE,2*sizeof(float));
+        memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
+        memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
+        memcpy(sv+PM_USER_BASE,local->user,sizeof(local->user));
+        if(!local->ready) {
+            memcpy(sv+PM_Q_BASE,next.q,sizeof(next.q));
+            if(!pm_execute(&program->init,sv,&line)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
+            memcpy(local->t,sv+PM_T_BASE,sizeof(local->t));
+            memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
+            local->ready=1;
+        }
+        /* Shape q reads the current preset frame; t restores init seeds.
+         * Shape outputs restart from static values; named locals persist. */
+        memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
+        memcpy(sv+PM_T_BASE,local->t,sizeof(local->t));
+        memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
+        if(!pm_execute(&program->frame,sv,&line)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
+        for(int k=0;k<23;k++) {
+            float value=sv[PM_SHAPE_BASE+k],lo=0,hi=1;
+            if(k==1) {lo=3;hi=MD_SHAPE_SIDES;}
+            if(k==7 || k==8) {lo=-100;hi=100;}
+            if(k==9) {lo=.1f;hi=10;}
+            if(!isfinite(value) || value<lo || value>hi || ((k<4 || k==22) && value!=floorf(value)))
+                return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&program->frame,PM_SHAPE_BASE+k),"shape range");
+        }
+        memcpy(&evaluated.shapes[slot],sv+PM_SHAPE_BASE,sizeof(MdShape));
+        memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
+    }
+    *decor=evaluated;
     memcpy(decor,v+30,MD_DECOR_VALUES*sizeof(float));
     *warp = (MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
     *color = 0xff000000U | (unsigned int)(v[6]*255) |

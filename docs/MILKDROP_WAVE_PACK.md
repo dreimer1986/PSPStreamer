@@ -96,7 +96,8 @@ No server update is required. Stream timeouts and A/V synchronization are unchan
 
 ## Still separate architectural work
 
-Independent custom-shape init/frame contexts, custom-wave frame/point contexts,
+Custom-shape init/frame contexts are now supported in a bounded subset; see
+[shape formulas](MILKDROP_SHAPE_FORMULAS.md). Custom-wave frame/point contexts,
 complete NS-EEL compatibility (including memory/loops), larger/persistent
 per-grid contexts and preset blending are not minor switches. They remain
 unimplemented rather than silently approximated. Shader execution and external

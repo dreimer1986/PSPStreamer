@@ -1,0 +1,22 @@
+[preset00]
+nWaveMode=0
+fDecay=.94
+fWaveAlpha=.3
+fGammaAdj=1.2
+fVideoEchoZoom=1.5
+fVideoEchoAlpha=.15
+shapecode_0_enabled=1
+shapecode_0_sides=5
+shapecode_0_border_a=1
+shapecode_0_thickOutline=1
+shapecode_1_enabled=1
+shapecode_1_sides=3
+shapecode_1_border_a=1
+shapecode_1_additive=1
+per_frame_1=q1=time*.6;
+shape_0_init1=t1=.25; phase=0;
+shape_0_per_frame1=phase=phase+.02; x=.5+t1*cos(q1); y=.5+t1*sin(q1); ang=sin(phase)*3;
+shape_0_per_frame2=rad=.07+.06*psp_low; r=1; g=.3; b=.1; a=.7;
+shape_1_init1=t1=.25; phase=0;
+shape_1_per_frame1=phase=phase+.03; x=.5-t1*cos(q1); y=.5-t1*sin(q1); ang=cos(phase)*3;
+shape_1_per_frame2=rad=.07+.06*psp_high; r=.1; g=.5; b=1; a=.7;
