@@ -110,6 +110,22 @@ separate from media/subtitle preparation. Hardware TLS throughput and audible
 behavior still need a real PSP test. This build does not claim a security audit
 or production hardening of the old TLS dependency.
 
+### Playback startup memory
+
+PSP error `80020190` is `SCE_KERNEL_ERROR_NO_MEMORY`. A working HTTPS library
+browser does not guarantee that the later playback threads can be allocated.
+The linked newlib otherwise claims the largest free user-memory block for its
+malloc heap, leaving only 512 KiB for allocations outside that heap. The client
+now explicitly reserves 2048 KiB for firmware/module/thread allocations,
+including the larger HTTPS worker stacks. This trades 1.5 MiB of potential
+malloc heap space for partition headroom; it does not reduce stream buffers,
+TLS stack sizes or alter playback clocks. Hardware verification is still needed.
+
+Watchdog files now record `partition_free` and `largest_block` at startup.
+Worker-creation errors identify `Music worker` or `FLV reader worker` rather
+than retaining an unrelated earlier stage label. If the error persists, include
+that label and the watchdog logs from `ms0:/PSP/SYSTEM/`.
+
 ## Verification
 
 The regular tests cover password authentication/persistence/validation, failed

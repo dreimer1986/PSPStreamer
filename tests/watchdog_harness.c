@@ -16,6 +16,8 @@ static const char *remote_http_stage="idle";
 static struct {unsigned int write,read;} timed_video,timed_audio;
 static const char *h264_hw_last_step(void) { return "idle"; }
 static unsigned long long clock_us;
+static unsigned int sceKernelTotalFreeMemSize(void) {return 123456;}
+static unsigned int sceKernelMaxFreeMemSize(void) {return 65432;}
 static unsigned long long sceKernelGetSystemTimeWide(void) { return clock_us; }
 static int fail_open,fail_write,fail_thread,healthy,closes;
 static char contents[10000],path_seen[100];
@@ -49,6 +51,7 @@ int main(void) {
     fail_open=0; fail_write=1; assert(video_watch_start(1)<0 && closes==1);
     fail_write=0; fail_thread=1; assert(video_watch_start(1)==-23);
     assert(strstr(contents,"monitor thread failed"));
+    assert(strstr(contents,"partition_free=123456 largest_block=65432"));
     fail_thread=0; healthy=1;
     assert(video_watch_start(1)==0); video_watch_stop();
     assert(!strcmp(path_seen,"ms0:/PSP/SYSTEM/PSPStreamer-watch-music.txt"));

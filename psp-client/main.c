@@ -38,6 +38,10 @@
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 PSP_MAIN_THREAD_STACK_SIZE_KB(256);
+/* newlib otherwise claims the largest user-memory block minus only 512 KiB.
+ * Thread stacks and firmware modules cannot allocate from that malloc heap.
+ * Keep headroom for TLS reader/remote stacks and the media firmware instead. */
+PSP_HEAP_THRESHOLD_SIZE_KB(2048);
 
 #define RESPONSE_SIZE (512 * 1024)
 /* The PSP-3000 has 64 MiB RAM.  Keep a generously sized, paged directory
@@ -1755,6 +1759,7 @@ static int play_audio(const char *media_id, const char *title) {
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
     spectrum_fullscreen_reset();
+    video_step = "Music startup";
     start_result = video_watch_start(1);
     if (start_result < 0) { video_step = "Diagnostic file"; video_watch_stop(); return start_result; }
     int visual_preset = music_saved_visual_preset;
@@ -1810,6 +1815,7 @@ static int play_audio(const char *media_id, const char *title) {
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, server_https?0x10000:0x4000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
+        video_step = "Music worker";
         if (audio_thread_id >= 0) sceKernelDeleteThread(audio_thread_id);
         audio_running = 0;
         md_stop(); music_visual_active = 0;
@@ -2076,6 +2082,7 @@ static int play_h264(const char *media_id) {
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
         audio_quality_name(), selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
+    video_step = "FLV reader worker";
     timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, server_https?0x10000:0x5000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
     if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {

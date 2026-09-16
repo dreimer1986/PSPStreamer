@@ -72,7 +72,11 @@ static int video_watch_start(int music) {
     video_watch_music=music;
     video_watch_path=music?"ms0:/PSP/SYSTEM/PSPStreamer-watch-music.txt":"ms0:/PSP/SYSTEM/PSPStreamer-watch-video.txt";
     sceIoMkdir("ms0:/PSP/SYSTEM",0777);
-    result=video_watch_write(music?"music startup\n":"video startup\n",1);
+    char startup[192];
+    snprintf(startup,sizeof(startup),"%s startup\npartition_free=%u largest_block=%u\n",
+        music?"music":"video",(unsigned int)sceKernelTotalFreeMemSize(),
+        (unsigned int)sceKernelMaxFreeMemSize());
+    result=video_watch_write(startup,1);
     if(result<0) return result;
     video_watch_ready=0;
     video_watch_ping("playback startup");
