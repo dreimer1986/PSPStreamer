@@ -52,8 +52,12 @@ static int music_remote_start(void) {
     music_remote_action = MUSIC_REMOTE_NONE;
     music_remote_seconds = -1;
     music_remote_running = 1;
+    /* Full TLS handshakes recur on each remote poll. At the UI's 0x40
+     * priority, their CPU work can stall both spectrum and MilkDrop while
+     * the higher-priority DAC stays clean. Let the display preempt HTTPS
+     * control work; it still runs during the UI's regular sleep intervals. */
     music_remote_thread_id = sceKernelCreateThread("PSPStreamerMusicRemote",
-        music_remote_worker, 0x40, server_https?0x10000:0x4000, 0, NULL);
+        music_remote_worker, server_https?0x41:0x40, server_https?0x10000:0x4000, 0, NULL);
     if (music_remote_thread_id < 0) {
         result = music_remote_thread_id;
         music_remote_thread_id = -1; music_remote_running = 0;

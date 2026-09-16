@@ -126,6 +126,19 @@ Worker-creation errors identify `Music worker` or `FLV reader worker` rather
 than retaining an unrelated earlier stage label. If the error persists, include
 that label and the watchdog logs from `ms0:/PSP/SYSTEM/`.
 
+### Music display scheduling
+
+The HTTPS music-remote worker runs at priority `0x41`, below the music display
+at `0x40` (smaller PSP priority numbers run first). Its repeated full TLS
+handshakes must not compete at equal priority with spectrum/MilkDrop drawing.
+The display can preempt it when its normal sleep ends; remote processing still
+runs during those sleeps. Plain HTTP remains at its previous `0x40`, and
+decoder/DAC/video priorities, poll intervals and certificate handling are
+unchanged. This removes a plausible shared source of visual hitches without
+raising clocks or weakening the renderer's audio-protection delays. Host tests
+verify the priority contract and command lifecycle in both modes; smoothness
+and remote responsiveness require a PSP test.
+
 ## Verification
 
 The regular tests cover password authentication/persistence/validation, failed

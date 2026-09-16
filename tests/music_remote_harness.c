@@ -15,7 +15,8 @@ static void sceKernelDelayThread(int us);
 static int sceKernelCreateThread(const char *name, int (*worker)(SceSize, void *),
                                 int priority, int stack, int flags, void *option) {
     assert(!strcmp(name, "PSPStreamerMusicRemote") && worker == music_remote_worker);
-    assert(priority > 0x3D && stack >= 0x4000 && flags == 0 && !option);
+    assert(priority == (server_https?0x41:0x40));
+    assert(stack == (server_https?0x10000:0x4000) && flags == 0 && !option);
     return create_failure ? -10 : 123;
 }
 static int sceKernelStartThread(int id, int args, void *argp) {
@@ -55,7 +56,9 @@ static void reset(void) {
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
 }
-int main(void) {
+int main(int argc,char **argv) {
+    (void)argv;
+    server_https=argc>1;
     reset();
     strcpy(remote_session,"old");
     int seq=10;

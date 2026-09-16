@@ -27,6 +27,7 @@ class MusicRemoteTests(unittest.TestCase):
                             "-fsanitize=undefined", "-I", str(ROOT / "psp-client"),
                             str(c_file), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)
+            subprocess.run([str(binary), "https"], check=True, timeout=10)
 
     def test_music_consumes_controls_and_joins_before_return(self):
         source = (ROOT / "psp-client/main.c").read_text()
