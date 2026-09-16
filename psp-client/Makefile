@@ -25,7 +25,7 @@ language.o: language.h lang_en.h lang_de.h
 main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h preset_math.h milkdrop_signal.h
 milkdrop_signal.o: milkdrop_signal.h
-preset_math.o: preset_math.h
+preset_math.o: preset_math.h preset_expression.h
 main.o: music_preset_ui.h remote_http.h remote_state.h video_watchdog.h stream_diagnostic.h spectrum_fullscreen.h
 main.o: server_auth.h video_controls.h
 main.o: preset_catalog.h preset_browser.h

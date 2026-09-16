@@ -120,8 +120,9 @@ overwritten by the prepared release.
 
 ## What remains
 
-Full expression-language/NS-EEL work is deferred by request, along with shaders
-and external textures. This remains a bounded PSP implementation, not exact
+The later [expression/compatibility batch](MILKDROP_COMPATIBILITY.md) implements
+the public expression function/operator families within PSP limits. Shaders
+and external textures remain excluded. This is a bounded PSP implementation, not exact
 desktop output: normalized audio analysis, fixed mesh/side/instance limits,
 strict field bounds and snapshot crossfades differ from desktop MilkDrop.
 Obsolete switches without an active MilkDrop 2 render path (including the old

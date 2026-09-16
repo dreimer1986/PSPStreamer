@@ -136,7 +136,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(type==GU_LINES) { assert(count<=384 && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==512 || count==1023 || count==64 || count==127 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
+        assert(count==512 || count==1023 || count==192 || count==383 || count==64 || count==127 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=33)); ring_calls++;
         if(count<=33 && count!=16 && count!=31) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
@@ -187,6 +187,12 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             assert(target_width==512 && target_height==256 && target_changes==1);
             assert(v[i].x>-2048 && v[i].x<2048);
             assert(v[i].y>-2048 && v[i].y<2048);
+        } else if(count==192 || count==383) {
+            /* The new custom wave reaches x=1. Thick copies extend one pixel
+             * past the feedback edge and are clipped by the same scissor. */
+            assert(target_width==512 && target_height==256 && target_changes==1);
+            assert(v[i].x>=-1 && v[i].x<=target_width+1);
+            assert(v[i].y>=-1 && v[i].y<=target_height+1);
         } else {
             assert(v[i].x>=0 && v[i].x<=target_width);
             assert(v[i].y>=0 && v[i].y<=target_height);
@@ -195,7 +201,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==24);
+    assert(argc==27);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -397,6 +403,7 @@ int main(int argc,char **argv) {
     MdFileError demo_error;
     expected_passes=4; expected_ring_color=0;
     for(int fixture=1;fixture<argc;fixture++) {
+    expected_passes=fixture<=23?4:1;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;

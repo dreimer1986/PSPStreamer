@@ -6,12 +6,16 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <stdint.h>
 enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT,
        FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL,
-       TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP };
+       TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP,
+       DROP, KEEP, MOD, BITAND, BITOR, NEQ, LE, GE, BOOL, RAND, INVSQRT,
+       REGL, REGS, MEML, MEMS, GMEML, GMEMS, DUP, LOOP, LOOPEND, WHILE, WHILEEND,
+       EXEC2, EXEC3, MEMCPY, MEMSET, FREEMBUF, ASSIGN };
 static int binary(int op) {
     return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL) ||
-           op==BAND || op==BOR || op==SIGMOID;
+           op==BAND || op==BOR || op==SIGMOID || (op>=MOD && op<=GE);
 }
 static int function(const char *name) {
     static const struct {const char *name; int op;} list[]={
@@ -20,19 +24,32 @@ static int function(const char *name) {
         {"log10",LOG10},{"sqr",SQR},{"sign",SIGN},{"pow",POW},{"atan2",ATAN2},
         {"above",ABOVE},{"below",BELOW},{"equal",EQUAL},
         {"tan",TAN},{"asin",ASIN},{"acos",ACOS},{"bnot",BNOT},
-        {"band",BAND},{"bor",BOR},{"sigmoid",SIGMOID},{"if",IF}};
+        {"band",BAND},{"bor",BOR},{"sigmoid",SIGMOID},{"if",IF},
+        {"rand",RAND},{"invsqrt",INVSQRT},{"loop",LOOP},{"while",WHILE},
+        {"exec2",EXEC2},{"exec3",EXEC3},{"megabuf",MEML},{"gmegabuf",GMEML},
+        {"memcpy",MEMCPY},{"memset",MEMSET},{"freembuf",FREEMBUF},
+        {"assign",ASSIGN},{"int",FLOOR}};
     for(unsigned int i=0;i<sizeof(list)/sizeof(list[0]);i++)
         if(!strcmp(name,list[i].name)) return list[i].op;
     return -1;
 }
 int pm_assignment_line(const PmProgram *program, int variable) {
     for (int i = program->count-1; i >= 0; i--)
-        if (program->code[i].op == STORE && program->code[i].arg == variable)
+        if ((program->code[i].op == STORE || program->code[i].op == KEEP) && program->code[i].arg == variable)
             return program->code[i].line;
     return 0;
 }
 typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; int pixel; } Parser;
-static void space(Parser *p) { while (isspace((unsigned char)*p->p)) p->p++; }
+static void space(Parser *p) {
+    for (;;) {
+        while (isspace((unsigned char)*p->p)) p->p++;
+        if (p->p[0]=='/' && p->p[1]=='/') {p->p+=strlen(p->p);return;}
+        if (p->p[0]!='/' || p->p[1]!='*') return;
+        const char *end=strstr(p->p+2,"*/");
+        if (!end) {p->error=PM_INVALID;return;}
+        p->p=end+2;
+    }
+}
 static int emit(Parser *p, int op, int arg, float value) {
     if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
     p->code->code[p->code->count++] = (PmOp){op,arg,p->line,value};
@@ -44,11 +61,16 @@ static int name(Parser *p, char text[32]) {
     if (!isalpha((unsigned char)*p->p) && *p->p != '_') return 0;
     while (isalnum((unsigned char)*p->p) || *p->p == '_') {
         if (n == 31) { p->error = PM_INVALID; return 0; }
-        text[n++] = *p->p++;
+        text[n++] = (char)tolower((unsigned char)*p->p++);
     }
     text[n] = 0; return 1;
 }
 static int builtin_variable(const char *s) {
+    if(!strcmp(s,"wave_usedots")) return 33;
+    if(!strcmp(s,"wrap")) return PM_WRAP;
+    if(!strcmp(s,"monitor")) return PM_MONITOR;
+    static const char *inputs[]={"meshx","meshy","pixelsx","pixelsy","aspectx","aspecty"};
+    for(int i=0;i<6;i++) if(!strcmp(s,inputs[i])) return PM_INPUT_BASE+i;
     if(!strcmp(s,"progress")) return PM_ENGINE_BASE+2;
     static const char *effects[]={"darken_center","brighten","darken","solarize","invert"};
     for(int i=0;i<5;i++) if(!strcmp(s,effects[i])) return PM_EFFECT_BASE+i;
@@ -93,7 +115,7 @@ static int variable(Parser *p,const char *s) {
     }
     if(p->pixel==2) {
         if(!strcmp(s,"instance")) return PM_ENGINE_BASE;
-        if(!strcmp(s,"instances")) return PM_ENGINE_BASE+1;
+        if(!strcmp(s,"instances") || !strcmp(s,"num_inst")) return PM_ENGINE_BASE+1;
         static const char *names[]={"enabled","sides","additive","textured","x","y","rad","ang","tex_ang","tex_zoom","r","g","b","a","r2","g2","b2","a2","border_r","border_g","border_b","border_a","thick"};
         for(int i=0;i<23;i++) if(!strcmp(s,names[i])) return PM_SHAPE_BASE+i;
         if(s[0]=='t' && s[1]>='1' && s[1]<='8' && !s[2]) return PM_T_BASE+s[1]-'1';
@@ -104,7 +126,7 @@ static int variable(Parser *p,const char *s) {
     }
     int id=builtin_variable(s);
     if(id>=0) {
-        if(p->pixel>=2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE) || id==PM_ENGINE_BASE+2)) goto unsupported;
+        if(p->pixel>=2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE) || id==PM_ENGINE_BASE+2 || (id>=PM_INPUT_BASE && id<PM_MONITOR))) goto unsupported;
         if(p->pixel==1 && !(id<3 || id==5 || (id>=9 && id<=29) ||
                         (id>=PM_Q_BASE && id<PM_USER_BASE) || id>=PM_META_BASE)) goto unsupported;
         return id;
@@ -129,125 +151,7 @@ unsupported:
     p->error=PM_UNSUPPORTED;
     return -1;
 }
-static int expression(Parser *p);
-/* Forward-only branches: exactly one expression is evaluated at runtime.
- * Both branches still compile and count against the same instruction budget. */
-static int conditional(Parser *p) {
-    p->p++; /* '(' */
-    if (!expression(p)) return 0;
-    space(p);
-    if (*p->p!=',') return 0;
-    p->p++;
-    int otherwise=p->code->count;
-    if (!emit(p,JZ,0,0) || !expression(p)) return 0;
-    space(p);
-    if (*p->p!=',') return 0;
-    p->p++;
-    int finish=p->code->count;
-    if (!emit(p,JUMP,0,0)) return 0;
-    p->code->code[otherwise].arg=p->code->count;
-    if (!expression(p)) return 0;
-    space(p);
-    if (*p->p!=')') return 0;
-    p->p++;
-    p->code->code[finish].arg=p->code->count;
-    return 1;
-}
-static int unary(Parser *p) {
-    char text[32], *end;
-    int ok = 0;
-    space(p);
-    if (++p->depth > PM_DEPTH) { p->error = PM_INVALID; return 0; }
-    if (*p->p == '+' || *p->p == '-') {
-        int negative = *p->p++ == '-';
-        ok = unary(p) && (!negative || emit(p,NEG,0,0));
-    } else if (*p->p == '(') {
-        p->p++; ok = expression(p); space(p);
-        if (*p->p != ')') ok = 0; else p->p++;
-    } else if (isdigit((unsigned char)*p->p) || *p->p == '.') {
-        float value;
-        errno = 0; value = strtof(p->p,&end);
-        if (end != p->p && errno != ERANGE && isfinite(value)) {
-            p->p = end; ok = emit(p,PUSH,0,value);
-        }
-    } else if (name(p,text)) {
-        space(p);
-        if (*p->p == '(') {
-            int op = function(text);
-            if (op < 0) p->error = PM_UNSUPPORTED;
-            else if (op == IF) ok = conditional(p);
-            else {
-                p->p++; ok = expression(p); space(p);
-                if (ok && binary(op)) {
-                    if (*p->p != ',') ok = 0;
-                    else { p->p++; ok = expression(p); space(p); }
-                }
-                if (*p->p != ')') ok = 0;
-                else { p->p++; ok = ok && emit(p,op,0,0); }
-            }
-        } else {
-            int id = variable(p,text);
-            if (id >= 0) ok = emit(p,LOAD,id,0);
-        }
-    }
-    p->depth--;
-    return ok;
-}
-static int term(Parser *p) {
-    if (!unary(p)) return 0;
-    for (;;) {
-        int op; space(p);
-        if (*p->p != '*' && *p->p != '/') return 1;
-        op = *p->p++ == '*' ? MUL : DIV;
-        if (!unary(p) || !emit(p,op,0,0)) return 0;
-    }
-}
-static int expression(Parser *p) {
-    if (!term(p)) return 0;
-    for (;;) {
-        int op; space(p);
-        if (*p->p != '+' && *p->p != '-') return 1;
-        op = *p->p++ == '+' ? ADD : SUB;
-        if (!term(p) || !emit(p,op,0,0)) return 0;
-    }
-}
-static int compile_context(PmProgram *program, const char *source, int line, PmSymbols *symbols, int pixel) {
-    int before = program->count;
-    PmSymbols saved;
-    if(symbols) {
-        if(symbols->count<0 || symbols->count>PM_USER_COUNT) return PM_INVALID;
-        saved=*symbols;
-    }
-    Parser p = {source,program,line,0,PM_INVALID,symbols,pixel};
-    space(&p);
-    if (!*p.p || program->lines >= 16 || before < 0 || before > PM_MAX_OPS) return PM_INVALID;
-    while (*p.p) {
-        char text[32]; int id;
-        if (!name(&p,text)) goto fail;
-        id = variable(&p,text);
-        if (id < 0) goto fail;
-        if(id>=PM_ENGINE_BASE) {p.error=PM_UNSUPPORTED;goto fail;}
-        if((id>PM_WAVE_BASE && id<PM_EFFECT_BASE) || (pixel==4 && id==PM_WAVE_BASE)) { p.error=PM_UNSUPPORTED; goto fail; }
-        if (id >= 9 && id < 23) { p.error = PM_UNSUPPORTED; goto fail; }
-        if (id >= PM_META_BASE && id < PM_DYNAMIC_BASE) { p.error = PM_UNSUPPORTED; goto fail; }
-        if(pixel==1 && !(id==0 || id==1 || id==2 || (id>=23 && id<=29))) {
-            p.error=PM_UNSUPPORTED; goto fail;
-        }
-        space(&p);
-        if (*p.p++ != '=') goto fail;
-        if (!expression(&p) || !emit(&p,STORE,id,0)) goto fail;
-        space(&p);
-        if (*p.p != ';') goto fail;
-        p.p++; space(&p);
-    }
-    if((pixel==1 || pixel==4) && program->count>PM_PIXEL_OPS) { p.error=PM_INVALID; goto fail; }
-    program->lines++;
-    return PM_OK;
-fail:
-    program->count = before;
-    if(symbols) *symbols=saved;
-    return p.error;
-}
+#include "preset_expression.h"
 int pm_compile(PmProgram *program, const char *source, int line) {
     return compile_context(program,source,line,NULL,0);
 }
@@ -257,21 +161,115 @@ int pm_compile_symbols(PmProgram *program, const char *source, int line, PmSymbo
 int pm_compile_pixel(PmProgram *program, const char *source, int line) {
     return compile_context(program,source,line,NULL,1);
 }
+int pm_compile_pixel_symbols(PmProgram *program,const char *source,int line,PmSymbols *symbols) {
+    return compile_context(program,source,line,symbols,1);
+}
 int pm_compile_shape(PmProgram *program, const char *source, int line, PmSymbols *symbols) {
     return compile_context(program,source,line,symbols,2);
 }
 int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols *symbols, int point) {
     return compile_context(program,source,line,symbols,point?4:3);
 }
-int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line) {
+static float global_memory[PM_MEMORY], registers[100];
+static PmRuntime fallback_runtime;
+static int frame_fuel=-1;
+void pm_begin_frame(void) {frame_fuel=262144;}
+void pm_reset_globals(void) {
+    memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
+    memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
+}
+/* Only memory-using programs pay for journaling. Roll back on invalid math,
+ * bytecode, address, or exhausted execution budget; no allocations in playback. */
+typedef struct {float *address,old;} Write;
+enum {JOURNAL_SIZE=2*PM_MEMORY+100};
+typedef struct {int count;PmRuntime *runtime;unsigned int dirty[(JOURNAL_SIZE+31)/32];Write writes[JOURNAL_SIZE];} Journal;
+static int write_value(Journal *j,float *address,float value) {
+    uintptr_t a=(uintptr_t)address;
+    int id;
+    if(a>=(uintptr_t)j->runtime->memory && a<(uintptr_t)(j->runtime->memory+PM_MEMORY)) id=(int)((a-(uintptr_t)j->runtime->memory)/sizeof(float));
+    else if(a>=(uintptr_t)global_memory && a<(uintptr_t)(global_memory+PM_MEMORY)) id=PM_MEMORY+(int)((a-(uintptr_t)global_memory)/sizeof(float));
+    else if(a>=(uintptr_t)registers && a<(uintptr_t)(registers+100)) id=2*PM_MEMORY+(int)((a-(uintptr_t)registers)/sizeof(float));
+    else return 0;
+    unsigned int bit=1U<<(id&31);
+    if(!(j->dirty[id/32]&bit)) {
+        if(j->count>=JOURNAL_SIZE) return 0;
+        j->dirty[id/32]|=bit;j->writes[j->count++]=(Write){address,*address};
+    }
+    *address=value;return 1;
+}
+static int address_index(float x) {
+    if(!isfinite(x) || x<0 || x>=PM_MEMORY) return -1;
+    int i=(int)(x+.00001f);return i<PM_MEMORY?i:-1;
+}
+static int execute(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime,Journal *journal) {
     float local[PM_VALUES], stack[PM_STACK];
-    int used = 0;
+    struct {int start,end,left,stack;} loops[PM_DEPTH];
+    int used = 0,depth=0,fuel=PM_FUEL;
     memcpy(local,values,sizeof(local)); *error_line = 0;
     if (program->count < 0 || program->count > PM_MAX_OPS) return 0;
     for (int i = 0; i < program->count; i++) {
         const PmOp *op = &program->code[i];
+        if(--fuel<0 || frame_fuel==0) return 0;
+        if(frame_fuel>0) frame_fuel--;
         float a, b = 0, result = 0;
         *error_line = op->line;
+        if(op->op==LOOP || op->op==WHILE) {
+            if(depth>=PM_DEPTH || op->arg<=i+1 || op->arg>program->count ||
+               program->code[op->arg-1].op!=(op->op==LOOP?LOOPEND:WHILEEND) || program->code[op->arg-1].arg!=i) return 0;
+            int count=PM_FUEL;
+            if(op->op==LOOP) {
+                if(!used) return 0;
+                a=stack[--used];count=a<1?0:a>PM_FUEL?PM_FUEL:(int)a;
+                if(!count) {stack[used++]=0;i=op->arg-1;continue;}
+            }
+            loops[depth].start=i;loops[depth].end=op->arg-1;
+            loops[depth].left=count;loops[depth++].stack=used;continue;
+        }
+        if(op->op==LOOPEND || op->op==WHILEEND) {
+            if(!depth || loops[depth-1].start!=op->arg || loops[depth-1].end!=i ||
+               used!=loops[depth-1].stack+1) return 0;
+            int again=op->op==LOOPEND?--loops[depth-1].left>0:fabsf(stack[used-1])>=.00001f;
+            if(again) {used--;i=op->arg;} else depth--;
+            continue;
+        }
+        if(op->op==DROP) {if(!used) return 0;used--;continue;}
+        if(op->op==DUP) {if(!used || used>=PM_STACK) return 0;stack[used]=stack[used-1];used++;continue;}
+        if(op->op==REGL || op->op==REGS) {
+            if(op->arg<0 || op->arg>=100) return 0;
+            if(op->op==REGL) {if(used>=PM_STACK) return 0;stack[used++]=registers[op->arg];}
+            else if(!used || !write_value(journal,&registers[op->arg],stack[used-1])) return 0;
+            continue;
+        }
+        if(op->op==MEML || op->op==GMEML || op->op==MEMS || op->op==GMEMS) {
+            int store=op->op==MEMS || op->op==GMEMS;
+            if(used<1+store) return 0;
+            int index=address_index(stack[used-1-store]);if(index<0) return 0;
+            float *memory=(op->op==GMEML || op->op==GMEMS)?global_memory:runtime->memory;
+            if(store) {
+                a=stack[--used];if(!write_value(journal,memory+index,a)) return 0;
+                stack[used-1]=a;
+            } else stack[used-1]=memory[index];
+            continue;
+        }
+        if(op->op==MEMCPY || op->op==MEMSET) {
+            if(used<3) return 0;
+            float count=stack[used-1];int dst=address_index(stack[used-3]);
+            if(count<0 || count>PM_MEMORY || dst<0) return 0;
+            int n=(int)count,src=op->op==MEMCPY?address_index(stack[used-2]):0;
+            if(dst+n>PM_MEMORY || src<0 || (op->op==MEMCPY && src+n>PM_MEMORY)) return 0;
+            if(n>fuel) return 0;
+            fuel-=n;
+            if(frame_fuel>=0) {
+                if(n>frame_fuel) {frame_fuel=0;return 0;}
+                frame_fuel-=n;
+            }
+            a=stack[used-2];
+            for(int k=0;k<n;k++) {
+                int j=op->op==MEMCPY && dst>src?n-1-k:k;
+                if(!write_value(journal,runtime->memory+dst+j,op->op==MEMCPY?runtime->memory[src+j]:a)) return 0;
+            }
+            used-=2;continue;
+        }
         if (op->op==JZ || op->op==JUMP) {
             /* Corrupt bytecode must not introduce loops or escape the program. */
             if (op->arg<=i || op->arg>program->count) return 0;
@@ -288,11 +286,11 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             if (!isfinite(result)) return 0;
             stack[used++] = result; continue;
         }
-        if (op->op == STORE) {
-            if (used != 1 || op->arg < 0 || op->arg>=PM_ENGINE_BASE || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
+        if (op->op == STORE || op->op==KEEP) {
+            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || (op->arg>=PM_ENGINE_BASE && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
                 (op->arg >= 9 && op->arg < 23) ||
                 (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
-            local[op->arg] = stack[--used]; continue;
+            local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
         }
         if (!used) return 0;
         a = stack[--used];
@@ -316,6 +314,27 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
             case POW: result=powf(a,b); break; case ATAN2: result=atan2f(a,b); break;
             case ABOVE: result=a>b; break; case BELOW: result=a<b; break;
             case EQUAL: result=fabsf(a-b)<.00001f; break;
+            case NEQ: result=fabsf(a-b)>=.00001f;break;
+            case LE: result=a<=b;break;case GE:result=a>=b;break;
+            case MOD: {
+                double aa=floor(fabs((double)a)),bb=floor(fabs((double)b));
+                if(aa>4294967295.0 || bb>4294967295.0) return 0;
+                result=bb==0?0:(float)((uint32_t)aa%(uint32_t)bb);break;
+            }
+            case BITAND: case BITOR:
+                if((double)a < -9223372036854775808.0 || (double)a >= 9223372036854775808.0 ||
+                   (double)b < -9223372036854775808.0 || (double)b >= 9223372036854775808.0) return 0;
+                result=(float)(op->op==BITAND?((int64_t)a & (int64_t)b):((int64_t)a | (int64_t)b));break;
+            case BOOL: result=fabsf(a)>=.00001f;break;
+            case RAND: {
+                unsigned int r=runtime->random?runtime->random:0x9e3779b9U;
+                r^=r<<13;r^=r>>17;r^=r<<5;runtime->random=r;
+                result=(float)((double)r/4294967295.0)*fmaxf(1,floorf(a));break;
+            }
+            case INVSQRT: if(a<=0) return 0;result=1/sqrtf(a);break;
+            /* Fixed memory is already reserved. EEL freembuf is only a hint;
+             * it must not erase data observable by subsequent expressions. */
+            case FREEMBUF: result=a;break;
             case TAN: result=tanf(a); break;
             case ASIN: if(fabsf(a)>1) return 0; result=asinf(a); break;
             case ACOS: if(fabsf(a)>1) return 0; result=acosf(a); break;
@@ -337,6 +356,16 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
         if (!isfinite(result)) return 0;
         stack[used++] = result;
     }
-    if (used) return 0;
+    if (used || depth) return 0;
     memcpy(values,local,sizeof(local)); *error_line=0; return 1;
+}
+int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime) {
+    Journal journal; journal.count=0;journal.runtime=runtime;memset(journal.dirty,0,sizeof(journal.dirty));
+    unsigned int random=runtime->random;
+    if(execute(program,values,error_line,runtime,&journal)) return 1;
+    while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
+    runtime->random=random;return 0;
+}
+int pm_execute(const PmProgram *program,float values[PM_VALUES],int *error_line) {
+    return pm_execute_runtime(program,values,error_line,&fallback_runtime);
 }

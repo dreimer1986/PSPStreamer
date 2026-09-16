@@ -293,6 +293,12 @@ An optional [MilkDrop warp prototype](docs/MILKDROP_PROTOTYPE.md) is available
 during music: **Square** cycles three built-in effects, the custom file
 `presets/active.milk`, then the normal spectrum. Copy the supplied
 `psp-client/presets` folder beside EBOOT to try the fourth slot.
+The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
+is the authoritative feature/limit summary; older linked guides describe
+historical batches. The latest batch adds EEL operators, assignment expressions,
+loops, shared registers, local/global memory, engine dimensions and monitor
+state. Try `eel-memory-orbit-demo.milk`, `eel-grid-logic-demo.milk` and
+`eel-wave-loop-demo.milk`. Shaders and external textures remain excluded.
 During music, **Circle** opens the in-app preset browser: Up/Down selects,
 L/R pages, Cross applies, Circle cancels. The chosen filename is saved as
 `music_preset=filename.milk` in the PSP config; manual `active.milk` replacement
@@ -357,7 +363,7 @@ Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.
 The [initialization/q-variable subset](docs/MILKDROP_INIT.md) adds
 `per_frame_init_*` and `q1`–`q32`; try `init-orbit-demo.milk` as the active file.
-Up to 16 [named persistent variables](docs/MILKDROP_VARIABLES.md) can retain
+Up to 64 [named persistent variables](docs/MILKDROP_COMPATIBILITY.md) per context can retain
 state between frames; `memory-pulse-demo.milk` holds and releases bass impulses.
 Bounded [per-grid-point formulas](docs/MILKDROP_GRID.md) add local transforms;
 try `grid-twist-demo.milk`. This is an interpolated 8×8 mesh, not pixel shaders.
@@ -366,9 +372,10 @@ try `grid-twist-demo.milk`. This is an interpolated 8×8 mesh, not pixel shaders
 pause, volume and remote commands still work. Without an active visualization,
 the existing enlarged spectrum/receiver layout is unchanged.
 This adapts MilkDrop 2's no-shader
-warp equations to PSP GU, not its complete engine: arbitrary `.milk` files,
-full EEL and shader presets are not supported. A bounded arithmetic/time
-subset is available in the custom slot. Music remembers the selected effect
+warp equations to PSP GU, not its complete desktop engine: arbitrary `.milk`
+files and shader presets are not guaranteed compatible. The custom slot now
+supports the reference's public expression function/operator families within
+documented PSP limits. Music remembers the selected effect
 and fullscreen across track changes, including autoplay/shuffle and remote
 selection. Resources are still released and recreated per track. Video uses
 its own presentation mode; restarting the app resets music visualization to

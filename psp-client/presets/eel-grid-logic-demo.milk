@@ -1,0 +1,15 @@
+// Stateful per-grid formulas, ternary, logical/bitwise operators, engine inputs.
+[preset00]
+fRating=4
+nWaveMode=6
+fDecay=0.97
+zoom=1.008
+wave_r=0.8
+wave_g=0.4
+wave_b=1
+per_frame_init_1=q1=.003;
+per_frame_1=q1=.003+.005*psp_low_smooth;wave_usedots=(int(time)&1);wrap=(int(time)%10<8);
+per_frame_2=wave_r=.4+.4*(psp_low_smooth>.15 && psp_mid_smooth<.8);wave_b=.7+.3*psp_high;
+per_pixel_1=counter+=1;cell=int(x*meshx)+int(y*meshy);signum=(cell&1)?1:-1;
+per_pixel_2=dx=signum*q1*sin(time+rad*3);dy=q1*cos(time+ang)*min(1,aspecty);
+per_pixel_3=rot=(x>.2 && x<.8)?sin(time*.4+rad)*.015:0;zoom=1.005+q1*(x^2+y^2);

@@ -133,7 +133,11 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     }
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
-    MdPresetState next_state=md_preset_state;
+    /* Render-thread scratch: extended EEL memories must not consume the PSP
+     * stack twice before entering the frame/point evaluators. */
+    static MdPresetState next_state,candidate;
+    next_state=md_preset_state;
+    md_output_width=width;md_output_height=height;
     if (preset == 3) {
         if (!md_signal_active) {
             md_signal_reset(&md_signal_state);
@@ -141,7 +145,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         }
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
-        MdPresetState candidate=md_preset_state;
+        candidate=md_preset_state;
         if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
                                   &candidate, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
@@ -191,7 +195,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(md_front));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(GU_LINEAR, GU_LINEAR);
-    int wrap=preset==3 && !md_custom_preset.wrap ? GU_CLAMP : GU_REPEAT;
+    int wrap=preset==3 && !next_state.wrap ? GU_CLAMP : GU_REPEAT;
     sceGuTexWrap(wrap,wrap);
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();

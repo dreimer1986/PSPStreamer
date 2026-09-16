@@ -39,24 +39,28 @@ class Op(ctypes.Structure):
 
 
 class Program(ctypes.Structure):
-    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * 128)]
+    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * 512)]
 
 
 class Symbols(ctypes.Structure):
-    _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*16)]
+    _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*64)]
+
+
+class Runtime(ctypes.Structure):
+    _fields_=[("memory",ctypes.c_float*1024),("random",ctypes.c_uint)]
 
 
 class ShapeProgram(ctypes.Structure):
     _fields_=[("init",Program),("frame",Program),("symbols",Symbols)]
 
 class ShapeState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*16)]
+    _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*64),("runtime",Runtime)]
 
 class CustomWave(ctypes.Structure):
     _fields_=[(n,ctypes.c_float) for n in ("enabled","samples","sep","spectrum","dots","thick","additive","scaling","smoothing","r","g","b","a")]+[("init",Program),("frame",Program),("point",Program),("symbols",Symbols),("point_symbols",Symbols)]
 
 class WaveState(ctypes.Structure):
-    _fields_=[("frame",ShapeState),("point_user",ctypes.c_float*16)]
+    _fields_=[("frame",ShapeState),("point_user",ctypes.c_float*64),("point_runtime",Runtime)]
 
 class Preset(ctypes.Structure):
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
@@ -65,14 +69,15 @@ class Preset(ctypes.Structure):
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
                 ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
-                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4)]
+                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4),("pixel_symbols",Symbols)]
 
 
 class PresetState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*16),
+    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*64),
               ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
               ("last_seconds",ctypes.c_float),("fps",ctypes.c_float),
-              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4),("waves",WaveState*4),("effects",ctypes.c_float*5)]
+              ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4),("waves",WaveState*4),("effects",ctypes.c_float*5),
+              ("runtime",Runtime),("pixel_runtime",Runtime),("pixel_user",ctypes.c_float*64),("monitor",ctypes.c_float),("wrap",ctypes.c_int)]
 
 
 class Error(ctypes.Structure):
@@ -137,6 +142,136 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
+
+    def execute_eel(self, source, runtime=None, success=True):
+        program,symbols=Program(),Symbols()
+        compile_fn=self.library.pm_compile_symbols
+        compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols)]
+        self.assertEqual(compile_fn(ctypes.byref(program),source.encode(),7,ctypes.byref(symbols)),0,source)
+        values=(ctypes.c_float*218)();error=ctypes.c_int()
+        runtime=runtime if runtime is not None else Runtime()
+        fn=self.library.pm_execute_runtime
+        fn.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
+        self.library.pm_begin_frame()
+        result=fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime))
+        self.assertEqual(result,int(success),source)
+        if not success: self.assertEqual(bytes(values),bytes((ctypes.c_float*218)()),source)
+        return {bytes(symbols.names[i]).split(b'\0')[0].decode():values[87+i] for i in range(symbols.count)},runtime
+
+    def test_eel_operators_constants_and_lazy_sequences(self):
+        cases={
+            '2^3^2':512, '17%5':2, '-17%5':2, '4%0':0,
+            '(6&3)|8':10, '2<=2':1, '2>=3':0, '2!=3':1, '2==2':1,
+            '!3':0, '!0':1, '0 && 1/0':0, '1 || 1/0':1,
+            '0?1/0:3':3, '1?2:1/0':2, '0?1:0?2:3':3,
+            'exec2(a=1;a+=2,a*=2;a)':6, 'exec3(a=1,a+=1,a^=3)':8,
+            'if(1,a=2;a+=1,1/0)':3, 'invsqrt(4)':.5,
+            'assign(a,3);a':3,'assign(megabuf(3),7);megabuf(3)':7,'int(-1.2)':-2,
+            '$PI':math.pi,'$e':math.e,'$phi':(1+math.sqrt(5))/2,
+            '$xFF':255,"$'A'":65,
+        }
+        for expression,expected in cases.items():
+            values,_=self.execute_eel('result='+expression+';')
+            self.assertAlmostEqual(values['result'],expected,places=5,msg=expression)
+        values,_=self.execute_eel('CoUnTeR=8;counter/=2;counter%=3;counter|=8;counter&=9; result=COUNTER; // note')
+        self.assertEqual(values['result'],9)
+        values,_=self.execute_eel('a=1; /* inline */ b=a=3;result=a+b;')
+        self.assertEqual(values['result'],6)
+
+    def test_eel_loops_and_runtime_budget(self):
+        values,_=self.execute_eel('a=0;loop(5,a+=1);result=a;')
+        self.assertEqual(values['result'],5)
+        values,_=self.execute_eel('a=0;loop(3,loop(4,a+=1));result=a;')
+        self.assertEqual(values['result'],12)
+        values,_=self.execute_eel('a=0;result=loop(0,a=9);while(a+=1;a<5);result+=a;')
+        self.assertEqual(values['result'],5)
+        values,_=self.execute_eel('a=0;loop(-2,a=7);result=a;')
+        self.assertEqual(values['result'],0)
+        self.execute_eel('a=0;while(a+=1;1);',success=False)
+        self.execute_eel('loop(1e30,1);',success=False)
+        self.execute_eel('a=1;loop(2,1/0);',success=False)
+
+    def test_eel_memory_registers_scope_overlap_and_rollback(self):
+        self.library.pm_reset_globals()
+        first=Runtime()
+        values,_=self.execute_eel('reg00=3;reg99=7;gmegabuf(2)=9;megabuf(0)=4;0[1]=5;'
+                                'megabuf(2)=6;memcpy(1,0,3);result=megabuf(1)+0[2]+0[3];',first)
+        self.assertEqual(values['result'],15)
+        values,_=self.execute_eel('result=reg00+reg99+gmegabuf(2)+megabuf(0);',Runtime())
+        self.assertEqual(values['result'],19)  # local memory is not shared
+        snapshot=bytes(first)
+        self.execute_eel('reg00=99;gmegabuf(2)=99;megabuf(0)=99;rand(2);a=1/0;',first,False)
+        self.assertEqual(bytes(first),snapshot)
+        values,_=self.execute_eel('result=reg00+gmegabuf(2)+megabuf(0);',first)
+        self.assertEqual(values['result'],16)
+        values,_=self.execute_eel('memset(4,2,5);megabuf(4)+=3;freembuf(0);result=4[0]+megabuf(8);',first)
+        self.assertEqual(values['result'],7)
+        for source in ('a=megabuf(1024);','megabuf(-1)=2;','gmegabuf(1e30)=0;',
+                       'memcpy(1023,0,2);','memset(0,1,1025);','a=1e30&2;'):
+            before=bytes(first)
+            self.execute_eel(source,first,False)
+            self.assertEqual(bytes(first),before)
+
+    def test_eel_random_engine_inputs_and_monitor_persistence(self):
+        runtime=Runtime()
+        values=[]
+        for _ in range(16):
+            result,_=self.execute_eel('result=rand(3.9);',runtime)
+            self.assertTrue(0<=result['result']<=3)
+            values.append(result['result'])
+        self.assertGreater(len(set(values)),12)
+        code,preset,_=self.parse(b'[preset00]\nper_frame_init_1=monitor=2;\n'
+            b'per_frame_1=monitor+=1;wave_usedots=1;wrap=0;q1=pixelsx;q2=pixelsy;q3=aspecty;q4=meshx;\n')
+        self.assertEqual(code,0)
+        state=PresetState()
+        for frame in range(3):
+            self.assertEqual(self.evaluate_state(preset,state,frame)[0],0)
+            self.assertEqual(state.monitor,frame+3)
+            self.assertEqual(state.wrap,0)
+            self.assertEqual(self.last_decor.wave_dots,1)
+            self.assertEqual(state.frame_q[0],480)
+            self.assertEqual(state.frame_q[1],272)
+            self.assertAlmostEqual(state.frame_q[2],480/272,places=5)
+            self.assertEqual(state.frame_q[3],8)
+
+    def test_eel_frame_budget_is_shared_and_stays_exhausted(self):
+        program,symbols=Program(),Symbols()
+        compile_fn=self.library.pm_compile_symbols
+        compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols)]
+        self.assertEqual(compile_fn(ctypes.byref(program),b'memset(0,1,1024);',1,ctypes.byref(symbols)),0)
+        execute=self.library.pm_execute_runtime
+        execute.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
+        runtime=Runtime();values=(ctypes.c_float*218)();error=ctypes.c_int()
+        self.library.pm_begin_frame()
+        for attempts in range(300):
+            if not execute(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)):break
+        else:self.fail('Aggregate frame budget was not enforced')
+        self.assertGreater(attempts,200)
+        self.assertEqual(execute(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),0)
+        self.library.pm_begin_frame()
+        self.assertEqual(execute(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),1)
+
+    def test_eel_pixel_state_is_independent_and_persistent(self):
+        code,preset,_=self.parse(b'[preset00]\nper_frame_init_1=q1=0;\n'
+            b'per_pixel_1=counter+=1;q1+=1;megabuf(0)+=1;dx=q1*.001;dy=counter*.0001;\n')
+        self.assertEqual(code,0)
+        fn=self.library.md_eval_pixel_grid
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                     ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        state=PresetState();points=(Warp*81)();error=Error()
+        for frame_number in range(2):
+            _,frame,_=self.evaluate_state(preset,state,frame_number)
+            self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),frame_number,None,
+                                ctypes.byref(state),points,ctypes.byref(error)),0)
+            self.assertAlmostEqual(points[80].dx,.081,places=6)
+            self.assertAlmostEqual(points[80].dy,.0081*(frame_number+1),places=6)
+            self.assertEqual(state.pixel_runtime.memory[0],81*(frame_number+1))
+            self.assertEqual(state.frame_q[0],0)
+
+    def test_expanded_file_and_line_limits(self):
+        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*4000)[0],0)
+        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*12000)[0],2)
+        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n;'+b'a'*2047)[0],2)
 
     def test_whitespace_bom_crlf_and_defaults(self):
         result, preset, _ = self.parse(b"\xef\xbb\xbf; note\r\n [preset00] \r\n zoom = 1.02 \r\n// comment\n")
@@ -212,13 +347,13 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(color, 0xffff3f7f)
 
     def test_formula_rejections_and_budgets(self):
-        for source in ("rot=1", "rot=;", "rot=(1;", "0", "rot=nan;",
+        for source in ("rot==;", "rot=;", "rot=(1;", "rot=nan;",
                        "time=0;", "fps=1;", "rot=unknown_func(1);", "rot=1e99;",
                        "rot=" + "("*18 + "0" + ")"*18 + ";",
-                       "rot=" + "+".join(["0"]*70) + ";"):
+                       "rot=" + "+".join(["0"]*260) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
         for lines in ("per_frame_2=rot=0;", "per_frame_1=rot=0;\nper_frame_1=rot=0;",
-                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,18))):
+                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,130))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
 
     def test_runtime_errors_are_atomic(self):
@@ -231,7 +366,7 @@ class PresetTests(unittest.TestCase):
 
     def test_formula_fuzz_and_total_instruction_limit(self):
         # Short valid lines individually fit; their combined bytecode must not.
-        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,15))
+        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,50))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
         rng = random.Random(121)
         alphabet = "rot=0123.+-*/(); time_sincosabs\t"
@@ -486,13 +621,14 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(self.parse(b'[preset00]\nnWaveMode=1')[0],0)
 
     def test_frame_clock_inputs(self):
-        code,preset,_=self.parse(b'[preset00]\nper_frame_1=q1=frame; q2=fps;')
+        code,preset,_=self.parse(b'[preset00]\nper_frame_1=q1=frame; q2=fps;q3=1/fps;')
         self.assertEqual(code,0)
         state=PresetState()
-        for index,seconds in enumerate((0,.1,.2,.4)):
+        for index,seconds in enumerate((0,.1,.2,.4,.4)):
             self.assertEqual(self.evaluate_state(preset,state,seconds)[0],0)
             self.assertEqual(state.frame_q[0],index)
-            self.assertAlmostEqual(state.frame_q[1],(0,10,10,5)[index],places=4)
+            self.assertAlmostEqual(state.frame_q[1],(20,10,10,5,5)[index],places=4)
+            self.assertAlmostEqual(state.frame_q[2],1/state.frame_q[1],places=6)
 
     def test_fft_and_remaining_waveforms(self):
         class Vertex(ctypes.Structure):
@@ -621,13 +757,12 @@ class PresetTests(unittest.TestCase):
 
     def test_conditional_syntax_budgets_and_bytecode_safety(self):
         for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
-                           "if(1,,3)","if(1,2,)","if(1,2,monitor)",
-                           "if(1,2,rand(1))","if(1,2,warp=3)"):
+                           "if(1,,3)","if(1,2,)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
         expression="0"
         for _ in range(18): expression=f"if(0,0,{expression})"
         self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
-        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,17))
+        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,40))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         # A failed append never changes the previously compiled instructions.
         program=Program()
@@ -650,7 +785,7 @@ class PresetTests(unittest.TestCase):
                 damaged=Program.from_buffer_copy(program)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*162)(*([.5]*162)); before=bytes(values)
+                values=(ctypes.c_float*218)(*([.5]*218)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -866,12 +1001,12 @@ per_frame_1=wave_r=progress;
         for time in range(10): self.assertEqual(self.evaluate_state(preset,state,time)[1].warp,1)
 
     def test_init_q_validation_atomicity_and_budgets(self):
-        for name in ("q0","q33","q01","q999999999999999999999","q1x","Q1","fps"):
+        for name in ("q0","q33","q01","q999999999999999999999","q1x","fps"):
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
                       "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
-                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,18)),
-                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,15))):
+                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,130)),
+                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,50))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=1/0;\n")
         self.assertEqual(code,0)
@@ -923,12 +1058,12 @@ per_frame_1=wave_r=progress;
         self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,0)
 
     def test_named_variable_limits_and_namespace_rollback(self):
-        lines="\n".join(f"per_frame_{i+1}=custom_{i}={i};" for i in range(16))
+        lines="\n".join(f"per_frame_{i+1}=custom_{i}={i};" for i in range(64))
         code,preset,_=self.parse(f"[preset00]\n{lines}".encode())
         self.assertEqual(code,0)
-        self.assertEqual(preset.symbols.count,16)
+        self.assertEqual(preset.symbols.count,64)
         self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1=extra=1;\n{lines}".encode())[0],2)
-        for name in ("fps","frame","x","rad","t1","reg00","sin","q33"):
+        for name in ("fps","frame","x","rad","t1","reg100","sin","q33"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0],0)
         self.assertEqual(self.parse(("[preset00]\nper_frame_1="+"a"*31+"=1;").encode())[0],0)
         self.assertNotEqual(self.parse(("[preset00]\nper_frame_1="+"a"*32+"=1;").encode())[0],0)
@@ -978,9 +1113,9 @@ per_frame_1=wave_r=progress;
         self.assertEqual(bytes(points),before)
 
     def test_pixel_restrictions_and_demo(self):
-        for formula in ("x=0;","q1=1;","counter=1;","wave_r=1;","dx=counter;","dx=wave_r;"):
+        for formula in ("x=0;","wave_r=1;","dx=wave_r;"):
             self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
-        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,10))
+        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,26))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         self.assertEqual(self.parse(b"[preset00]\nper_pixel_2=dx=0;")[0],2)
         code,preset,_=self.parse((ROOT / "psp-client/presets/grid-twist-demo.milk").read_bytes())

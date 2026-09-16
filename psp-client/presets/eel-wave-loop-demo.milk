@@ -1,0 +1,18 @@
+// while/loop, exec sequences, assign/int aliases and custom-point memory.
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=0
+fDecay=0.96
+zoom=1.006
+wavecode_0_enabled=1
+wavecode_0_samples=192
+wavecode_0_bDrawThick=1
+wavecode_0_r=0.3
+wavecode_0_g=0.8
+wavecode_0_b=1
+wave_0_init1=t1=$pi*2;
+wave_0_per_frame1=i=0;sum=0;while(sum+=.1;i+=1;i<4);r=.2+sum;g=.5+.4*psp_mid_smooth;
+wave_0_per_point1=i=1;sum=0;loop(3,sum+=sin(sample*t1*i+time)/i;i+=1);
+wave_0_per_point2=assign(megabuf(int(sample*191)),sum);x=sample;y=.5+.1*sum+.1*value1;
+wave_0_per_point3=b=exec2(temp=abs(value2),min(1,.6+temp));a=.85;

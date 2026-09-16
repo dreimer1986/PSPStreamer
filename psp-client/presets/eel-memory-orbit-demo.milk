@@ -1,0 +1,23 @@
+// Loops, shared registers/memory, rand, compound assignments and shape instances.
+[preset00]
+fRating=4
+nWaveMode=7
+fDecay=0.965
+zoom=1.008
+wave_r=0.2
+wave_g=0.6
+wave_b=1
+fWaveAlpha=0.55
+per_frame_init_1=phase=rand(6);monitor=0;memset(0,0,16);
+per_frame_1=monitor+=1;i=0;loop(8,megabuf(i)=0.5+0.5*sin(time*.7+i*$pi/4+phase);i+=1);
+per_frame_2=memcpy(8,0,8);i=0;loop(8,gmegabuf(i)=megabuf(8+i);i+=1);reg00=psp_low_smooth;
+per_frame_3=wave_usedots=(int(time)%8)>=4;wrap=1;wave_r=.2+.6*psp_low_smooth;
+shapecode_0_enabled=1
+shapecode_0_sides=6
+shapecode_0_num_inst=8
+shapecode_0_rad=0.035
+shapecode_0_a=0.7
+shapecode_0_a2=0.1
+shapecode_0_border_a=0.8
+shape_0_per_frame1=ang=time*.3+instance*$pi*2/num_inst;x=.5+.3*cos(ang);y=.5+.3*sin(ang);
+shape_0_per_frame2=r=.2+.8*gmegabuf(instance);g=.3+.5*reg00;b=1-r*.6;rad=.025+.035*reg00;

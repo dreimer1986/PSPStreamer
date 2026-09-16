@@ -37,6 +37,7 @@
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
+PSP_MAIN_THREAD_STACK_SIZE_KB(256);
 
 #define RESPONSE_SIZE (512 * 1024)
 /* The PSP-3000 has 64 MiB RAM.  Keep a generously sized, paged directory
@@ -650,7 +651,8 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
     char request[2048], header[4096], *body;
     int socket_fd, received = 0, header_size = 0, body_size, content_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0 || prepare_server(&server) < 0) return -1;
+    if (socket_fd < 0) return -1;
+    if (prepare_server(&server) < 0) {connection_close(socket_fd);return -1;}
     if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { connection_close(socket_fd); return -1; }
     snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
     if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { connection_close(socket_fd); return -1; }

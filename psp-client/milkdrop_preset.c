@@ -17,6 +17,13 @@ MdFilePreset md_custom_preset={.wave_mode=-1,.wrap=1,.gamma=1,
     .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1}};
 MdFileError md_runtime_error;
 float md_preset_duration=60;
+int md_output_width=480,md_output_height=272;
+static void md_inputs(float *v) {
+    float w=md_output_width>0?md_output_width:480,h=md_output_height>0?md_output_height:272;
+    v[PM_INPUT_BASE]=MD_GRID;v[PM_INPUT_BASE+1]=MD_GRID;
+    v[PM_INPUT_BASE+2]=w;v[PM_INPUT_BASE+3]=h;
+    v[PM_INPUT_BASE+4]=w>=h?1:h/w;v[PM_INPUT_BASE+5]=h>=w?1:w/h;
+}
 static const float low[] = {.8f, -.2f, -4, 0, .1f, .8f, 0, 0, 0};
 static const float high[] = {1.2f, .2f, 4, 4, 8, 1, 1, 1, 1};
 static char *md_trim(char *text) {
@@ -34,10 +41,16 @@ static int md_file_error(MdFileError *e, int code, int line, const char *key) {
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     static const char *keys[] = {"zoom", "rot", "warp", "fWarpAnimSpeed", "fWarpScale",
                                  "fDecay", "wave_r", "wave_g", "wave_b"};
-    MdFilePreset next = {.warp = md_presets[0], .red = 1, .green = .6f, .blue = .2f,
-        .wave_mode = -1, .wrap = 1, .gamma = 1, .wave_scale = 1, .wave_smoothing = .75f,
-        .wave_alpha = 1, .motion={0,1,1,1,12,9,0,0,1}, .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1,
-            .wave_mod_start=.75f,.wave_mod_end=.95f}};
+    MdFilePreset *working=calloc(1,sizeof(*working));
+    if(!working) return md_file_error(error,MD_FILE_IO,0,"preset allocation");
+    /* Large compiled programs belong on the heap, not the PSP thread stack. */
+#define next (*working)
+    next.warp=md_presets[0];next.red=1;next.green=.6f;next.blue=.2f;
+    next.wave_mode=-1;next.wrap=1;next.gamma=1;next.wave_scale=1;next.wave_smoothing=.75f;
+    next.wave_alpha=1;
+    const float initial_motion[9]={0,1,1,1,12,9,0,0,1};
+    memcpy(next.motion,initial_motion,sizeof(initial_motion));
+    next.decor=(MdDecor){.wave_x=.5f,.wave_y=.5f,.echo_zoom=1,.wave_mod_start=.75f,.wave_mod_end=.95f};
     for(int i=0;i<MD_SHAPES;i++) next.decor.shapes[i]=(MdShape){
         .sides=4,.x=.5f,.y=.5f,.rad=.1f,.tex_zoom=1,.r=1,.g=1,.b=1,.a=1,
         .r2=1,.g2=1,.b2=1,.border_r=1,.border_g=1,.border_b=1};
@@ -86,24 +99,24 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         &next.warp.warp_speed, &next.warp.warp_scale, &next.warp.decay,
         &next.red, &next.green, &next.blue};
     FILE *file = fopen(path, "rb");
-    char line[256];
+    char line[2048];
     int total = 0, number = 0, section = 0, result = MD_FILE_OK;
     unsigned int seen = 0;
     memset(error, 0, sizeof(*error));
-    if (!file) return md_file_error(error, errno == ENOENT ? MD_FILE_MISSING : MD_FILE_IO, 0, "");
+    if (!file) {int code=errno==ENOENT?MD_FILE_MISSING:MD_FILE_IO;free(working);return md_file_error(error,code,0,"");}
     for (;;) {
         int ch, used = 0, index;
         char *key, *value, *equal, *end;
         float parsed;
         number++;
         while ((ch = fgetc(file)) != EOF && ch != '\n') {
-            if (++total > 16384 || used >= (int)sizeof(line)-1 || ch == 0) {
+            if (++total > 65536 || used >= (int)sizeof(line)-1 || ch == 0) {
                 result = md_file_error(error, MD_FILE_INVALID, number, "size/encoding");
                 goto done;
             }
             line[used++] = (char)ch;
         }
-        if (ch == '\n' && ++total > 16384) {
+        if (ch == '\n' && ++total > 65536) {
             result = md_file_error(error, MD_FILE_INVALID, number, "size");
             goto done;
         }
@@ -206,7 +219,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if (strcmp(key, expected)) {
                 result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;
             }
-            int compiled = pixel?pm_compile_pixel(program,value,number):
+            int compiled = pixel?pm_compile_pixel_symbols(program,value,number,&next.pixel_symbols):
                 pm_compile_symbols(program, value, number, &next.symbols);
             if (compiled != PM_OK) {
                 result = md_file_error(error, compiled == PM_UNSUPPORTED ?
@@ -252,6 +265,8 @@ done:
     if (fclose(file) && result == MD_FILE_OK)
         result = md_file_error(error, MD_FILE_IO, number, "");
     if (result == MD_FILE_OK) *out = next;
+    free(working);
+#undef next
     return result;
 }
 
@@ -293,24 +308,31 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         v[10+i] = value;
     }
     MdPresetState next=*state;
+    pm_begin_frame();md_inputs(v);v[PM_MONITOR]=next.monitor;
+    v[PM_WRAP]=(float)p->wrap;
     float dt=seconds-next.last_seconds;
-    next.fps=next.frames && dt>0?1.0f/dt:0;
+    /* Presets commonly divide by fps. Seed the first visual frame from the
+     * renderer's 50-ms minimum interval; subsequent frames use measured time.
+     * A same-timestamp layout redraw retains the last valid rate. */
+    if(next.frames && dt>0) next.fps=1.0f/dt;
+    else if(!isfinite(next.fps) || next.fps<=0) next.fps=20;
     v[PM_META_BASE]=(float)next.frames;
     v[PM_META_BASE+1]=next.fps;
     if (!next.ready) {
         float initial[PM_VALUES];
         memcpy(initial,v,sizeof(initial));
-        if (!pm_execute(&p->init_program,initial,&line))
+        if (!pm_execute_runtime(&p->init_program,initial,&line,&next.runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"init formula");
         memcpy(next.q,initial+PM_Q_BASE,sizeof(next.q));
         memcpy(next.user,initial+PM_USER_BASE,sizeof(next.user));
+        next.monitor=initial[PM_MONITOR];v[PM_MONITOR]=next.monitor;
         next.ready=1;
     }
     /* Reference LoadPerFrameEvallibVars restores q_values_after_init_code
      * before every frame. Ordinary output fields also restart from static. */
     memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
     memcpy(v+PM_USER_BASE,next.user,sizeof(next.user));
-    if (!pm_execute(&p->program, v, &line))
+    if (!pm_execute_runtime(&p->program, v, &line,&next.runtime))
         return md_file_error(error, MD_FILE_INVALID, line, "formula");
     for (int i = 0; i < 9; i++) {
         if (p->legacy && isfinite(v[i])) {
@@ -357,6 +379,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         next.effects[i]=value;
     }
     memcpy(next.motion,v+PM_DYNAMIC_BASE+1,sizeof(next.motion));
+    next.wrap=fabsf(v[PM_WRAP])>=.00001f;
     MdDecor evaluated=p->decor;
     for(int slot=0;slot<MD_SHAPES;slot++) {
         const MdShapeProgram *program=&p->shape_program[slot];
@@ -366,6 +389,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         for(int instance=0;instance<instances;instance++) {
         MdShapeState *local=&next.shape[slot];
         float sv[PM_VALUES]={0};
+        md_inputs(sv);
         memcpy(sv+9,v+9,14*sizeof(float));
         memcpy(sv+PM_META_BASE,v+PM_META_BASE,2*sizeof(float));
         sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;sv[PM_ENGINE_BASE+2]=v[PM_ENGINE_BASE+2];
@@ -374,7 +398,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         memcpy(sv+PM_USER_BASE,local->user,sizeof(local->user));
         if(!local->ready) {
             memcpy(sv+PM_Q_BASE,next.q,sizeof(next.q));
-            if(!pm_execute(&program->init,sv,&line)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
+            if(!pm_execute_runtime(&program->init,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
             memcpy(local->t,sv+PM_T_BASE,sizeof(local->t));
             memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
             local->ready=1;
@@ -384,7 +408,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
         memcpy(sv+PM_T_BASE,local->t,sizeof(local->t));
         memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
-        if(!pm_execute(&program->frame,sv,&line)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
+        if(!pm_execute_runtime(&program->frame,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
         for(int k=0;k<23;k++) {
             float value=sv[PM_SHAPE_BASE+k],lo=0,hi=1;
             if(k==1) {lo=3;hi=MD_SHAPE_SIDES;}
@@ -405,6 +429,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         ((unsigned int)(v[7]*255)<<8) | ((unsigned int)(v[8]*255)<<16);
     memcpy(next.user,v+PM_USER_BASE,sizeof(next.user));
     memcpy(next.frame_q,v+PM_Q_BASE,sizeof(next.frame_q));
+    next.monitor=v[PM_MONITOR];
     next.frames++; next.last_seconds=seconds;
     *state=next;
     return MD_FILE_OK;
@@ -422,6 +447,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         if(w->spectrum && (!spectrum_left || !spectrum_right)) return md_file_error(error,MD_FILE_INVALID,0,"spectrum unavailable");
         MdWaveState *ws=&next.waves[slot];
         float v[PM_VALUES]={0};
+        md_inputs(v);
         v[9]=seconds;
         v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
@@ -430,13 +456,13 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(v+PM_USER_BASE,ws->frame.user,sizeof(ws->frame.user));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
         if(!ws->frame.ready) {
-            if(!pm_execute(&w->init,v,&line)) return md_file_error(error,MD_FILE_INVALID,line,"wave init");
+            if(!pm_execute_runtime(&w->init,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave init");
             memcpy(ws->frame.t,v+PM_T_BASE,sizeof(ws->frame.t)); ws->frame.ready=1;
         }
         memcpy(v+PM_T_BASE,ws->frame.t,sizeof(ws->frame.t));
         memcpy(v+PM_Q_BASE,next.frame_q,sizeof(next.frame_q));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
-        if(!pm_execute(&w->frame,v,&line)) return md_file_error(error,MD_FILE_INVALID,line,"wave frame");
+        if(!pm_execute_runtime(&w->frame,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave frame");
         float n=v[PM_WAVE_BASE];
         if(!isfinite(n) || n<2 || n>MD_CUSTOM_POINTS || n!=floorf(n)) return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&w->frame,PM_WAVE_BASE),"wave samples");
         memcpy(ws->frame.user,v+PM_USER_BASE,sizeof(ws->frame.user));
@@ -459,7 +485,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
             v[PM_WAVE_BASE+1]=(float)i/(count-1); v[PM_WAVE_BASE+2]=a[i]; v[PM_WAVE_BASE+3]=b[i];
             v[PM_SHAPE_BASE+4]=.5f+a[i]; v[PM_SHAPE_BASE+5]=.5f+b[i];
             memcpy(v+PM_SHAPE_BASE+10,colors,sizeof(colors));
-            if(!pm_execute(&w->point,v,&line)) return md_file_error(error,MD_FILE_INVALID,line,"wave point");
+            if(!pm_execute_runtime(&w->point,v,&line,&ws->point_runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave point");
             for(int k=0;k<4;k++) if(!isfinite(v[PM_SHAPE_BASE+10+k]) || v[PM_SHAPE_BASE+10+k]<0 || v[PM_SHAPE_BASE+10+k]>1)
                 return md_file_error(error,MD_FILE_INVALID,line,"wave color");
             float x=v[PM_SHAPE_BASE+4],y=v[PM_SHAPE_BASE+5];
@@ -476,9 +502,12 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
 }
 
 int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float seconds,
-                      const MdSignal *signal, const MdPresetState *state,
+                      const MdSignal *signal, MdPresetState *state,
                       MdPreset points[MD_GRID_POINTS], MdFileError *error) {
     MdPreset next[MD_GRID_POINTS];
+    PmRuntime runtime=state->pixel_runtime;
+    float users[PM_USER_COUNT],q[PM_Q_COUNT];
+    memcpy(users,state->pixel_user,sizeof(users));memcpy(q,state->frame_q,sizeof(q));
     memset(error,0,sizeof(*error));
     if(p->pixel_program.count<0 || p->pixel_program.count>PM_PIXEL_OPS)
         return md_file_error(error,MD_FILE_INVALID,0,"pixel budget");
@@ -488,7 +517,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         v[23]=frame->dx; v[24]=frame->dy; v[25]=frame->cx; v[26]=frame->cy;
         v[27]=frame->sx; v[28]=frame->sy; v[29]=frame->zoomexp;
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
-        memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
+        md_inputs(v);
+        memcpy(v+PM_Q_BASE,q,sizeof(q));memcpy(v+PM_USER_BASE,users,sizeof(users));
         v[PM_META_BASE]=state->frames?(float)(state->frames-1):0;
         v[PM_META_BASE+1]=state->fps;
         v[PM_DYNAMIC_BASE]=(float)state->wave_mode;
@@ -500,7 +530,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);
         v[PM_COORD_BASE+3]=(px==0 && py==0)?0:atan2f(py,px);
         int line=0;
-        if(!pm_execute(&p->pixel_program,v,&line))
+        if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");
         const int ids[]={0,1,2,23,24,25,26,27,28,29};
         const float lo[]={.1f,-.2f,-4,-1,-1,0,0,.25f,.25f,.5f};
@@ -509,7 +539,9 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
         next[y*(MD_GRID+1)+x]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
             v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
+        memcpy(q,v+PM_Q_BASE,sizeof(q));memcpy(users,v+PM_USER_BASE,sizeof(users));
     }
     memcpy(points,next,sizeof(next));
+    state->pixel_runtime=runtime;memcpy(state->pixel_user,users,sizeof(users));
     return MD_FILE_OK;
 }
