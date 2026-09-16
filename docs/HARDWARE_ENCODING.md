@@ -23,6 +23,25 @@ minutes per backend/device/output size/frame rate. A first hardware request
 can therefore take longer. This is a format check, not a substitute for
 testing actual playback and quality on the PSP.
 
+**Hardware-test finding:** the initial VA-API version passed host decoding but
+failed on the PSP's TV decoder with `80628002` after one picture. Version
+0.1.28 removes optional H.264 SEI metadata from VA-API output as a targeted
+compatibility candidate. The NUC generated buffering-period/picture-timing
+SEI unlike the working x264 stream. The filter preserves coded slices,
+SPS/PPS and container timestamps; it does not re-encode or alter audio.
+This difference is a suspect, not a proven root cause. Until confirmed on
+the PSP, keep `software` selected for reliable playback; `auto` cannot detect
+a PSP firmware failure remotely and therefore cannot guarantee recovery from
+this error. NVIDIA is not changed by this compatibility filter.
+
+The diagnostic comparison on the NUC also found differences in frame-number
+bit width, explicit reference-picture marking, the PPS deblocking-control
+flag and advertised motion-vector bounds. Those are not changed speculatively
+by 0.1.28. If removing SEI does not fix the actual PSP failure, these remain
+separate investigation points; a successful FFmpeg decode cannot distinguish
+which syntax the Sony firmware rejects. A regression test verifies the SEI
+filter preserves every non-SEI NAL payload and identical decoded frame hashes.
+
 If a real hardware process produces no output, `auto` can restart in software
 before HTTP media headers/data are sent. After output starts the server never
 splices a different encoder into that stream. Ordinary network recovery stays

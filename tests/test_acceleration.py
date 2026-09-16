@@ -6,6 +6,9 @@ from pathlib import Path
 import tempfile
 import unittest
 import threading
+import re
+import shutil
+import subprocess
 from unittest.mock import patch, Mock
 
 from psp_streamer.acceleration import Acceleration, hardware_command
@@ -13,6 +16,29 @@ from psp_streamer.server import ffmpeg_command, AppServer, Library, MediaItem
 
 
 class AccelerationTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg required')
+    def test_sei_filter_preserves_parameter_sets_slices_and_decoded_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original=Path(directory)/'original.h264'
+            filtered=Path(directory)/'filtered.h264'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=480x272:rate=20',
+                            '-frames:v','6','-c:v','libx264','-profile:v','baseline','-preset','veryfast',
+                            '-b:v','600k','-maxrate','700k','-bufsize','900k','-x264-params',
+                            'nal-hrd=vbr:bframes=0',str(original)],check=True,timeout=15)
+            command=hardware_command(['ffmpeg','-c:v','libx264','pipe:1'],'vaapi','/dev/dri/renderD128')
+            bit_filter=command[command.index('-bsf:v')+1]
+            subprocess.run(['ffmpeg','-v','error','-i',str(original),'-c:v','copy','-bsf:v',bit_filter,str(filtered)],
+                           check=True,timeout=15)
+            def units(path):
+                return [n.rstrip(b'\0') for n in re.split(b'\x00{2,3}\x01',path.read_bytes()) if n]
+            before,after=units(original),units(filtered)
+            self.assertTrue(any(n[0]&31==6 for n in before))
+            self.assertFalse(any(n[0]&31==6 for n in after))
+            self.assertEqual([n for n in before if n[0]&31!=6],after)
+            def checksum(path):
+                return subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-f','framemd5','-'],timeout=15)
+            self.assertEqual(checksum(original),checksum(filtered))
+
     def test_hardware_start_failure_retries_before_http_headers(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,
                 {'PSP_STREAMER_SETTINGS_DIR':'','PSP_STREAMER_PASSWORD':'',
@@ -62,9 +88,12 @@ class AccelerationTests(unittest.TestCase):
                     value = command[command.index(key)+1]
                     self.assertIn('fps=24000/1001', value)
                     if backend == 'vaapi':
+                        self.assertEqual(command[command.index('-bsf:v')+1], 'filter_units=remove_types=6')
                         self.assertIn('format=nv12,hwupload', value)
                         self.assertEqual(command[command.index('-level:v')+1], '30')
                         if bitmap: self.assertTrue(value.endswith('hwupload[v]'))
+                    else:
+                        self.assertNotIn('-bsf:v',command)
 
     def test_software_is_unchanged_and_audio_never_probed(self):
         with patch.dict(os.environ, {'PSP_STREAMER_SETTINGS_DIR':'','PSP_STREAMER_ACCELERATION':'software'}):

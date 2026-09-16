@@ -52,6 +52,11 @@ def main():
                     assert all(p['pts']==p['dts'] for p in vp)
                     assert all(a['pts']<b['pts'] for a,b in zip(vp,vp[1:]))
                     assert abs(float(vp[0]['pts_time'])-float(ap[0]['pts_time']))<.1
+                    if args.backend=='vaapi':
+                        trace=subprocess.run(['ffmpeg','-i',str(output),'-map','0:v:0','-c:v','copy',
+                                              '-bsf:v','trace_headers','-f','null','-'],
+                                             capture_output=True,text=True,check=True,timeout=15).stderr
+                        assert 'Supplemental Enhancement Information' not in trace
                     subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(output),'-f','null','-'],
                                    check=True,timeout=15)
                     print(f'PASS {args.backend} TV={tv} FPS={fps} subtitles={track>=0}',flush=True)

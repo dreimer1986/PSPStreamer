@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.28
+
+- VA-API compatibility candidate for PSP AVC error 80628002 after the first
+  TV frame: remove optional H.264 SEI metadata, retaining coded picture data,
+  SPS/PPS, FLV timestamps and audio. Software and NVENC are unchanged.
+- Host validation now checks that VA-API output contains no SEI. Actual PSP
+  firmware compatibility still requires hardware verification.
+
 ## 0.1.27
 
 - Optional Intel/AMD VA-API and NVIDIA NVENC video encoding; software remains default.

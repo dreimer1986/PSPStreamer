@@ -46,6 +46,12 @@ def hardware_command(command, backend, device):
     if backend == "vaapi":
         result[1:1] = ["-vaapi_device", device]
         common += ["-profile:v", "constrained_baseline", "-coder", "cavlc", "-rc_mode", "VBR", "-async_depth", "1"]
+        # Intel emits buffering-period/picture-timing SEI even without
+        # reordered pictures. The PSP uses FLV PTS, not these optional SEI
+        # messages. Strip metadata only; retain SPS/PPS and every coded slice.
+        # This narrows a firmware compatibility failure after the first frame;
+        # host decoding alone does not prove PSP firmware compatibility.
+        common += ["-bsf:v", "filter_units=remove_types=6"]
     else:
         common += ["-profile:v", "baseline", "-preset", "p4", "-tune", "ll",
                    "-rc", "vbr", "-rc-lookahead", "0", "-zerolatency", "1"]
