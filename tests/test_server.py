@@ -92,7 +92,8 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(library.next_media(token("Episode 4.flac")), {})
             self.assertEqual(library.next_media(token("Episode 4.flac"), shuffle=True)["id"],
                              token("Episode 3.mp3"))
-            self.assertEqual(library.next_media("__psp_calibration_10s__"), {})
+            with self.assertRaises(ValueError):
+                library.next_media("__psp_calibration_10s__")
             with self.assertRaises(ValueError):
                 library.next_media(library.encode(MediaItem(0, "../outside.mkv")))
 

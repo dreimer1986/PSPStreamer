@@ -15,11 +15,13 @@ static unsigned long long sync_trace_start, sync_trace_last;
 static unsigned int sync_decode_us, sync_prepare_us;
 static volatile int sync_audio_channel = -1, sync_audio_pts_errors;
 static void sync_trace_reset(void) {
+    if(!debug_enabled) return;
     sync_trace_count = sync_trace_shown = sync_trace_dropped = 0;
     sync_audio_pts_errors = 0;
     sync_trace_start = sceKernelGetSystemTimeWide(); sync_trace_last = 0;
 }
 static void sync_trace_record(int video_pts, int action, unsigned int copy_us) {
+    if(!debug_enabled) return;
     unsigned long long now = sceKernelGetSystemTimeWide();
     unsigned int audio_pts = audio_current_timestamp_ms;
     SyncTraceRow *row;
@@ -40,6 +42,7 @@ static void sync_trace_record(int video_pts, int action, unsigned int copy_us) {
     row->pts_errors = sync_audio_pts_errors;
 }
 static void sync_trace_save(int tv, int result, int start_seconds) {
+    if(!debug_enabled) return;
     char line[320];
     unsigned int i, first = sync_trace_count > SYNC_TRACE_CAPACITY ? sync_trace_count - SYNC_TRACE_CAPACITY : 0;
     SceUID fd = sceIoOpen(tv ? "ms0:/PSP/SYSTEM/PSPStreamer-sync-tv.csv" :

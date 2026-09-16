@@ -5,6 +5,8 @@ port=8091
 server_password=
 # 0 = HTTP (default), 1 = HTTPS with automatic certificate-change notices.
 https=0
+# 0 disables diagnostic logs/monitoring (default); 1 enables troubleshooting.
+debug=0
 audio=0
 subtitle=-1
 quality=2

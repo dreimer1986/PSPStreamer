@@ -14,6 +14,7 @@ static char current_path[512]="folder",remote_session[40]="session",status[256],
 static int server_port=8091,server_https,tv_ui_auto,selected_audio_track,selected_subtitle_track=-1;
 static int selected_audio_quality=2,selected_video_fps,playback_volume=24,audio_shuffle;
 static int music_preset_auto,music_preset_seconds=60,music_preset_fade_ms=1500;
+static int debug_enabled;
 static int have_cached_server_address=1,resume_pending=1,remote_control_sequence=3,item_count=4,tv_ui_active;
 static unsigned int keys[64];static int position,total,save_failed,saved;
 static unsigned long long tick;
@@ -37,6 +38,9 @@ static void sceKernelDelayThread(int us) {tick+=us;}
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
     AppSettings state;settings_capture(&state);assert(!strcmp(state.password,"ä:test"));
+    assert(state.value[SET_DEBUG]==0);
+    state.value[SET_DEBUG]=1;settings_apply(&state);assert(debug_enabled==1);
+    state.value[SET_DEBUG]=0;settings_apply(&state);assert(debug_enabled==0);
     memset(music_preset_file,'x',250);music_preset_file[250]=0;
     settings_capture(&state);assert(strlen(state.preset)==250);settings_apply(&state);
     const unsigned int cancel[]={0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_CIRCLE};

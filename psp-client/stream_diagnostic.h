@@ -1,3 +1,4 @@
+#define DEBUG_DIAG(statement) do { if(debug_enabled) { statement } } while(0)
 /* Reader-owned RAM snapshot. Save after joining the reader, not on audio or
  * video ticks. No deadlines, packet handling or playback clocks are changed. */
 static struct {
@@ -8,6 +9,7 @@ static struct {
 } stream_diag;
 
 static void stream_diag_reset(void) {
+    if(!debug_enabled) return;
     memset(&stream_diag,0,sizeof(stream_diag));
     stream_diag.stage="socket"; stream_diag.reason="invalid FLV or reader setup";
     stream_diag.video_pts=stream_diag.audio_pts=-1;
@@ -19,40 +21,44 @@ static void stream_diag_reset(void) {
 static int timed_recv(unsigned char *data,int size) {
     if(server_https) {
         int n=tls_recv(timed_socket,data,size,100);
-        stream_diag.recv_result=n;
-        if(n>0) {stream_diag.bytes+=n;stream_diag.last_data_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL);}
-        else if(n!=-2) {stream_diag.reason=n?"TLS receive error":"TLS EOF";stream_diag.socket_error=n;}
+        DEBUG_DIAG(stream_diag.recv_result=n;);
+        if(n>0) {DEBUG_DIAG(stream_diag.bytes+=n;);DEBUG_DIAG(stream_diag.last_data_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL););}
+        else if(n!=-2) {DEBUG_DIAG(stream_diag.reason=n?"TLS receive error":"TLS EOF";);DEBUG_DIAG(stream_diag.socket_error=n;);}
         return n;
     }
     struct SceNetInetPollfd p={timed_socket,SCE_NET_INET_POLLIN,0};
     int result=sceNetInetPoll(&p,1,100);
-    stream_diag.poll_result=result; stream_diag.poll_events=p.revents;
+    DEBUG_DIAG(stream_diag.poll_result=result;); DEBUG_DIAG(stream_diag.poll_events=p.revents;);
     if(!result) return -2;
     if(result<0) {
-        stream_diag.socket_error=sceNetInetGetErrno();
-        stream_diag.reason="poll error"; return 0;
+        DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno(););
+        DEBUG_DIAG(stream_diag.reason="poll error";); return 0;
     }
     if(!(p.revents&SCE_NET_INET_POLLIN)) {
-        int error=0; socklen_t length=sizeof(error);
-        if(sceNetInetGetsockopt(timed_socket,SOL_SOCKET,SO_ERROR,&error,&length)<0)
-            error=sceNetInetGetErrno();
-        stream_diag.socket_error=error;
-        stream_diag.reason="poll without readable data"; return 0;
+        if(debug_enabled) {
+            int error=0; socklen_t length=sizeof(error);
+            if(sceNetInetGetsockopt(timed_socket,SOL_SOCKET,SO_ERROR,&error,&length)<0)
+                error=sceNetInetGetErrno();
+            stream_diag.socket_error=error;
+            stream_diag.reason="poll without readable data";
+        }
+        return 0;
     }
     result=sceNetInetRecv(timed_socket,data,size,0);
-    stream_diag.recv_result=result;
+    DEBUG_DIAG(stream_diag.recv_result=result;);
     if(result<0) {
-        stream_diag.socket_error=sceNetInetGetErrno();
-        stream_diag.reason="recv error";
-    } else if(!result) stream_diag.reason="TCP EOF";
+        DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno(););
+        DEBUG_DIAG(stream_diag.reason="recv error";);
+    } else if(!result) DEBUG_DIAG(stream_diag.reason="TCP EOF";);
     else {
-        stream_diag.bytes+=result;
-        stream_diag.last_data_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL);
+        DEBUG_DIAG(stream_diag.bytes+=result;);
+        DEBUG_DIAG(stream_diag.last_data_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL););
     }
     return result;
 }
 
 static int stream_diag_save(int result) {
+    if(!debug_enabled) return 0;
     char text[1024];
     int size=snprintf(text,sizeof(text),
         "result=%d stage=%s reason=%s\n"

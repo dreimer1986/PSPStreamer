@@ -46,7 +46,7 @@ static int timed_put(TimedQueue *q, const unsigned char *data, int size, int pts
     if (!timed_running) return -1;
     p = &q->slots[q->write % 128];
     p->data = memalign(64, (size + 63) & ~63);
-    if (!p->data) { stream_diag.reason="packet allocation failed"; sceKernelSignalSema(q->free, 1); return -1; }
+    if (!p->data) { DEBUG_DIAG(stream_diag.reason="packet allocation failed";); sceKernelSignalSema(q->free, 1); return -1; }
     memcpy(p->data, data, size);
     p->size = size; p->pts = pts;
     q->write++;
@@ -68,7 +68,7 @@ static int timed_get(TimedQueue *q, TimedPacket *out) {
  */
 static int timed_read(unsigned char *out, int size) {
     int have = 0;
-    stream_diag.wanted=size; stream_diag.received=0;
+    DEBUG_DIAG(stream_diag.wanted=size;); DEBUG_DIAG(stream_diag.received=0;);
     unsigned long long last = sceKernelGetSystemTimeWide();
     while (have < size && timed_running) {
         int got = offline_active ? sceIoRead(offline_reader_fd,out+have,size-have) : timed_recv(out + have, size - have);
@@ -78,12 +78,12 @@ static int timed_read(unsigned char *out, int size) {
             unsigned long long limit = timed_playing ? 30000000ULL : 180000000ULL;
             if (playback_paused) last = sceKernelGetSystemTimeWide();
             if (sceKernelGetSystemTimeWide() - last < limit) continue;
-            stream_diag.reason="read inactivity timeout";
+            DEBUG_DIAG(stream_diag.reason="read inactivity timeout";);
             return -1;
         }
         if (got <= 0) return have ? -1 : 0;
         have += got; last = sceKernelGetSystemTimeWide();
-        stream_diag.received=have;
+        DEBUG_DIAG(stream_diag.received=have;);
     }
     return have == size ? 1 : -1;
 }
@@ -91,15 +91,15 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
     int nonblock = 1, status;
     unsigned long long start = sceKernelGetSystemTimeWide();
     if (sceNetInetSetsockopt(fd, SOL_SOCKET, SO_NONBLOCK, &nonblock, sizeof(nonblock)) < 0) {
-        stream_diag.reason="nonblocking socket setup"; stream_diag.socket_error=sceNetInetGetErrno(); return -1;
+        DEBUG_DIAG(stream_diag.reason="nonblocking socket setup";); DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); return -1;
     }
     status = sceNetInetConnect(fd, (struct sockaddr *)server, sizeof(*server));
     while (status < 0 && timed_running) {
         struct SceNetInetPollfd p = {fd, SCE_NET_INET_POLLOUT, 0};
         int ready = sceNetInetPoll(&p, 1, 100);
         if (ready < 0 || sceKernelGetSystemTimeWide() - start > 15000000ULL) {
-            stream_diag.reason=ready<0?"connect poll error":"connect timeout";
-            if(ready<0) stream_diag.socket_error=sceNetInetGetErrno();
+            DEBUG_DIAG(stream_diag.reason=ready<0?"connect poll error":"connect timeout";);
+            if(ready<0) DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno(););
             return -1;
         }
         if (ready) {
@@ -107,8 +107,8 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
             socklen_t length = sizeof(error);
             if (!(p.revents & SCE_NET_INET_POLLOUT) ||
                 sceNetInetGetsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) < 0 || error) {
-                stream_diag.reason="connect failed";
-                stream_diag.socket_error=error?error:sceNetInetGetErrno(); return -1;
+                DEBUG_DIAG(stream_diag.reason="connect failed";);
+                DEBUG_DIAG(stream_diag.socket_error=error?error:sceNetInetGetErrno();); return -1;
             }
             status = 0;
         }
@@ -116,7 +116,7 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
     if (!timed_running) return -1;
     if(server_https) {
         int result=tls_open(fd,server_host,server_port,&timed_running,15000);
-        if(result<0) {stream_diag.reason="TLS handshake";stream_diag.socket_error=result;}
+        if(result<0) {DEBUG_DIAG(stream_diag.reason="TLS handshake";);DEBUG_DIAG(stream_diag.socket_error=result;);}
         return result;
     }
     nonblock = 0;
@@ -139,23 +139,23 @@ static int timed_reader(SceSize args, void *argp) {
     }
     fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     timed_socket = fd;
-    if (fd < 0) { stream_diag.socket_error=sceNetInetGetErrno(); goto end; }
-    stream_diag.stage="resolve server";
+    if (fd < 0) { DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); goto end; }
+    DEBUG_DIAG(stream_diag.stage="resolve server";);
     if (prepare_server(&server) < 0) goto end;
-    stream_diag.stage="connect";
+    DEBUG_DIAG(stream_diag.stage="connect";);
     if (!timed_running || timed_connect(fd, &server) < 0) goto end;
-    stream_diag.stage="send HTTP request";
+    DEBUG_DIAG(stream_diag.stage="send HTTP request";);
     {
         int sent = 0, length = strlen(timed_request);
         while (sent < length && timed_running) {
             got = server_https ? tls_send(fd,timed_request+sent,length-sent,&timed_running,15000) :
                 (int)sceNetInetSend(fd, timed_request + sent, length - sent, 0);
-            if (got <= 0) { stream_diag.socket_error=sceNetInetGetErrno(); goto end; }
+            if (got <= 0) { DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); goto end; }
             sent += got;
         }
     }
     /* Reading only the HTTP header bytes avoids consuming FLV data twice. */
-    stream_diag.stage="HTTP header";
+    DEBUG_DIAG(stream_diag.stage="HTTP header";);
     while (n < (int)sizeof(http) - 1) {
         if (timed_read((unsigned char *)http + n, 1) != 1) goto end;
         http[++n] = 0;
@@ -163,33 +163,33 @@ static int timed_reader(SceSize args, void *argp) {
     }
     if (!strstr(http, " 200 ") || n == (int)sizeof(http) - 1) goto end;
 flv_header:
-    stream_diag.stage="FLV header";
+    DEBUG_DIAG(stream_diag.stage="FLV header";);
     if (timed_read(h, 13) != 1 || memcmp(h, "FLV\1", 4) ||
         flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || !(h[4] & 1)) goto end;
     timed_has_audio = !!(h[4] & 4);
     body = malloc(FLV_MAX_VIDEO);
     annexb = malloc(FLV_MAX_VIDEO);
-    if (!body || !annexb) { stream_diag.reason="reader allocation failed"; goto end; }
+    if (!body || !annexb) { DEBUG_DIAG(stream_diag.reason="reader allocation failed";); goto end; }
     while (timed_running) {
         unsigned int size, type;
         int pts, converted;
-        stream_diag.stage="FLV tag header";
+        DEBUG_DIAG(stream_diag.stage="FLV tag header";);
         got = timed_read(tag, 11);
         if (!got) { result = saw_end ? 0 : -1; break; }
         if (got < 0) break;
         size = flv_u24(tag + 1); type = tag[0];
         if (!size || size > FLV_MAX_VIDEO || flv_u24(tag + 8)) break;
-        stream_diag.stage="FLV tag body";
+        DEBUG_DIAG(stream_diag.stage="FLV tag body";);
         if (timed_read(body, size) != 1) break;
-        stream_diag.stage="FLV tag trailer";
+        DEBUG_DIAG(stream_diag.stage="FLV tag trailer";);
         if (timed_read(previous, 4) != 1 || flv_u32(previous) != size + 11) break;
         pts = (int)(flv_u24(tag + 4) | ((unsigned int)tag[7] << 24));
         if (type == 8) {
-            stream_diag.stage="MP3 tag"; stream_diag.audio_pts=pts;
+            DEBUG_DIAG(stream_diag.stage="MP3 tag";); DEBUG_DIAG(stream_diag.audio_pts=pts;);
             if (size < 5 || size - 1 > FLV_MAX_AUDIO || (body[0] >> 4) != 2) break;
             if (timed_put(&timed_audio, body + 1, size - 1, pts) < 0) break;
         } else if (type == 9) {
-            stream_diag.stage="AVC tag"; stream_diag.video_pts=pts;
+            DEBUG_DIAG(stream_diag.stage="AVC tag";); DEBUG_DIAG(stream_diag.video_pts=pts;);
             if (size < 5 || (body[0] & 15) != 7) break;
             if (body[1] == 0) {
                 if (flv_config(&avc, body + 5, size - 5) < 0) break;
@@ -208,8 +208,8 @@ flv_header:
 end:
     if(offline_reader_fd>=0) {sceIoClose(offline_reader_fd);offline_reader_fd=-1;}
     if(result<0 && timed_running) {
-        stream_diag.failure_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL);
-        if(!offline_active)stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state);
+        DEBUG_DIAG(stream_diag.failure_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL););
+        if(!offline_active)DEBUG_DIAG(stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state););
     }
     free(body); free(annexb);
     if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }

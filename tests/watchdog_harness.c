@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+static int debug_enabled=1;
 typedef int SceUID;
 typedef unsigned int SceSize;
 #define PSP_O_WRONLY 1
@@ -47,6 +48,11 @@ static void sceKernelDelayThread(int us) {
     if(clock_us>=10000000) video_watch_running=0;
 }
 int main(void) {
+    debug_enabled=0; fail_open=1;
+    assert(video_watch_start(1)==0 && video_watch_id==-1 && !path_seen[0]);
+    video_watch_ping("disabled"); assert(!video_watch_tick);
+    assert(video_watch_write("disabled",1)==0 && !path_seen[0]);
+    video_watch_stop(); debug_enabled=1;
     fail_open=1; assert(video_watch_start(1)==-22 && video_watch_id==-1);
     fail_open=0; fail_write=1; assert(video_watch_start(1)<0 && closes==1);
     fail_write=0; fail_thread=1; assert(video_watch_start(1)==-23);

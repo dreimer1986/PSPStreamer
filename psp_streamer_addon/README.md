@@ -4,6 +4,10 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.32** removes the obsolete synthetic A/V calibration streams and
+hardens media root validation. Ordinary media conversion/playback is unchanged.
+The PSP debug switch is a client setting, not an app/server option.
+
 Version **0.1.31** adds Memory Stick ZIP exports for completed conversions.
 Download/extract on a PC, then merge the PSP folder into the Memory Stick root
 with PSP Streamer closed. Safely eject and select Local storage. No SSH is

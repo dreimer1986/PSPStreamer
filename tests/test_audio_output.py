@@ -30,6 +30,7 @@ static int audio_dac_samples = AUDIO_BLOCK_SAMPLES, playback_volume = 30;
 static int audio_running, audio_start, audio_queue_primed, timed_active;
 static int video_first_presented, timed_running, audio_clock_started;
 static int audio_queue_read, audio_state, sync_audio_channel, sync_audio_pts_errors;
+static int debug_enabled=1;
 static int audio_played_blocks, audio_blocks_published;
 static int audio_queue_ready_sema = 2, audio_queue_free_sema = 3;
 static int target, submitted, freed, active_slot, active_tag, cancel_start, fail_at;

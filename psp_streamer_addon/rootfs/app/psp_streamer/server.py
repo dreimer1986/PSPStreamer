@@ -38,10 +38,6 @@ BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "
 PSP_SUBTITLE_FPS = 20.1
 MAX_SUBTITLE_CUES = 1800
 PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
-CALIBRATION_MEDIA = {
-    "__psp_calibration_10s__": ("A/V Calibration — short (18 seconds)", 18),
-    "__psp_calibration_5m__": ("A/V Calibration — 5 minutes", 300),
-}
 
 
 def track_label(value: object) -> str:
@@ -134,9 +130,11 @@ class Library:
             raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
             data = json.loads(raw)
             item = MediaItem(root=int(data["r"]), relative=str(data["p"]))
+            if not 0 <= item.root < len(self.roots):
+                raise ValueError('Invalid media root')
             root = self.roots[item.root]
             target = (root / item.relative).resolve()
-        except (ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
+        except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise ValueError("Invalid media identifier") from exc
         if root not in target.parents or not target.is_file() or target.suffix.lower() not in MEDIA_EXTENSIONS:
             raise ValueError("Media item is unavailable")
@@ -146,10 +144,8 @@ class Library:
         """Resolve a same-folder successor independently of PSP menu state.
 
         Video stops at the folder's end. Music may shuffle, excluding the
-        current file. Synthetic calibration clips do not have successors.
+        current file.
         """
-        if token in CALIBRATION_MEDIA:
-            return {}
         item, source = self.decode(token)
         root = self.roots[item.root]
         directory = (root / item.relative).parent.resolve()
@@ -199,9 +195,6 @@ class Library:
             raise ValueError("Folder is unavailable")
 
         folders, videos = [], []
-        if not relative:
-            for token, (name, duration) in CALIBRATION_MEDIA.items():
-                videos.append({"name": name, "id": token, "bytes": duration, "kind": "video"})
         for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), natural_name_key(path.name))):
             if entry.name.startswith("."):
                 continue
@@ -325,39 +318,6 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         command.extend(["-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1"])
     return command
 
-
-def calibration_command(duration: int, container: str, tv_output: bool) -> list[str]:
-    """Generate unique colour/tone pairs for unambiguous A/V measurement."""
-    markers = ((7, "red", 440), (11, "green", 880), (15, "blue", 1320)) if duration < 60 else \
-              ((10, "red", 440), (150, "green", 880), (290, "blue", 1320))
-    if container in {"mp3", "flv"}:
-        terms = "+".join("if(between(t\\,%d\\,%.2f)\\,0.75*sin(2*PI*%d*t)\\,0)" % (second, second + .35, frequency)
-                         for second, _colour, frequency in markers)
-        pulse = "aevalsrc=%s:s=44100:d=%d" % (terms, duration)
-        audio_command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", pulse,
-                "-ac", "2", "-c:a", "libmp3lame", "-b:a", "160k", "-write_xing", "0",
-                "-id3v2_version", "0", "-f", "mp3", "pipe:1"]
-        if container == "mp3":
-            return audio_command
-    width, height = (720, 480) if tv_output else (480, 272)
-    fps = "20" if container == "flv" else ("101/5" if tv_output else "201/10")
-    source = f"color=c=black:s={width}x{height}:r={fps}:d={duration}"
-    flash = ",".join("drawbox=x=0:y=0:w=iw:h=ih:color=%s:t=fill:enable='between(t,%.2f,%.2f)'" %
-                     (colour, second, second + .35) for second, colour, _frequency in markers)
-    command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
-            "-vf", flash, "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.0",
-            "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"), "-tune", "zerolatency",
-            "-b:v", "850k" if tv_output else "600k", "-maxrate", "950k" if tv_output else "700k",
-            "-bufsize", "1200k" if tv_output else "900k",
-            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0:cabac=1:weightp=0",
-            "-an", "-f", "h264", "pipe:1"]
-
-    if container == "flv":
-        at = command.index("-vf")
-        command[at:at] = ["-f", "lavfi", "-i", pulse, "-map", "0:v:0", "-map", "1:a:0"]
-        command[-4:] = ["-ac", "2", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "160k",
-                        "-flvflags", "no_duration_filesize", "-f", "flv", "pipe:1"]
-    return command
 
 class AppHandler(BaseHTTPRequestHandler):
     server: "AppServer"
@@ -547,9 +507,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 token = command.get("id")
                 if not isinstance(token, str) or len(token) > 1024:
                     raise ValueError("Invalid media id")
-                source = None if token in CALIBRATION_MEDIA else self.server.library.decode(token)[1]
+                source = self.server.library.decode(token)[1]
                 clean["id"] = token
-                clean["kind"] = "video" if source is None else ("audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video")
+                clean["kind"] = "audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video"
                 clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
                 clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
                 clean["start"] = max(0, min(86400, int(command.get("start", 0))))
@@ -662,11 +622,6 @@ class AppHandler(BaseHTTPRequestHandler):
         cached = self.server.metadata_cache.get(token)
         if cached is not None:
             return self.send_json(cached)
-        if token in CALIBRATION_MEDIA:
-            payload = {"a": [{"n": "0", "l": "und", "t": "1 kHz click"}], "s": [],
-                       "d": str(CALIBRATION_MEDIA[token][1])}
-            self.server.metadata_cache[token] = payload
-            return self.send_json(payload)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json", str(source)],
@@ -788,8 +743,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20") -> None:
-        calibration_duration = CALIBRATION_MEDIA.get(token, ("", 0))[1]
-        source = None if calibration_duration else self.server.library.decode(token)[1]
+        source = self.server.library.decode(token)[1]
         if not self.server.transcode_slots.acquire(blocking=False):
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
@@ -818,8 +772,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not subtitle_source.exists():
                     os.symlink(source, subtitle_source)
             process = subprocess.Popen(
-                (calibration_command(calibration_duration, container, tv_output) if calibration_duration else
-                 ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)),
+                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps),
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on
@@ -935,7 +888,12 @@ def main() -> None:
     server = AppServer((host, port), Library(roots))
     scheme = "https" if server.tls_context else "http"
     print(f"PSP Streamer ready at {scheme}://{host}:{port} (roots: {', '.join(map(str, roots))})")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

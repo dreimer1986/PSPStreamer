@@ -47,3 +47,12 @@ adapted source file psp-client/milkdrop_warp.c. Binary packages include
 MilkDrop2-license.txt. The PSP GU adapter and spectrum ring are new additions,
 not the original MilkDrop renderer or waveform implementation. No third-party
 presets are bundled. See docs/MILKDROP_PROTOTYPE.md for supported scope.
+
+Optional StreamerOC kernel plugin
+--------------------------------
+PLL recipe adapted from m-c/d's Experimental Overclock Stress Tester,
+Copyright (c) 2026 m-c/d, MIT License (psp-overclock/LICENSE).
+Source: https://github.com/mcidclan/psp-beyond-444mhz
+Revision: ce746451b724599332ba1b315952f003a20ada75.
+The standalone plugin is not linked into PSP Streamer; see its README for
+model restrictions, disabled defaults and hardware-validation requirements.

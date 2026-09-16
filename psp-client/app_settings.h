@@ -1,14 +1,14 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_COUNT};
+      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
     strcpy(s->host,server_host);strcpy(s->password,server_password);strcpy(s->preset,music_preset_file);
     int values[SET_COUNT]={0,server_port,0,server_https,!strcmp(language_code(),"de"),tv_ui_auto,
         selected_audio_track,selected_subtitle_track,selected_audio_quality,selected_video_fps,
-        playback_volume,audio_shuffle,0,music_preset_auto,music_preset_seconds,music_preset_fade_ms};
+        playback_volume,audio_shuffle,0,music_preset_auto,music_preset_seconds,music_preset_fade_ms,debug_enabled};
     memcpy(s->value,values,sizeof(values));
 }
 static void settings_apply(const AppSettings *s) {
@@ -19,6 +19,7 @@ static void settings_apply(const AppSettings *s) {
     selected_audio_quality=s->value[SET_QUALITY];selected_video_fps=s->value[SET_FPS];
     playback_volume=s->value[SET_VOLUME];audio_shuffle=s->value[SET_SHUFFLE];
     music_preset_auto=s->value[SET_AUTO];music_preset_seconds=s->value[SET_SECONDS];music_preset_fade_ms=s->value[SET_FADE];
+    debug_enabled=s->value[SET_DEBUG];
     server_auth_update();
 }
 static void settings_shell(const char *title) {
@@ -78,8 +79,8 @@ static int app_settings(void) {
     AppSettings original,draft;settings_capture(&original);draft=original;
     int selected=0,dirty=1,result=0;
     unsigned int old=PSP_CTRL_SELECT;unsigned long long repeat=0;
-    static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0};
-    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000};
+    static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0};
+    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1};
     while(1) {
         keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;
@@ -91,7 +92,7 @@ static int app_settings(void) {
                 else if(i==SET_PASSWORD)strcpy(value,draft.password[0]?"********":"-");
                 else if(i==SET_PRESET)snprintf(value,sizeof(value),"%.48s",draft.preset);
                 else if(i==SET_LANGUAGE)strcpy(value,draft.value[i]?"Deutsch":"English");
-                else if(i==SET_HTTPS||i==SET_TV||i==SET_SHUFFLE)snprintf(value,sizeof(value),"%s",tr(draft.value[i]?TXT_SETTINGS_ON:TXT_OFF));
+                else if(i==SET_HTTPS||i==SET_TV||i==SET_SHUFFLE||i==SET_DEBUG)snprintf(value,sizeof(value),"%s",tr(draft.value[i]?TXT_SETTINGS_ON:TXT_OFF));
                 else if(i==SET_AUTO)snprintf(value,sizeof(value),"%s",tr((TextId)(TXT_PRESET_AUTO_OFF+draft.value[i])));
                 else if(i==SET_FPS)strcpy(value,draft.value[i]?"23.976":"20");
                 else if(i==SET_QUALITY) {const char *q[]={"96k","128k","160k","V6","V5","V4","V3"};strcpy(value,q[draft.value[i]]);}

@@ -1,3 +1,9 @@
+# 0.1.32
+
+- Remove obsolete synthetic A/V calibration streams and their special routes.
+- Reject invalid/negative library root identifiers consistently.
+- Same server implementation as the ordinary Docker deployment.
+
 # 0.1.31
 
 - Persist web track/language, quality, frame rate and output preferences.

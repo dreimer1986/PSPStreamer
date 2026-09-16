@@ -48,6 +48,9 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_AUTO] = "Preset mode",
     [TXT_SETTINGS_SECONDS] = "Preset seconds",
     [TXT_SETTINGS_FADE] = "Fade ms",
+    [TXT_SETTINGS_DEBUG] = "Debug diagnostics",
+    [TXT_MUSIC_FINISHED] = "Music ended",
+    [TXT_VIDEO_FINISHED] = "Video ended",
 
     [TXT_TLS_FIRST] = "HTTPS certificate saved",
     [TXT_TLS_CHANGED] = "HTTPS certificate changed!",

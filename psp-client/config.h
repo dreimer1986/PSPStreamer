@@ -7,7 +7,7 @@
 /* 0 automatically selects the first saved PSP infrastructure profile. */
 #define PSP_NETWORK_PROFILE 0
 
-/* Diagnostic profile: lowers total H.264+PCM traffic by about one third. */
+/* Low-bandwidth H.264/MP3 profile for PSP Wi-Fi. */
 #define PSP_STREAMER_PROFILE "low"
 #define PSP_AUDIO_SAMPLE_RATE 44100
 

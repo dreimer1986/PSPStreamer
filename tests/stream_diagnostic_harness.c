@@ -11,6 +11,7 @@ struct SceNetInetPollfd { int fd,events,revents; };
 static int timed_socket=3,timed_running=1,timed_playing=1,playback_paused;
 static int mode,reads,fail_write;
 static int server_https;
+static int debug_enabled=1;
 static int offline_active,offline_reader_fd=-1;
 static int sceIoRead(int fd,void *data,int size){(void)fd;(void)data;(void)size;assert(0);return -1;}
 static int tls_recv(int fd,void *data,int size,int timeout) {(void)fd;(void)data;(void)size;(void)timeout;return -1;}
@@ -70,5 +71,8 @@ int main(void) {
     assert(stream_diag_save(-1320)==0 && strstr(report,"result=-1320"));
     assert(strstr(report,"reason=TCP EOF") && strstr(report,"received=1"));
     fail_write=1; assert(stream_diag_save(-1320)<0);
+    debug_enabled=0; report[0]=0;
+    assert(stream_diag_save(-1320)==0 && !report[0]);
+    mode=0; assert(timed_read(data,4)==1); /* same reads, no diagnostic I/O */
     return 0;
 }

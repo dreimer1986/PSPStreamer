@@ -6,7 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from psp_streamer.server import AppServer, Library, MediaItem, calibration_command, ffmpeg_command, parse_srt_cues
+from psp_streamer.server import AppServer, Library, MediaItem, ffmpeg_command, parse_srt_cues
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -77,8 +77,15 @@ class FlvIntegrationTests(unittest.TestCase):
                             str(ROOT / "tests/flv_parser.c"), "-o", str(parser)], check=True)
             for tv, duration in ((False, 2), (True, 2), (True, 300)):
                 movie = work / "test.flv"
-                command = calibration_command(duration, "flv", tv)
-                command.remove("-re")
+                source = work / 'fixture.mkv'
+                subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'lavfi', '-i',
+                                f'color=black:s=480x272:r=20:d={duration}', '-f', 'lavfi', '-i',
+                                f'sine=frequency=440:sample_rate=44100:duration={duration}',
+                                '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'flac', str(source)], check=True)
+                command = ffmpeg_command(source, 0, 'flv', tv_output=tv)
+                command.remove('-re')
+                at = command.index('-readrate_initial_burst')
+                del command[at:at+2]
                 movie.write_bytes(subprocess.check_output(command))
                 if duration == 2:
                     self.assert_main_cabac(movie)

@@ -5,7 +5,6 @@
 #include <pspnet_apctl.h>
 #include <pspnet_inet.h>
 #include <pspdisplay.h>
-#include <pspjpeg.h>
 #include <pspaudio.h>
 #include <pspaudiocodec.h>
 #include <psppower.h>
@@ -367,6 +366,8 @@ static int receiver_visible;
 static unsigned int receiver_flash_button;
 static int stream_start_seconds;
 static int download_before_play;
+/* Opt-in diagnostics; normal errors and recovery remain active. */
+static int debug_enabled;
 static int resume_pending;
 static char resume_media_id[ID_SIZE];
 static int seek_requested;
@@ -417,6 +418,7 @@ static void load_playback_settings(void) {
                 }
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
             else if (!strncmp(line,"https=",6)) server_https=atoi(line+6)!=0;
+            else if (!strncmp(line,"debug=",6)) debug_enabled=!strcmp(line+6,"1");
             else if (!strncmp(line, "server_password=", 16)) {
                 strncpy(server_password,line+16,sizeof(server_password)-1);
                 server_password[sizeof(server_password)-1]=0;
@@ -459,6 +461,7 @@ static int save_playback_settings(void) {
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
+    length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     if(length<0 || length>=(int)sizeof(data))return -1;
     file = sceIoOpen(SETTINGS_PATH ".tmp", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0600);
     if(file<0)return file;
@@ -1230,9 +1233,8 @@ static void receiver_hud(int frames) {
     playback_hud(frames, playback_paused);
 }
 
-/* The JPEG entry points are visible in user mode, but their AV backend is
- * normally not resident for a homebrew game. Use the firmware Utility API;
- * direct flash-PRX loading is not permitted in user mode. */
+/* Load firmware AV dependencies once through the Utility API. Keep the
+ * proven MPEG module order; direct flash-PRX loading is not a user-mode API. */
 static int load_video_modules(void) {
     int result;
     /* Firmware AV modules remain resident for this application session.
@@ -1249,50 +1251,6 @@ static int load_video_modules(void) {
     return 0;
 }
 
-/* Superseded software/YUV path.  Firmware AVC writes straight to VRAM, so
- * compiling this code would only reserve a large staging framebuffer. */
-#if 0
-static void present_decoded_frame(void) {
-    unsigned char *vram = (unsigned char *)0x44000000; /* uncached VRAM alias */
-    int row;
-    for (row = 0; row < VIDEO_HEIGHT; row++) {
-        memcpy(vram + row * VIDEO_STRIDE * 4,
-               decoded_frame + row * VIDEO_WIDTH * 4,
-               VIDEO_WIDTH * 4);
-    }
-    sceDisplaySetFrameBuf((void *)0x04000000, VIDEO_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888,
-                          PSP_DISPLAY_SETBUF_NEXTVSYNC);
-    sceDisplayWaitVblankStart();
-}
-
-static unsigned char clamp_byte(int value) {
-    if (value < 0) return 0;
-    if (value > 255) return 255;
-    return (unsigned char)value;
-}
-
-static void present_yuv420(const unsigned char *y, const unsigned char *u,
-                           const unsigned char *v, int y_stride, int uv_stride,
-                           int width, int height) {
-    int row, column;
-    if (width != VIDEO_WIDTH || height != VIDEO_HEIGHT) return;
-    for (row = 0; row < VIDEO_HEIGHT; row++) {
-        unsigned char *destination = decoded_frame + row * VIDEO_WIDTH * 4;
-        for (column = 0; column < VIDEO_WIDTH; column++) {
-            int yy = (int)y[row * y_stride + column] - 16;
-            int uu = (int)u[(row >> 1) * uv_stride + (column >> 1)] - 128;
-            int vv = (int)v[(row >> 1) * uv_stride + (column >> 1)] - 128;
-            int base = yy < 0 ? 0 : 298 * yy;
-            destination[column * 4] = clamp_byte((base + 409 * vv + 128) >> 8);
-            destination[column * 4 + 1] = clamp_byte((base - 100 * uu - 208 * vv + 128) >> 8);
-            destination[column * 4 + 2] = clamp_byte((base + 516 * uu + 128) >> 8);
-            destination[column * 4 + 3] = 0xFF;
-        }
-    }
-    sceKernelDcacheWritebackInvalidateAll();
-    present_decoded_frame();
-}
-#endif
 
 #include "timed_stream.h"
 
@@ -1322,13 +1280,13 @@ static int video_staging_bytes;
  * audio PTS, like PPA's show thread, while continuing to process controls. */
 static int prepare_timed_video(TimedPacket *packet) {
     int result, cue_ms, saved_position = playback_position_ms;
-    unsigned long long start = sceKernelGetSystemTimeWide();
+    unsigned long long start = debug_enabled ? sceKernelGetSystemTimeWide() : 0;
     video_watch_ping("ME lock for video");
     if (!codec_enter()) return -1324;
     video_watch_ping("AVC decode/CSC");
     result = h264_hw_decode_annexb(packet->data, packet->size, video_staging);
     codec_leave();
-    sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
+    if(debug_enabled) sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     if (result < 0) { video_step = h264_hw_last_step(); return result; }
     if (result > 0) {
         video_watch_ping("subtitle/overlay");
@@ -1348,94 +1306,10 @@ static int prepare_timed_video(TimedPacket *packet) {
         playback_position_ms = saved_position;
         hardware_decoder_frames++;
     }
-    sync_prepare_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
+    if(debug_enabled) sync_prepare_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     return result;
 }
 
-/* Receive concatenated JPEG images, decode each with the PSP firmware's
- * MJPEG unit, and point the LCD straight at the decoded RGBA frame.  This is
- * intentionally an initial video-only transport: it establishes actual
- * moving pictures before adding the considerably more complex H.264/AAC
- * demux and A/V clock path. */
-#if 0
-static int play_mjpeg(const char *media_id) {
-    struct sockaddr_in server;
-    char request[2048], header[4096], receive_buffer[4096], *body;
-    int socket_fd, header_size = 0, received, i, jpeg_size = 0;
-    int in_jpeg = 0, previous = 0, frames = 0, result;
-
-    result = load_video_modules();
-    if (result < 0) return result;
-    video_step = "TCP connection";
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mjpeg HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", media_id, server_host, server_auth_header);
-    socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) return socket_fd;
-    if (prepare_server(&server) < 0) { connection_close(socket_fd); return -1206; }
-    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
-        connection_close(socket_fd); return -1201;
-    }
-    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) {
-        connection_close(socket_fd); return -1202;
-    }
-    while (header_size < (int)sizeof(header) - 1) {
-        received = (int)connection_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
-        if (received <= 0) { connection_close(socket_fd); return -1203; }
-        header_size += received;
-        header[header_size] = '\0';
-        body = strstr(header, "\r\n\r\n");
-        if (body) break;
-    }
-    if (!body || !strstr(header, " 200 ")) { video_step = "HTTP response"; connection_close(socket_fd); return -1204; }
-    video_step = "JPEG-Decoder";
-    result = sceJpegInitMJpeg();
-    if (result < 0) { connection_close(socket_fd); return result; }
-    result = sceJpegCreateMJpeg(VIDEO_WIDTH, VIDEO_HEIGHT);
-    if (result < 0) { sceJpegFinishMJpeg(); connection_close(socket_fd); return result; }
-
-    /* The bytes following the HTTP header are the first JPEG bytes. */
-    received = header_size - (int)(body + 4 - header);
-    if (received > 0) {
-        if (received > (int)sizeof(receive_buffer)) received = sizeof(receive_buffer);
-        memcpy(receive_buffer, body + 4, received);
-    }
-    while (1) {
-        if (received <= 0) {
-            received = (int)connection_recv(socket_fd, receive_buffer, sizeof(receive_buffer), 0);
-            if (received <= 0) break;
-        }
-        for (i = 0; i < received; i++) {
-            unsigned char byte = (unsigned char)receive_buffer[i];
-            if (!in_jpeg) {
-                if (previous == 0xFF && byte == 0xD8) {
-                    jpeg_buffer[0] = 0xFF; jpeg_buffer[1] = 0xD8;
-                    jpeg_size = 2; in_jpeg = 1;
-                }
-            } else if (jpeg_size < JPEG_BUFFER_BYTES) {
-                jpeg_buffer[jpeg_size++] = byte;
-                if (previous == 0xFF && byte == 0xD9) {
-                    video_step = "JPEG-Dekodierung";
-                    result = sceJpegDecodeMJpeg(jpeg_buffer, jpeg_size, decoded_frame, 0);
-                    if (result >= 0) {
-                        sceKernelDcacheWritebackInvalidateAll();
-                        present_decoded_frame();
-                        frames++;
-                    }
-                    in_jpeg = 0; jpeg_size = 0;
-                }
-            } else {
-                in_jpeg = 0; jpeg_size = 0;
-            }
-            previous = byte;
-        }
-        received = 0;
-    }
-    sceJpegDeleteMJpeg();
-    sceJpegFinishMJpeg();
-    connection_close(socket_fd);
-    if (!frames) video_step = "no JPEG frames";
-    return frames ? frames : -1205;
-}
-#endif
 
 #include "milkdrop_wave.h"
 static void audio_measure_pcm(const short *pcm, int frames) {
@@ -1515,9 +1389,10 @@ static int audio_output_thread(SceSize args, void *argp) {
         /* Keep PPA's submitted-block clock, measured separately from the
          * hardware's remaining sample count in the diagnostic trace. */
         audio_current_timestamp_ms = audio_block_timestamp_ms[block];
-        if (have_previous_pts && audio_current_timestamp_ms <= previous_pts)
-            sync_audio_pts_errors++;
-        previous_pts = audio_current_timestamp_ms; have_previous_pts = 1;
+        if(debug_enabled) {
+            if (have_previous_pts && audio_current_timestamp_ms <= previous_pts) sync_audio_pts_errors++;
+            previous_pts = audio_current_timestamp_ms; have_previous_pts = 1;
+        }
         audio_clock_started = 1;
         sceKernelDcacheWritebackRange(audio_samples + block * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
         if (sceAudioOutputBlocking(channel, PSP_AUDIO_VOLUME_MAX * playback_volume / 30,
@@ -2315,13 +2190,13 @@ static int play_h264(const char *media_id) {
                     video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
                 if (!sync) continue;
                 if (sync == 1) {
-                    unsigned long long copy_start = sceKernelGetSystemTimeWide();
+                    unsigned long long copy_start = debug_enabled ? sceKernelGetSystemTimeWide() : 0;
                     memcpy((void *)0x44000000, video_staging, video_staging_bytes);
                     video_controls_present(paused);
                     result = sceDisplaySetFrameBuf((void *)0x04000000,
                         tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
                         PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
-                    copy_us = (unsigned int)(sceKernelGetSystemTimeWide() - copy_start);
+                    if(debug_enabled) copy_us = (unsigned int)(sceKernelGetSystemTimeWide() - copy_start);
                     if (result < 0) { video_step = "Video display"; break; }
                     if (!video_first_presented) {
                         video_only_tick = sceKernelGetSystemTimeWide();
@@ -2753,9 +2628,9 @@ static void show(int selected) {
     else gui_text(376, 57, 0x00FFFFFF, "%s", tr(TXT_WAITING));
     if (item_count) gui_text(376, 76, 0x008A9BAA, "%s", items[selected].is_folder ? tr(TXT_FOLDER) : (items[selected].is_audio ? tr(TXT_MUSIC) : tr(TXT_VIDEO)));
     gui_text(376, 90, 0x008A9BAA, tr(TXT_ENTRIES), item_count);
-    gui_text(376, 104, 0x008A9BAA, tr(TXT_PROFILE), active_network_profile);
-    if (hardware_runtime_result == 0) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
-    else if (hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
+    if(debug_enabled) gui_text(376, 104, 0x008A9BAA, tr(TXT_PROFILE), active_network_profile);
+    if (hardware_runtime_result == 0 && debug_enabled) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
+    else if (hardware_runtime_result != 0 && hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
     gui_text(376, 138, 0x00FFFFFF, "%.11s", status);
     /* The tiny receiver sidebar intentionally clips ordinary status copy.
      * Decoder diagnostics need their complete signed hex code, however. */
@@ -2990,7 +2865,7 @@ int main(void) {
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old_buttons & PSP_CTRL_CIRCLE)) {
             offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
         }
-        if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
+        if (debug_enabled && (pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
             (old_buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) {
@@ -3100,7 +2975,9 @@ int main(void) {
                         if(!items[next].is_folder && items[next].is_audio==items[selected].is_audio) break;
                 }
                 if (next < 0) {
-                    if (items[selected].is_audio)
+                    if(!debug_enabled)
+                        snprintf(status,sizeof(status),"%s",tr(items[selected].is_audio?TXT_MUSIC_FINISHED:TXT_VIDEO_FINISHED));
+                    else if (items[selected].is_audio)
                         snprintf(status, sizeof(status), tr(TXT_MUSIC_ENDED), audio_state);
                     else
                         snprintf(status, sizeof(status), tr(TXT_VIDEO_ENDED), result);

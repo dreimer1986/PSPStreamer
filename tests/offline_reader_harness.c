@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <netinet/in.h>
 #include "flv.h"
+#define DEBUG_DIAG(statement) do { statement } while(0)
 typedef int SceSize;
 typedef long long SceOff;
 #define PSP_O_RDONLY 0

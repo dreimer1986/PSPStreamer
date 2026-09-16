@@ -49,6 +49,9 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_AUTO] = "Preset-Modus",
     [TXT_SETTINGS_SECONDS] = "Preset-Sekunden",
     [TXT_SETTINGS_FADE] = "Überblendung ms",
+    [TXT_SETTINGS_DEBUG] = "Debug-Diagnose",
+    [TXT_MUSIC_FINISHED] = "Musik beendet",
+    [TXT_VIDEO_FINISHED] = "Video beendet",
 
     [TXT_TLS_FIRST] = "HTTPS-Zertifikat gespeichert",
     [TXT_TLS_CHANGED] = "HTTPS-Zertifikat geändert!",
