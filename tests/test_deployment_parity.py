@@ -1,11 +1,28 @@
 """Prevent Docker and Home Assistant copies from silently diverging."""
 from pathlib import Path
+import struct
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class DeploymentParityTests(unittest.TestCase):
+    def test_home_assistant_artwork(self):
+        app = ROOT / "psp_streamer_addon"
+        self.assertTrue((app / "config.yaml").is_file())
+        for name in ("icon.png", "logo.png"):
+            data = (app / name).read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(data[12:16], b"IHDR")
+            width, height = struct.unpack(">II", data[16:24])
+            self.assertGreater(width, 0)
+            self.assertGreater(height, 0)
+            self.assertLess(len(data), 65536)
+            if name == "icon.png":
+                self.assertEqual((width, height), (128, 128))
+        self.assertEqual((app / "logo.png").read_bytes(),
+                         (ROOT / "psp-client/assets/icon0.png").read_bytes())
+
     def test_source_and_web_assets_match(self):
         for directory in ("psp_streamer", "static"):
             original = ROOT / directory

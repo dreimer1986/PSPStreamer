@@ -1,6 +1,15 @@
 # PSP Streamer Home Assistant Add-on
 
+![PSP Streamer](logo.png)
+
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
+
+The app includes a square `icon.png` for Home Assistant and a `logo.png`
+reusing the original PSP application artwork. Both files live beside
+`config.yaml` and are discovered automatically; no configuration option is
+needed. After these files are published, refresh the app store repositories
+and reload the browser if the previous artwork is still cached. This artwork
+change does not require rebuilding the server or updating the PSP client.
 
 Mount or place the library under Home Assistant's media directory. SMB credentials stay outside this add-on.
 
