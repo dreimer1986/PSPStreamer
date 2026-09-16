@@ -68,7 +68,11 @@ class SettingsTests(unittest.TestCase):
                     return response.status, json.loads(data) if data else None
                 try:
                     status, data = request("GET", "/api/settings")
-                    self.assertEqual(data, {"password_editable": True, "password_set": False})
+                    self.assertTrue(data["password_editable"])
+                    self.assertFalse(data["password_set"])
+                    self.assertEqual(data["acceleration"]["mode"], "software")
+                    self.assertEqual(request("POST", "/api/settings/acceleration", {"mode":"auto", "device":"/dev/dri/renderD128"})[0], 200)
+                    self.assertEqual(request("GET", "/api/settings")[1]["acceleration"]["mode"], "auto")
                     status, _ = request("POST", "/api/settings/password", {"password": "first"}, {"Origin": "https://evil.invalid"})
                     self.assertEqual(status, 403)
                     self.assertEqual(request("POST", "/api/settings/password", {"password": "first"})[0], 200)

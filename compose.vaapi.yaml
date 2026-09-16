@@ -1,0 +1,7 @@
+# docker compose -f compose.yaml -f compose.vaapi.yaml up -d --build
+services:
+  psp-streamer:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      PSP_STREAMER_ACCELERATION: "${PSP_STREAMER_ACCELERATION:-auto}"

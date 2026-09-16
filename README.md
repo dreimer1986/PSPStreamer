@@ -1,5 +1,9 @@
 # PSP Streamer
 
+Optional **Intel/AMD VA-API and NVIDIA NVENC video encoding** is available in
+both normal Docker and the Home Assistant app. Software remains the default;
+see [hardware encoding setup and limitations](docs/HARDWARE_ENCODING.md).
+
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 Baseline and MP3 audio, both decoded locally by the PSP.
 
 Video profiles are 480×272 for LCD and 720×480 for component TV output, with 44.1 kHz MP3. The encoder currently produces 20 fps to limit decoder workload; that number is **not a playback clock or an A/V calibration value**. Text subtitles and LCD PGS bitmap subtitles use native PSP overlays. Video and common music formats use the same MP3 DAC path; music playback includes a receiver UI with live stereo VU meters and a real 12-band PCM spectrum display.

@@ -4,6 +4,16 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Since **0.1.27**, optional GPU encoding is available through `acceleration`
+(`software`, `auto`, `vaapi`, `nvenc`) and `vaapi_device` (normally
+`/dev/dri/renderD128`). Software remains the default. Intel and Mesa VA-API
+drivers are included; the app requests GPU access. For an Intel NUC, try `auto`
+and check **Server settings → Last video encoder** in the web UI after starting
+a video. Restart after changing HA options. NVIDIA requires additional host
+support and is not guaranteed on stock HA OS. See the repository's
+[hardware encoding guide](https://github.com/dreimer1986/PSPStreamer/blob/master/docs/HARDWARE_ENCODING.md)
+for Docker equivalents, probing, fallback and limitations. No PSP update is needed.
+
 The app includes a square `icon.png` for Home Assistant and a `logo.png`
 reusing the original PSP application artwork. Both files live beside
 `config.yaml` and are discovered automatically; no configuration option is
