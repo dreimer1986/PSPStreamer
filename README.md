@@ -405,7 +405,10 @@ state. Try `eel-memory-orbit-demo.milk`, `eel-grid-logic-demo.milk` and
 fixed-function baseline: try `external-texture-demo.milk` together with
 `presets/textures/checker.png`. See the compatibility guide for supported
 dimensions and the `psp_texture_0`–`psp_texture_3` extension. Shaders and their
-arbitrary texture sampling remain excluded. Building the PSP client now also
+arbitrary texture sampling remain excluded. Numbered warp/composite shader
+source is silently skipped so supported non-shader parts can run. Other preset
+errors still report normally; shader-heavy presets can look different or blank.
+Try `shader-fallback-demo.milk` to check this fallback. Building the PSP client now also
 requires PSP libpng and zlib (host rendering tests require their host libraries).
 During music, **Circle** opens the in-app preset browser: Up/Down selects,
 L/R pages, Cross applies, Circle cancels. The chosen filename is saved as

@@ -38,6 +38,16 @@ static int md_file_error(MdFileError *e, int code, int line, const char *key) {
     snprintf(e->key, sizeof(e->key), "%.39s", key);
     return code;
 }
+/* Desktop HLSL is intentionally opaque on the fixed-function PSP GE.
+ * Match numbered source records, not arbitrary warp/comp-prefixed settings. */
+static int md_shader_source(const char *key) {
+    const char *p;
+    if(!strncmp(key,"warp_",5) || !strncmp(key,"comp_",5)) p=key+5;
+    else return 0;
+    if(*p<'1' || *p>'9') return 0;
+    while(*p>='0' && *p<='9') p++;
+    return !*p;
+}
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     static const char *keys[] = {"zoom", "rot", "warp", "fWarpAnimSpeed", "fWarpScale",
                                  "fDecay", "wave_r", "wave_g", "wave_b"};
@@ -133,11 +143,23 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         equal = strchr(key, '=');
         if (!equal) { result = md_file_error(error, MD_FILE_INVALID, number, key); goto done; }
         *equal = 0; key = md_trim(key); value = md_trim(equal+1);
+        /* MilkDrop 2 writes these numeric headers before [preset00].
+         * Accept the envelope without claiming its shader capabilities. */
+        if(!strcmp(key,"MILKDROP_PRESET_VERSION") || !strcmp(key,"PSVERSION") ||
+           !strcmp(key,"PSVERSION_WARP") || !strcmp(key,"PSVERSION_COMP")) {
+            const char *p=value;
+            while(*p>='0' && *p<='9') p++;
+            if(p==value || *p || strlen(value)>9) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
+            }
+            continue;
+        }
         if (!strcmp(key,"presetName")) {
             if (named || !*value) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
             named=1; section=1; next.legacy=1; continue;
         }
         if (!section) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
+        if(md_shader_source(key)) continue;
         if(!strncmp(key,"psp_texture_",12)) {
             int slot=key[12]-'0';
             size_t len=strlen(value);

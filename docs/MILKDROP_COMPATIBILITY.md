@@ -115,6 +115,30 @@ Still excluded: warp/composite shaders, shader blur stages, arbitrary shader
 texture sampling, random texture selection, animated textures and desktop
 image formats other than PNG. No DirectX or desktop shader execution is involved.
 
+### Shader preset fallback
+
+The PSP deliberately skips numbered `warp_1`, `warp_2`, … and `comp_1`,
+`comp_2`, … shader source records without a warning. Numeric
+`MILKDROP_PRESET_VERSION`, `PSVERSION`, `PSVERSION_WARP` and `PSVERSION_COMP`
+headers are accepted, including before `[preset00]`. All supported non-shader
+fields still run through the existing fixed-function renderer. The result can
+look very different, or effectively blank, if the desktop preset relies on
+shaders. This is not shader emulation or a shader-performance benchmark.
+
+Unknown non-shader fields, formula errors, invalid textures and malformed
+numeric headers still report errors. Existing file/line/encoding limits remain
+in force, even on skipped shader records. A preset containing only headers and
+shader code still fails the empty-preset check. The legacy `fShader` color
+effect is not HLSL source and retains its existing validation.
+
+Rationale: MilkDrop 2's `state.cpp` exports the numbered source and shader
+version headers, while `utility.cpp` loads `D3DXCompileShader`. PSP GU instead
+provides fixed texture/blend operations, not an HLSL execution target. A general
+CPU interpreter would introduce substantial per-pixel work into music playback;
+it has not been implemented or benchmarked. References:
+[MilkDrop authoring](https://github.com/clangen/milkdrop2-musikcube/blob/master/resources/Milkdrop2/docs/milkdrop_preset_authoring.html),
+[PSPSDK GU](https://pspdev.github.io/pspsdk/group__GU.html).
+
 ## External PNG textures: baseline
 
 This is an explicit PSP extension, not a claim to execute desktop shader

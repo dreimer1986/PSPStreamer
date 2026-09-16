@@ -290,12 +290,30 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.decay, .97, places=5)
 
     def test_unsupported_fields_are_not_ignored(self):
-        for key in ("per_point_1", "warp_1", "comp_1",
+        for key in ("per_point_1", "warp_bad", "comp_1_typo", "warp_0",
                     "unknown", "wavecode_0_unknown"):
             result, _, error = self.parse(("[preset00]\nzoom=1\n" + key + "=0\n").encode())
             self.assertEqual(result, 3)
             self.assertEqual(error.line, 3)
             self.assertEqual(error.key.decode(), key)
+
+    def test_shader_fallback_preserves_nonshader_preset(self):
+        self.assertEqual(self.parse((ROOT / 'psp-client/presets/shader-fallback-demo.milk').read_bytes())[0], 0)
+        base = b'[preset00]\nzoom=1.02\nnWaveMode=0\nper_frame_1=rot=sin(time)*0.1;\n'
+        headers = b'MILKDROP_PRESET_VERSION=201\nPSVERSION=3\nPSVERSION_WARP=2\nPSVERSION_COMP=3\n'
+        shaders = b'warp_1=`shader_body {\nwarp_2=`ret=tex2D(sampler_main,uv).xyz;\nwarp_3=`}\ncomp_1=`invalid HLSL deliberately ignored\n'
+        code, expected, _ = self.parse(headers + base)
+        self.assertEqual(code, 0)
+        code, actual, error = self.parse(headers + base + shaders)
+        self.assertEqual(code, 0, error.key)
+        self.assertEqual(bytes(actual), bytes(expected))
+        for suffix in (b'unknown=1\n', b'per_frame_2=rot=unknown_function(time);\n',
+                       b'psp_texture_0=../bad.png\n', b'zoom=nan\n'):
+            self.assertNotEqual(self.parse(headers + base + shaders + suffix)[0], 0)
+        for value in (b'abc', b'-1', b'2junk', b''):
+            self.assertEqual(self.parse(b'PSVERSION='+value+b'\n'+base)[0], 2)
+        self.assertNotEqual(self.parse(headers+b'[preset00]\n'+shaders)[0], 0)
+        self.assertEqual(self.parse(base+b'warp_1='+b'x'*2048)[0], 2)
 
     def test_invalid_numbers_duplicates_and_sections(self):
         for value in ("nan", "inf", "-inf", "1e99", "1e-999", "", "1 + bass",
