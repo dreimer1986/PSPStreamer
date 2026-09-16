@@ -17,6 +17,13 @@ static void stream_diag_reset(void) {
 /* Preserve errors that the shared legacy stream_recv helper intentionally
  * collapses to EOF. Only the FLV reader uses this diagnostic wrapper. */
 static int timed_recv(unsigned char *data,int size) {
+    if(server_https) {
+        int n=tls_recv(timed_socket,data,size,100);
+        stream_diag.recv_result=n;
+        if(n>0) {stream_diag.bytes+=n;stream_diag.last_data_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL);}
+        else if(n!=-2) {stream_diag.reason=n?"TLS receive error":"TLS EOF";stream_diag.socket_error=n;}
+        return n;
+    }
     struct SceNetInetPollfd p={timed_socket,SCE_NET_INET_POLLIN,0};
     int result=sceNetInetPoll(&p,1,100);
     stream_diag.poll_result=result; stream_diag.poll_events=p.revents;

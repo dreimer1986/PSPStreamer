@@ -4,6 +4,7 @@
 #include <string.h>
 typedef unsigned int SceSize;
 static int remote_control_sequence, create_failure, start_failure;
+static int server_https;
 static int deleted, joined, index_reply, count_reply, count_events;
 static int events[16], seconds_seen[16], cancel_during_http, fail_http_once;
 static const char *replies[16];

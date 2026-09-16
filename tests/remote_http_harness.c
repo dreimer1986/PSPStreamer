@@ -29,6 +29,11 @@ static unsigned long long sceKernelGetSystemTimeWide(void) {
     return (unsigned long long)now.tv_sec*1000000+now.tv_nsec/1000;
 }
 static int have_cached_server_address=1,server_port;
+static int server_https;
+static int tls_open(int fd,const char *host,int port,volatile int *running,int timeout) {(void)fd;(void)host;(void)port;(void)running;(void)timeout;return -1;}
+static int tls_send(int fd,const void *data,int size,volatile int *running,int timeout) {(void)fd;(void)data;(void)size;(void)running;(void)timeout;return -1;}
+static int tls_recv(int fd,void *data,int size,int timeout) {(void)fd;(void)data;(void)size;(void)timeout;return -1;}
+#define connection_close sceNetInetClose
 static struct in_addr cached_server_address;
 static const char *server_host="localhost";
 static const char *server_auth_header="";

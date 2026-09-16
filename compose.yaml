@@ -7,7 +7,14 @@ services:
       MEDIA_ROOTS: /media
       MAX_TRANSCODES: "4"
       PSP_STREAMER_PASSWORD: "${PSP_STREAMER_PASSWORD:-}"
+      PSP_STREAMER_SETTINGS_DIR: /data
+      PSP_STREAMER_TLS_CERT: "${PSP_STREAMER_TLS_CERT:-}"
+      PSP_STREAMER_TLS_KEY: "${PSP_STREAMER_TLS_KEY:-}"
     volumes:
+      - streamer-settings:/data
       # SMB mount on the host; exposed read-only inside the container.
       - ${MEDIA_ROOT_PATH:-/media}:/media:ro
     restart: unless-stopped
+
+volumes:
+  streamer-settings:

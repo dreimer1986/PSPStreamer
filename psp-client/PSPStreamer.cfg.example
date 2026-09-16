@@ -1,10 +1,18 @@
-# Copy as ms0:/PSP/SYSTEM/PSPStreamer.cfg and change the endpoint.
+# Copy as ms0:/PSP/SYSTEM/PSPStreamer.cfg or use SELECT in the app browser.
 # A DNS/DynDNS name or an IPv4 address is accepted.
 server=http://streamer.example.net:8091
 port=8091
+server_password=
+# 0 = HTTP (default), 1 = HTTPS with automatic certificate-change notices.
+https=0
 audio=0
 subtitle=-1
 quality=2
+video_fps=20
+music_preset=active.milk
+preset_auto=0
+preset_seconds=60
+preset_fade_ms=1500
 volume=24
 shuffle=0
 language=en

@@ -1,6 +1,9 @@
 # On-device settings, deployment parity and HTTPS review
 
-Status: design review, not an implemented settings screen or TLS client.
+Historical design review. Superseded by [the implemented settings/TLS
+workflow](HTTPS_AND_SETTINGS.md). The user explicitly chose automatic
+certificate acceptance and change notices instead of CA/pin enforcement.
+The proposals below describe the earlier review, not current functionality.
 
 ## Settings without a PC
 

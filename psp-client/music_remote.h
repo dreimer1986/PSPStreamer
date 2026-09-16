@@ -53,7 +53,7 @@ static int music_remote_start(void) {
     music_remote_seconds = -1;
     music_remote_running = 1;
     music_remote_thread_id = sceKernelCreateThread("PSPStreamerMusicRemote",
-        music_remote_worker, 0x40, 0x4000, 0, NULL);
+        music_remote_worker, 0x40, server_https?0x10000:0x4000, 0, NULL);
     if (music_remote_thread_id < 0) {
         result = music_remote_thread_id;
         music_remote_thread_id = -1; music_remote_running = 0;

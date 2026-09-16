@@ -16,3 +16,6 @@ psp-client/third_party/
 
 # Local configuration
 .env
+certificates/
+*.pem
+*.key

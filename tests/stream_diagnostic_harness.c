@@ -10,6 +10,8 @@ typedef int SceUID;
 struct SceNetInetPollfd { int fd,events,revents; };
 static int timed_socket=3,timed_running=1,timed_playing=1,playback_paused;
 static int mode,reads,fail_write;
+static int server_https;
+static int tls_recv(int fd,void *data,int size,int timeout) {(void)fd;(void)data;(void)size;(void)timeout;return -1;}
 static unsigned long long tick;
 static char report[1024];
 static unsigned long long sceKernelGetSystemTimeWide(void) { return tick; }

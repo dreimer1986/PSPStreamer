@@ -160,12 +160,16 @@ The first time a playback option is saved, the app creates this file:
 ms0:/PSP/SYSTEM/PSPStreamer.cfg
 ```
 
-The server is configurable without recompiling. Edit the file on a PC:
+The server is configurable without recompiling or a PC: press **Select in the
+file browser** for Settings. Up/Down selects, Left/Right changes values,
+Cross opens text/number entry, Start saves and Circle cancels. TV startup mode
+applies on the next app launch. You can also edit the config file directly:
 
 ```ini
 server=streamer.example.net
 port=8091
 server_password=
+https=0
 audio=0
 subtitle=-1
 quality=2
@@ -180,7 +184,17 @@ language=en
 tv_ui=off
 ```
 
-`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` prefix is also allowed. The PSP resolves the name for every new connection. `audio` and `subtitle` store the preferred video-track indices (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k`, `3=V6`, `4=V5`, `5=V4`, `6=V3` MP3; `volume` ranges from `0` to `30`; and `shuffle=1` randomly continues with another audio file from the current folder (`0` keeps its listed order).
+`server` accepts an IPv4 address or DNS/DynDNS name; an `http://` or `https://`
+prefix is also allowed in the file. `https=0` selects HTTP, `https=1` TLS;
+when both are present the last setting wins. `port` is explicit in either mode.
+Enter just the hostname/IP in the app's Server host field, not a URL.
+DNS is refreshed by library/media setup; remote polling uses that cached address.
+`audio` (0–7) and `subtitle` (-1–31) store preferred video-track indices
+(`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k`,
+`3=V6`, `4=V5`, `5=V4`, `6=V3` MP3; `volume` ranges from `0` to `30`;
+`shuffle=1` randomly continues with another audio file from the current folder
+(`0` keeps its listed order). See [settings and HTTPS](docs/HTTPS_AND_SETTINGS.md)
+for text entry, password changes, certificates and deployment examples.
 
 MilkDrop automation: `preset_auto=0` disables automatic changes (default);
 `1` selects in order, `2` randomly and `3` randomly weighted by each preset's
@@ -408,14 +422,16 @@ redistributing binaries containing the prototype.
 
 ### One shared password (server/HA app 0.1.24)
 
-Set the HA app option `password`, or set `PSP_STREAMER_PASSWORD` in the server's
-environment (also supported by `compose.yaml`). Restart the server after a
-change. All GET/POST routes, including media, metadata, subtitles, the website
+Set the HA app option `password`, or use **Server settings** in the Docker WebUI.
+`PSP_STREAMER_PASSWORD` bootstraps Docker; a saved WebUI password takes precedence
+and survives restarts in the `/data` volume. HA still manages its password via
+its app options and requires a restart after changes there.
+All GET/POST routes, including media, metadata, subtitles, the website
 and remote control, require authentication when the password is nonempty.
 An empty password preserves unauthenticated LAN use; it is **not safe for WAN**.
 
-Put the identical password in `server_password=` in
-`ms0:/PSP/SYSTEM/PSPStreamer.cfg` and restart the PSP app. Use a single-line
+Put the identical password in the PSP's Settings screen or `server_password=` in
+`ms0:/PSP/SYSTEM/PSPStreamer.cfg` (restart after manual file edits). Use a single-line
 password of at most 128 UTF-8 bytes; a long random ASCII password is easiest to
 enter consistently. The client preserves this setting when saving volume or
 other preferences. The password is stored in plaintext on the Memory Stick.
@@ -428,18 +444,16 @@ work. Browser control commands require same-origin JSON. Protected responses
 are marked non-cacheable. Clear the browser's saved authentication or restart
 its session after changing passwords.
 
-**A password is not transport encryption.** This PSP client still speaks HTTP;
-Basic credentials are only Base64 encoded and can be read/replayed on an
-untrusted path ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). Do not expose
-port 8091 directly to the Internet. For portable use, put the PSP behind a
-VPN-capable router/hotspot and reach the server over that tunnel. A public
-browser endpoint needs HTTPS and a hardened reverse proxy with rate limiting;
-preserve Host and Authorization headers and keep the HTTP backend private.
-HTTPS at the browser proxy alone does not encrypt a PSP's separate HTTP path.
-This change adds access control, not native PSP TLS or Internet-service hardening.
+**A password is not transport encryption.** HTTP remains available and is the
+default. Basic credentials are only Base64 encoded on HTTP
+([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). Optional PSP HTTPS now covers
+media, subtitles, metadata and remote polling. It automatically records and
+accepts server certificates, showing a notice when they change, as requested
+for this project. This is encrypted transport, **not verified server identity**:
+CA trust, hostname and expiration are not enforced. An active interceptor can
+present a replacement certificate and receive credentials. No silent downgrade
+to HTTP occurs. Use a trusted/VPN path when that risk is unacceptable.
 
-The [settings, deployment parity and HTTPS review](docs/SETTINGS_TLS_REVIEW.md)
-records the proposed on-device settings/WebUI password workflow and TLS trust
-model. These interfaces and native PSP HTTPS are not implemented yet. Docker
-and HA media sources/web assets are checked for equality in the test suite;
-both images include mkvtoolnix for MKV PGS subtitle extraction.
+See [HTTPS and settings setup](docs/HTTPS_AND_SETTINGS.md). Browser HTTPS should
+use a normally trusted certificate. Docker and HA media sources/web assets are
+checked for equality in the test suite; both include mkvtoolnix for MKV PGS.

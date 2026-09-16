@@ -12,6 +12,7 @@ import mimetypes
 import os
 import random
 import signal
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -25,6 +26,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .pgs import PgsCue, parse_pgs
+from .settings import PasswordSettings
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -359,7 +361,7 @@ class AppHandler(BaseHTTPRequestHandler):
     server: "AppServer"
 
     def authorized(self) -> bool:
-        if not self.server.password:
+        if not self.server.settings.protected:
             return True
         supplied = b""
         try:
@@ -371,7 +373,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     supplied = password
         except (ValueError, binascii.Error):
             pass
-        if hmac.compare_digest(supplied, self.server.password):
+        if self.server.settings.verify(supplied):
             return True
         self.close_connection = True  # Do not interpret an unread POST body as another request.
         self.send_response(HTTPStatus.UNAUTHORIZED)
@@ -387,7 +389,7 @@ class AppHandler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
     def end_headers(self) -> None:
-        if self.server.password:
+        if self.server.settings.protected:
             self.send_header("Cache-Control", "private, no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         super().end_headers()
@@ -410,6 +412,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == "/api/settings":
+                return self.send_json({"password_editable": self.server.settings.path is not None,
+                                       "password_set": self.server.settings.protected})
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == "/api/remote/next":
@@ -476,6 +481,16 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
+            if parsed.path == "/api/settings/password":
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 2 <= length <= 2048:
+                    self.close_connection = True
+                    raise ValueError("Invalid settings length")
+                settings = json.loads(self.rfile.read(length).decode("utf-8"))
+                if not isinstance(settings, dict):
+                    raise ValueError("Invalid settings")
+                self.server.settings.change(settings.get("current", ""), settings.get("password"))
+                return self.send_json({"ok": True})
             if parsed.path != "/api/remote/command":
                 return self.send_error_json(HTTPStatus.NOT_FOUND, "Not found")
             length = int(self.headers.get("Content-Length", "0"))
@@ -734,6 +749,16 @@ class AppServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], library: Library):
+        self.settings = PasswordSettings()
+        cert = os.environ.get("PSP_STREAMER_TLS_CERT", "")
+        key = os.environ.get("PSP_STREAMER_TLS_KEY", "")
+        self.tls_context = None
+        if cert or key:
+            if not cert or not key:
+                raise ValueError("Set both PSP_STREAMER_TLS_CERT and PSP_STREAMER_TLS_KEY")
+            self.tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            self.tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
+            self.tls_context.load_cert_chain(cert, key)
         super().__init__(address, AppHandler)
         self.library = library
         self.metadata_cache: dict[str, object] = {}
@@ -748,10 +773,21 @@ class AppServer(ThreadingHTTPServer):
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
         self.remote_lock = threading.Lock()
         self.remote_sequence = 0
-        self.password = os.environ.get("PSP_STREAMER_PASSWORD", "").encode("utf-8")
         self.remote_deadline = 0.0
         self.remote_session = os.urandom(16).hex()
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
+
+    def get_request(self):
+        connection, address = super().get_request()
+        if self.tls_context:
+            connection.settimeout(15)
+            try:
+                connection = self.tls_context.wrap_socket(connection, server_side=True,
+                                                          do_handshake_on_connect=False)
+            except Exception:
+                connection.close()
+                raise
+        return connection, address
 
     def set_remote_command(self, command: dict[str, object]) -> dict[str, object]:
         with self.remote_lock:
@@ -771,7 +807,8 @@ def main() -> None:
     roots = load_roots(os.environ.get("MEDIA_ROOTS"))
     host, port = os.environ.get("BIND", "0.0.0.0"), int(os.environ.get("PORT", "8091"))
     server = AppServer((host, port), Library(roots))
-    print(f"PSP Streamer ready at http://{host}:{port} (roots: {', '.join(map(str, roots))})")
+    scheme = "https" if server.tls_context else "http"
+    print(f"PSP Streamer ready at {scheme}://{host}:{port} (roots: {', '.join(map(str, roots))})")
     server.serve_forever()
 
 

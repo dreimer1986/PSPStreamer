@@ -366,6 +366,7 @@ static char resume_media_id[ID_SIZE];
 static int seek_requested;
 #define SETTINGS_PATH "ms0:/PSP/SYSTEM/PSPStreamer.cfg"
 static char server_host[64] = PSP_STREAMER_HOST;
+static int server_https;
 static int server_port = PSP_STREAMER_PORT;
 #include "server_auth.h"
 static struct in_addr cached_server_address;
@@ -390,7 +391,8 @@ static void load_playback_settings(void) {
         for (line = strtok(data, "\r\n"); line; line = strtok(NULL, "\r\n")) {
             if (!strncmp(line, "server=", 7) && line[7]) {
                 const char *host = line + 7;
-                if (!strncmp(host, "http://", 7)) host += 7;
+                if (!strncmp(host, "https://", 8)) {host+=8;server_https=1;}
+                else if (!strncmp(host, "http://", 7)) {host+=7;server_https=0;}
                 strncpy(server_host, host, sizeof(server_host) - 1);
                 server_host[sizeof(server_host) - 1] = '\0';
                 /* A URL path is never part of a TCP host name. */
@@ -408,6 +410,7 @@ static void load_playback_settings(void) {
                     }
                 }
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
+            else if (!strncmp(line,"https=",6)) server_https=atoi(line+6)!=0;
             else if (!strncmp(line, "server_password=", 16)) {
                 strncpy(server_password,line+16,sizeof(server_password)-1);
                 server_password[sizeof(server_password)-1]=0;
@@ -427,7 +430,7 @@ static void load_playback_settings(void) {
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
-    if (selected_subtitle_track < -1 || selected_subtitle_track > 7) selected_subtitle_track = -1;
+    if (selected_subtitle_track < -1 || selected_subtitle_track > 31) selected_subtitle_track = -1;
     if (selected_audio_quality < 0 || selected_audio_quality > 6) selected_audio_quality = 2;
     audio_shuffle = audio_shuffle != 0;
     if (playback_volume < 0 || playback_volume > 30) playback_volume = 24;
@@ -439,7 +442,7 @@ static void load_playback_settings(void) {
     if(music_preset_fade_ms<0 || music_preset_fade_ms>5000) music_preset_fade_ms=1500;
 }
 
-static void save_playback_settings(void) {
+static int save_playback_settings(void) {
     SceUID file;
     char data[1024];
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
@@ -447,8 +450,22 @@ static void save_playback_settings(void) {
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
-    file = sceIoOpen(SETTINGS_PATH, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
-    if (file >= 0) { sceIoWrite(file, data, length); sceIoClose(file); }
+    length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
+    if(length<0 || length>=(int)sizeof(data))return -1;
+    file = sceIoOpen(SETTINGS_PATH ".tmp", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0600);
+    if(file<0)return file;
+    int written=sceIoWrite(file,data,length), closed=sceIoClose(file);
+    memset(data,0,sizeof(data));
+    if(written!=length || closed<0)return -1;
+    SceIoStat info;
+    int existed=sceIoGetstat(SETTINGS_PATH,&info)>=0;
+    sceIoRemove(SETTINGS_PATH ".bak");
+    if(existed && sceIoRename(SETTINGS_PATH,SETTINGS_PATH ".bak")<0)return -1;
+    if(sceIoRename(SETTINGS_PATH ".tmp",SETTINGS_PATH)<0) {
+        if(existed)sceIoRename(SETTINGS_PATH ".bak",SETTINGS_PATH);
+        return -1;
+    }
+    return 0;
 }
 
 static int resolve_server_address(struct in_addr *address) {
@@ -476,16 +493,19 @@ static int prepare_server(struct sockaddr_in *server) {
     return resolve_server_address(&server->sin_addr);
 }
 
+#include "server_connection.h"
+
 /* Used only after HTTP headers arrived.  A timeout is not an error: it lets
  * the playback owner stop an audio worker after WLAN disappears. */
 static int stream_recv(int socket_fd, void *buffer, int length, int timeout_ms) {
+    if(server_https)return tls_recv(socket_fd,buffer,length,timeout_ms);
     struct SceNetInetPollfd pollfd = { socket_fd, SCE_NET_INET_POLLIN, 0 };
     int ready = sceNetInetPoll(&pollfd, 1, timeout_ms);
     if (ready == 0) return -2;
     if (ready < 0) return 0;
     /* EOF may arrive together with the last readable bytes. Drain them. */
     if (!(pollfd.revents & SCE_NET_INET_POLLIN)) return 0;
-    return (int)sceNetInetRecv(socket_fd, buffer, length, 0);
+    return (int)connection_recv(socket_fd, buffer, length, 0);
 }
 
 /* Never let a lost hotspot leave the UI or playback thread in a permanent
@@ -578,20 +598,20 @@ static int http_get_wait(const char *path, char *buffer, int buffer_size, int id
     int socket_fd, received = 0, read_size, content_length = -1, header_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return socket_fd;
-    if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); return -1004; }
-    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
+    if (prepare_server(&server) < 0) { connection_close(socket_fd); return -1004; }
+    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
         int error = sceNetInetGetErrno();
-        sceNetInetClose(socket_fd);
+        connection_close(socket_fd);
         return error ? -error : -1001;
     }
     snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
-    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1002; }
+    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { connection_close(socket_fd); return -1002; }
     while (received < buffer_size - 1) {
         read_size = stream_recv(socket_fd, buffer + received, buffer_size - 1 - received, 250);
         if (read_size == -2) {
             idle_ms += 250;
             if (idle_ms < idle_timeout_ms) continue;
-            sceNetInetClose(socket_fd);
+            connection_close(socket_fd);
             return -1005;
         }
         if (read_size <= 0) break;
@@ -609,7 +629,7 @@ static int http_get_wait(const char *path, char *buffer, int buffer_size, int id
         if (header_length >= 0 && content_length >= 0 &&
             received >= header_length + content_length) break;
     }
-    sceNetInetClose(socket_fd);
+    connection_close(socket_fd);
     buffer[received] = '\0';
     body = strstr(buffer, "\r\n\r\n");
     if (!body || strncmp(buffer, "HTTP/1.", 7) || !strstr(buffer, " 200 ")) return -1003;
@@ -631,31 +651,31 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
     int socket_fd, received = 0, header_size = 0, body_size, content_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0 || prepare_server(&server) < 0) return -1;
-    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { sceNetInetClose(socket_fd); return -1; }
+    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { connection_close(socket_fd); return -1; }
     snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
-    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { sceNetInetClose(socket_fd); return -1; }
+    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { connection_close(socket_fd); return -1; }
     while (header_size < (int)sizeof(header) - 1) {
         int got = stream_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 250);
-        if (got == -2) { if ((idle_ms += 250) < 20000) continue; sceNetInetClose(socket_fd); return -1; }
-        if (got <= 0) { sceNetInetClose(socket_fd); return -1; }
+        if (got == -2) { if ((idle_ms += 250) < 20000) continue; connection_close(socket_fd); return -1; }
+        if (got <= 0) { connection_close(socket_fd); return -1; }
         idle_ms = 0;
         header_size += got; header[header_size] = 0; body = strstr(header, "\r\n\r\n"); if (body) break;
     }
-    if (!body || !strstr(header, " 200 ")) { sceNetInetClose(socket_fd); return -1; }
+    if (!body || !strstr(header, " 200 ")) { connection_close(socket_fd); return -1; }
     { char *length_header = strstr(header, "Content-Length:"); if (length_header) content_length = atoi(length_header + 15); }
     body += 4; body_size = header_size - (int)(body - header);
-    if (body_size > buffer_size) { sceNetInetClose(socket_fd); return -1; }
+    if (body_size > buffer_size) { connection_close(socket_fd); return -1; }
     memcpy(buffer, body, body_size); received = body_size;
     while (received < buffer_size && (content_length < 0 || received < content_length)) {
         int wanted = buffer_size - received;
         int got;
         if (content_length >= 0 && wanted > content_length - received) wanted = content_length - received;
         got = stream_recv(socket_fd, buffer + received, wanted, 250);
-        if (got == -2) { if ((idle_ms += 250) < 20000) continue; sceNetInetClose(socket_fd); return -1; }
+        if (got == -2) { if ((idle_ms += 250) < 20000) continue; connection_close(socket_fd); return -1; }
         if (got <= 0) break;
         idle_ms = 0; received += got;
     }
-    sceNetInetClose(socket_fd); return received;
+    connection_close(socket_fd); return received;
 }
 
 /* The subtitle endpoint deliberately emits a restricted JSON form:
@@ -1338,27 +1358,27 @@ static int play_mjpeg(const char *media_id) {
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mjpeg HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", media_id, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return socket_fd;
-    if (prepare_server(&server) < 0) { sceNetInetClose(socket_fd); return -1206; }
-    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
-        sceNetInetClose(socket_fd); return -1201;
+    if (prepare_server(&server) < 0) { connection_close(socket_fd); return -1206; }
+    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
+        connection_close(socket_fd); return -1201;
     }
-    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) {
-        sceNetInetClose(socket_fd); return -1202;
+    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) {
+        connection_close(socket_fd); return -1202;
     }
     while (header_size < (int)sizeof(header) - 1) {
-        received = (int)sceNetInetRecv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
-        if (received <= 0) { sceNetInetClose(socket_fd); return -1203; }
+        received = (int)connection_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
+        if (received <= 0) { connection_close(socket_fd); return -1203; }
         header_size += received;
         header[header_size] = '\0';
         body = strstr(header, "\r\n\r\n");
         if (body) break;
     }
-    if (!body || !strstr(header, " 200 ")) { video_step = "HTTP response"; sceNetInetClose(socket_fd); return -1204; }
+    if (!body || !strstr(header, " 200 ")) { video_step = "HTTP response"; connection_close(socket_fd); return -1204; }
     video_step = "JPEG-Decoder";
     result = sceJpegInitMJpeg();
-    if (result < 0) { sceNetInetClose(socket_fd); return result; }
+    if (result < 0) { connection_close(socket_fd); return result; }
     result = sceJpegCreateMJpeg(VIDEO_WIDTH, VIDEO_HEIGHT);
-    if (result < 0) { sceJpegFinishMJpeg(); sceNetInetClose(socket_fd); return result; }
+    if (result < 0) { sceJpegFinishMJpeg(); connection_close(socket_fd); return result; }
 
     /* The bytes following the HTTP header are the first JPEG bytes. */
     received = header_size - (int)(body + 4 - header);
@@ -1368,7 +1388,7 @@ static int play_mjpeg(const char *media_id) {
     }
     while (1) {
         if (received <= 0) {
-            received = (int)sceNetInetRecv(socket_fd, receive_buffer, sizeof(receive_buffer), 0);
+            received = (int)connection_recv(socket_fd, receive_buffer, sizeof(receive_buffer), 0);
             if (received <= 0) break;
         }
         for (i = 0; i < received; i++) {
@@ -1399,7 +1419,7 @@ static int play_mjpeg(const char *media_id) {
     }
     sceJpegDeleteMJpeg();
     sceJpegFinishMJpeg();
-    sceNetInetClose(socket_fd);
+    connection_close(socket_fd);
     if (!frames) video_step = "no JPEG frames";
     return frames ? frames : -1205;
 }
@@ -1561,10 +1581,10 @@ static int audio_thread(SceSize args, void *argp) {
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
     if (prepare_server(&server) < 0) { audio_state = -17; goto cleanup; }
-    if (sceNetInetConnect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { audio_state = -12; goto cleanup; }
-    if ((int)sceNetInetSend(socket_fd, request, strlen(request), 0) < 0) { audio_state = -13; goto cleanup; }
+    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { audio_state = -12; goto cleanup; }
+    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { audio_state = -13; goto cleanup; }
     while (header_size < (int)sizeof(header) - 1) {
-        received = (int)sceNetInetRecv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
+        received = (int)connection_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
         if (received <= 0) { audio_state = -14; goto cleanup; }
         header_size += received; header[header_size] = '\0'; body = strstr(header, "\r\n\r\n");
         if (body) break;
@@ -1687,7 +1707,7 @@ cleanup:
     audio_start = 1;
     if (write_slot_reserved && audio_queue_free_sema >= 0)
         sceKernelSignalSema(audio_queue_free_sema, 1);
-    if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) sceNetInetClose(socket_fd); }
+    if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) connection_close(socket_fd); }
     if (mp3_codec_work) { free(mp3_codec_work); mp3_codec_work = NULL; }
     return 0;
 }
@@ -1785,7 +1805,7 @@ static int play_audio(const char *media_id, const char *title) {
         else visual_preset = 0;
     }
     if (fullscreen && !music_visual_active) draw_fullscreen_spectrum();
-    audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x4000, 0, NULL);
+    audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, server_https?0x10000:0x4000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
         if (audio_thread_id >= 0) sceKernelDeleteThread(audio_thread_id);
@@ -1944,7 +1964,7 @@ static int play_audio(const char *media_id, const char *title) {
     music_remote_running = 0;
     video_watch_ping("music stop: close socket");
     audio_running = 0; audio_start = 1;
-    if (audio_socket_fd >= 0) { int fd = audio_socket_fd; audio_socket_fd = -1; sceNetInetClose(fd); }
+    if (audio_socket_fd >= 0) sceNetInetShutdown(audio_socket_fd,2);
     video_watch_ping("music stop: join producer");
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
     sceKernelDeleteThread(audio_thread_id);
@@ -2054,7 +2074,7 @@ static int play_h264(const char *media_id) {
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
         audio_quality_name(), selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
-    timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x5000, 0, NULL);
+    timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, server_https?0x10000:0x5000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
     if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {
         sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1; result = -1321; goto done;
@@ -2062,7 +2082,7 @@ static int play_h264(const char *media_id) {
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
     remote_control_running = 1;
-    remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, 0x20, 0x3000, 0, NULL);
+    remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, server_https?0x40:0x20, server_https?0x10000:0x3000, 0, NULL);
     result = remote_control_thread_id < 0 ? remote_control_thread_id :
         sceKernelStartThread(remote_control_thread_id, 0, NULL);
     if (result < 0) {
@@ -2306,7 +2326,7 @@ done:
     video_first_presented = 0;
     remote_control_running = 0;
     if (timed_socket >= 0) {
-        int fd = timed_socket; timed_socket = -1; sceNetInetClose(fd);
+        sceNetInetShutdown(timed_socket,2);
     }
     if (timed_reader_id >= 0) {
         video_watch_ping("stop: join FLV reader");
@@ -2675,7 +2695,12 @@ static void gui_library_shell(const char *section) {
 static void show(int selected) {
     int i, first, last;
     if (selected < 0 || selected >= item_count) selected = 0;
-    if (tv_ui_active) { tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0); return; }
+    if (tv_ui_active) {
+        tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
+        tv_text(34,286,48,1,TV_CYAN,"%s",tr(TXT_SETTINGS_HINT));
+        if(tls_notice())tv_text(34,302,48,1,TV_AMBER,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
+        tv_present();return;
+    }
     first = item_count ? (selected / GUI_LIST_ROWS) * GUI_LIST_ROWS : 0;
     last = first + GUI_LIST_ROWS;
     if (last > item_count) last = item_count;
@@ -2704,6 +2729,8 @@ static void show(int selected) {
     /* The tiny receiver sidebar intentionally clips ordinary status copy.
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
+    gui_text(38,156,0x00FFFFFF,"%s",tr(TXT_SETTINGS_HINT));
+    if(tls_notice())gui_text(38,166,0x0000D8FF,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
 }
 
@@ -2829,6 +2856,8 @@ static int playback_options(int audio_only) {
     }
 }
 
+#include "app_settings.h"
+
 int main(void) {
     SceCtrlData pad;
     unsigned int old_buttons = 0;
@@ -2840,6 +2869,7 @@ int main(void) {
     int dirty = 1;
     int result;
     setup_callbacks();
+    tls_init();
     load_playback_settings();
     pspDebugScreenInit();
     pspDebugScreenSetXY(0, 0);
@@ -2928,7 +2958,12 @@ int main(void) {
             old_buttons = pad.Buttons;
             continue;
         }
-        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) { refresh_library(); dirty = 1; }
+        if ((pad.Buttons & PSP_CTRL_SELECT) && !(old_buttons & PSP_CTRL_SELECT) &&
+            !(pad.Buttons & (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER))) {
+            if(app_settings()>0) {selected=0;refresh_library();}
+            dirty=1;old_buttons=PSP_CTRL_SELECT|PSP_CTRL_START|PSP_CTRL_CIRCLE;continue;
+        }
+        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) { tls_notice_clear(); refresh_library(); dirty = 1; }
         if (item_count && (pad.Buttons & (PSP_CTRL_DOWN | PSP_CTRL_UP))) {
             unsigned long long now = sceKernelGetSystemTimeWide();
             unsigned int direction = pad.Buttons & (PSP_CTRL_DOWN | PSP_CTRL_UP);

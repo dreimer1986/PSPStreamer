@@ -114,6 +114,11 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
         }
     }
     if (!timed_running) return -1;
+    if(server_https) {
+        int result=tls_open(fd,server_host,server_port,&timed_running,15000);
+        if(result<0) {stream_diag.reason="TLS handshake";stream_diag.socket_error=result;}
+        return result;
+    }
     nonblock = 0;
     return sceNetInetSetsockopt(fd, SOL_SOCKET, SO_NONBLOCK, &nonblock, sizeof(nonblock));
 }
@@ -138,7 +143,8 @@ static int timed_reader(SceSize args, void *argp) {
     {
         int sent = 0, length = strlen(timed_request);
         while (sent < length && timed_running) {
-            got = sceNetInetSend(fd, timed_request + sent, length - sent, 0);
+            got = server_https ? tls_send(fd,timed_request+sent,length-sent,&timed_running,15000) :
+                (int)sceNetInetSend(fd, timed_request + sent, length - sent, 0);
             if (got <= 0) { stream_diag.socket_error=sceNetInetGetErrno(); goto end; }
             sent += got;
         }
@@ -195,7 +201,7 @@ end:
         stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state);
     }
     free(body); free(annexb);
-    if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) sceNetInetClose(fd); }
+    if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }
     if (result < 0 && timed_running) timed_error = -1320;
     timed_eof = 1;
     return 0;

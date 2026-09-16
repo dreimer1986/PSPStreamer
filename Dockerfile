@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fontconf
 WORKDIR /app
 COPY psp_streamer ./psp_streamer
 COPY static ./static
-ENV MEDIA_ROOTS=/media PORT=8091 MAX_TRANSCODES=1
+ENV MEDIA_ROOTS=/media PORT=8091 MAX_TRANSCODES=1 PSP_STREAMER_SETTINGS_DIR=/data
+VOLUME ["/data"]
 EXPOSE 8091
 CMD ["python", "-m", "psp_streamer.server"]
