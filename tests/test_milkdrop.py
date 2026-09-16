@@ -8,6 +8,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_square_only_toggles_spectrum_and_file_preset(self):
+        source=(ROOT / "psp-client/main.c").read_text()
+        music=source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        block=music[music.index("if ((pad.Buttons & PSP_CTRL_SQUARE)"):]
+        block=block[:block.index("old = pad.Buttons;")]
+        harness=(ROOT / "tests/music_visual_toggle.c").read_text().replace("/* SQUARE_BLOCK */",block)
+        with tempfile.TemporaryDirectory() as directory:
+            source_file=Path(directory)/"toggle.c"
+            binary=Path(directory)/"toggle"
+            source_file.write_text(harness)
+            subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror","-fsanitize=undefined",
+                            str(source_file),"-o",str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=5)
+
     def test_warp_and_gu_ownership(self):
         adapter = (ROOT / "psp-client/milkdrop_gu.c").read_text()
         adapter = re.sub(r"#include <psp\w+\.h>\n", "", adapter)
@@ -62,7 +76,7 @@ class MilkDropTests(unittest.TestCase):
         source = (ROOT / "psp-client/main.c").read_text()
         music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
         self.assertIn("fullscreen = music_saved_fullscreen", music)
-        self.assertIn("visual_preset = music_saved_visual_preset", music)
+        self.assertIn("visual_preset = music_saved_visual_preset == 4 ? 4 : 0", music)
         self.assertIn("music_saved_fullscreen = fullscreen;", music)
         self.assertIn("music_saved_visual_preset = visual_preset;", music)
         self.assertIn("visual_preset != 4 || preset_result == MD_FILE_OK", music)

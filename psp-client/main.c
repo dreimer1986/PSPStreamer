@@ -1762,7 +1762,9 @@ static int play_audio(const char *media_id, const char *title) {
     video_step = "Music startup";
     start_result = video_watch_start(1);
     if (start_result < 0) { video_step = "Diagnostic file"; video_watch_stop(); return start_result; }
-    int visual_preset = music_saved_visual_preset;
+    /* Public modes are spectrum (0) and file-based MilkDrop (4). The GU
+     * adapter's historical 0..2 test variants are no longer selectable. */
+    int visual_preset = music_saved_visual_preset == 4 ? 4 : 0;
     MdFileError preset_error;
     int preset_result;
     unsigned long long preset_notice_tick = ~0ULL;
@@ -1954,11 +1956,12 @@ static int play_audio(const char *media_id, const char *title) {
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
             if (visual_preset == 4) {
                 md_stop(); visual_preset = 0; music_visual_active = 0;
-            } else if (visual_preset == 3) {
+            } else {
                 visual_preset = 4;
-                if (preset_result != MD_FILE_OK) { md_stop(); music_visual_active = 0; }
-            } else if (visual_preset || md_start()) {
-                visual_preset++; music_visual_active = 1;
+                if (preset_result == MD_FILE_OK) {
+                    music_visual_active = md_start();
+                    if (!music_visual_active) visual_preset = 0;
+                } else music_visual_active = 0; /* Show the existing preset error. */
             }
             music_saved_visual_preset = visual_preset;
             next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
