@@ -14,6 +14,7 @@ typedef struct {
 } TimedQueue;
 static TimedQueue timed_video, timed_audio;
 static volatile int timed_active, timed_running, timed_eof, timed_error, timed_playing;
+static const char * volatile timed_error_step = "FLV/PTS stream";
 static volatile int timed_has_audio, timed_audio_done;
 static volatile int timed_socket = -1;
 static int timed_reader_id = -1;
@@ -72,6 +73,11 @@ static int timed_read(unsigned char *out, int size) {
     unsigned long long last = sceKernelGetSystemTimeWide();
     while (have < size && timed_running) {
         int got = offline_active ? sceIoRead(offline_reader_fd,out+have,size-have) : timed_recv(out + have, size - have);
+        if (offline_active && got < 0) {
+            timed_error_step = "Read local video";
+            timed_error = got;
+            return -1;
+        }
         if (got == -2) {
             /* Preserve partial FLV packets across temporary delivery gaps.
              * Cancellation still polls every 100 ms; startup is unchanged. */
@@ -132,9 +138,14 @@ static int timed_reader(SceSize args, void *argp) {
     (void)args; (void)argp;
     stream_diag_reset();
     memset(&avc, 0, sizeof(avc));
+    timed_error_step = "FLV/PTS stream";
     if(offline_active) {
         offline_reader_fd=sceIoOpen(offline_movie,PSP_O_RDONLY,0);
-        if(offline_reader_fd<0)goto end;
+        if(offline_reader_fd<0) {
+            timed_error_step = "Open local video";
+            timed_error = offline_reader_fd;
+            goto end;
+        }
         goto flv_header;
     }
     fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
@@ -213,7 +224,8 @@ end:
     }
     free(body); free(annexb);
     if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }
-    if (result < 0 && timed_running) timed_error = -1320;
+    if (result < 0 && timed_running && !timed_error) timed_error = -1320;
+    __sync_synchronize();
     timed_eof = 1;
     return 0;
 }

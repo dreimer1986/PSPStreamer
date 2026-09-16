@@ -13,6 +13,8 @@ static int mode,reads,fail_write;
 static int server_https;
 static int debug_enabled=1;
 static int offline_active,offline_reader_fd=-1;
+static int timed_error;
+static const char * volatile timed_error_step;
 static int sceIoRead(int fd,void *data,int size){(void)fd;(void)data;(void)size;assert(0);return -1;}
 static int tls_recv(int fd,void *data,int size,int timeout) {(void)fd;(void)data;(void)size;(void)timeout;return -1;}
 static unsigned long long tick;

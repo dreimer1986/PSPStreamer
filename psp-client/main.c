@@ -2105,7 +2105,7 @@ static int play_h264(const char *media_id) {
         if (pause_tick) { video_only_tick += sceKernelGetSystemTimeWide() - pause_tick; pause_tick = 0; }
         if (timed_error || audio_state < 0) {
             result = timed_error ? timed_error : audio_state;
-            video_step = timed_error ? "FLV/PTS stream" : "MP3";
+            video_step = timed_error ? timed_error_step : "MP3";
             break;
         }
         if (timed_has_audio == 1 && audio_thread_id < 0) {
@@ -2127,7 +2127,14 @@ static int play_h264(const char *media_id) {
         if (!buffered) {
             if (!current.data || (!next.data && !timed_eof) || timed_has_audio < 0 ||
                 (timed_has_audio && !audio_queue_primed)) {
-                if (timed_eof && !current.data) { result = -1306; break; }
+                if (timed_eof && !current.data) {
+                    /* The reader can fail during timed_get's semaphore wait,
+                     * after the error check above. Do not hide its error as
+                     * "no H.264 frames", particularly for missing local files. */
+                    result = timed_error ? timed_error : -1306;
+                    if (timed_error) video_step = timed_error_step;
+                    break;
+                }
                 sceKernelDelayThread(2000); continue;
             }
             /* Initialise AVC before starting the DAC, keeping the established
