@@ -71,7 +71,7 @@ static int timed_read(unsigned char *out, int size) {
     stream_diag.wanted=size; stream_diag.received=0;
     unsigned long long last = sceKernelGetSystemTimeWide();
     while (have < size && timed_running) {
-        int got = timed_recv(out + have, size - have);
+        int got = offline_active ? sceIoRead(offline_reader_fd,out+have,size-have) : timed_recv(out + have, size - have);
         if (got == -2) {
             /* Preserve partial FLV packets across temporary delivery gaps.
              * Cancellation still polls every 100 ms; startup is unchanged. */
@@ -128,10 +128,15 @@ static int timed_reader(SceSize args, void *argp) {
     unsigned char *body = NULL, *annexb = NULL;
     char http[4096];
     FlvAvc avc;
-    int n = 0, result = -1, fd, got, saw_end = 0;
+    int n = 0, result = -1, fd=-1, got, saw_end = 0;
     (void)args; (void)argp;
     stream_diag_reset();
     memset(&avc, 0, sizeof(avc));
+    if(offline_active) {
+        offline_reader_fd=sceIoOpen(offline_movie,PSP_O_RDONLY,0);
+        if(offline_reader_fd<0)goto end;
+        goto flv_header;
+    }
     fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     timed_socket = fd;
     if (fd < 0) { stream_diag.socket_error=sceNetInetGetErrno(); goto end; }
@@ -157,6 +162,7 @@ static int timed_reader(SceSize args, void *argp) {
         if (n >= 4 && !memcmp(http + n - 4, "\r\n\r\n", 4)) break;
     }
     if (!strstr(http, " 200 ") || n == (int)sizeof(http) - 1) goto end;
+flv_header:
     stream_diag.stage="FLV header";
     if (timed_read(h, 13) != 1 || memcmp(h, "FLV\1", 4) ||
         flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || !(h[4] & 1)) goto end;
@@ -187,6 +193,10 @@ static int timed_reader(SceSize args, void *argp) {
             if (size < 5 || (body[0] & 15) != 7) break;
             if (body[1] == 0) {
                 if (flv_config(&avc, body + 5, size - 5) < 0) break;
+                if(offline_active && offline_seek_offset) {
+                    if(sceIoLseek(offline_reader_fd,(SceOff)offline_seek_offset,PSP_SEEK_SET)<0)break;
+                    offline_seek_offset=0;
+                }
             } else if (body[1] == 1) {
                 converted = flv_annexb(&avc, body + 5, size - 5, annexb, FLV_MAX_VIDEO);
                 if (converted < 0) break;
@@ -196,9 +206,10 @@ static int timed_reader(SceSize args, void *argp) {
         } else if (type != 18) break;
     }
 end:
+    if(offline_reader_fd>=0) {sceIoClose(offline_reader_fd);offline_reader_fd=-1;}
     if(result<0 && timed_running) {
         stream_diag.failure_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL);
-        stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state);
+        if(!offline_active)stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state);
     }
     free(body); free(annexb);
     if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }

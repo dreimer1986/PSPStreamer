@@ -1,5 +1,26 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Offline library and transfer status. */
+    [TXT_LOCAL_STORAGE] = "LOCAL STORAGE",
+    [TXT_DOWNLOADS] = "SERVER QUEUE",
+    [TXT_CONVERTING] = "Waiting / converting on server",
+    [TXT_DOWNLOADING] = "Downloading to Memory Stick",
+    [TXT_VERIFYING] = "Verifying SHA256 checksum",
+    [TXT_DOWNLOAD_STOPPING] = "Stopping transfer...",
+    [TXT_DOWNLOAD_ETA] = "Remaining: %u seconds",
+    [TXT_DOWNLOAD_CANCEL] = "O STOP DOWNLOAD (SERVER JOB IS KEPT)",
+    [TXT_DOWNLOAD_BACK] = "X / O BACK",
+    [TXT_DOWNLOAD_RETRY] = "Interrupted - select again to resume",
+    [TXT_DOWNLOAD_SPACE] = "Not enough free Memory Stick space",
+    [TXT_DOWNLOAD_DELETE] = "Delete this local download?",
+    [TXT_DOWNLOAD_CONFIRM] = "X DELETE   O KEEP",
+    [TXT_DOWNLOAD_QUEUE_HELP] = "X DOWNLOAD  R ALL  [] LOCAL  O BACK",
+    [TXT_DOWNLOAD_LOCAL_HELP] = "X PLAY/RESUME  TRI DELETE  [] QUEUE  O BACK",
+    [TXT_PLAY_MODE] = "Playback",
+    [TXT_STREAM_MODE] = "Streaming",
+    [TXT_DOWNLOAD_MODE] = "Download, then play",
+    [TXT_DOWNLOAD_PROFILE] = "Download needs matching LCD/TV output",
+
     /* General settings and on-device text entry. */
     [TXT_SETTINGS] = "SETTINGS",
     [TXT_SETTINGS_HELP] = "UP/DN SELECT  LEFT/RIGHT EDIT  X TEXT",

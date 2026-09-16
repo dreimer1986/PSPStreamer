@@ -366,6 +366,7 @@ static int video_fullscreen = 1;
 static int receiver_visible;
 static unsigned int receiver_flash_button;
 static int stream_start_seconds;
+static int download_before_play;
 static int resume_pending;
 static char resume_media_id[ID_SIZE];
 static int seek_requested;
@@ -428,6 +429,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
             else if (!strncmp(line,"preset_fade_ms=",15)) music_preset_fade_ms=atoi(line+15);
             else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
+            else if (!strncmp(line, "play_mode=", 10)) download_before_play = !strcmp(line + 10, "download");
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
@@ -453,6 +455,7 @@ static int save_playback_settings(void) {
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
+    length += snprintf(data + length, sizeof(data) - length, "play_mode=%s\n",download_before_play?"download":"stream");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
@@ -545,7 +548,7 @@ void setup_callbacks(void) {
     if (thread_id >= 0) sceKernelStartThread(thread_id, 0, NULL);
 }
 
-static int wait_for_network(void) {
+static int wait_for_network(int connect_wifi) {
     int state = 0;
     int elapsed;
     int result;
@@ -565,6 +568,7 @@ static int wait_for_network(void) {
     failure_step = "sceNetApctlInit";
     result = sceNetApctlInit(0x1800, 48);
     if (result < 0) return result;
+    if (!connect_wifi) return -1; /* Offline launch: modules live, no association. */
     sceNetApctlGetState(&state);
     if (state == PSP_NET_APCTL_STATE_GOT_IP) return 0;
     profile = PSP_NETWORK_PROFILE;
@@ -688,22 +692,24 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
  * {"t":"text","c":[[start,end,"ASCII text"],...]}.  Text has already
  * been normalised by the server, so a narrow parser is both safer and much
  * smaller than adding a general JSON library to the playback binary. */
+#include "offline_source.h"
+
 static int prepare_client_subtitles(const char *media_id, int tv_profile) {
     char path[ID_SIZE + 64];
     int result;
     subtitle_cue_count = 0;
     subtitle_client_side = 0;
     if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
-    if (selected_subtitle_track < 0) return 0;
+    if (selected_subtitle_track < 0 && !offline_active) return 0;
     snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
-    result = http_get(path, response, sizeof(response));
+    result = offline_active ? offline_subtitle_json() : http_get(path, response, sizeof(response));
     if (result < 0) return result;
     /* Bitmap tracks keep the existing server-overlay fallback until the
      * sprite transport is available.  Never silently lose a requested PGS. */
-    if (strstr(response, "\"t\":\"bitmap\"")) {
+    if (strstr(response, "\"t\":\"bitmap\"") || (offline_active && strstr(response, "\"t\":\"pgs\""))) {
         char path[ID_SIZE + 64], *cursor;
         snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
-        if (http_get_wait(path, response, sizeof(response), 180000) < 0 || !strstr(response, "\"t\":\"pgs\"")) return 0;
+        if ((!offline_active && http_get_wait(path, response, sizeof(response), 180000) < 0) || !strstr(response, "\"t\":\"pgs\"")) return 0;
         if (bitmap_cues) free(bitmap_cues);
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
         if (!bitmap_cues) return 0;
@@ -770,7 +776,7 @@ static void bitmap_present(int frame, const char *media_id) {
     if (bitmap_loaded_cue != index) {
         char path[ID_SIZE + 96];
         snprintf(path, sizeof(path), "/api/bitmap-sprite/%s?track=%d&cue=%d", media_id, selected_subtitle_track, index);
-        got = http_get_binary(path, (unsigned char *)response, RESPONSE_SIZE);
+        got = offline_active ? offline_bitmap(index,(unsigned char *)response,RESPONSE_SIZE) : http_get_binary(path, (unsigned char *)response, RESPONSE_SIZE);
         if (got < 1024 + cue->width * cue->height) return;
         bitmap_bytes = got; bitmap_loaded_cue = index;
     }
@@ -1326,7 +1332,7 @@ static int prepare_timed_video(TimedPacket *packet) {
     if (result < 0) { video_step = h264_hw_last_step(); return result; }
     if (result > 0) {
         video_watch_ping("subtitle/overlay");
-        cue_ms = stream_start_seconds * 1000 + packet->pts - timed_video_origin;
+        cue_ms = offline_active ? packet->pts : stream_start_seconds * 1000 + packet->pts - timed_video_origin;
         playback_position_ms = cue_ms;
         playback_draw_target = (u32 *)video_staging;
         if (!tvout_video_active) {
@@ -2021,6 +2027,7 @@ static int play_h264(const char *media_id) {
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
+    if(offline_active) {offline_prepare_seek(stream_start_seconds);stream_start_seconds=offline_seek_ms/1000;}
     playback_reached_end = 0;
     playback_paused = 0;
     playback_position_ms = stream_start_seconds * 1000;
@@ -2037,6 +2044,12 @@ static int play_h264(const char *media_id) {
     video_staging = NULL;
     sync_trace_reset();
     tvout_video_active = tvout_begin_video() == 0;
+    if(offline_active && offline_profile_tv!=tvout_video_active) {
+        video_step=tr(TXT_DOWNLOAD_PROFILE);
+        if(tvout_video_active)tvout_end_video();
+        tvout_video_active=0;
+        return -1401;
+    }
     if (tvout_video_active) memset((void *)0x44000000, 0, TVOUT_STRIDE * 480 * 4);
     prepare_client_subtitles(media_id, tvout_video_active);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
@@ -2094,9 +2107,10 @@ static int play_h264(const char *media_id) {
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
     remote_control_running = 1;
-    remote_control_thread_id = sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, server_https?0x40:0x20, server_https?0x10000:0x3000, 0, NULL);
+    remote_control_thread_id = offline_active ? -1 : sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, server_https?0x40:0x20, server_https?0x10000:0x3000, 0, NULL);
     result = remote_control_thread_id < 0 ? remote_control_thread_id :
         sceKernelStartThread(remote_control_thread_id, 0, NULL);
+    if (offline_active) {result=0;remote_control_running=0;}
     if (result < 0) {
         if (remote_control_thread_id >= 0) sceKernelDeleteThread(remote_control_thread_id);
         remote_control_thread_id = -1;
@@ -2319,7 +2333,7 @@ static int play_h264(const char *media_id) {
             sync_trace_record(current.pts, sync, copy_us);
             timed_position_ms = current.pts - timed_video_origin;
             if (timed_position_ms < 0) timed_position_ms = 0;
-            playback_position_ms = stream_start_seconds * 1000 + timed_position_ms;
+            playback_position_ms = offline_active ? current.pts : stream_start_seconds * 1000 + timed_position_ms;
             frames += prepared;
             prepared = 0;
             free(current.data); current = next; memset(&next, 0, sizeof(next));
@@ -2653,6 +2667,11 @@ static void refresh_library(void) {
         return;
     }
     parse_library();
+    if(!current_path[0] && item_count<MAX_ITEMS) {
+        memmove(items+1,items,item_count*sizeof(*items));
+        memset(items,0,sizeof(*items));items[0].is_folder=2;
+        snprintf(items[0].title,TITLE_SIZE,"%s",tr(TXT_LOCAL_STORAGE));item_count++;
+    }
     snprintf(status, sizeof(status), tr(TXT_ENTRIES), item_count);
 }
 
@@ -2823,6 +2842,8 @@ static int playback_options(int audio_only) {
                 if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
                 if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
                 if (row == 3) gui_rect((u32 *)0x44000000, 36, 124, 310, 9, 0x004A5A32);
+                if (row == 4) gui_rect((u32 *)0x44000000, 36, 144, 310, 9, 0x004A5A32);
+                gui_text(38, 144, 0x00FFFFFF, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
                 gui_text(38, 124, 0x00FFFFFF, "%s: %s", tr(TXT_FRAME_RATE), selected_video_fps ? "23.976 fps" : "20 fps");
                 gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
                                      audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
@@ -2845,8 +2866,8 @@ static int playback_options(int audio_only) {
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
         if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
         if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 3) % 4;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 4;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 4) % 5;
+        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 5;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
             if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
@@ -2861,6 +2882,7 @@ static int playback_options(int audio_only) {
                 }
             } else if (row == 2) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
             else if (row == 3) selected_video_fps = !selected_video_fps;
+            else if (row == 4) download_before_play = !download_before_play;
             save_playback_settings();
         }
         old = pad.Buttons;
@@ -2869,6 +2891,7 @@ static int playback_options(int audio_only) {
 }
 
 #include "app_settings.h"
+#include "offline_ui.h"
 
 int main(void) {
     SceCtrlData pad;
@@ -2897,14 +2920,18 @@ int main(void) {
      * several seconds on a PSP; leaving the old blank debug screen there made
      * the application appear to start only after a file was chosen. */
     show(0);
-    result = wait_for_network();
+    items[0].is_folder=2;snprintf(items[0].title,TITLE_SIZE,"%s",tr(TXT_LOCAL_STORAGE));item_count=1;
+    /* Hold R to enter the local library without waiting for an access point. */
+    result = wait_for_network(!(pad.Buttons & PSP_CTRL_RTRIGGER));
+    /* Keep the established network/module order, but initialise AVC even if
+     * association failed: local playback has no network dependency. */
+    hardware_runtime_result = load_hardware_avc_runtime();
     if (result < 0) {
-        snprintf(status, sizeof(status), tr(TXT_NETWORK_FAILED), failure_step, result);
+        if(pad.Buttons & PSP_CTRL_RTRIGGER)snprintf(status,sizeof(status),"%s",tr(TXT_LOCAL_STORAGE));
+        else snprintf(status, sizeof(status), tr(TXT_NETWORK_FAILED), failure_step, result);
     } else {
         network_ready = 1;
         http_ready = 1;
-        /* Preflight only: no hardware AVC calls are made in this build. */
-        hardware_runtime_result = load_hardware_avc_runtime();
         refresh_library();
     }
     while (1) {
@@ -2960,6 +2987,9 @@ int main(void) {
             }
         }
         if ((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) break;
+        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old_buttons & PSP_CTRL_CIRCLE)) {
+            offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
+        }
         if ((pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
             (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER) &&
             (old_buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) !=
@@ -3009,6 +3039,9 @@ int main(void) {
             old_buttons = pad.Buttons;
             continue;
         }
+        if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder==2) {
+            offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
+        }
         if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder) {
             strncpy(current_path, items[selected].value, sizeof(current_path) - 1);
             current_path[sizeof(current_path) - 1] = '\0';
@@ -3033,6 +3066,10 @@ int main(void) {
                 show_metadata_loading();
                 load_media_metadata(items[selected].value);
                 if (!playback_options(items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
+                if(!items[selected].is_audio && download_before_play) {
+                    offline_enqueue_play(items[selected].value);
+                    dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
+                }
             }
             do {
                 int next;

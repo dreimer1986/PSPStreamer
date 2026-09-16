@@ -412,6 +412,22 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == "/api/offline/jobs":
+                return self.send_json(self.server.offline.list())
+            if parsed.path == "/api/offline/catalog":
+                jobs = self.server.offline.list()
+                data = ''.join(f"{j['job']}\t{j['state']}\t{j['progress']}\t{j['name']}\n" for j in jobs).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if parsed.path.startswith('/api/offline/job/'):
+                return self.send_json(self.server.offline.get(parsed.path.rsplit('/', 1)[-1]))
+            if parsed.path.startswith('/api/offline/file/'):
+                key, number = parsed.path.split('/')[-2:]
+                return self.offline_file(key, int(number))
             if parsed.path == "/api/settings":
                 return self.send_json({"password_editable": self.server.settings.path is not None,
                                        "password_set": self.server.settings.protected})
@@ -481,6 +497,22 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
+            if parsed.path.startswith('/api/offline/'):
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 8192:
+                    self.close_connection = True
+                    raise ValueError('Invalid request length')
+                data = json.loads(self.rfile.read(length).decode('utf-8'))
+                if not isinstance(data, dict):
+                    raise ValueError('Invalid request')
+                if parsed.path == '/api/offline/jobs':
+                    return self.send_json(self.server.offline.add(data))
+                if parsed.path == '/api/offline/cancel':
+                    return self.send_json(self.server.offline.cancel(str(data.get('job', ''))))
+                if parsed.path == '/api/offline/delete':
+                    self.server.offline.delete(str(data.get('job', '')))
+                    return self.send_json({'ok': True})
+                return self.send_error_json(HTTPStatus.NOT_FOUND, 'Not found')
             if parsed.path == "/api/settings/password":
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 2 <= length <= 2048:
@@ -529,6 +561,36 @@ class AppHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.log_error("Remote command failed: %r", exc)
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
+
+    def offline_file(self, key: str, number: int) -> None:
+        path, entry = self.server.offline.file(key, number)
+        # Open before headers: a concurrent deletion cannot produce a partial
+        # error response; an already-open download can finish on POSIX.
+        with path.open('rb') as data:
+            size = os.fstat(data.fileno()).st_size
+            start = 0
+            partial = self.headers.get('Range')
+            if partial:
+                match = re.fullmatch(r'bytes=(\d+)-', partial)
+                if not match or int(match[1]) >= size:
+                    self.send_response(416)
+                    self.send_header('Content-Range', f'bytes */{size}')
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                    return
+                start = int(match[1])
+            self.send_response(206 if partial else 200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(size-start))
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('ETag', '"' + entry['sha256'] + '"')
+            if partial:
+                self.send_header('Content-Range', f'bytes {start}-{size-1}/{size}')
+            self.end_headers()
+            data.seek(start)
+            self.connection.settimeout(15)
+            while block := data.read(65536):
+                self.wfile.write(block)
 
     def static_file(self, path: str) -> None:
         wanted = "/index.html" if path == "/" else path
@@ -776,6 +838,17 @@ class AppServer(ThreadingHTTPServer):
         self.remote_deadline = 0.0
         self.remote_session = os.urandom(16).hex()
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
+        from .offline import OfflineQueue
+        cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(
+            Path(os.environ.get('PSP_STREAMER_SETTINGS_DIR', str(Path.home() / '.cache/psp-streamer'))) / 'downloads')
+        self.offline = OfflineQueue(cache_root, library, ffmpeg_command, parse_srt_cues, self.transcode_slots)
+        if self.offline.jobs:
+            self.offline.start()
+
+    def server_close(self):
+        if hasattr(self, 'offline'):
+            self.offline.close()
+        super().server_close()
 
     def get_request(self):
         connection, address = super().get_request()

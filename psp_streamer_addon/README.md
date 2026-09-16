@@ -4,6 +4,13 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.30** adds the offline conversion queue and requires the matching
+PSP client for downloads/local playback. Converted files and queue state use
+the app's persistent `/data/downloads` directory. The media mount stays
+read-only. Manage server copies in the web UI; deleting one does not remove
+copies already downloaded to the PSP. The ordinary Docker deployment has the
+same queue and protocol. See the main README's Offline downloads section.
+
 Version **0.1.29** returns to software-only libx264 encoding and tests H.264
 Main with CABAC (no B-frames or weighted P prediction). Hardware encoder options
 from 0.1.27/0.1.28 no longer apply. Update/rebuild and restart the app; keep the

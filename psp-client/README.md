@@ -1,6 +1,13 @@
 # PSP-Client
 
-This directory contains the native PSP application: timestamped FLV with H.264 Baseline video through the Media Engine, MP3 audio through the PSP DAC, subtitle/audio-track selection, receiver-style menus, and the AVC bridge. Install `subtitle_font.raw`, `cooleyesBridge.prx` and `dvemgr.prx` next to `EBOOT.PBP`. The menu skin is embedded in the application.
+This directory contains the native PSP application: timestamped FLV with H.264 Main/CABAC video through the Media Engine, MP3 audio through the PSP DAC, subtitle/audio-track selection, receiver-style menus, and the AVC bridge. Install `subtitle_font.raw`, `cooleyesBridge.prx` and `dvemgr.prx` next to `EBOOT.PBP`. The menu skin is embedded in the application.
+
+With server 0.1.30, `offline_ui.h` adds conversion/download management and the
+managed Local storage browser. `offline_source.h` supplies file reads, subtitle
+packages and seek-index lookup to the same FLV reader used by streaming.
+Downloads use a separate cancellable worker, HTTP Range and SHA256 verification;
+local playback does not start a network/remote worker. See the project README
+for controls, LCD/TV profile selection and Memory Stick limits.
 
 Installation, the `ms0:/PSP/SYSTEM/PSPStreamer.cfg` configuration file, and the build command are described in the [project README](../README.md).
 

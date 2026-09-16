@@ -11,6 +11,8 @@ struct SceNetInetPollfd { int fd,events,revents; };
 static int timed_socket=3,timed_running=1,timed_playing=1,playback_paused;
 static int mode,reads,fail_write;
 static int server_https;
+static int offline_active,offline_reader_fd=-1;
+static int sceIoRead(int fd,void *data,int size){(void)fd;(void)data;(void)size;assert(0);return -1;}
 static int tls_recv(int fd,void *data,int size,int timeout) {(void)fd;(void)data;(void)size;(void)timeout;return -1;}
 static unsigned long long tick;
 static char report[1024];

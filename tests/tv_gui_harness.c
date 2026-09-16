@@ -41,6 +41,7 @@ static int playback_volume = 24, vu_display_left = 30, vu_display_right = 80;
 static int item_count = 40, audio_track_count = 2, subtitle_track_count = 2;
 static int selected_audio_track, selected_subtitle_track, audio_shuffle;
 static int selected_video_fps;
+static int download_before_play;
 static int audio_running = 1, audio_start = 1;
 static float current_duration_seconds = 1442.0f;
 static int spectrum_levels[12], spectrum_display[12];
@@ -157,7 +158,8 @@ int main(int argc, char **argv) {
     tv_glyph(&tv_canvas, font, 255, 719, 479, 1);
     for (language = 0; language < 2; language++) {
         language_set_code(language ? "de" : "en");
-        for (view = 0; view <= TV_VIEW_MUSIC; view++) for (variant = 0; variant < 4; variant++) {
+        for (view = 0; view <= TV_VIEW_MUSIC; view++) for (variant = 0; variant < 5; variant++) {
+            download_before_play = variant == 4;
             selected_video_fps = variant == 3;
             tv_draw_view(view, 13, variant, variant == 1, "Music / Grüße aus München", variant == 2);
             for (i = 0; i < 480; i++) for (int x = 720; x < 768; x++)

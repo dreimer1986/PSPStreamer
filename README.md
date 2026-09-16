@@ -2,23 +2,78 @@
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
-### Software encoding / Main with CABAC test (0.1.29)
+### Software encoding / Main with CABAC (0.1.29)
 
 All deployments use software `libx264` again; VA-API/NVENC support and its
-configuration have been removed following PSP decoder failures. The current
-compatibility test uses H.264 **Main, level 3.0, CABAC enabled**, with B-frames
+configuration have been removed following PSP decoder failures. Encoding
+uses H.264 **Main, level 3.0, CABAC enabled**, with B-frames
 and weighted P prediction disabled. Resolution, selected frame rate, bitrates,
 MP3 audio and container timestamp synchronization are unchanged. Docker and the
 Home Assistant app use identical encoder commands. Update/rebuild the server;
-this change does not require a new PSP executable. Main/CABAC still needs real
-PSP validation on LCD and TV output; successful FFmpeg decoding alone is not
-proof of PSP compatibility.
+this change does not require a new PSP executable. Main/CABAC subsequently
+passed the user's real PSP playback test. Successful FFmpeg decoding alone
+is not proof of PSP compatibility.
 
-Deferred: offer streaming or full server conversion followed by download to
-the PSP cache before playback. Show encoding/download stages, total size when
-known, transferred bytes, transfer rate and estimated remaining time. A general
-local-file browser/player is not part of that first step. This mode is not yet
-implemented.
+## Offline downloads (server/app 0.1.30 and matching PSP client)
+
+Choose **Streaming** or **Download, then play** in the PSP video options.
+The latter queues a full episode from its beginning, waits for conversion,
+downloads and verifies it, then starts the existing FLV/PTS player from the
+Memory Stick. It is not a general local-file browser. Music streaming is
+unchanged; offline jobs currently support video only.
+
+For several episodes, use **Convert for download** in the web remote. Each
+job retains its own audio track, subtitle track, audio quality, frame rate and
+LCD/TV profile. Conversions run sequentially, without real-time throttling;
+the queue survives server restarts. A single conversion shares the server's
+existing transcode limit with streaming. The web list reports conversion
+state, percentage and produced size; cancel/delete controls affect only
+server jobs/copies, not downloaded PSP files.
+
+On the PSP, open **Local storage** at the library root, or press **Circle**
+in any library folder. **Square** switches between local files and the server
+queue. In the queue, **X** downloads the selected job (waiting if it is still
+converting); **R** downloads all pending/ready jobs in the displayed list,
+one after another. Use Square twice to refresh the queue. During transfer,
+the screen shows file bytes/total size, KiB/s and estimated seconds remaining.
+Size is final only after conversion. Subtitle/index sidecars follow the video;
+the byte counter then refers to the current sidecar. SHA256 verification has
+its own status. **Circle** cancels the PSP wait/transfer, keeping both the
+server job and partial download. Select it again to resume via HTTP Range.
+
+Local **X** plays a completed download or resumes an incomplete transfer.
+**Triangle** offers deletion with confirmation; **Circle** goes back.
+Playback supports pause, stop and keyframe-based seek using the existing
+controls. Next/previous and end-of-file advance use the local list's filename
+order (and stop at an incomplete entry). Local playback makes no server or
+remote-control requests, including for subtitles. Hold **R while launching**
+to skip Wi-Fi association entirely; restart normally to return online.
+
+Files live under
+`ms0:/PSP/VIDEO/PSPStreamer/<job-id>/<original-name>.flv`, with a subtitle
+package, seek index and job metadata alongside. Unique job directories prevent
+collisions between different series/language variants. Filesystem-unsafe
+characters are replaced and exceptionally long names shortened. `+` identifies
+a completed, verified entry; `~` an incomplete one. Local deletion is limited
+to these managed files and never touches unrelated Memory Stick content.
+
+Choose the output profile before converting: LCD (480×272) or TV (720×480).
+A downloaded file requires its matching output; connect/disconnect the TV
+cable accordingly. The PSP's direct-download option detects the cable.
+Text subtitles use the existing offline overlay; supported LCD MKV/PGS cues
+and sprites are packaged too. TV bitmap subtitles and unsupported/oversized
+bitmap-overlay cases retain the existing server burn-in fallback. No network
+fetches remain during playback. Current 960-cue subtitle bounds still apply.
+
+Free Memory Stick space is checked before each file; individual files above
+FAT32's 4 GiB-minus-one-byte limit are rejected. Keep free space on the server:
+converted copies remain until explicitly deleted. Docker stores the queue in
+its persistent `/data/downloads` volume; Home Assistant uses its app's own
+`/data/downloads`. Native server default: `~/.cache/psp-streamer/downloads`.
+Override with `PSP_STREAMER_DOWNLOAD_DIR` if needed. All offline endpoints use
+the same password/HTTPS protection as streaming. The queue is capped at 128
+jobs. This release requires real PSP testing of Memory Stick transfers,
+offline playback and interruption/resume in addition to host tests.
 
 Video profiles are 480×272 for LCD and 720×480 for component TV output, with 44.1 kHz MP3. The encoder currently produces 20 fps to limit decoder workload; that number is **not a playback clock or an A/V calibration value**. Text subtitles and LCD PGS bitmap subtitles use native PSP overlays. Video and common music formats use the same MP3 DAC path; music playback includes a receiver UI with live stereo VU meters and a real 12-band PCM spectrum display.
 
@@ -192,6 +247,7 @@ audio=0
 subtitle=-1
 quality=2
 video_fps=20
+play_mode=stream
 music_preset=active.milk
 preset_auto=0
 preset_seconds=60
@@ -213,6 +269,11 @@ DNS is refreshed by library/media setup; remote polling uses that cached address
 `shuffle=1` randomly continues with another audio file from the current folder
 (`0` keeps its listed order). See [settings and HTTPS](docs/HTTPS_AND_SETTINGS.md)
 for text entry, password changes, certificates and deployment examples.
+
+`play_mode=stream` (default) or `play_mode=download` selects the PSP's video
+playback workflow. Change it in the video options dialog; music and immediate
+web-remote Play commands continue streaming. Web conversion jobs have their
+own explicit button and per-job settings.
 
 MilkDrop automation: `preset_auto=0` disables automatic changes (default);
 `1` selects in order, `2` randomly and `3` randomly weighted by each preset's

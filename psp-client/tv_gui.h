@@ -206,21 +206,22 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         tv_help(tr(TXT_INFO_CONTROLS));
     } else if (view == TV_VIEW_OPTIONS) {
         tv_text(34, 66, 38, 1, TV_CYAN, "%s", tr(TXT_STREAM_OPTIONS));
-        tv_rect(&tv_canvas, 32, 105 + row * (audio_only ? 60 : 50), 498, 48, 0x003B4824);
+        tv_rect(&tv_canvas, 32, 105 + row * (audio_only ? 60 : 40), 498, audio_only ? 48 : 38, 0x003B4824);
         if (audio_only) {
             tv_text(34, 110, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
             tv_text(34, 170, 38, 2, TV_WHITE, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
         } else {
-            tv_text(34, 110, 38, 3, TV_WHITE, tr(TXT_AUDIO_LABEL),
+            tv_text(34, 110, 38, 2, TV_WHITE, tr(TXT_AUDIO_LABEL),
                 audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                 audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
                 audio_track_count ? audio_tracks[selected_audio_track].title : "");
-            tv_text(34, 160, 38, 3, TV_WHITE, tr(TXT_SUBS_LABEL),
+            tv_text(34, 150, 38, 2, TV_WHITE, tr(TXT_SUBS_LABEL),
                 selected_subtitle_track < 0 ? tr(TXT_OFF) : subtitle_tracks[selected_subtitle_track].language,
                 selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                 selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-            tv_text(34, 210, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-            tv_text(34, 260, 38, 1, TV_WHITE, "%s: %s", tr(TXT_FRAME_RATE), selected_video_fps ? "23.976 fps" : "20 fps");
+            tv_text(34, 190, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+            tv_text(34, 230, 38, 1, TV_WHITE, "%s: %s", tr(TXT_FRAME_RATE), selected_video_fps ? "23.976 fps" : "20 fps");
+            tv_text(34, 270, 38, 2, TV_WHITE, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
         }
         tv_text(562, 67, 10, 3, TV_AMBER, "%s", tr(audio_only ? TXT_QUALITY : TXT_AUDIO_SUB));
         tv_text(562, 132, 10, 1, TV_MUTED, "%s", tr(TXT_TV_SAVED_LINE1));

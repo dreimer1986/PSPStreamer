@@ -9,6 +9,7 @@ audio=0
 subtitle=-1
 quality=2
 video_fps=20
+play_mode=stream
 music_preset=active.milk
 preset_auto=0
 preset_seconds=60

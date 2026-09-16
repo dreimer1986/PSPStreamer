@@ -1,6 +1,27 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Lokale Bibliothek und Übertragungsstatus. */
+    [TXT_LOCAL_STORAGE] = "LOKALER SPEICHER",
+    [TXT_DOWNLOADS] = "SERVER-AUFTRÄGE",
+    [TXT_CONVERTING] = "Warten / Server konvertiert",
+    [TXT_DOWNLOADING] = "Übertragung auf Memory Stick",
+    [TXT_VERIFYING] = "SHA256-Prüfsumme prüfen",
+    [TXT_DOWNLOAD_STOPPING] = "Übertragung wird beendet...",
+    [TXT_DOWNLOAD_ETA] = "Restdauer: %u Sekunden",
+    [TXT_DOWNLOAD_CANCEL] = "O DOWNLOAD STOPPEN (AUFTRAG BLEIBT)",
+    [TXT_DOWNLOAD_BACK] = "X / O ZURÜCK",
+    [TXT_DOWNLOAD_RETRY] = "Unterbrochen - erneut wählen",
+    [TXT_DOWNLOAD_SPACE] = "Zu wenig freier Memory-Stick-Speicher",
+    [TXT_DOWNLOAD_DELETE] = "Diesen lokalen Download löschen?",
+    [TXT_DOWNLOAD_CONFIRM] = "X LÖSCHEN   O BEHALTEN",
+    [TXT_DOWNLOAD_QUEUE_HELP] = "X LADEN  R ALLE  [] LOKAL  O ZURÜCK",
+    [TXT_DOWNLOAD_LOCAL_HELP] = "X START/WEITER  TRI LÖSCHEN  [] SERVER  O ZURÜCK",
+    [TXT_PLAY_MODE] = "Wiedergabe",
+    [TXT_STREAM_MODE] = "Streaming",
+    [TXT_DOWNLOAD_MODE] = "Erst laden, dann abspielen",
+    [TXT_DOWNLOAD_PROFILE] = "Download braucht passendes LCD/TV-Ziel",
+
     /* Allgemeine Einstellungen und Texteingabe. */
     [TXT_SETTINGS] = "EINSTELLUNGEN",
     [TXT_SETTINGS_HELP] = "HOCH/RUNTER WAHL  LINKS/RECHTS ÄNDERN  X TEXT",
