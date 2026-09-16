@@ -1,3 +1,13 @@
+# 0.1.31
+
+- Persist web track/language, quality, frame rate and output preferences.
+
+- Add authenticated Memory Stick ZIP exports for completed conversion jobs.
+- Recommend PC/USB copying; keep PSP Wi-Fi downloads as the portable fallback.
+- Include FLV, subtitles, seek index, compact metadata and completion marker.
+- Stream archives without storing an extra video-sized ZIP on the server.
+- Compatible with the existing 0.1.30 PSP client; no new PSP build required.
+
 # 0.1.30
 
 - Persistent offline conversion queue with per-episode track and quality settings.

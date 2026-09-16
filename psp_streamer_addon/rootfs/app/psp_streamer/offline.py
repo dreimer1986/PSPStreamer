@@ -71,6 +71,30 @@ class OfflineQueue:
         temporary.write_text(json.dumps(job, ensure_ascii=False))
         temporary.replace(folder / 'job.json')
 
+    def preferences(self, values=None):
+        with self.lock:
+            path = self.root / 'preferences.json'
+            if values is not None:
+                allowed = {'audio_quality': {'96k', '128k', '160k', 'v6', 'v5', 'v4', 'v3'},
+                           'video_fps': {'20', '24000/1001'}, 'profile': {'normal', 'low', 'tv'}}
+                clean = {}
+                for key, value in values.items():
+                    if key in allowed and isinstance(value, str) and value in allowed[key]:
+                        clean[key] = value
+                    elif key in {'audio', 'subtitle'} and isinstance(value, str) and len(value) <= 512:
+                        clean[key] = value
+                    else:
+                        raise ValueError('Invalid preference')
+                temporary = path.with_suffix('.tmp')
+                self.root.mkdir(parents=True, exist_ok=True)
+                temporary.write_text(json.dumps(clean, ensure_ascii=False), encoding='utf-8')
+                temporary.replace(path)
+                return clean
+            try:
+                return json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                return {}
+
     def list(self):
         self.start()
         with self.lock:

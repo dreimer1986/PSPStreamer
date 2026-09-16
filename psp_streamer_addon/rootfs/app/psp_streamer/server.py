@@ -19,6 +19,8 @@ import threading
 import time
 import re
 import unicodedata
+import zipfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -412,6 +414,8 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/offline/preferences':
+                return self.send_json(self.server.offline.preferences())
             if parsed.path == "/api/offline/jobs":
                 return self.send_json(self.server.offline.list())
             if parsed.path == "/api/offline/catalog":
@@ -425,6 +429,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith('/api/offline/job/'):
                 return self.send_json(self.server.offline.get(parsed.path.rsplit('/', 1)[-1]))
+            if parsed.path.startswith('/api/offline/export/'):
+                return self.offline_export(parsed.path.rsplit('/', 1)[-1])
             if parsed.path.startswith('/api/offline/file/'):
                 key, number = parsed.path.split('/')[-2:]
                 return self.offline_file(key, int(number))
@@ -505,6 +511,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 data = json.loads(self.rfile.read(length).decode('utf-8'))
                 if not isinstance(data, dict):
                     raise ValueError('Invalid request')
+                if parsed.path == '/api/offline/preferences':
+                    return self.send_json(self.server.offline.preferences(data))
                 if parsed.path == '/api/offline/jobs':
                     return self.send_json(self.server.offline.add(data))
                 if parsed.path == '/api/offline/cancel':
@@ -561,6 +569,51 @@ class AppHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.log_error("Remote command failed: %r", exc)
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
+
+    def offline_export(self, key: str) -> None:
+        # Pin open descriptors under the queue lock, then release it before
+        # streaming. A concurrent deletion cannot mix or truncate the bundle.
+        with ExitStack() as opened:
+            with self.server.offline.lock:
+                job = self.server.offline.get(key)
+                if job['state'] != 'ready':
+                    raise ValueError('Conversion is not ready for export')
+                files = []
+                for number in range(len(job['files'])):
+                    path, entry = self.server.offline.file(key, number)
+                    source = opened.enter_context(path.open('rb'))
+                    if os.fstat(source.fileno()).st_size != entry['size']:
+                        raise ValueError('Converted file size changed; create a new job')
+                    files.append((source, entry))
+            self.connection.settimeout(30)
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Disposition', f'attachment; filename="PSPStreamer-{key}.zip"')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            prefix = f'PSP/VIDEO/PSPStreamer/{key}/'
+            try:
+                # No second video-sized file on HA storage; no recompression
+                # of H.264/MP3. ZIP's data descriptors support a socket sink.
+                with zipfile.ZipFile(self.wfile, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                    for source, entry in files:
+                        digest = hashlib.sha256()
+                        with archive.open(prefix + entry['name'], 'w', force_zip64=True) as target:
+                            while block := source.read(256 * 1024):
+                                digest.update(block)
+                                target.write(block)
+                        if digest.hexdigest() != entry['sha256']:
+                            raise ValueError('Converted file checksum changed')
+                    # Disk job.json is pretty-printed. PSP's narrow parser
+                    # requires the same compact form as its HTTP manifest.
+                    archive.writestr(prefix + 'job.json', json.dumps(job, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+                    archive.writestr(prefix + 'ready', b'1')
+            except (OSError, ValueError) as exc:
+                # Headers already went out: never append JSON to a ZIP body.
+                # In particular, a failed integrity check must not emit ready.
+                self.log_error('Offline export interrupted: %r', exc)
 
     def offline_file(self, key: str, number: int) -> None:
         path, entry = self.server.offline.file(key, number)

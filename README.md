@@ -30,6 +30,30 @@ existing transcode limit with streaming. The web list reports conversion
 state, percentage and produced size; cancel/delete controls affect only
 server jobs/copies, not downloaded PSP files.
 
+The web UI remembers audio/subtitle labels and languages, quality, frame rate
+and output profile on the server across restarts. Tracks match by label first,
+then language; a missing preferred track produces a warning to check the
+fallback selection. Subtitle Off is remembered too. Queued jobs retain their
+own settings; PSP config defaults are unchanged. FFmpeg/libx264 chooses its
+thread count automatically, with no single-core limit imposed by the queue.
+
+### Recommended: PC/USB transfer (server 0.1.31)
+
+For a finished conversion, click **Download Memory Stick ZIP (PC / USB — recommended)**.
+Download and extract it on your PC, close PSP Streamer, then merge the contained
+**PSP** folder into the Memory Stick root (not into another PSP folder).
+Safely eject and open **Local storage**. The existing 0.1.30 PSP client needs
+no update. This works with HA and Docker without SSH or internal filesystem access.
+
+Copy the entire `PSP/VIDEO/PSPStreamer/<job-id>/` folder: FLV, `subtitles.ovl`,
+`seek.idx`, compact `job.json` and `ready`, not just the video. Multiple ZIPs
+can be merged thanks to unique job folders. Download ZIPs onto the PC first:
+the combined archive can exceed FAT32's limit even when individual files fit.
+The server streams the ZIP without creating another video-sized disk copy.
+Interrupted ZIP downloads must be repeated. Direct Wi-Fi remains the fallback.
+
+### Alternative: direct PSP Wi-Fi download
+
 On the PSP, open **Local storage** at the library root, or press **Circle**
 in any library folder. **Square** switches between local files and the server
 queue. In the queue, **X** downloads the selected job (waiting if it is still

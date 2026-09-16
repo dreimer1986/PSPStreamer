@@ -4,6 +4,12 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.31** adds Memory Stick ZIP exports for completed conversions.
+Download/extract on a PC, then merge the PSP folder into the Memory Stick root
+with PSP Streamer closed. Safely eject and select Local storage. No SSH is
+needed; the existing 0.1.30 PSP client remains compatible. Web track/quality
+and output defaults now persist on the server. Docker has the same features.
+
 Version **0.1.30** adds the offline conversion queue and requires the matching
 PSP client for downloads/local playback. Converted files and queue state use
 the app's persistent `/data/downloads` directory. The media mount stays

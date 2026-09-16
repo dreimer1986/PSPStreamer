@@ -19,6 +19,13 @@ deleted; create a new job to retry a failed conversion.
 - `POST /api/offline/jobs`: JSON `id`, `audio`, `subtitle`, `audio_quality`,
   `video_fps`, `profile` (`normal`, `low`, `tv`). Full video from the beginning.
 - `GET /api/offline/jobs`: web list of states and conversion progress.
+- `GET/POST /api/offline/preferences`: web defaults stored atomically in
+  `preferences.json` in the download cache, separate from PSP config.
+- `GET /api/offline/export/<id>`: authenticated streamed ZIP with all payload
+  files under `PSP/VIDEO/PSPStreamer/<id>/`, compact UTF-8 `job.json` and `ready`
+  written last after SHA256 checks. Open descriptors are pinned under the queue
+  lock, allowing export to finish even if the server copy is deleted. No extra
+  ZIP on disk; no Range support for ZIP exports. Retry interrupted downloads.
 - `GET /api/offline/catalog`: bounded tab-separated PSP catalogue.
 - `GET /api/offline/job/<id>`: compact JSON manifest, including ordered files,
   byte lengths and SHA256 hashes when ready.

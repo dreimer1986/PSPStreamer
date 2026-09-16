@@ -1,4 +1,5 @@
 import hashlib
+import io
 import http.client
 import json
 import os
@@ -8,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,6 +63,60 @@ class OfflineTests(unittest.TestCase):
                 return job
             time.sleep(.05)
         self.fail('Conversion did not finish')
+
+    def test_web_preferred_track_matching(self):
+        script = (Path(__file__).resolve().parents[1] / 'static/offline.js').read_text()
+        function = script[script.index('function restoreTrack('):script.index('choose=async')]
+        subprocess.run(['node', '-e', function + '''
+const assert=require('node:assert/strict');
+const select={options:[{value:'-1',textContent:'Off'},
+ {value:'3',textContent:'deu Deutsch'}, {value:'1',textContent:'jpn Japanese'}],value:'-1'};
+assert.equal(restoreTrack(select,'ger German'),true);
+assert.equal(select.value,'3');
+assert.equal(restoreTrack(select,'jpn Japanese'),true);
+assert.equal(select.value,'1');
+assert.equal(restoreTrack(select,'Off'),true);
+assert.equal(select.value,'-1');
+assert.equal(restoreTrack(select,'eng English'),false);
+assert.equal(select.value,'-1');
+'''], check=True)
+
+    def test_pc_export_and_persistent_preferences(self):
+        prefs = {'audio': 'jpn Japanese', 'subtitle': 'ger Deutsch', 'profile': 'tv',
+                 'audio_quality': 'v5', 'video_fps': '24000/1001'}
+        code, _, body = self.request('POST', '/api/offline/preferences', prefs)
+        self.assertEqual(code, 200, body)
+        self.assertEqual(json.loads(self.request('GET', '/api/offline/preferences')[2]), prefs)
+        self.assertEqual(json.loads((self.root / 'cache/preferences.json').read_text()), prefs)
+        self.assertEqual(self.request('POST', '/api/offline/preferences', {'profile': '../bad'})[0], 400)
+        self.assertEqual(self.request('GET', '/api/offline/export/unknown')[0], 400)
+        token = self.source()
+        _, _, body = self.request('POST', '/api/offline/jobs', {'id': token, 'subtitle': 0})
+        key = json.loads(body)['job']
+        job = self.wait_ready(key)
+        code, headers, body = self.request('GET', '/api/offline/export/' + key)
+        self.assertEqual(code, 200)
+        self.assertEqual(headers['Content-Type'], 'application/zip')
+        prefix = f'PSP/VIDEO/PSPStreamer/{key}/'
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertEqual(archive.namelist(), [prefix + f['name'] for f in job['files']] +
+                             [prefix + 'job.json', prefix + 'ready'])
+            for entry in job['files']:
+                data = archive.read(prefix + entry['name'])
+                self.assertEqual(len(data), entry['size'])
+                self.assertEqual(hashlib.sha256(data).hexdigest(), entry['sha256'])
+            manifest = archive.read(prefix + 'job.json')
+            self.assertIn(b'"name":"', manifest)
+            self.assertEqual(json.loads(manifest), job)
+            self.assertEqual(archive.read(prefix + 'ready'), b'1')
+        self.assertFalse(list((self.root / 'cache').rglob('*.zip')))
+        source = self.root / 'cache' / key / job['files'][0]['name']
+        with source.open('r+b') as stream:
+            stream.write(b'BAD')
+        _, _, body = self.request('GET', '/api/offline/export/' + key)
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            self.assertNotIn(prefix + 'ready', archive.namelist())
 
     def test_queue_variants_conversion_resume_subtitles_seek_and_restart(self):
         token = self.source()
