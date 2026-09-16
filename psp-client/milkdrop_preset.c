@@ -438,21 +438,22 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
 int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *signal,
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error) {
-    MdPresetState next=*state;
+    MdWaveState next[MD_CUSTOM_WAVES];
     MdWaveGeometry geometry[MD_CUSTOM_WAVES]={0};
     int line=0;
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
         const MdCustomWave *w=&p->waves[slot];
         if(!w->enabled) continue;
         if(w->spectrum && (!spectrum_left || !spectrum_right)) return md_file_error(error,MD_FILE_INVALID,0,"spectrum unavailable");
-        MdWaveState *ws=&next.waves[slot];
+        MdWaveState *ws=&next[slot];
+        *ws=state->waves[slot];
         float v[PM_VALUES]={0};
         md_inputs(v);
         v[9]=seconds;
         v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
-        v[PM_META_BASE]=next.frames?(float)(next.frames-1):0; v[PM_META_BASE+1]=next.fps;
-        memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
+        v[PM_META_BASE]=state->frames?(float)(state->frames-1):0; v[PM_META_BASE+1]=state->fps;
+        memcpy(v+PM_Q_BASE,state->q,sizeof(state->q));
         memcpy(v+PM_USER_BASE,ws->frame.user,sizeof(ws->frame.user));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
         if(!ws->frame.ready) {
@@ -460,7 +461,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
             memcpy(ws->frame.t,v+PM_T_BASE,sizeof(ws->frame.t)); ws->frame.ready=1;
         }
         memcpy(v+PM_T_BASE,ws->frame.t,sizeof(ws->frame.t));
-        memcpy(v+PM_Q_BASE,next.frame_q,sizeof(next.frame_q));
+        memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
         if(!pm_execute_runtime(&w->frame,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave frame");
         float n=v[PM_WAVE_BASE];
@@ -497,7 +498,9 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(ws->point_user,v+PM_USER_BASE,sizeof(ws->point_user));
         geometry[slot].count=count;
     }
-    memcpy(output,geometry,sizeof(geometry)); *state=next;
+    memcpy(output,geometry,sizeof(geometry));
+    for(int slot=0;slot<MD_CUSTOM_WAVES;slot++)
+        if(p->waves[slot].enabled) state->waves[slot]=next[slot];
     return MD_FILE_OK;
 }
 

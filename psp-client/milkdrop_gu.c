@@ -135,8 +135,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     seconds = (float)(now-md_origin)/1000000;
     /* Render-thread scratch: extended EEL memories must not consume the PSP
      * stack twice before entering the frame/point evaluators. */
-    static MdPresetState next_state,candidate;
-    next_state=md_preset_state;
+    static MdPresetState next_state;
     md_output_width=width;md_output_height=height;
     if (preset == 3) {
         if (!md_signal_active) {
@@ -145,14 +144,13 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         }
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
-        candidate=md_preset_state;
+        next_state=md_preset_state;
         if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
-                                  &candidate, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
+                                  &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
         if(md_custom_preset.pixel_program.count &&
            md_eval_pixel_grid(&md_custom_preset,&evaluated,seconds,&md_signal_state.signal,
-                             &candidate,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
-        next_state=candidate;
+                             &next_state,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
     } else md_signal_active = 0;
     int waveform=preset==3 && next_state.wave_mode>=0;
     int mode=waveform?next_state.wave_mode:0;

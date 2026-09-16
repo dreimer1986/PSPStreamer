@@ -148,6 +148,16 @@ quadratic searches. A socket leaked on DNS failure while downloading binary
 data was fixed, and the visual `fps=0` startup trap was removed. Stable decoder
 initialization and A/V timing were not changed.
 
+After the HTTPS startup fix, an additional visual-only optimization removes
+redundant full-state copies in the GU adapter. Custom-wave evaluation stages
+only enabled wave contexts rather than the entire preset state. Empty formula
+programs return immediately; the rollback bitmap is initialized only on the
+first actual memory/register write. Common load/store instructions are checked
+before loop/memory operations. These changes preserve formula results, failure
+rollback, audio priorities and the existing conservative renderer sleep policy.
+In particular, a slow frame still increases the next visual-only delay; these
+optimizations do not promise a fixed frame rate or eliminate every visible hitch.
+
 Reference reviewed: MilkDrop 2 `ns-eel2/nseel-compiler.c`, `nseel-eval.c`,
 `nseel-cfunc.c`, `nseel-ram.c`, and `vis_milk2/state.cpp`/`milkdropfs.cpp` from the
 source archive already used by this project. The implementation remains new

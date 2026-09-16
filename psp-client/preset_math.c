@@ -184,6 +184,9 @@ typedef struct {float *address,old;} Write;
 enum {JOURNAL_SIZE=2*PM_MEMORY+100};
 typedef struct {int count;PmRuntime *runtime;unsigned int dirty[(JOURNAL_SIZE+31)/32];Write writes[JOURNAL_SIZE];} Journal;
 static int write_value(Journal *j,float *address,float value) {
+    /* Most point formulas never write memory/registers. Initialize their
+     * rollback bitmap only if such a write actually occurs. */
+    if(!j->count) memset(j->dirty,0,sizeof(j->dirty));
     uintptr_t a=(uintptr_t)address;
     int id;
     if(a>=(uintptr_t)j->runtime->memory && a<(uintptr_t)(j->runtime->memory+PM_MEMORY)) id=(int)((a-(uintptr_t)j->runtime->memory)/sizeof(float));
@@ -213,6 +216,20 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
         if(frame_fuel>0) frame_fuel--;
         float a, b = 0, result = 0;
         *error_line = op->line;
+        if (op->op == PUSH || op->op == LOAD) {
+            if (used >= PM_STACK) return 0;
+            if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
+            result = op->op == PUSH ? op->value : local[op->arg];
+            if (!isfinite(result)) return 0;
+            stack[used++] = result; continue;
+        }
+        if (op->op == STORE || op->op==KEEP) {
+            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || (op->arg>=PM_ENGINE_BASE && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
+                (op->arg >= 9 && op->arg < 23) ||
+                (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
+            local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
+        }
+
         if(op->op==LOOP || op->op==WHILE) {
             if(depth>=PM_DEPTH || op->arg<=i+1 || op->arg>program->count ||
                program->code[op->arg-1].op!=(op->op==LOOP?LOOPEND:WHILEEND) || program->code[op->arg-1].arg!=i) return 0;
@@ -278,19 +295,6 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
             a=stack[--used];
             if (fabsf(a)<.00001f) i=op->arg-1;
             continue;
-        }
-        if (op->op == PUSH || op->op == LOAD) {
-            if (used >= PM_STACK) return 0;
-            if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
-            result = op->op == PUSH ? op->value : local[op->arg];
-            if (!isfinite(result)) return 0;
-            stack[used++] = result; continue;
-        }
-        if (op->op == STORE || op->op==KEEP) {
-            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || (op->arg>=PM_ENGINE_BASE && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
-                (op->arg >= 9 && op->arg < 23) ||
-                (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
-            local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
         }
         if (!used) return 0;
         a = stack[--used];
@@ -360,7 +364,8 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
     memcpy(values,local,sizeof(local)); *error_line=0; return 1;
 }
 int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime) {
-    Journal journal; journal.count=0;journal.runtime=runtime;memset(journal.dirty,0,sizeof(journal.dirty));
+    if(!program->count) {*error_line=0;return 1;}
+    Journal journal; journal.count=0;journal.runtime=runtime;
     unsigned int random=runtime->random;
     if(execute(program,values,error_line,runtime,&journal)) return 1;
     while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
