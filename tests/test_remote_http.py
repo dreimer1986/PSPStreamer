@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteHttpTests(unittest.TestCase):
+    def test_idle_browser_poll_is_asynchronous_and_cancellable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "browser-remote"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                            "-I", str(ROOT / "psp-client"), str(ROOT / "tests/browser_remote_harness.c"),
+                            "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_watchdog_storage_failures_readiness_and_both_stall_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / "watch"

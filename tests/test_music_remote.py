@@ -13,7 +13,7 @@ class MusicRemoteTests(unittest.TestCase):
         value = source[source.index("static int json_value(", source.index("static int play_h264(")):]
         value = value[:value.index("static void parse_stream_tracks")]
         integer = source[source.index("static int json_integer(", source.index("static int play_h264(")):]
-        integer = integer[:integer.index("/* Browser commands")]
+        integer = integer[:integer.index('#include "browser_remote.h"')]
         harness = (ROOT / "tests/music_remote_harness.c").read_text()
         harness = harness.replace("/* JSON_FUNCTIONS */", value + integer)
         worker = source[source.index("static int remote_control_thread(SceSize args, void *argp) {"):]

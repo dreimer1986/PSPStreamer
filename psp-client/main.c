@@ -2341,36 +2341,33 @@ static int json_integer(const char *from, const char *key, int fallback) {
     return value ? atoi(value + strlen(needle)) : fallback;
 }
 
-/* Browser commands are deliberately polled only while the library is idle.
- * This costs one tiny JSON request per second, never competes with the two
- * real-time audio/video sockets, and lets the TV be controlled from a phone. */
+#include "browser_remote.h"
+
+/* Consume background replies only while the library is idle. */
 static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
                             int *subtitle, int *is_audio, int *start_seconds) {
     int sequence = remote_control_sequence;
-    char path[64], action[16], kind[16];
-    char *field;
-    int result;
-    snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
-    result = remote_http_get(path, response, sizeof(response), NULL);
-    if (result < 0 || !json_value(response, "action", action, sizeof(action))) return 0;
-    if (remote_state_reset(response, &sequence)) return 0;
-    field = strstr(response, "\"seq\":");
+    char action[16], kind[16];
+    const char *reply = browser_remote_poll(sequence), *field;
+    if (!reply || !json_value(reply, "action", action, sizeof(action))) return 0;
+    if (remote_state_reset(reply, &sequence)) return 0;
+    field = strstr(reply, "\"seq\":");
     if (field) remote_control_sequence = sequence = atoi(field + 6);
-    if (strcmp(action, "play") || !json_value(response, "id", media_id, media_id_size)) return 0;
+    if (strcmp(action, "play") || !json_value(reply, "id", media_id, media_id_size)) return 0;
     remote_control_sequence = sequence;
-    *audio = json_integer(response, "audio", 0);
-    *subtitle = json_integer(response, "subtitle", -1);
+    *audio = json_integer(reply, "audio", 0);
+    *subtitle = json_integer(reply, "subtitle", -1);
     {
         char setting[20];
         int i;
         static const char *qualities[] = {"96k", "128k", "160k", "v6", "v5", "v4", "v3"};
-        if (json_value(response, "audio_quality", setting, sizeof(setting)))
+        if (json_value(reply, "audio_quality", setting, sizeof(setting)))
             for (i = 0; i < 7; i++) if (!strcmp(setting, qualities[i])) selected_audio_quality = i;
-        if (json_value(response, "video_fps", setting, sizeof(setting)))
+        if (json_value(reply, "video_fps", setting, sizeof(setting)))
             selected_video_fps = !strcmp(setting, "24000/1001");
     }
-    *start_seconds = json_integer(response, "start", 0);
-    *is_audio = json_value(response, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
+    *start_seconds = json_integer(reply, "start", 0);
+    *is_audio = json_value(reply, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
     return 1;
 }
 
@@ -2773,7 +2770,6 @@ int main(void) {
     unsigned int old_buttons = 0;
     unsigned long long next_repeat_tick = 0;
     unsigned long long next_page_repeat_tick = 0;
-    unsigned long long next_remote_poll_tick = 0;
     unsigned long long next_tv_redraw_tick = 0;
     int selected = 0;
     int dirty = 1;
@@ -2818,10 +2814,15 @@ int main(void) {
             dirty = 1;
             next_tv_redraw_tick = now + 150000ULL;
         }
-        if (network_ready && now >= next_remote_poll_tick) {
+        /* Stop before anything that can change network settings, use the
+         * library buffer, or launch another remote worker. Navigation can
+         * continue while HTTPS is connecting. Local input takes precedence. */
+        unsigned int browser_action = pad.Buttons & (PSP_CTRL_START | PSP_CTRL_CIRCLE |
+            PSP_CTRL_SELECT | PSP_CTRL_SQUARE | PSP_CTRL_LEFT | PSP_CTRL_TRIANGLE | PSP_CTRL_CROSS);
+        if (!network_ready || browser_action) browser_remote_stop();
+        if (network_ready && !browser_action) {
             char remote_media_id[ID_SIZE];
             int remote_audio, remote_subtitle, remote_is_audio, remote_start;
-            next_remote_poll_tick = now + 1000000ULL;
             if (remote_poll_play(remote_media_id, sizeof(remote_media_id), &remote_audio,
                                  &remote_subtitle, &remote_is_audio, &remote_start)) {
                 selected_audio_track = remote_audio;
@@ -2995,8 +2996,9 @@ int main(void) {
         }
         old_buttons = pad.Buttons;
         if (dirty) { show(selected); dirty = 0; }
-        sceKernelDelayThread(75000);
+        sceKernelDelayThread(20000);
     }
+    browser_remote_stop();
     if (display_output.tv) display_output_select(&display_output, 0);
     free(tv_canvas.pixels);
     sceNetApctlTerm();

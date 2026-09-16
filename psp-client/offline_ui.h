@@ -283,7 +283,7 @@ static void offline_scan(void) {
                     snprintf(item->state,sizeof(item->state),"%s",offline_size(path)?"ready":"partial");
                     char audio[20]="",sub[20]="",profile[16]="";
                     json_value(meta,"audio_label",audio,sizeof(audio));json_value(meta,"subtitle_label",sub,sizeof(sub));json_value(meta,"profile",profile,sizeof(profile));
-                    snprintf(item->info,sizeof(item->info),"%s | A%d %s | S%d %s",profile,json_integer(meta,"audio",0)+1,audio,json_integer(meta,"subtitle",-1)+1,sub);
+                    snprintf(item->info,sizeof(item->info),"%s | A%d %s | S%d %s",!strcmp(profile,"tv")?"TV 720x480":"LCD 480x272",json_integer(meta,"audio",0)+1,audio,json_integer(meta,"subtitle",-1)+1,sub);
                     item->progress=!strcmp(item->state,"ready")?100:0;offline_count++;
                 }
             }
@@ -351,7 +351,12 @@ static int offline_play(const OfflineEntry *item) {
     if(result<0) {
         snprintf(status,sizeof(status),"%s: %08X",video_step,result);
         settings_shell(tr(TXT_LOCAL_STORAGE));settings_line(1,0,video_step);
-        char code[20];snprintf(code,sizeof(code),"%08X",result);settings_line(3,0,code);settings_help(tr(TXT_DOWNLOAD_BACK));
+        char code[20];snprintf(code,sizeof(code),"%08X",result);settings_line(3,0,code);
+        if(result==-1401) {
+            settings_line(5,0,tr(offline_profile_tv?TXT_DOWNLOAD_TV_FILE:TXT_DOWNLOAD_LCD_FILE));
+            settings_line(7,0,tr(offline_profile_tv?TXT_DOWNLOAD_TV_HELP:TXT_DOWNLOAD_LCD_HELP));
+        }
+        settings_help(tr(TXT_DOWNLOAD_BACK));
         SceCtrlData pad;unsigned int old=PSP_CTRL_CROSS|PSP_CTRL_START;
         while(1){keep_awake();sceCtrlReadBufferPositive(&pad,1);if((pad.Buttons&~old)&(PSP_CTRL_CROSS|PSP_CTRL_CIRCLE))break;old=pad.Buttons;sceKernelDelayThread(20000);}
     }

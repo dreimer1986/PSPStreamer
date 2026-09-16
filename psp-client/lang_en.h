@@ -19,7 +19,11 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_PLAY_MODE] = "Playback",
     [TXT_STREAM_MODE] = "Streaming",
     [TXT_DOWNLOAD_MODE] = "Download, then play",
-    [TXT_DOWNLOAD_PROFILE] = "Download needs matching LCD/TV output",
+    [TXT_DOWNLOAD_PROFILE] = "LCD/TV profile mismatch",
+    [TXT_DOWNLOAD_LCD_FILE] = "File: LCD (480 x 272)",
+    [TXT_DOWNLOAD_TV_FILE] = "File: TV (720 x 480)",
+    [TXT_DOWNLOAD_LCD_HELP] = "Unplug TV cable or download TV version",
+    [TXT_DOWNLOAD_TV_HELP] = "Connect component TV or download LCD version",
 
     /* General settings and on-device text entry. */
     [TXT_SETTINGS] = "SETTINGS",

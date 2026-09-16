@@ -84,6 +84,11 @@ to these managed files and never touches unrelated Memory Stick content.
 Choose the output profile before converting: LCD (480×272) or TV (720×480).
 A downloaded file requires its matching output; connect/disconnect the TV
 cable accordingly. The PSP's direct-download option detects the cable.
+`FFFFFA87` means this output/profile check failed, not that VLC-compatible
+video is corrupt. The local list shows the resolution; the error screen shows
+the required output and how to correct it. For TV playback, select the TV
+profile on the server before converting; LCD copies cannot be reused as
+native 720×480 TV copies (or vice versa).
 Text subtitles use the existing offline overlay; supported LCD MKV/PGS cues
 and sprites are packaged too. TV bitmap subtitles and unsupported/oversized
 bitmap-overlay cases retain the existing server burn-in fallback. No network
@@ -102,6 +107,11 @@ offline playback and interruption/resume in addition to host tests.
 Video profiles are 480×272 for LCD and 720×480 for component TV output, with 44.1 kHz MP3. The encoder currently produces 20 fps to limit decoder workload; that number is **not a playback clock or an A/V calibration value**. Text subtitles and LCD PGS bitmap subtitles use native PSP overlays. Video and common music formats use the same MP3 DAC path; music playback includes a receiver UI with live stereo VU meters and a real 12-band PCM spectrum display.
 
 ## Timestamp-based audio/video synchronization
+
+The idle file browser polls remote commands in a cancellable background task,
+so an HTTPS handshake or unavailable server does not block list navigation.
+The task is joined before settings, other network requests or playback begin;
+media and subtitle timeout budgets are unchanged.
 
 Both LCD and TV playback follow the audio-master approach in [PMPlayer Advance](https://github.com/DavisDev/pmplayer-advance/tree/9ce494d020d3c909ee312bda1932f8d806a2f05d/ppa/mod):
 

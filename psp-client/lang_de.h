@@ -20,7 +20,11 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_PLAY_MODE] = "Wiedergabe",
     [TXT_STREAM_MODE] = "Streaming",
     [TXT_DOWNLOAD_MODE] = "Erst laden, dann abspielen",
-    [TXT_DOWNLOAD_PROFILE] = "Download braucht passendes LCD/TV-Ziel",
+    [TXT_DOWNLOAD_PROFILE] = "LCD/TV-Profil passt nicht",
+    [TXT_DOWNLOAD_LCD_FILE] = "Datei: LCD (480 x 272)",
+    [TXT_DOWNLOAD_TV_FILE] = "Datei: TV (720 x 480)",
+    [TXT_DOWNLOAD_LCD_HELP] = "TV-Kabel abziehen oder TV-Version laden",
+    [TXT_DOWNLOAD_TV_HELP] = "Component-TV verbinden oder LCD-Version laden",
 
     /* Allgemeine Einstellungen und Texteingabe. */
     [TXT_SETTINGS] = "EINSTELLUNGEN",
