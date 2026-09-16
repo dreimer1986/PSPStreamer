@@ -17,6 +17,7 @@ static float filter_values[8],filter_source;
 static int copy_tile;
 static int fade_texture;
 static int fade_draws;
+static int external_binds;
 static void sceKernelDcacheWritebackRange(const void *p,unsigned int n) {assert(p && n);}
 static int target_bpp, composition_width, target_changes, texture_offset;
 static int raw_target, raw_source;
@@ -78,10 +79,24 @@ static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b)
     filter_src=src; filter_dst=dst;filter_fix=b;
 }
 static void sceGuEnable(int what) { (void)what; }
-static void sceGuTexMode(int p,int a,int b,int c) { assert((p==GU_PSM_8888 || p==GU_PSM_5650) && !a && !b && !c); }
+static int texture_swizzled,texture_format;
+static void sceGuTexMode(int p,int a,int b,int c) {
+    assert((p==GU_PSM_8888 || p==GU_PSM_5650) && !a && !b && (c==0 || c==1));
+    if(c) assert(p==GU_PSM_8888);
+    texture_swizzled=c;texture_format=p;
+}
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
     uintptr_t offset=(uintptr_t)texture-0x04000000;
+    if(w==128 && h==128 && offset>2097152) {
+        assert(!level && s==128 && !((uintptr_t)texture&63));
+        assert(texture_swizzled && texture_format==GU_PSM_8888);
+        const unsigned char *rgba=texture;
+        assert(rgba[0]==255 && rgba[1]==180 && rgba[2]==30 && rgba[3]==0);
+        assert(rgba[((64/8)*(128/4)+64/4)*128+3]==255);
+        external_binds++; fade_texture=effect_texture=0; return;
+    }
     assert(!level && (w==512 || w==64) && h==256 && s==w);
+    assert(!texture_swizzled);
     effect_texture=w==64;
     fade_texture=offset>2097152;
     if(fade_texture) {assert(w==512 && h==256 && s==512);return;}
@@ -201,7 +216,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==27);
+    assert(argc==28);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -417,6 +432,10 @@ int main(int argc,char **argv) {
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
+            if(fixture==27) {
+                assert(md_images_ready && md_images[0].pixels && external_binds>0);
+                if(frame==20) {md_begin_preset(500);assert(!md_images[0].pixels);}
+            }
             if(fixture==15) {
                 short pcm[2048];
                 assert(md_preset_state.wave_mode>=0 && md_preset_state.wave_mode<=8);
@@ -467,10 +486,24 @@ int main(int argc,char **argv) {
             }
         }
         md_stop();
+        assert(!md_images_ready && !md_images[0].pixels);
     }
     }
     /* Layout changes bypass the frame throttle and reset only feedback.
      * Scanout format stays 32-bit even when TV feedback becomes RGB565. */
+    /* Four independent slots, then a partial load failure: neither case may
+     * leave allocations alive after a preset reset or corrupt the GU list. */
+    assert(md_start());
+    for(int i=1;i<MD_SHAPES;i++) strcpy(md_custom_preset.texture_path[i],md_custom_preset.texture_path[0]);
+    assert(md_images_prepare());
+    for(int i=0;i<MD_SHAPES;i++) assert(md_images[i].pixels);
+    md_begin_preset(0);
+    strcpy(md_custom_preset.texture_path[1],"/nonexistent-psp-texture.png");
+    assert(!md_images_prepare());
+    assert(md_runtime_error.code==MD_FILE_IO && !strcmp(md_runtime_error.key,"psp_texture_1"));
+    for(int i=0;i<MD_SHAPES;i++) assert(!md_images[i].pixels);
+    memset(md_custom_preset.texture_path,0,sizeof(md_custom_preset.texture_path));
+    md_stop();
     expected_passes=1;
     assert(md_start());
     for(int i=0;i<12;i++) {

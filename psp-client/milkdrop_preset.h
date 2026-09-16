@@ -27,6 +27,7 @@ typedef struct {
     float effects[5]; /* darken center, brighten, darken, solarize, invert */
     int shape_instances[MD_SHAPES];
     PmSymbols pixel_symbols;
+    char texture_path[MD_SHAPES][512]; /* PSP PNG shape extension, preset-relative. */
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
 typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT];

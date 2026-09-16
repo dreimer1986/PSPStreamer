@@ -12,7 +12,8 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 * Four custom waves with independent init/frame/point contexts, up to 512
   points (1023 vertices after smoothing), per-point position and RGBA.
 * Four custom shapes, up to eight instances each, polygon fills/gradients,
-  outlines, thick outlines, additive drawing and existing feedback sampling.
+  outlines, thick outlines, additive drawing, existing feedback sampling and
+  optional external PNG images through the PSP extension described below.
 * Zoom/exponent, rotation, translation, center, stretch, warp and per-mesh
   formulas; motion vectors, borders, echo, gamma, wrap/clamp, brighten, darken,
   invert, solarize and center darkening.
@@ -22,8 +23,8 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
   playlists, snapshot-to-live fades, embedded/fullscreen LCD and TV layouts.
 
 The new expression batch adds the remaining public function/operator families
-of the supplied MilkDrop 2 NS-EEL reference, without implementing shaders or
-external textures. **This is not a promise that every desktop `.milk` file
+of the supplied MilkDrop 2 NS-EEL reference, without implementing shaders.
+**This is not a promise that every desktop `.milk` file
 loads or renders identically.** The bounds and adaptations below are deliberate.
 
 ## Formula language
@@ -110,9 +111,45 @@ snapshot transitions rather than running two full preset engines simultaneously.
 Obsolete flags without an active path in the reference MilkDrop 2 renderer are
 not silently accepted as implemented effects.
 
-Still excluded: warp/composite shaders, shader blur stages and external/user
-textures. Sampling the renderer's own existing feedback is not a new external
-texture loader. No DirectX or desktop shader execution is involved.
+Still excluded: warp/composite shaders, shader blur stages, arbitrary shader
+texture sampling, random texture selection, animated textures and desktop
+image formats other than PNG. No DirectX or desktop shader execution is involved.
+
+## External PNG textures: baseline
+
+This is an explicit PSP extension, not a claim to execute desktop shader
+samplers. Add `psp_texture_0=checker.png` to a preset's `[preset00]` section and
+put the image in the **textures subdirectory beside that preset**. Slots 0–3
+map to custom shapes 0–3, including all their instances. Enable the matching
+`shapecode_0_textured=1`; without a filename, that shape still samples feedback
+exactly as before. Rotation/zoom use the existing `tex_ang` and `tex_zoom`
+shape fields; vertex colors and alpha modulate the PNG's RGBA pixels.
+
+Each dimension must independently be a power of two from 16 through 256
+(for example 128×64). No automatic image resizing occurs. Files are limited
+to 1 MiB each; decoded RGBA storage is at most 1 MiB total for four slots,
+plus temporary decoder/input memory during activation. Images live in aligned
+main RAM, **not additional TV framebuffer/feedback VRAM**. They are decoded
+once per activation, swizzled into GE cache-friendly blocks, flushed to RAM
+once and reused on subsequent
+frames. A brief activation delay is possible when reading the Memory Stick.
+Assets are released only after GU synchronization on preset changes or exit.
+The existing frame pacing, audio priority and display-switching paths remain
+unchanged. Shader sampling, automatic file discovery and image animation are
+not part of this implementation.
+
+Names must be basenames ending in `.png`; directory separators, `..`, drive
+prefixes and control characters are rejected. Missing, invalid or oversized
+images go through the existing preset error display (`psp_texture_N`) rather
+than silently rendering a different texture or stopping music.
+
+Test `external-texture-demo.milk`: a rotating orange/cyan circular checkerboard
+with transparent corners and a music-reactive size. Copy its accompanying
+`textures/checker.png` too. Test embedded/fullscreen LCD and TV, then change
+presets and tracks and return to video. The deterministic image can be rebuilt
+with `python3 tools/generate_texture_fixture.py`. Host tests cover PNG limits,
+alpha, path validation, activation cleanup and the actual GU drawing path;
+the final performance/audio check still needs real hardware.
 
 ## Tests and hardware check
 

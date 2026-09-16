@@ -29,6 +29,13 @@ https://github.com/Mbed-TLS/mbedtls/tree/v2.28.10
 PSP entropy is obtained through the PSPSDK/ARK sctrlKernelRand API;
 no ARK implementation code is copied into this project.
 
+External PNG textures link PSPDEV's libpng 1.6.53 and zlib 1.3.1.
+Copyright (c) 1995-2025 The PNG Reference Library Authors.
+Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler (zlib).
+These libraries are used unmodified under the libpng and zlib licenses.
+License notices: licenses/PNG-zlib.txt (PNG-zlib-license.txt in binary packages).
+Upstream: https://libpng.org/pub/png/libpng.html and https://zlib.net/
+
 MilkDrop 2 warp equations
 ------------------------
 The optional music prototype adapts WarpedBlit_NoShaders UV calculations

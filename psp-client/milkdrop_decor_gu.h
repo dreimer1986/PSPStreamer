@@ -23,8 +23,20 @@ static void md_shapes(const MdDecor *decor,float aspect) {
             sceGuEnable(GU_TEXTURE_2D);
             /* Original fixed-function shapes take alpha from vertex color,
              * not the feedback texture's alpha channel. */
-            sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGB);
-            sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_texture(md_front));
+            const MdImage *image=&md_images[slot];
+            if(image->pixels) {
+                for(int j=0;j<count;j++) {
+                    v[j].u*= (float)image->width/MD_WIDTH;
+                    v[j].v*= (float)image->height/MD_HEIGHT;
+                }
+                sceGuTexMode(GU_PSM_8888,0,0,1);
+                sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);
+                sceGuTexImage(0,image->width,image->height,image->width,image->pixels);
+            } else {
+                sceGuTexMode(md_pixel_format,0,0,0);
+                sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGB);
+                sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_texture(md_front));
+            }
             sceGuTexFlush();
         } else sceGuDisable(GU_TEXTURE_2D);
         sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,v);
@@ -49,6 +61,7 @@ static void md_shapes(const MdDecor *decor,float aspect) {
             }
         }
     }
+    sceGuTexMode(md_pixel_format,0,0,0);
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);
     sceGuDisable(GU_TEXTURE_2D); sceGuDisable(GU_BLEND);
 }

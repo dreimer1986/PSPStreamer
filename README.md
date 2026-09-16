@@ -298,7 +298,12 @@ is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,
 loops, shared registers, local/global memory, engine dimensions and monitor
 state. Try `eel-memory-orbit-demo.milk`, `eel-grid-logic-demo.milk` and
-`eel-wave-loop-demo.milk`. Shaders and external textures remain excluded.
+`eel-wave-loop-demo.milk`. External PNG textures now have a bounded,
+fixed-function baseline: try `external-texture-demo.milk` together with
+`presets/textures/checker.png`. See the compatibility guide for supported
+dimensions and the `psp_texture_0`–`psp_texture_3` extension. Shaders and their
+arbitrary texture sampling remain excluded. Building the PSP client now also
+requires PSP libpng and zlib (host rendering tests require their host libraries).
 During music, **Circle** opens the in-app preset browser: Up/Down selects,
 L/R pages, Cross applies, Circle cancels. The chosen filename is saved as
 `music_preset=filename.milk` in the PSP config; manual `active.milk` replacement

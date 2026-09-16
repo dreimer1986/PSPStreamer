@@ -1,0 +1,57 @@
+import ctypes
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from tools.generate_texture_fixture import png_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class Image(ctypes.Structure):
+    _fields_ = [('pixels', ctypes.c_void_p), ('width', ctypes.c_uint), ('height', ctypes.c_uint)]
+
+
+class TextureTests(unittest.TestCase):
+    def test_png_bounds_alpha_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            library = root / 'texture.so'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-shared', '-fPIC', '-fsanitize=undefined',
+                            str(ROOT / 'psp-client/milkdrop_texture.c'),
+                            '-lpng', '-lz', '-o', str(library)], check=True)
+            lib = ctypes.CDLL(str(library))
+            lib.md_image_load.argtypes = [ctypes.c_char_p, ctypes.POINTER(Image)]
+            lib.md_image_free.argtypes = [ctypes.POINTER(Image)]
+            path = root / 'test.png'
+            for w, h in ((16, 16), (64, 128), (256, 256)):
+                path.write_bytes(png_bytes(w, h))
+                image = Image()
+                self.assertEqual(lib.md_image_load(str(path).encode(), ctypes.byref(image)), 1)
+                self.assertEqual((image.width, image.height), (w, h))
+                self.assertEqual(image.pixels % 64, 0)
+                pixels = ctypes.string_at(image.pixels, w*h*4)
+                for y in range(h):
+                    for x in range(w):
+                        pos = ((y//8)*(w//4)+x//4)*128+(y%8)*16+(x%4)*4
+                        color = bytes((30,200,255) if (x//16+y//16)%2 else (255,180,30))
+                        alpha = 255 if (x-w/2)**2+(y-h/2)**2 < (w*.44)**2 else 0
+                        self.assertEqual(pixels[pos:pos+4], color+bytes((alpha,)))
+                lib.md_image_free(ctypes.byref(image))
+                self.assertFalse(image.pixels)
+                lib.md_image_free(ctypes.byref(image))
+            for data in (b'', b'not a png', png_bytes()[:100],
+                         png_bytes(257, 128), png_bytes(63, 64), png_bytes(1,1), b'x'*(1024*1024+1)):
+                path.write_bytes(data)
+                image = Image(None, 7, 9)
+                self.assertEqual(lib.md_image_load(str(path).encode(), ctypes.byref(image)), 0)
+                self.assertEqual((image.pixels, image.width, image.height), (None, 7, 9))
+            self.assertEqual(lib.md_image_load(str(root/'missing.png').encode(), ctypes.byref(image)), 0)
+            self.assertEqual((ROOT/'psp-client/presets/textures/checker.png').read_bytes(), png_bytes())
+
+    def test_no_fixed_startup_fps(self):
+        for language in ('de', 'en'):
+            source = (ROOT / f'psp-client/lang_{language}.h').read_text()
+            start = next(line for line in source.splitlines() if '[TXT_STARTING_VIDEO]' in line)
+            self.assertNotIn('FPS', start.upper())

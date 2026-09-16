@@ -138,6 +138,24 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             named=1; section=1; next.legacy=1; continue;
         }
         if (!section) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
+        if(!strncmp(key,"psp_texture_",12)) {
+            int slot=key[12]-'0';
+            size_t len=strlen(value);
+            const char *slash=strrchr(path,'/');
+            size_t directory=slash?(size_t)(slash-path+1):0;
+            /* Basenames only: never allow presets to open arbitrary files. */
+            if(strlen(key)!=13 || slot<0 || slot>=MD_SHAPES ||
+               next.texture_path[slot][0] || len<5 || len>127 ||
+               strcmp(value+len-4,".png") || strstr(value,"..") ||
+               strpbrk(value,"/\\:") || directory+9+len>=512) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
+            }
+            for(size_t i=0;i<len;i++) if((unsigned char)value[i]<32) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
+            }
+            snprintf(next.texture_path[slot],512,"%.*stextures/%s",(int)directory,path,value);
+            continue;
+        }
         if(!strncmp(key,"wavecode_",9)) {
             int slot=key[9]-'0';
             static const char *names[]={"enabled","samples","sep","bSpectrum","bUseDots","bDrawThick","bAdditive","scaling","smoothing","r","g","b","a"};

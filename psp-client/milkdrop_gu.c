@@ -3,12 +3,14 @@
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
 #include "milkdrop_wave.h"
+#include "milkdrop_texture.h"
 #include <pspgu.h>
 #include <pspge.h>
 #include <pspkernel.h>
 #include <malloc.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -36,8 +38,30 @@ static MdWaveGeometry md_custom_geometry[MD_CUSTOM_WAVES];
 static void *md_fade_image;
 static unsigned long long md_fade_start;
 static unsigned int md_fade_ms;
+static MdImage md_images[MD_SHAPES];
+static int md_images_ready;
+static void md_images_clear(void) {
+    for(int i=0;i<MD_SHAPES;i++) md_image_free(&md_images[i]);
+    md_images_ready=0;
+}
+static int md_images_prepare(void) {
+    if(md_images_ready) return 1;
+    for(int i=0;i<MD_SHAPES;i++) if(md_custom_preset.texture_path[i][0]) {
+        if(!md_image_load(md_custom_preset.texture_path[i],&md_images[i])) {
+            md_images_clear();
+            md_runtime_error.code=MD_FILE_IO; md_runtime_error.line=0;
+            snprintf(md_runtime_error.key,sizeof(md_runtime_error.key),"psp_texture_%d",i);
+            return 0;
+        }
+        sceKernelDcacheWritebackRange(md_images[i].pixels,md_images[i].width*md_images[i].height*4);
+    }
+    md_images_ready=1;
+    return 1;
+}
 static void md_fade_clear(void) {free(md_fade_image);md_fade_image=NULL;md_fade_ms=0;}
 void md_begin_preset(unsigned int fade_ms) {
+    if(md_list) sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+    md_images_clear();
     md_fade_clear();
     if(md_list && md_origin && fade_ms) {
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
@@ -99,6 +123,7 @@ void md_stop(void) {
     md_wave_capture=0;
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    md_images_clear();
     md_fade_clear();
     sceGuTerm();
     free(md_list); md_list = NULL;
@@ -120,6 +145,9 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     unsigned int custom_color = 0;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 3) return 0;
+    /* Once per activation, before starting any GU list. Never decode in the
+     * shape loop. Failed assets use the existing preset-error UI. */
+    if(preset==3 && !md_images_prepare()) return -1;
     if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
         top == md_last_top) return 1;
     if (tv != md_last_tv) {

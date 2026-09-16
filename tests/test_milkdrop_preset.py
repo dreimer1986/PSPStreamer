@@ -69,7 +69,7 @@ class Preset(ctypes.Structure):
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
                 ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
-                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4),("pixel_symbols",Symbols)]
+                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4),("pixel_symbols",Symbols),("texture_path",(ctypes.c_char*512)*4)]
 
 
 class PresetState(ctypes.Structure):
@@ -143,6 +143,16 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
 
+    def test_external_texture_paths(self):
+        result, preset, _ = self.parse(b'[preset00]\nzoom=1\npsp_texture_0=checker.png\n')
+        self.assertEqual(result, 0)
+        self.assertEqual(bytes(preset.texture_path[0]).split(b'\0')[0],
+                         str(self.root / 'textures/checker.png').encode())
+        for value in (b'../secret.png', b'/secret.png', b'ms0:secret.png', b'a\\b.png',
+                      b'foo.jpg', b'x'*128+b'.png', b'a\x01.png'):
+            self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_0='+value+b'\n')[0],0)
+        self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_0=a.png\npsp_texture_0=b.png\n')[0],0)
+        self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_4=a.png\n')[0],0)
     def execute_eel(self, source, runtime=None, success=True):
         program,symbols=Program(),Symbols()
         compile_fn=self.library.pm_compile_symbols
