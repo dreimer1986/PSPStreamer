@@ -41,17 +41,3 @@ class DeploymentParityTests(unittest.TestCase):
             text = (ROOT / path).read_text()
             for dependency in ("ffmpeg", "fontconfig", "mkvtoolnix"):
                 self.assertIn(dependency, text, path)
-
-    def test_hardware_encoding_is_packaged_for_both_deployments(self):
-        docker = (ROOT / "Dockerfile").read_text()
-        addon = (ROOT / "psp_streamer_addon/Dockerfile").read_text()
-        self.assertIn("intel-media-va-driver-non-free", docker)
-        self.assertIn("mesa-va-drivers", docker)
-        self.assertIn("intel-media-driver", addon)
-        self.assertIn("mesa-va-gallium", addon)
-        self.assertIn("video: true", (ROOT / "psp_streamer_addon/config.yaml").read_text())
-        for setting in ("PSP_STREAMER_ACCELERATION", "PSP_STREAMER_VAAPI_DEVICE"):
-            self.assertIn(setting, (ROOT / "compose.yaml").read_text())
-            self.assertIn(setting, (ROOT / "psp_streamer_addon/run.sh").read_text())
-        self.assertIn("/dev/dri:/dev/dri", (ROOT / "compose.vaapi.yaml").read_text())
-        self.assertIn("capabilities: [gpu]", (ROOT / "compose.nvidia.yaml").read_text())

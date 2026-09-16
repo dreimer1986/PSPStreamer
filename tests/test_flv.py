@@ -80,6 +80,8 @@ class FlvIntegrationTests(unittest.TestCase):
                 command = calibration_command(duration, "flv", tv)
                 command.remove("-re")
                 movie.write_bytes(subprocess.check_output(command))
+                if duration == 2:
+                    self.assert_main_cabac(movie)
                 output = subprocess.check_output(
                     [str(parser), str(movie), str(work / "video.h264"), str(work / "audio.mp3")],
                     text=True)
@@ -102,8 +104,26 @@ class FlvIntegrationTests(unittest.TestCase):
                 del cmd[burst:burst + 2]
                 seeked = work / "seek.flv"
                 seeked.write_bytes(subprocess.check_output(cmd))
+                self.assert_main_cabac(seeked)
                 subprocess.run([str(parser), str(seeked), str(work / "video.h264"),
                                 str(work / "audio.mp3")], check=True, stdout=subprocess.DEVNULL)
+
+    def assert_main_cabac(self, movie):
+        streams = json.loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-of", "json", str(movie)]))["streams"]
+        video = next(stream for stream in streams if stream["codec_type"] == "video")
+        self.assertEqual(video["profile"], "Main")
+        self.assertEqual(video["level"], 30)
+        self.assertEqual(video["has_b_frames"], 0)
+        audio = next(stream for stream in streams if stream["codec_type"] == "audio")
+        self.assertEqual(audio["codec_name"], "mp3")
+        self.assertEqual(audio["sample_rate"], "44100")
+        trace = subprocess.run([
+            "ffmpeg", "-hide_banner", "-i", str(movie), "-map", "0:v",
+            "-c:v", "copy", "-bsf:v", "trace_headers", "-f", "null", "-"],
+            check=True, capture_output=True, text=True).stderr
+        self.assertRegex(trace, r"entropy_coding_mode_flag\s+1\s+= 1")
+        self.assertRegex(trace, r"weighted_pred_flag\s+0\s+= 0")
 
 
 if __name__ == "__main__":

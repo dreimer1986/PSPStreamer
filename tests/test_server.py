@@ -168,7 +168,8 @@ class LibraryTests(unittest.TestCase):
 
     def test_command_has_psp_constraints(self):
         command = ffmpeg_command(Path("/media/test.mkv"), 1)
-        self.assertIn("baseline", command)
+        self.assertIn("main", command)
+        self.assertIn("bframes=0:cabac=1:weightp=0", command[command.index("-x264-params") + 1])
         self.assertIn("480:272", " ".join(command))
         self.assertIn("0:a:1?", command)
 
@@ -181,7 +182,8 @@ class LibraryTests(unittest.TestCase):
 
     def test_h264_command_has_access_unit_markers(self):
         command = ffmpeg_command(Path("/media/test.mkv"), 0, "h264")
-        self.assertIn("baseline", command)
+        self.assertIn("main", command)
+        self.assertIn("bframes=0:cabac=1:weightp=0", command[command.index("-x264-params") + 1])
         self.assertIn("-re", command)
         self.assertIn("aud=1:repeat-headers=1:keyint=64", " ".join(command))
         self.assertIn("-an", command)

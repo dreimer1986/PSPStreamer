@@ -1,10 +1,24 @@
 # PSP Streamer
 
-Optional **Intel/AMD VA-API and NVIDIA NVENC video encoding** is available in
-both normal Docker and the Home Assistant app. Software remains the default;
-see [hardware encoding setup and limitations](docs/HARDWARE_ENCODING.md).
+PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
-PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 Baseline and MP3 audio, both decoded locally by the PSP.
+### Software encoding / Main with CABAC test (0.1.29)
+
+All deployments use software `libx264` again; VA-API/NVENC support and its
+configuration have been removed following PSP decoder failures. The current
+compatibility test uses H.264 **Main, level 3.0, CABAC enabled**, with B-frames
+and weighted P prediction disabled. Resolution, selected frame rate, bitrates,
+MP3 audio and container timestamp synchronization are unchanged. Docker and the
+Home Assistant app use identical encoder commands. Update/rebuild the server;
+this change does not require a new PSP executable. Main/CABAC still needs real
+PSP validation on LCD and TV output; successful FFmpeg decoding alone is not
+proof of PSP compatibility.
+
+Deferred: offer streaming or full server conversion followed by download to
+the PSP cache before playback. Show encoding/download stages, total size when
+known, transferred bytes, transfer rate and estimated remaining time. A general
+local-file browser/player is not part of that first step. This mode is not yet
+implemented.
 
 Video profiles are 480×272 for LCD and 720×480 for component TV output, with 44.1 kHz MP3. The encoder currently produces 20 fps to limit decoder workload; that number is **not a playback clock or an A/V calibration value**. Text subtitles and LCD PGS bitmap subtitles use native PSP overlays. Video and common music formats use the same MP3 DAC path; music playback includes a receiver UI with live stereo VU meters and a real 12-band PCM spectrum display.
 

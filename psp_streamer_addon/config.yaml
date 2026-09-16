@@ -1,6 +1,6 @@
 name: PSP Streamer
 slug: psp_streamer
-version: "0.1.28"
+version: "0.1.29"
 description: Transcodes a Home Assistant media library for PSP Streamer.
 url: https://github.com/dreimer1986/PSPStreamer
 # The reference add-on runs on this Home Assistant installation's amd64 host.
@@ -9,7 +9,6 @@ arch: [amd64]
 startup: services
 boot: auto
 init: false
-video: true
 ports: {8091/tcp: 8091}
 ports_description: {8091/tcp: PSP Streamer HTTP server}
 map:
@@ -19,5 +18,5 @@ map:
   - type: media
     read_only: true
     path: /media
-options: {port: 8091, max_transcodes: 4, password: "", tls_cert: "", tls_key: "", acceleration: software, vaapi_device: /dev/dri/renderD128}
-schema: {port: port, max_transcodes: "int(2,8)", password: password, tls_cert: str, tls_key: str, acceleration: "list(software|auto|vaapi|nvenc)", vaapi_device: "match(^/dev/dri/renderD[0-9]{1,5}$)"}
+options: {port: 8091, max_transcodes: 4, password: "", tls_cert: "", tls_key: ""}
+schema: {port: port, max_transcodes: "int(2,8)", password: password, tls_cert: str, tls_key: str}

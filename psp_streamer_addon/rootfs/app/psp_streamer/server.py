@@ -27,7 +27,6 @@ from urllib.parse import parse_qs, urlparse
 
 from .pgs import PgsCue, parse_pgs
 from .settings import PasswordSettings
-from .acceleration import Acceleration
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -224,9 +223,9 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
         "-map", "0:v:0", "-map", f"0:a:{audio_track}?",
         "-vf", "scale=480:272:force_original_aspect_ratio=decrease,pad=480:272:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-        "-r", "30", "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
+        "-r", "30", "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.0",
         "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"),
-        "-tune", "zerolatency", "-x264-params", "keyint=60:min-keyint=60:scenecut=0",
+        "-tune", "zerolatency", "-x264-params", "keyint=60:min-keyint=60:scenecut=0:bframes=0:cabac=1:weightp=0",
         "-b:v", "700k", "-maxrate", "900k", "-bufsize", "1800k",
         "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "96k",
     ]
@@ -275,9 +274,9 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             # resumes the normal real-time rate.
             "ffmpeg", "-hide_banner", "-loglevel", "error", *( ["-ss", f"{start_seconds:.3f}"] if start_seconds else [] ), "-re", "-readrate_initial_burst", "2", "-i", str(source),
             "-map", "[v]" if bitmap_filter else "0:v:0",
-            # Baseline without B-frames keeps packet PTS in display order and
-            # preserves the firmware decoder's existing input constraints.
-            "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
+            # Main/CABAC compatibility test: keep packet PTS in display order
+            # with no B-frames, and retain unweighted P prediction.
+            "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"),
             "-tune", "zerolatency",
             "-b:v", "400k" if low_bandwidth else ("850k" if tv_output else "600k"),
@@ -285,7 +284,7 @@ def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_b
             "-bufsize", "600k" if low_bandwidth else ("1200k" if tv_output else "900k"),
             # Retain established GOP size and headers. They are not a clock
             # and the client does not reset the decoder at each keyframe.
-            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
+            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0:cabac=1:weightp=0",
             * (["-an", "-f", "h264", "pipe:1"] if container == "h264" else
                ["-map", f"0:a:{audio_track}?", "-c:a", "libmp3lame", "-ar", "44100",
                 # Normalize delayed audio to the same zero-based PTS. Do not
@@ -344,11 +343,11 @@ def calibration_command(duration: int, container: str, tv_output: bool) -> list[
     flash = ",".join("drawbox=x=0:y=0:w=iw:h=ih:color=%s:t=fill:enable='between(t,%.2f,%.2f)'" %
                      (colour, second, second + .35) for second, colour, _frequency in markers)
     command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi", "-i", source,
-            "-vf", flash, "-c:v", "libx264", "-profile:v", "baseline", "-level:v", "3.0",
+            "-vf", flash, "-c:v", "libx264", "-profile:v", "main", "-level:v", "3.0",
             "-preset", os.environ.get("FFMPEG_PRESET", "veryfast"), "-tune", "zerolatency",
             "-b:v", "850k" if tv_output else "600k", "-maxrate", "950k" if tv_output else "700k",
             "-bufsize", "1200k" if tv_output else "900k",
-            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0",
+            "-x264-params", "aud=1:repeat-headers=1:keyint=64:min-keyint=64:scenecut=0:bframes=0:cabac=1:weightp=0",
             "-an", "-f", "h264", "pipe:1"]
 
     if container == "flv":
@@ -415,8 +414,7 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/settings":
                 return self.send_json({"password_editable": self.server.settings.path is not None,
-                                       "password_set": self.server.settings.protected,
-                                       "acceleration": self.server.acceleration.status()})
+                                       "password_set": self.server.settings.protected})
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == "/api/remote/next":
@@ -483,16 +481,6 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
-            if parsed.path == "/api/settings/acceleration":
-                length = int(self.headers.get("Content-Length", "0"))
-                if not 2 <= length <= 2048:
-                    self.close_connection = True
-                    raise ValueError("Invalid settings length")
-                settings = json.loads(self.rfile.read(length).decode("utf-8"))
-                if not isinstance(settings, dict):
-                    raise ValueError("Invalid settings")
-                self.server.acceleration.change(settings.get("mode"), settings.get("device"))
-                return self.send_json(self.server.acceleration.status())
             if parsed.path == "/api/settings/password":
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 2 <= length <= 2048:
@@ -714,13 +702,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
                 if not subtitle_source.exists():
                     os.symlink(source, subtitle_source)
-            software_command = (calibration_command(calibration_duration, container, tv_output) if calibration_duration else
-                                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps))
-            command, encoder, fallback = software_command, "software", False
-            if container in {"flv", "h264"}:
-                command, encoder, fallback = self.server.acceleration.prepare(software_command, tv_output, video_fps)
             process = subprocess.Popen(
-                command,
+                (calibration_command(calibration_duration, container, tv_output) if calibration_duration else
+                 ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)),
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on
@@ -730,30 +714,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 # stop ffmpeg's video writer after only a few seconds.
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             )
-            first_chunk = b""
-            if encoder != "software":
-                # Do not commit HTTP headers until the actual source produces
-                # data. A failed hardware start may still fall back safely;
-                # never concatenate two different streams after playback starts.
-                first_chunk = process.stdout.read1(4096)
-                if not first_chunk:
-                    process.wait(timeout=15)
-                    process.stdout.close()
-                    self.server.acceleration.failed_start(fallback)
-                    if not fallback:
-                        return self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, "Hardware encoder produced no stream; try Software")
-                    encoder = "software"
-                    process = subprocess.Popen(software_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             self.send_response(HTTPStatus.OK)
             content_type = {"flv": "video/x-flv", "mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
-            self.send_header("X-Video-Encoder", encoder)
             self.end_headers()
-            if first_chunk:
-                self.wfile.write(first_chunk)
-                self.wfile.flush()
             assert process.stdout is not None
             # read() waits until its complete request is filled. For low-rate
             # MJPEG that used to batch several frames into a 64-KB burst, so
@@ -784,7 +750,6 @@ class AppServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], library: Library):
         self.settings = PasswordSettings()
-        self.acceleration = Acceleration()
         cert = os.environ.get("PSP_STREAMER_TLS_CERT", "")
         key = os.environ.get("PSP_STREAMER_TLS_KEY", "")
         self.tls_context = None
