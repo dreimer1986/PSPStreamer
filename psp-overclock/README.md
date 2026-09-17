@@ -1,6 +1,6 @@
 # StreamerOC — optional experimental kernel plugin
 
-This is separate from PSP Streamer and does not change its CPU settings.
+This is separate from PSP Streamer and does not change its configuration file.
 **Not hardware-validated. Leave disabled until you are ready for a controlled
 test. Overclocking can freeze/reboot the PSP and corrupt files being written.**
 Back up the Memory Stick; do not test while downloading/saving important data.
@@ -25,7 +25,8 @@ at the configured maximum rather than the actual register value. Its bitwise
 PLL-index test is also not an equality test. Those assumptions are not carried
 over here. The new implementation has bounded waits, exact ratio checks and
 reads the actual numerator before reducing it. No framebuffer hooks or global
-memory-protection unlock are used.
+memory-protection unlock are used. The optional diagnostic overlay writes a
+small rectangle into validated VRAM without installing display hooks.
 If an application changes the PLL/domain setup during a yielded ramp, the
 ramp aborts and enforcement is disabled rather than continuing blindly.
 
@@ -140,7 +141,8 @@ after editing the INI; the report's modification time is not its config-load tim
 
 `config_path` identifies the startup INI. `config_state=loaded` confirms that
 the complete file was read and validated. `config_bytes` and `config_keys`
-record bytes read and recognized settings; the sample has four settings.
+record bytes read and recognized settings; the sample has five settings
+(older four-setting files remain valid and leave the overlay disabled).
 `config_io_result` gives the hexadecimal I/O result (zero after successful EOF).
 `config_error_line` identifies a parse error, or is zero on success. Failed
 open/read/close operations and invalid files keep the safe defaults and report
@@ -151,6 +153,40 @@ spaces around `=`, and `#`/`;` comments. Unknown keys, invalid booleans (anythin
 except 0 or 1), out-of-range targets and empty/comment-only files are rejected.
 Settings are committed only after the whole file passes validation. No runtime
 reload, automatic retry or automatic overclock activation has been added.
+
+### Optional diagnostic overlay (experimental)
+
+Add `overlay=1` to `StreamerOC.ini` and restart the application. Hold
+**L+R+Triangle** briefly to show CPU/bus register estimates, requested target,
+Sony's clock report, effective enabled state, enforcement setting and callback
+availability for five seconds. Release and press again to hide it early.
+L+R+SELECT still appends a snapshot to the log. `overlay=0` is the default;
+the overlay is independent of `report`. Key combinations are not consumed,
+so the application can also react to them.
+
+This is a small ASCII overlay at the upper left, refreshed at up to 10 Hz only
+while visible. The clock enforcement check remains at 500 ms. No GU state,
+display mode, frame-buffer selection or syscall/display hooks are changed.
+The rasterizer accepts validated VRAM-backed 565/5551/4444/8888 surfaces up to
+720x480 and uses their actual stride. Unsupported/main-RAM framebuffers are
+skipped. TV-Out visibility depends on whether the active TV surface is exposed
+by the standard display query; support is not promised for every TV mode/app.
+
+Applications continue rendering independently: flicker or partial overwrite is
+possible, particularly with double buffering or hardware video. This is **not**
+a universally composited overlay. When hiding, only pixels still matching our
+paint are restored; application redraws are left alone. A coincident identical
+pixel cannot be distinguished from our own. Mode changes or suspend discard
+stale backup pixels instead of restoring them into a different layout; a static
+screen may retain traces until its application redraws. Set `overlay=0` if an
+app misbehaves. No display writes occur in the power callback.
+
+Log timestamps now use 32-bit formatting components instead of `%llu`, which
+produced zero fields on the tested kernel. A real-device test must confirm the
+corrected output. Elapsed milliseconds wrap after roughly 49 days in one run.
+Missing final events on forced application replacement remain a limitation;
+no global exit callback is claimed or installed, and clock restoration across
+such replacement is not guaranteed. Earlier event records are retained.
 
 ## What the reported speed means
 

@@ -9,6 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_overlay_pixel_formats_and_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'overlay'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-overclock'),
+                            str(ROOT / 'tests/oc_overlay_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_oc_event_history_append_and_io_failures(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / 'report'
@@ -39,14 +47,15 @@ static int parse(const char *input, OcConfig *out, int *keys, int *line) {
     return oc_config_parse(text,(int)n,out,keys,line);
 }
 int main(int argc,char **argv) {
-    OcConfig c={0,333,0,1}; int keys,line;
+    OcConfig c={0,333,0,1,0}; int keys,line;
     assert(parse("# header\nenabled=1\ntarget_mhz=383\nenforce=1\nreport=1\n",&c,&keys,&line)==0);
     assert(c.enabled==1 && c.target==383 && c.enforce==1 && c.report==1 && keys==4 && !line);
+    assert(parse("overlay=1",&c,&keys,&line)==0 && c.overlay==1 && !c.enabled);
     assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
     assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
     const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
         "enabled=1\nreport=0\ntarget_mhz=332", "target_mhz=9999999999999999999999",
-        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1"};
+        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=2"};
     for(unsigned int i=0;i<sizeof(bad)/sizeof(bad[0]);i++) {
         OcConfig before=c;
         assert(parse(bad[i],&c,&keys,&line)<0);
@@ -57,7 +66,7 @@ int main(int argc,char **argv) {
     if(argc==2) {
         char file[1024]; FILE *f=fopen(argv[1],"rb");assert(f);
         int n=(int)fread(file,1,sizeof(file)-1,f);fclose(f);file[n]=0;
-        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==4);
+        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==5);
     }
     return 0;
 }

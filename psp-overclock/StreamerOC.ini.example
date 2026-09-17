@@ -7,3 +7,6 @@ target_mhz=333
 enforce=0
 # Register-derived CPU/PLL/bus estimates in StreamerOC-status.txt.
 report=1
+# Optional diagnostic OSD: hold L+R+Triangle; 5 seconds, press again to hide.
+# Disabled by default; no display hooks. May flicker in fast-rendering apps.
+overlay=0

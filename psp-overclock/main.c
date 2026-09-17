@@ -9,6 +9,8 @@
 #include <pspsdk.h>
 #include <pspsysmem_kernel.h>
 #include <pspinit.h>
+#include <pspdisplay.h>
+#include <pspge.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -16,6 +18,7 @@
 #include "power_callback_slot.h"
 #include "config_parse.h"
 #include "report_io.h"
+#include "overlay_pixels.h"
 
 PSP_MODULE_INFO("StreamerOC", 0x1006, 1, 0);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -38,6 +41,40 @@ static char application[192];
 static int journal_result;
 static volatile int pending_suspend_flags;
 static volatile unsigned long long suspend_tick;
+static int overlay_enabled;
+static unsigned long long overlay_until;
+static OcOverlay overlay;
+
+static void overlay_update(int toggle) {
+    if(!overlay_enabled)return;
+    /* A resumed application may have reused VRAM: never restore stale pixels. */
+    if(suspended){overlay.valid=0;overlay_until=0;return;}
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    if(toggle)overlay_until=overlay_until?0:now+5000000ULL;
+    if(overlay_until && now>=overlay_until)overlay_until=0;
+    if(!overlay_until && !overlay.valid)return;
+    void *base=NULL;int stride,format,mode,width,height;
+    if(sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
+       sceDisplayGetMode(&mode,&width,&height)<0 ||
+       !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format)) {
+        overlay.valid=0;return;
+    }
+    if(overlay.valid && (overlay.stride!=stride || overlay.format!=format))overlay.valid=0;
+    oc_osd_restore(&overlay);
+    if(!overlay_until)return;
+    unsigned int cpu=0,bus=0;
+    if(oc_supported_model(sceKernelGetModel())) {
+        int intr=sceKernelCpuSuspendIntr();
+        unsigned int ctl=CTL,mul=MUL,c=CPU,b=BUS;
+        sceKernelCpuResumeIntr(intr);
+        cpu=oc_khz(ctl,mul,c);bus=oc_khz(ctl,mul,b);
+    }
+    char lines[3][40]={{0}};
+    snprintf(lines[0],40,"OC CPU %u.%u BUS %u.%u MHZ EST",cpu/1000,(cpu%1000)/100,bus/1000,(bus%1000)/100);
+    snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
+    snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
+    oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
+}
 
 /* Same pipeline-settle loop as the reference, but every ready wait is bounded. */
 static void settle(void) {
@@ -73,6 +110,7 @@ static void config(void) {
         config_state="parse failed";status="invalid config: monitor only";return;
     }
     enabled=parsed.enabled;target=parsed.target;enforce=parsed.enforce;report=parsed.report;
+    overlay_enabled=parsed.overlay;
     config_state="loaded";
 }
 static void snapshot(const char *event) {
@@ -86,7 +124,7 @@ static void snapshot(const char *event) {
     char path[256],text[2048];
     unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
-        "\n[event=%s session_us=%llu worker=%d elapsed_ms=%llu]\napplication=%s\n"
+        "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\ntarget_mhz=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
         "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
@@ -94,17 +132,19 @@ static void snapshot(const char *event) {
         "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
-        "suspend_flags=%08X\nsuspend_observed_us=%llu\nprevious_journal_result=%08X\n"
+        "suspend_flags=%08X\nsuspend_observed_us=%u%06u\nprevious_journal_result=%08X\noverlay=%d\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
-        event,session_tick,worker,(now-session_tick)/1000ULL,application,
+        event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
+        (unsigned int)((now-session_tick)/1000ULL),application,
         status,sceKernelGetModel(),enabled,enforce,target,
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
         scePowerGetCpuClockFrequencyInt(),
         oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus,
-        (unsigned int)pending_suspend_flags,suspend_tick,(unsigned int)journal_result);
+        (unsigned int)pending_suspend_flags,(unsigned int)(suspend_tick/1000000ULL),
+        (unsigned int)(suspend_tick%1000000ULL),(unsigned int)journal_result,overlay_enabled);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
     snprintf(path,sizeof(path),"%sStreamerOC-events.log",directory);
@@ -202,10 +242,11 @@ static int thread_main(SceSize args,void *argp) {
     snapshot("startup_result");
     unsigned int previous=0,conflicts=0;
     unsigned long long window=sceKernelGetSystemTimeWide();
+    unsigned long long next_clock_check=0;
     while(running) {
-        sceKernelDelayThreadCB(500000);
+        sceKernelDelayThreadCB(overlay_enabled?100000:500000);
         if(!running)break;
-        if(suspended==1)continue;
+        if(suspended==1){overlay_update(0);continue;}
         if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME) {
             enabled=0;status="left GAME context: enforcement disabled";
             snapshot("left_game_before_restore");
@@ -213,17 +254,23 @@ static int thread_main(SceSize args,void *argp) {
             snapshot("left_game_after_restore");break;
         }
         if(suspended==2) {
+            overlay_update(0);
             /* Suspend is a safety boundary: do not silently re-overclock. */
             suspended=0;enabled=0;status="resumed: enforcement disabled; restart to enable";
             snapshot("suspend_resume");pending_suspend_flags=0;
         }
         sceCtrlPeekBufferPositive(&pad,1);
         unsigned int buttons=pad.Buttons;
+        unsigned int osd_chord=PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_TRIANGLE;
+        overlay_update((buttons&osd_chord)==osd_chord && (previous&osd_chord)!=osd_chord);
         if((buttons&(PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT))==
            (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT) &&
            (previous&(PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT))!=
            (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT)) snapshot("manual_snapshot");
         previous=buttons;
+        unsigned long long clock_tick=sceKernelGetSystemTimeWide();
+        if(clock_tick<next_clock_check)continue;
+        next_clock_check=clock_tick+500000ULL;
         if(!enabled || matches())continue;
         snapshot("clock_mismatch");
         if(!enforce){enabled=0;status="application changed clocks: not reapplied";snapshot("enforcement_disabled");continue;}
@@ -234,6 +281,7 @@ static int thread_main(SceSize args,void *argp) {
         snapshot("reapply_result");
     }
     snapshot("session_stopping");
+    overlay_until=0;overlay_update(0);
     if(changed && !suspended)restore();
     enabled=0;status="worker stopped";
     snapshot("session_end");
