@@ -33,6 +33,7 @@ main.o: preset_sequence.h
 main.o tls_transport.o: tls_transport.h
 main.o: server_connection.h app_settings.h
 main.o: offline_source.h offline_ui.h offline_filename.h
+main.o: offline_preroll.h mp3_preroll.h
 main.o milkdrop_gu.o milkdrop_wave.o: milkdrop_wave.h milkdrop_warp.h
 milkdrop_wave_extra.o: milkdrop_wave.h milkdrop_decor.h milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_wave.o milkdrop_preset.o milkdrop_decor.o: milkdrop_decor.h

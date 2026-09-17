@@ -131,6 +131,39 @@ int main(void) {
 
 
 class AudioOutputTests(unittest.TestCase):
+    def test_seek_warmup_never_publishes_pcm_and_keeps_real_errors_fatal(self):
+        source = (ROOT / "psp-client/main.c").read_text()
+        start = source.index('        if (result < 0 && !(warmup && missing_history))')
+        end = source.index('        if (frames_in_block * MP3_DECODE_SAMPLES', start)
+        code = r'''
+#include <assert.h>
+#include <string.h>
+#include "mp3_preroll.h"
+int main(void) {
+    for(int fail=-1;fail<=10;fail++) {
+        Mp3Preroll state={0};
+        unsigned char mp3_input_buffer[104]={255,251,16,0,255,128};
+        int frames_in_block=0,audio_state=0,audio_running=1;
+        for(int i=0;i<14;i++) {
+            int warmup=i<10;
+            int missing_history=warmup?mp3_preroll_missing(&state,mp3_input_buffer,104):0;
+            int result=(missing_history || i==fail)?-1:0;
+            int frame_size=104,have=104;
+''' + source[start:end] + r'''
+        }
+        if(fail>=8)assert(audio_state==-24 && !audio_running && frames_in_block==0);
+        else assert(!audio_state && audio_running && frames_in_block==4);
+    }
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'warmup'
+            subprocess.run(['cc', '-x', 'c', '-', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT / 'psp-client'), '-o', str(binary)],
+                           input=code, text=True, check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_worker_ownership_startup_eof_and_failure(self):
         source = (ROOT / "psp-client/main.c").read_text()
         begin = source.index("static int audio_output_thread(")

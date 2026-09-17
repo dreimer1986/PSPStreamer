@@ -1443,6 +1443,7 @@ static int audio_thread(SceSize args, void *argp) {
     unsigned int block_pts = 0;
     int have = 0, frame_size, result, initial_size, frames_in_block = 0;
     int write_slot_reserved = 0;
+    Mp3Preroll preroll={0};
     const int block_bytes = audio_dac_samples * 2 * (int)sizeof(short);
     const int decoded_bytes = MP3_DECODE_SAMPLES * 2 * (int)sizeof(short);
     (void)args; (void)argp;
@@ -1496,6 +1497,7 @@ static int audio_thread(SceSize args, void *argp) {
         audio_state = -16; audio_running = 0; goto cleanup;
     }
     while (audio_running) {
+        int warmup=0,missing_history=0;
         if (!write_slot_reserved) {
             if (!audio_queue_wait(audio_queue_free_sema)) continue;
             if (!audio_running) break;
@@ -1511,6 +1513,11 @@ static int audio_thread(SceSize args, void *argp) {
                 audio_state = -26; break;
             }
             memcpy(mp3_input_buffer, timed_packet.data, frame_size);
+            warmup=offline_active && timed_packet.pts<offline_seek_ms;
+            if(warmup) {
+                missing_history=mp3_preroll_missing(&preroll,mp3_input_buffer,frame_size);
+                if(missing_history<0){audio_state=-26;break;}
+            }
             if (!frames_in_block) block_pts = (unsigned int)timed_packet.pts;
             free(timed_packet.data); timed_packet.data = NULL;
             have = frame_size;
@@ -1545,9 +1552,12 @@ static int audio_thread(SceSize args, void *argp) {
          * maintenance must not write stale PCM back over the DMA result. */
         sceKernelDcacheInvalidateRange((void *)mp3_codec[8], decoded_bytes);
         codec_leave();
-        if (result < 0) { audio_state = -24; audio_running = 0; break; }
+        if (result < 0 && !(warmup && missing_history)) { audio_state = -24; audio_running = 0; break; }
         memmove(mp3_input_buffer, mp3_input_buffer + frame_size, have - frame_size);
         have -= frame_size;
+        /* Never publish preroll PCM or its timestamps. Reuse the reserved
+         * slot until the first audible frame at/after the video keyframe. */
+        if(warmup)continue;
         frames_in_block++;
         if (frames_in_block * MP3_DECODE_SAMPLES == audio_dac_samples) {
             sceKernelDcacheInvalidateRange(audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2, block_bytes);
@@ -2044,7 +2054,8 @@ static int play_h264(const char *media_id) {
                     } else if(video_controls.selected==3) {
                         paused=!paused; playback_paused=paused; audio_start=paused?0:buffered;
                     } else {
-                        stream_start_seconds += timed_position_ms/1000+deltas[video_controls.selected];
+                        stream_start_seconds = (offline_active ? playback_position_ms/1000 :
+                            stream_start_seconds+timed_position_ms/1000)+deltas[video_controls.selected];
                         if(stream_start_seconds<0) stream_start_seconds=0;
                         strncpy(resume_media_id,media_id,sizeof(resume_media_id)-1);
                         resume_media_id[sizeof(resume_media_id)-1]=0;
@@ -2088,7 +2099,8 @@ static int play_h264(const char *media_id) {
         if (!paused && (pad.Buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) &&
             !(previous_buttons & (PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER))) {
             int delta = (pad.Buttons & PSP_CTRL_RTRIGGER) ? 10 : -10;
-            stream_start_seconds += timed_position_ms / 1000 + delta;
+            stream_start_seconds = (offline_active ? playback_position_ms/1000 :
+                stream_start_seconds+timed_position_ms/1000)+delta;
             if (stream_start_seconds < 0) stream_start_seconds = 0;
             strncpy(resume_media_id, media_id, sizeof(resume_media_id) - 1);
             resume_media_id[sizeof(resume_media_id) - 1] = '\0';

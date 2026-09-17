@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflineOutputTests(unittest.TestCase):
+    def test_seek_preroll_reservoir_bounds_fragmentation_and_bad_index(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'preroll'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
+                            '-fsanitize=undefined', '-I', str(ROOT / 'psp-client'),
+                            str(ROOT / 'tests/offline_preroll_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_pc_copied_unicode_names_resolve_through_fat_alias(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / 'filename'

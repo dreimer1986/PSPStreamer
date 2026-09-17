@@ -3,6 +3,7 @@
  * existing firmware APIs and receive complete packets with container PTS.
  */
 #include "flv.h"
+#include "mp3_preroll.h"
 typedef struct {
     unsigned char *data;
     int size, pts;
@@ -128,6 +129,8 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
     nonblock = 0;
     return sceNetInetSetsockopt(fd, SOL_SOCKET, SO_NONBLOCK, &nonblock, sizeof(nonblock));
 }
+#include "offline_preroll.h"
+
 static int timed_reader(SceSize args, void *argp) {
     struct sockaddr_in server;
     unsigned char h[13], tag[11], previous[4];
@@ -135,6 +138,7 @@ static int timed_reader(SceSize args, void *argp) {
     char http[4096];
     FlvAvc avc;
     int n = 0, result = -1, fd=-1, got, saw_end = 0;
+    unsigned int local_position=13, video_start=offline_active?offline_seek_offset:0;
     (void)args; (void)argp;
     stream_diag_reset();
     memset(&avc, 0, sizeof(avc));
@@ -194,8 +198,11 @@ flv_header:
         if (timed_read(body, size) != 1) break;
         DEBUG_DIAG(stream_diag.stage="FLV tag trailer";);
         if (timed_read(previous, 4) != 1 || flv_u32(previous) != size + 11) break;
+        unsigned int tag_position=local_position;
+        if(offline_active)local_position+=size+15;
         pts = (int)(flv_u24(tag + 4) | ((unsigned int)tag[7] << 24));
         if (type == 8) {
+            if(offline_active && offline_seek_offset)continue;
             DEBUG_DIAG(stream_diag.stage="MP3 tag";); DEBUG_DIAG(stream_diag.audio_pts=pts;);
             if (size < 5 || size - 1 > FLV_MAX_AUDIO || (body[0] >> 4) != 2) break;
             if (timed_put(&timed_audio, body + 1, size - 1, pts) < 0) break;
@@ -205,10 +212,14 @@ flv_header:
             if (body[1] == 0) {
                 if (flv_config(&avc, body + 5, size - 5) < 0) break;
                 if(offline_active && offline_seek_offset) {
-                    if(sceIoLseek(offline_reader_fd,(SceOff)offline_seek_offset,PSP_SEEK_SET)<0)break;
+                    unsigned int start=offline_seek_offset;
+                    if(timed_has_audio && offline_preroll_start(offline_reader_fd,start,&start)<0)break;
+                    if(sceIoLseek(offline_reader_fd,(SceOff)start,PSP_SEEK_SET)!=(SceOff)start)break;
+                    local_position=start;
                     offline_seek_offset=0;
                 }
             } else if (body[1] == 1) {
+                if(offline_active && tag_position<video_start)continue;
                 converted = flv_annexb(&avc, body + 5, size - 5, annexb, FLV_MAX_VIDEO);
                 if (converted < 0) break;
                 if (timed_put(&timed_video, annexb, converted, flv_pts(tag, body)) < 0) break;

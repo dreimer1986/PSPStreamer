@@ -7,8 +7,10 @@
 #include <stdint.h>
 #include <netinet/in.h>
 #include "flv.h"
+#include "mp3_preroll.h"
 #define DEBUG_DIAG(statement) do { statement } while(0)
 typedef int SceSize;
+typedef int SceUID;
 typedef long long SceOff;
 #define PSP_O_RDONLY 0
 #define PSP_SEEK_SET SEEK_SET
@@ -21,6 +23,8 @@ static char offline_movie[512],timed_request[4];
 static unsigned long long offline_movie_size;
 static FILE *source,*video,*audio;
 static int video_pts=-1,audio_pts=-1,frames,samples,fail_read;
+static int target_pts,preroll_packets,audible_packets;
+static Mp3Preroll reservoir;
 static struct {const char *reason,*stage;int wanted,received,socket_error,ap_state,ap_result,audio_pts,video_pts;unsigned int failure_ms;} stream_diag;
 static unsigned long long sceKernelGetSystemTimeWide(void){return 1;}
 static int sceIoOpen(const char *path,int flags,int mode){(void)flags;(void)mode;source=fopen(path,"rb");return source?1:-77;}
@@ -42,10 +46,18 @@ static int connection_close(int fd){(void)fd;assert(0);return -1;}
 static int sceNetApctlGetState(int *s){(void)s;assert(0);return -1;}
 static int timed_put(int *q,const unsigned char *data,int size,int pts) {
     if(q==&timed_video){assert(pts>video_pts);video_pts=pts;frames++;assert(fwrite(data,1,size,video)==(size_t)size);}
-    else {assert(q==&timed_audio);assert(pts>audio_pts);audio_pts=pts;samples++;assert(fwrite(data,1,size,audio)==(size_t)size);}
+    else {
+        assert(q==&timed_audio);assert(pts>audio_pts);audio_pts=pts;samples++;
+        int missing=mp3_preroll_missing(&reservoir,data,size);
+        assert(missing>=0);
+        if(pts<target_pts)preroll_packets++;
+        else {assert(!missing);audible_packets++;}
+        assert(fwrite(data,1,size,audio)==(size_t)size);
+    }
     return 0;
 }
 /* TIMED_READ */
+#include "offline_preroll.h"
 /* TIMED_READER */
 int main(int argc,char **argv) {
     assert(argc==5);
@@ -59,9 +71,16 @@ int main(int argc,char **argv) {
     assert(!strcmp(timed_error_step,"Read local video"));
     offline_reader_fd=-1;fail_read=timed_error=0;
     strcpy(offline_movie,argv[1]);offline_seek_offset=strtoul(argv[2],NULL,10);
+    if(offline_seek_offset) {
+        FILE *f=fopen(offline_movie,"rb");unsigned char tag[11];assert(f);
+        assert(!fseek(f,offline_seek_offset,SEEK_SET)&&fread(tag,1,11,f)==11);fclose(f);
+        target_pts=flv_u24(tag+4)|((unsigned int)tag[7]<<24);
+    }
     video=fopen(argv[3],"wb");audio=fopen(argv[4],"wb");assert(video&&audio);
     assert(timed_reader(0,NULL)==0);assert(timed_eof&&!timed_error&&frames>0&&samples>0);
     assert(offline_reader_fd==-1&&timed_socket==-1);
+    assert(audible_packets>0);
+    if(target_pts>1000)assert(preroll_packets>=3);
     fclose(video);fclose(audio);
     printf("%d %d %d %d\n",frames,samples,video_pts,audio_pts);
     return 0;

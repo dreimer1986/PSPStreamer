@@ -69,7 +69,13 @@ Local **X** plays a completed download or resumes an incomplete transfer.
 **Triangle** offers deletion with confirmation; **Circle** goes back.
 Playback supports pause, stop and keyframe-based seek using the existing
 controls. Next/previous and end-of-file advance use the local list's filename
-order (and stop at an incomplete entry). Local playback makes no server or
+order (and stop at an incomplete entry). Local seeking also reads preceding
+MP3 packets through the FLV backward links: it warms the decoder silently,
+then publishes audio at/after the indexed video keyframe. This supplies the
+MP3 bit reservoir without re-encoding existing downloads or changing PTS sync.
+Decoder errors are tolerated only for silent lead-in frames whose required
+preceding data has not yet been fed. After that, errors still stop playback.
+Local playback makes no server or
 remote-control requests, including for subtitles. Hold **R while launching**
 to skip Wi-Fi association entirely; restart normally to return online.
 
