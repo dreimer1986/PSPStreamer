@@ -6,6 +6,23 @@ static unsigned int channel(float x) { return (unsigned int)(fminf(1,fmaxf(0,x))
 unsigned int md_rgba(float r,float g,float b,float a) {
     return channel(r)|(channel(g)<<8)|(channel(b)<<16)|(channel(a)<<24);
 }
+float md_wave_opacity(const MdDecor *d,int mode,float bass,float mid,float treble) {
+    /* MilkDrop 2 milkdropfs.cpp DrawWave: mode gain, then the unbounded
+     * volume factor, then final alpha saturation. 512-wide feedback factors.
+     * Mode 3 intentionally derives its alpha from treble instead of wave_a. */
+    double alpha=d->wave_alpha;
+    if(mode==1)alpha*=1.25;
+    if(mode==2 || mode==5)alpha*=.09;
+    if(mode==3)alpha=.15*1.3*treble*treble;
+    if(d->wave_mod_alpha) {
+        double span=(double)d->wave_mod_end-d->wave_mod_start;
+        if(span<=0)return 0; /* loader/evaluator also reject this interval */
+        alpha*=(((double)bass+mid+treble)*.333-d->wave_mod_start)/span;
+    }
+    if(alpha<=0)return 0;
+    if(alpha>=1)return 1;
+    return isfinite(alpha)?(float)alpha:0;
+}
 int md_shape_vertices(MdVertex *v,const MdShape *p,float aspect) {
     int sides=(int)p->sides;
     if(sides<3 || sides>MD_SHAPE_SIDES || p->tex_zoom<=0) return 0;

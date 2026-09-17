@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -258,19 +259,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     if(waveform) {
         const MdDecor *d=&frame_decor;
         ring=sceGuGetMemory(MD_WAVE_MAX_VERTICES*sizeof(*ring));
-        float alpha=d->wave_alpha;
-        if(spiral) alpha*=1.25f;
-        if(mode==2 || mode==5) alpha*=.09f;
-        if(mode==3) { float treb=md_signal_state.signal.values[9]; alpha=.15f*1.3f*treb*treb; }
-        if(d->wave_mod_alpha) {
-            float relative=(md_signal_state.signal.values[7]+md_signal_state.signal.values[8]+
-                            md_signal_state.signal.values[9])/3;
-            float mix=(relative-d->wave_mod_start)/(d->wave_mod_end-d->wave_mod_start);
-            if(mix<0) mix=0;
-            if(mix>1) mix=1;
-            alpha*=mix;
-        }
-        if(alpha>1) alpha=1;
+        float alpha=md_wave_opacity(d,mode,md_signal_state.signal.values[7],
+            md_signal_state.signal.values[8],md_signal_state.signal.values[9]);
         float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
         int wave_count=MD_WAVE_VERTICES,split=0;
@@ -283,6 +273,15 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         else md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
                        seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         md_expand(ring, wave_count, 0);
+        /* Arbitrary finite preset gains can still overflow intermediate
+         * geometry. Never submit NaN/infinity or wrapping GU coordinates. */
+        for(int i=0;i<wave_count;i++) if(!isfinite(ring[i].x)||!isfinite(ring[i].y)||
+                fabsf(ring[i].x)>16383 || fabsf(ring[i].y)>16383) {
+            md_runtime_error.code=MD_FILE_INVALID;md_runtime_error.line=0;
+            snprintf(md_runtime_error.key,sizeof(md_runtime_error.key),"wave geometry");
+            sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+            return -1;
+        }
         md_blend(d->wave_additive!=0);
         int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
         sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,ring);

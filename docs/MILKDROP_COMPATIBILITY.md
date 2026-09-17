@@ -7,6 +7,21 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
+`fWaveScale` and `fWaveAlpha` follow MilkDrop 2's float import rather than a
+0–1 input restriction. Values above one (and finite negative values) are
+accepted. Scale multiplies audio amplitudes; negative scale reverses them.
+`fWaveAlpha`/formula output `wave_a` retain their gain until rendering: apply
+the waveform-specific factor, then the unclamped volume modulation factor,
+then saturate the final opacity to 0–1. Mode 3 retains the reference's special
+treble-derived opacity. This follows `state.cpp`'s `GetFastFloat` imports and
+`milkdropfs.cpp`'s `DrawWave` in the MilkDrop 2 reference; the mode-dependent
+constants match our 512-wide feedback surface. NaN/infinity, malformed values
+and arithmetic overflow remain errors. Extremely large resulting built-in
+wave coordinates outside the guarded PSP GU range report `wave geometry`
+instead of submitting unsafe vertices; this is a hardware safety limitation,
+not a claim of unbounded desktop rendering compatibility. Shader skipping is
+independent of these non-shader parameters.
+
 * Built-in wave modes 0–8, stereo PCM/FFT inputs, spectrum waves, smoothing,
   dots, thick/additive lines, volume-dependent alpha and color normalization.
 * Four custom waves with independent init/frame/point contexts, up to 512

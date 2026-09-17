@@ -143,6 +143,57 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
 
+    def test_reference_wave_gain_and_alpha(self):
+        evaluate=self.library.md_eval_preset_visual
+        evaluate.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),
+            ctypes.POINTER(Warp),ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(Decor),ctypes.POINTER(Error)]
+        opacity=self.library.md_wave_opacity
+        opacity.argtypes=[ctypes.POINTER(Decor),ctypes.c_int,ctypes.c_float,ctypes.c_float,ctypes.c_float]
+        opacity.restype=ctypes.c_float
+        for value in (-2,0,1,1.255,4.1,46.46,100):
+            data=f'[preset00]\nnWaveMode=2\nfWaveAlpha={value}\nfWaveScale=5.552\n'.encode()
+            code,preset,error=self.parse(data)
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertAlmostEqual(preset.wave_scale,5.552,places=5)
+            out,warp,color,error=Decor(),Warp(),ctypes.c_uint(),Error()
+            self.assertEqual(evaluate(ctypes.byref(preset),0,None,ctypes.byref(warp),ctypes.byref(color),
+                ctypes.byref(out),ctypes.byref(error)),0)
+            self.assertAlmostEqual(out.wave_alpha,value,places=5)
+            for mode,gain in ((0,1),(1,1.25),(2,.09),(5,.09),(8,1)):
+                self.assertAlmostEqual(opacity(ctypes.byref(out),mode,1,1,1),min(1,max(0,value*gain)),places=5)
+            self.assertAlmostEqual(opacity(ctypes.byref(out),3,1,1,1),.195,places=5)
+        code,preset,error=self.parse(b'[preset00]\nfWaveScale=-2\nper_frame_1=wave_a=4.1;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(preset.wave_scale,-2)
+        self.assertEqual(evaluate(ctypes.byref(preset),0,None,ctypes.byref(warp),ctypes.byref(color),
+            ctypes.byref(out),ctypes.byref(error)),0)
+        self.assertAlmostEqual(out.wave_alpha,4.1,places=5)
+        out.wave_alpha=.2;out.wave_mod_alpha=1;out.wave_mod_start=0;out.wave_mod_end=1
+        # Reference multiplies by >1 volume factors BEFORE the final clamp.
+        self.assertAlmostEqual(opacity(ctypes.byref(out),0,3,3,3),.2*9*.333,places=5)
+        for key in ('fWaveScale','fWaveAlpha'):
+            for bad in ('nan','inf','-inf','1e99','abc'):
+                self.assertNotEqual(self.parse(f'[preset00]\n{key}={bad}\n'.encode())[0],0)
+
+    def test_reference_wave_scale_geometry(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        draw=self.library.md_wave_circle
+        draw.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(ctypes.c_short),ctypes.c_float,
+                       ctypes.c_float,ctypes.c_float,ctypes.c_float,ctypes.c_uint]
+        samples=(ctypes.c_short*576)(*[int(math.sin(i*.1)*15000) for i in range(576)])
+        baseline,unit,large=(Vertex*241)(),(Vertex*241)(),(Vertex*241)()
+        draw(baseline,samples,0,.75,7,.5625,0xffffffff)
+        draw(unit,samples,1,.75,7,.5625,0xffffffff)
+        for scale in (5.552,-2):
+            draw(large,samples,scale,.75,7,.5625,0xffffffff)
+            for i in range(240):
+                self.assertAlmostEqual(large[i].x-baseline[i].x,
+                    (unit[i].x-baseline[i].x)*scale,delta=.0002)
+                self.assertAlmostEqual(large[i].y-baseline[i].y,
+                    (unit[i].y-baseline[i].y)*scale,delta=.0002)
+
     def test_external_texture_paths(self):
         result, preset, _ = self.parse(b'[preset00]\nzoom=1\npsp_texture_0=checker.png\n')
         self.assertEqual(result, 0)

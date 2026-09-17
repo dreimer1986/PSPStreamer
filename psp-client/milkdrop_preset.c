@@ -8,6 +8,7 @@
 #include <math.h>
 #include <errno.h>
 #include <stddef.h>
+#include <float.h>
 _Static_assert(offsetof(MdShape,border_a)==21*sizeof(float),"shape field layout");
 _Static_assert(offsetof(MdShape,thick_outline)==22*sizeof(float),"shape outline field layout");
 _Static_assert(offsetof(MdDecor,shapes)==MD_DECOR_VALUES*sizeof(float),"decor field layout");
@@ -77,8 +78,10 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"mv_l",0,10,&next.motion[8]},
         {"dx",-1,1,&next.warp.dx}, {"dy",-1,1,&next.warp.dy},
         {"nWaveMode",0,8,&wave_mode}, {"bTexWrap",0,1,&wrap},
-        {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",0,1,&next.wave_scale},
-        {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",0,1,&next.wave_alpha},
+        /* MilkDrop state.cpp imports these as floats, not normalized colors.
+         * Alpha is saturated only after mode/volume modulation at draw time. */
+        {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",-FLT_MAX,FLT_MAX,&next.wave_scale},
+        {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",-FLT_MAX,FLT_MAX,&next.wave_alpha},
         {"fRating",0,5,NULL}, {"fZoomExponent",.5f,2,&next.warp.zoomexp},
         {"cx",0,1,&next.warp.cx}, {"cy",0,1,&next.warp.cy},
         {"sx",.25f,4,&next.warp.sx}, {"sy",.25f,4,&next.warp.sy},
@@ -395,6 +398,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     for(int i=0;i<MD_DECOR_VALUES;i++) {
         float lo=i==2?-1:0, hi=(i==8 || i==9 || i==23)?4:i==10?100:i==12?3:(i==13 || i==18)?.5f:1;
         if(i==10 || i==23) lo=1;
+        if(i==24){lo=-FLT_MAX;hi=FLT_MAX;} /* wave_a: preserve gain until rendering */
         float value=v[30+i];
         if(!isfinite(value) || value<lo || value>hi ||
            (((i>=3 && i<=7) || i==12) && value!=floorf(value)))

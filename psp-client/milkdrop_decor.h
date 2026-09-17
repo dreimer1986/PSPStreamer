@@ -19,6 +19,7 @@ typedef struct {
     MdShape shapes[MD_RENDER_SHAPES];
 } MdDecor;
 unsigned int md_rgba(float r,float g,float b,float a);
+float md_wave_opacity(const MdDecor *decor,int mode,float bass,float mid,float treble);
 int md_shape_vertices(MdVertex *out,const MdShape *shape,float aspect);
 void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v);
 int md_motion_vertices(MdVertex *out,const MdVertex *expanded_mesh,const float settings[9]);
