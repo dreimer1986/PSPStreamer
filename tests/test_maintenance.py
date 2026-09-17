@@ -9,6 +9,48 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_config_parser_atomic_and_whitespace_tolerant(self):
+        source = r'''
+#include <assert.h>
+#include <stdio.h>
+#include "config_parse.h"
+static int parse(const char *input, OcConfig *out, int *keys, int *line) {
+    char text[1024]; size_t n=strlen(input);
+    assert(n<sizeof(text)); memcpy(text,input,n+1);
+    return oc_config_parse(text,(int)n,out,keys,line);
+}
+int main(int argc,char **argv) {
+    OcConfig c={0,333,0,1}; int keys,line;
+    assert(parse("# header\nenabled=1\ntarget_mhz=383\nenforce=1\nreport=1\n",&c,&keys,&line)==0);
+    assert(c.enabled==1 && c.target==383 && c.enforce==1 && c.report==1 && keys==4 && !line);
+    assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
+    assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
+    const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
+        "enabled=1\nreport=0\ntarget_mhz=332", "target_mhz=9999999999999999999999",
+        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1"};
+    for(unsigned int i=0;i<sizeof(bad)/sizeof(bad[0]);i++) {
+        OcConfig before=c;
+        assert(parse(bad[i],&c,&keys,&line)<0);
+        assert(!memcmp(&before,&c,sizeof(c))); /* never partially enable */
+    }
+    char nul[]="enabled=1\0target_mhz=443";
+    assert(oc_config_parse(nul,sizeof(nul)-1,&c,&keys,&line)<0);
+    if(argc==2) {
+        char file[1024]; FILE *f=fopen(argv[1],"rb");assert(f);
+        int n=(int)fread(file,1,sizeof(file)-1,f);fclose(f);file[n]=0;
+        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==4);
+    }
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.c'
+            path.write_text(source)
+            binary = path.with_suffix('')
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-overclock'), str(path), '-o', str(binary)], check=True)
+            subprocess.run([str(binary), str(ROOT / 'psp-overclock/StreamerOC.ini.example')], check=True)
+
     def test_oc_power_callback_slot_fallback(self):
         source = '''
 #include <assert.h>

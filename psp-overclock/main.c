@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "clock_math.h"
 #include "power_callback_slot.h"
+#include "config_parse.h"
 
 PSP_MODULE_INFO("StreamerOC", 0x1006, 1, 0);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -27,6 +28,8 @@ static volatile int running, suspended;
 static int worker=-1, enabled, target=333, enforce, report=1, changed;
 static int configured_enabled, power_callback_id=-1, power_slot=-1;
 static int power_auto_result=-1, power_register_result=-1;
+static int config_io_result, config_bytes, config_keys, config_error_line;
+static const char *config_state="not attempted";
 static char directory[192]="ms0:/SEPLUGINS/StreamerOC/";
 static const char *status="monitor only";
 
@@ -46,24 +49,25 @@ static void config(void) {
     char path[256],buffer[1024];
     snprintf(path,sizeof(path),"%sStreamerOC.ini",directory);
     SceUID fd=sceIoOpen(path,PSP_O_RDONLY,0);
-    if(fd<0)return;
-    int length=sceIoRead(fd,buffer,sizeof(buffer)-1);sceIoClose(fd);
-    if(length<=0 || length==(int)sizeof(buffer)-1){status="invalid config";return;}
-    buffer[length]=0;
-    char *line=strtok(buffer,"\r\n");
-    while(line) {
-        char *equal=strchr(line,'=');
-        if(equal && line[0]!='#') {
-            *equal=0;char *end;long value=strtol(equal+1,&end,10);
-            if(end==equal+1 || *end || value<0 || value>471) {enabled=0;status="invalid config: disabled";return;}
-            if(!strcmp(line,"enabled"))enabled=value==1;
-            else if(!strcmp(line,"target_mhz"))target=value;
-            else if(!strcmp(line,"enforce"))enforce=value==1;
-            else if(!strcmp(line,"report"))report=value==1;
-        }
-        line=strtok(NULL,"\r\n");
+    config_io_result=fd;
+    if(fd<0){config_state="open failed";status="config open failed: monitor only";return;}
+    while(config_bytes<(int)sizeof(buffer)-1) {
+        int n=sceIoRead(fd,buffer+config_bytes,sizeof(buffer)-1-config_bytes);
+        config_io_result=n;
+        if(n<=0)break;
+        config_bytes+=n;
     }
-    if(target<333 || target>471){enabled=0;status="invalid target: disabled";}
+    int closed=sceIoClose(fd);
+    if(config_io_result<0){config_state="read failed";status="config read failed: monitor only";return;}
+    if(closed<0){config_io_result=closed;config_state="close failed";status="config close failed: monitor only";return;}
+    if(!config_bytes || config_bytes==(int)sizeof(buffer)-1){config_state="empty or oversized";status="invalid config: monitor only";return;}
+    buffer[config_bytes]=0;
+    OcConfig parsed;
+    if(oc_config_parse(buffer,config_bytes,&parsed,&config_keys,&config_error_line)<0) {
+        config_state="parse failed";status="invalid config: monitor only";return;
+    }
+    enabled=parsed.enabled;target=parsed.target;enforce=parsed.enforce;report=parsed.report;
+    config_state="loaded";
 }
 static void snapshot(void) {
     if(!report || suspended==1)return;
@@ -73,10 +77,12 @@ static void snapshot(void) {
         ctl=CTL;mul=MUL;cpu=CPU;bus=BUS;
         sceKernelCpuResumeIntr(intr);
     }
-    char path[256],text[1024];
+    char path[256],text[1536];
     snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
     int n=snprintf(text,sizeof(text),
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\ntarget_mhz=%d\n"
+        "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
+        "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
         "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
         "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
@@ -84,6 +90,7 @@ static void snapshot(void) {
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
         status,sceKernelGetModel(),enabled,enforce,target,
+        directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
         scePowerGetCpuClockFrequencyInt(),

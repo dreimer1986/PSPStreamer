@@ -98,6 +98,26 @@ checks; `enabled` is the effective state. Registration is checked even when
 clock changes are disabled. The correction does not change the PLL recipe,
 requested frequency, enforcement policy or suspend/resume protection.
 
+### Configuration loading diagnostics
+
+L+R+SELECT refreshes the report using the running plugin's state. It does **not**
+reload the INI or apply a new clock target. Fully exit and restart the homebrew
+after editing the INI; the report's modification time is not its config-load time.
+
+`config_path` identifies the startup INI. `config_state=loaded` confirms that
+the complete file was read and validated. `config_bytes` and `config_keys`
+record bytes read and recognized settings; the sample has four settings.
+`config_io_result` gives the hexadecimal I/O result (zero after successful EOF).
+`config_error_line` identifies a parse error, or is zero on success. Failed
+open/read/close operations and invalid files keep the safe defaults and report
+the failure instead of silently appearing to be a deliberately disabled config.
+
+The parser has no shared tokenization state. It accepts LF/CRLF, a UTF-8 BOM,
+spaces around `=`, and `#`/`;` comments. Unknown keys, invalid booleans (anything
+except 0 or 1), out-of-range targets and empty/comment-only files are rejected.
+Settings are committed only after the whole file passes validation. No runtime
+reload, automatic retry or automatic overclock activation has been added.
+
 ## What the reported speed means
 
 The report separates Sony's API value from the register-derived estimates:
