@@ -15,6 +15,7 @@
 #include "clock_math.h"
 #include "power_callback_slot.h"
 #include "config_parse.h"
+#include "report_io.h"
 
 PSP_MODULE_INFO("StreamerOC", 0x1006, 1, 0);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -32,6 +33,11 @@ static int config_io_result, config_bytes, config_keys, config_error_line;
 static const char *config_state="not attempted";
 static char directory[192]="ms0:/SEPLUGINS/StreamerOC/";
 static const char *status="monitor only";
+static unsigned long long session_tick;
+static char application[192];
+static int journal_result;
+static volatile int pending_suspend_flags;
+static volatile unsigned long long suspend_tick;
 
 /* Same pipeline-settle loop as the reference, but every ready wait is bounded. */
 static void settle(void) {
@@ -69,7 +75,7 @@ static void config(void) {
     enabled=parsed.enabled;target=parsed.target;enforce=parsed.enforce;report=parsed.report;
     config_state="loaded";
 }
-static void snapshot(void) {
+static void snapshot(const char *event) {
     if(!report || suspended==1)return;
     unsigned int ctl=0,mul=0,cpu=0,bus=0;
     if(oc_supported_model(sceKernelGetModel())) {
@@ -77,9 +83,10 @@ static void snapshot(void) {
         ctl=CTL;mul=MUL;cpu=CPU;bus=BUS;
         sceKernelCpuResumeIntr(intr);
     }
-    char path[256],text[1536];
-    snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
+    char path[256],text[2048];
+    unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
+        "\n[event=%s session_us=%llu worker=%d elapsed_ms=%llu]\napplication=%s\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\ntarget_mhz=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
         "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
@@ -87,18 +94,23 @@ static void snapshot(void) {
         "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
+        "suspend_flags=%08X\nsuspend_observed_us=%llu\nprevious_journal_result=%08X\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
+        event,session_tick,worker,(now-session_tick)/1000ULL,application,
         status,sceKernelGetModel(),enabled,enforce,target,
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
         scePowerGetCpuClockFrequencyInt(),
-        oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus);
+        oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus,
+        (unsigned int)pending_suspend_flags,suspend_tick,(unsigned int)journal_result);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
-    SceUID fd=sceIoOpen(path,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0600);
-    if(fd>=0){sceIoWrite(fd,text,n);sceIoClose(fd);}
+    snprintf(path,sizeof(path),"%sStreamerOC-events.log",directory);
+    journal_result=oc_report_write(path,text,n,1);
+    snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
+    oc_report_write(path,text,n,0);
 }
 static int matches(void);
 static int apply(void) {
@@ -157,12 +169,19 @@ static void restore(void) {
 }
 static int power_callback(int count,int flags,void *arg) {
     (void)count;(void)arg;
-    if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY))suspended=1;
+    if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY)) {
+        pending_suspend_flags|=flags;
+        suspend_tick=sceKernelGetSystemTimeWide();
+        suspended=1;
+    }
     if(flags&PSP_POWER_CB_RESUME_COMPLETE)suspended=2;
     return 0;
 }
 static int thread_main(SceSize args,void *argp) {
     (void)args;(void)argp;
+    session_tick=sceKernelGetSystemTimeWide();
+    const char *filename=sceKernelInitFileName();
+    snprintf(application,sizeof(application),"%s",filename?filename:"unknown");
     config();
     configured_enabled=enabled;
     int model=sceKernelGetModel();
@@ -172,6 +191,7 @@ static int thread_main(SceSize args,void *argp) {
     if(power_callback_id>=0)
         power_slot=oc_register_power_callback(power_callback_id,&power_auto_result,&power_register_result);
     if(power_slot<0){enabled=0;status="power callback unavailable: monitor only";}
+    snapshot("session_start");
     SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
     while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
     SceCtrlData pad;sceCtrlPeekBufferPositive(&pad,1);
@@ -179,35 +199,44 @@ static int thread_main(SceSize args,void *argp) {
     if(running && enabled && !suspended && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_GAME) {
         int r=apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
-    snapshot();
+    snapshot("startup_result");
     unsigned int previous=0,conflicts=0;
     unsigned long long window=sceKernelGetSystemTimeWide();
     while(running) {
         sceKernelDelayThreadCB(500000);
+        if(!running)break;
         if(suspended==1)continue;
         if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME) {
             enabled=0;status="left GAME context: enforcement disabled";
+            snapshot("left_game_before_restore");
             if(changed){restore();changed=0;}
-            snapshot();break;
+            snapshot("left_game_after_restore");break;
         }
         if(suspended==2) {
             /* Suspend is a safety boundary: do not silently re-overclock. */
-            suspended=0;enabled=0;status="resumed: enforcement disabled; restart to enable";snapshot();
+            suspended=0;enabled=0;status="resumed: enforcement disabled; restart to enable";
+            snapshot("suspend_resume");pending_suspend_flags=0;
         }
         sceCtrlPeekBufferPositive(&pad,1);
         unsigned int buttons=pad.Buttons;
         if((buttons&(PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT))==
-           (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT) && buttons!=previous) snapshot();
+           (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT) &&
+           (previous&(PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT))!=
+           (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_SELECT)) snapshot("manual_snapshot");
         previous=buttons;
         if(!enabled || matches())continue;
-        if(!enforce){enabled=0;status="application changed clocks: not reapplied";snapshot();continue;}
+        snapshot("clock_mismatch");
+        if(!enforce){enabled=0;status="application changed clocks: not reapplied";snapshot("enforcement_disabled");continue;}
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(now-window>=60000000ULL){conflicts=0;window=now;}
-        if(++conflicts>3){enabled=0;status="clock conflict: enforcement disabled";snapshot();continue;}
+        if(++conflicts>3){enabled=0;status="clock conflict: enforcement disabled";snapshot("conflict_limit");continue;}
         int r=apply();status=r?"reapply failed: disabled":"target reapplied";if(r)enabled=0;
-        snapshot();
+        snapshot("reapply_result");
     }
+    snapshot("session_stopping");
     if(changed && !suspended)restore();
+    enabled=0;status="worker stopped";
+    snapshot("session_end");
     if(power_slot>=0)scePowerUnregisterCallback(power_slot);
     if(power_callback_id>=0)sceKernelDeleteCallback(power_callback_id);
     return 0;

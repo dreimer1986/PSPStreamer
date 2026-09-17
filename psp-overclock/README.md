@@ -79,6 +79,40 @@ Do not add both lines for the same plugin.
 `debug` switch because this plugin also runs in other applications. Reporting
 only happens at startup/state changes or on demand, not every polling tick.
 
+### Persistent event history
+
+With `report=1`, `StreamerOC-events.log` beside the plugin is an **append-only
+history across application starts**. `StreamerOC-status.txt` remains the latest
+snapshot. Copy the events log after returning to XMB; starting another homebrew
+does not erase earlier sessions. No INI changes are needed.
+
+Each event includes the application pathname (when available), session start
+tick in microseconds, worker ID, elapsed milliseconds, configuration, callback
+diagnostics and clock registers/estimates. Times are PSP system-clock ticks,
+not calendar dates; they can restart after reboot. File order and session-start
+records separate runs. Logged events include:
+
+- Session start and startup result (including bypass/initialization failure).
+- Detected target mismatch **before** correction, reapplication result and
+  enforcement/conflict-limit shutdown.
+- Suspend/resume, recorded after resume with the observed suspend tick/flags.
+- L+R+SELECT snapshots, once per chord press rather than every held poll.
+- Leaving GAME context and orderly worker shutdown, before/after restoration.
+
+Unchanged polling iterations do not write. This is not a CPU trace: clock
+changes between polls, or changes after enforcement was disabled, are not
+automatically captured. Each event is written and closed immediately; partial
+writes are handled. `previous_journal_result` reports the preceding append's
+I/O result (zero on success), so a later snapshot can expose a failed write.
+`report=0` disables **both** files. The log does not auto-rotate or delete old
+sessions; archive/remove it on a PC when no application is using the plugin.
+
+Power callbacks perform no file I/O. A suspend record is held in RAM until
+resume; shutdown while suspended loses that pending event. Forced load-exec,
+crashes or power loss may omit the final shutdown record (or the latest write).
+Already-written events remain useful; an exit record is not required to retain
+earlier sessions. No crash-proof or synchronous hardware-flush guarantee is made.
+
 ### Power callback diagnostics
 
 Automatic power callback slot assignment can fail in kernel plugins. Like the

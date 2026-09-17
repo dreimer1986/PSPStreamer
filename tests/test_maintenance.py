@@ -9,6 +9,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_event_history_append_and_io_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'report'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-overclock'),
+                            str(ROOT / 'tests/oc_report_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+        code = (ROOT / 'psp-overclock/main.c').read_text()
+        callback = code[code.index('static int power_callback('):code.index('static int thread_main(')]
+        self.assertNotIn('snapshot(', callback)
+        self.assertNotIn('sceIo', callback)
+        snapshot = code[code.index('static void snapshot('):code.index('static int matches(void);')]
+        self.assertIn('if(!report || suspended==1)return;', snapshot)
+        self.assertIn('oc_report_write(path,text,n,1)', snapshot)
+        self.assertIn('oc_report_write(path,text,n,0)', snapshot)
+        for event in ('session_start', 'startup_result', 'clock_mismatch', 'reapply_result',
+                      'suspend_resume', 'manual_snapshot', 'session_stopping', 'session_end'):
+            self.assertIn('snapshot("' + event + '")', code)
+
     def test_oc_config_parser_atomic_and_whitespace_tolerant(self):
         source = r'''
 #include <assert.h>
