@@ -47,9 +47,22 @@ change. This is not a load-exec hook. Do not overwrite your existing plugin
 list. The sample config has `enabled=0`, `target_mhz=333`, `enforce=0`, `report=1`.
 Simply loading it with that config must not change CPU clocks.
 
+For ARK-5, use one line in your existing plugin list:
+
+```text
+homebrew, ms0:/SEPLUGINS/StreamerOC/StreamerOC.prx, on
+```
+
+`homebrew` restricts loading to homebrew, including PSP Streamer. Use `game`
+instead if you also want PSP games; ARK's `game` runlevel includes homebrew.
+Do not add both lines for the same plugin.
+
 1. With other clock overrides disabled, start a homebrew and wait six seconds.
    Check `StreamerOC-status.txt` beside the plugin. Hold L+R+SELECT to refresh
    this file on demand. It never draws into the application's framebuffer.
+   With the default disabled config, expect `power_callback_ready=1`, a
+   `power_callback_slot` from 0 to 15, and `enabled=0`. Verify this before
+   enabling clock changes. A callback registration failure still blocks them.
 2. First test `enabled=1`, `target_mhz=333`, `enforce=0`, restart the homebrew,
    and check status, playback, Stop and exit. Only then try a frequency known
    to be stable on this particular PSP. Accepted requested range: 333–471 MHz.
@@ -65,6 +78,25 @@ Simply loading it with that config must not change CPU clocks.
 `report=0` disables status file writes. It is independent of PSP Streamer's
 `debug` switch because this plugin also runs in other applications. Reporting
 only happens at startup/state changes or on demand, not every polling tick.
+
+### Power callback diagnostics
+
+Automatic power callback slot assignment can fail in kernel plugins. Like the
+explicit-slot approach documented in
+[PSP-KillSwitch](https://github.com/crozone/PSP-KillSwitch/blob/main/killswitch.c),
+StreamerOC now tries slots 15 through 0 if automatic registration fails.
+Occupied slots are left alone. Cleanup unregisters only our successfully
+registered slot, not the zero returned by explicit registration.
+
+The report includes `power_callback_id` (callback creation result),
+`power_auto_result` and `power_register_result` as hexadecimal SDK results.
+`FFFFFFFF` means not attempted for the registration fields when callback
+creation itself failed. A negative `power_auto_result` is harmless if the
+fallback succeeds: `power_callback_ready=1` and `power_register_result=00000000`.
+`configured_enabled` records the parsed configuration before runtime safety
+checks; `enabled` is the effective state. Registration is checked even when
+clock changes are disabled. The correction does not change the PLL recipe,
+requested frequency, enforcement policy or suspend/resume protection.
 
 ## What the reported speed means
 

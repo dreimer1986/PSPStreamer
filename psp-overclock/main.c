@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "clock_math.h"
+#include "power_callback_slot.h"
 
 PSP_MODULE_INFO("StreamerOC", 0x1006, 1, 0);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -24,6 +25,8 @@ PSP_NO_CREATE_MAIN_THREAD();
 #define SYNC() __asm__ volatile("sync" ::: "memory")
 static volatile int running, suspended;
 static int worker=-1, enabled, target=333, enforce, report=1, changed;
+static int configured_enabled, power_callback_id=-1, power_slot=-1;
+static int power_auto_result=-1, power_register_result=-1;
 static char directory[192]="ms0:/SEPLUGINS/StreamerOC/";
 static const char *status="monitor only";
 
@@ -70,16 +73,23 @@ static void snapshot(void) {
         ctl=CTL;mul=MUL;cpu=CPU;bus=BUS;
         sceKernelCpuResumeIntr(intr);
     }
-    char path[256],text[640];
+    char path[256],text[1024];
     snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
     int n=snprintf(text,sizeof(text),
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\ntarget_mhz=%d\n"
+        "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
+        "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
-        status,sceKernelGetModel(),enabled,enforce,target,scePowerGetCpuClockFrequencyInt(),
+        status,sceKernelGetModel(),enabled,enforce,target,
+        configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
+        (unsigned int)power_auto_result,(unsigned int)power_register_result,
+        scePowerGetCpuClockFrequencyInt(),
         oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus);
+    if(n<0)return;
+    if(n>=(int)sizeof(text))n=sizeof(text)-1;
     SceUID fd=sceIoOpen(path,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0600);
     if(fd>=0){sceIoWrite(fd,text,n);sceIoClose(fd);}
 }
@@ -147,12 +157,14 @@ static int power_callback(int count,int flags,void *arg) {
 static int thread_main(SceSize args,void *argp) {
     (void)args;(void)argp;
     config();
+    configured_enabled=enabled;
     int model=sceKernelGetModel();
     if(!oc_supported_model(model)) {enabled=0;status="unsupported model: no register writes";}
     if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME){enabled=0;status="not GAME context: monitor only";}
-    SceUID callback=sceKernelCreateCallback("StreamerOC power",power_callback,NULL);
-    int slot=callback>=0?scePowerRegisterCallback(-1,callback):-1;
-    if(slot<0){enabled=0;status="power callback unavailable: monitor only";}
+    power_callback_id=sceKernelCreateCallback("StreamerOC power",power_callback,NULL);
+    if(power_callback_id>=0)
+        power_slot=oc_register_power_callback(power_callback_id,&power_auto_result,&power_register_result);
+    if(power_slot<0){enabled=0;status="power callback unavailable: monitor only";}
     SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
     while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
     SceCtrlData pad;sceCtrlPeekBufferPositive(&pad,1);
@@ -189,8 +201,8 @@ static int thread_main(SceSize args,void *argp) {
         snapshot();
     }
     if(changed && !suspended)restore();
-    if(slot>=0)scePowerUnregisterCallback(slot);
-    if(callback>=0)sceKernelDeleteCallback(callback);
+    if(power_slot>=0)scePowerUnregisterCallback(power_slot);
+    if(power_callback_id>=0)sceKernelDeleteCallback(power_callback_id);
     return 0;
 }
 int module_start(SceSize args,void *argp) {

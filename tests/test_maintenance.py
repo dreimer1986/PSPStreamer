@@ -9,6 +9,43 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_power_callback_slot_fallback(self):
+        source = '''
+#include <assert.h>
+static int automatic, available, calls;
+static int scePowerRegisterCallback(int slot, int callback) {
+    assert(callback==123);
+    if(calls++==0) { assert(slot==-1); return automatic; }
+    assert(slot==16-(calls-1)); /* bounded descending scan, no stolen slots */
+    return slot==available?0:-42;
+}
+#include "power_callback_slot.h"
+int main(void) {
+    int a,r;
+    automatic=0;calls=0;
+    assert(oc_register_power_callback(123,&a,&r)==0 && calls==1);
+    automatic=7;calls=0;
+    assert(oc_register_power_callback(123,&a,&r)==7 && a==7 && r==7 && calls==1);
+    automatic=-99;
+    for(available=15;available>=0;available--) {
+        calls=0;
+        assert(oc_register_power_callback(123,&a,&r)==available);
+        assert(a==-99 && r==0 && calls==17-available);
+    }
+    calls=0;available=-1;
+    assert(oc_register_power_callback(123,&a,&r)==-1);
+    assert(a==-99 && r==-42 && calls==17);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'callback.c'
+            path.write_text(source)
+            binary = path.with_suffix('')
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-overclock'), str(path), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_old_launcher_delegates_and_calibration_is_gone(self):
         import server
         from psp_streamer.server import main
