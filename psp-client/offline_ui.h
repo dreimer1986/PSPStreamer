@@ -322,10 +322,25 @@ static int offline_confirm(const char *name) {
         old=pad.Buttons;sceKernelDelayThread(20000);}
 }
 static void offline_delete(const OfflineEntry *item) {
-    char path[512];const char *leaves[]={item->name,"subtitles.ovl","seek.idx","job.json","ready"};
+    char path[512],movie[512];const char *leaves[]={item->name,"subtitles.ovl","seek.idx","job.json","ready"};
     if(!offline_key_valid(item->id)||!offline_leaf_valid(item->name))return;
+    snprintf(movie,sizeof(movie),"%s/%s/%s",OFFLINE_ROOT,item->id,item->name);
+    if(!strcmp(item->state,"ready")) {
+        char meta[8192];
+        snprintf(path,sizeof(path),"%s/%s/job.json",OFFLINE_ROOT,item->id);
+        if(offline_text_load(path,meta,sizeof(meta))<0)return;
+        SceUID fd=offline_open_movie(movie,sizeof(movie),offline_manifest_movie_size(meta));
+        /* Never discard the manifest while leaving an unaddressable movie. */
+        if(fd<0)return;
+        sceIoClose(fd);
+    }
     for(int i=0;i<5;i++) {
-        snprintf(path,sizeof(path),"%s/%s/%s",OFFLINE_ROOT,item->id,leaves[i]);sceIoRemove(path);
+        if(i==0) {
+            int result=sceIoRemove(movie);
+            if(result<0 && result!=(int)0x80010002)return;
+        } else {
+            snprintf(path,sizeof(path),"%s/%s/%s",OFFLINE_ROOT,item->id,leaves[i]);sceIoRemove(path);
+        }
         if(i<3){snprintf(path,sizeof(path),"%s/%s/%s.part",OFFLINE_ROOT,item->id,leaves[i]);sceIoRemove(path);}
     }
     snprintf(path,sizeof(path),"%s/%s",OFFLINE_ROOT,item->id);sceIoRmdir(path);
@@ -336,6 +351,7 @@ static int offline_play(const OfflineEntry *item) {
     snprintf(path,sizeof(path),"%s/job.json",offline_directory);
     if(offline_text_load(path,meta,sizeof(meta))<0)return -1;
     snprintf(offline_movie,sizeof(offline_movie),"%s/%s",offline_directory,item->name);
+    offline_movie_size=offline_manifest_movie_size(meta);
     char *duration=strstr(meta,"\"duration\":");current_duration_seconds=duration?atof(duration+11):0;
     offline_profile_tv=json_value(meta,"profile",profile,sizeof(profile))&&!strcmp(profile,"tv");
     offline_active=1;stream_start_seconds=0;resume_pending=seek_requested=0;

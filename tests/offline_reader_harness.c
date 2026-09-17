@@ -18,11 +18,15 @@ static const char * volatile timed_error_step;
 static int timed_video,timed_audio;
 static unsigned int offline_seek_offset;
 static char offline_movie[512],timed_request[4];
+static unsigned long long offline_movie_size;
 static FILE *source,*video,*audio;
 static int video_pts=-1,audio_pts=-1,frames,samples,fail_read;
 static struct {const char *reason,*stage;int wanted,received,socket_error,ap_state,ap_result,audio_pts,video_pts;unsigned int failure_ms;} stream_diag;
 static unsigned long long sceKernelGetSystemTimeWide(void){return 1;}
 static int sceIoOpen(const char *path,int flags,int mode){(void)flags;(void)mode;source=fopen(path,"rb");return source?1:-77;}
+static int offline_open_movie(char *path,size_t capacity,unsigned long long expected) {
+    (void)capacity;(void)expected;return sceIoOpen(path,PSP_O_RDONLY,0);
+}
 static int sceIoRead(int fd,void *out,int size){assert(fd==1);if(fail_read)return -78;if(size>7)size=7;return fread(out,1,size,source);}
 static SceOff sceIoLseek(int fd,SceOff offset,int where){assert(fd==1);return fseek(source,offset,where)?-1:offset;}
 static int sceIoClose(int fd){assert(fd==1);return fclose(source);}

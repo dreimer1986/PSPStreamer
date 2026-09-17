@@ -140,7 +140,7 @@ static int timed_reader(SceSize args, void *argp) {
     memset(&avc, 0, sizeof(avc));
     timed_error_step = "FLV/PTS stream";
     if(offline_active) {
-        offline_reader_fd=sceIoOpen(offline_movie,PSP_O_RDONLY,0);
+        offline_reader_fd=offline_open_movie(offline_movie,sizeof(offline_movie),offline_movie_size);
         if(offline_reader_fd<0) {
             timed_error_step = "Open local video";
             timed_error = offline_reader_fd;

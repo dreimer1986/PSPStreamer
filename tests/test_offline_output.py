@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflineOutputTests(unittest.TestCase):
+    def test_pc_copied_unicode_names_resolve_through_fat_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'filename'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-client'), str(ROOT / 'tests/offline_filename_harness.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_profile_guard_distinguishes_output_from_decoder_errors(self):
         source = (ROOT / 'psp-client/main.c').read_text()
         start = source.index('    tvout_video_active = tvout_begin_video() == 0;')

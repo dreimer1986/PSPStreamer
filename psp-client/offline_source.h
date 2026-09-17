@@ -1,5 +1,7 @@
 /* Managed local FLV input; shares the streaming decoder and PTS clock. */
+#include "offline_filename.h"
 static char offline_movie[512], offline_directory[384];
+static unsigned long long offline_movie_size;
 static int offline_active, offline_seek_ms, offline_profile_tv;
 static unsigned int offline_seek_offset, offline_sprite_base;
 static SceUID offline_reader_fd = -1;

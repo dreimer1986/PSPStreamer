@@ -80,6 +80,11 @@ collisions between different series/language variants. Filesystem-unsafe
 characters are replaced and exceptionally long names shortened. `+` identifies
 a completed, verified entry; `~` an incomplete one. Local deletion is limited
 to these managed files and never touches unrelated Memory Stick content.
+For PC-copied files whose Unicode long name the PSP cannot open, the client
+uses the FAT short-name alias inside that job folder. The fallback requires
+one unambiguous FLV with the manifest's byte size; files are not renamed.
+The original UTF-8 title remains visible. Existing exports need no conversion
+or server update for this client-side compatibility fix.
 
 Choose the output profile before converting: LCD (480×272) or TV (720×480).
 A downloaded file requires its matching output; connect/disconnect the TV
