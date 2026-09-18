@@ -14,6 +14,7 @@ typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
 typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;
+typedef struct { int offset, line; } PmSourceLocation;
 enum { PM_OK, PM_INVALID, PM_UNSUPPORTED };
 /* Compile appends transactionally; source is never retained. */
 int pm_compile(PmProgram *program, const char *source, int line);
@@ -23,6 +24,10 @@ int pm_compile_pixel(PmProgram *program, const char *source, int line);
 int pm_compile_pixel_symbols(PmProgram *program, const char *source, int line, PmSymbols *symbols);
 int pm_compile_shape(PmProgram *program, const char *source, int line, PmSymbols *symbols);
 int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols *symbols, int point);
+/* Compile a complete numbered-record block. Contexts: frame=0, pixel=1,
+ * shape=2, wave frame/init=3, wave point=4. Mapping lives only during import. */
+int pm_compile_mapped(PmProgram *program,const char *source,const PmSourceLocation *locations,
+                      int count,PmSymbols *symbols,int context,int *error_line);
 /* values: zoom,rot,warp,warp speed,warp scale,decay,r,g,b,time,
  * psp_low,psp_mid,psp_high,psp_level,psp_low_smooth,psp_mid_smooth,psp_high_smooth.
  * Then bass,mid,treb,bass_att,mid_att,treb_att (read-only relative inputs).

@@ -498,6 +498,10 @@ test effects are no longer part of the user-facing selection.
 Legacy `fShader` hue shading now uses fixed-function corner colors; compare
 `legacy-shading-demo.milk` and `legacy-shading-off-demo.milk`. Both also exercise
 echo zoom below 1. This is not HLSL shader support.
+Numbered formula entries now compile together, including multiline loops,
+comments and split tokens. Try `multiline-formula-demo.milk`.
+The [collection audit](docs/MILKDROP_MULTILINE_AUDIT.md) separates successful
+loading from host-side formula execution and actual PSP playback testing.
 The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
 is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,

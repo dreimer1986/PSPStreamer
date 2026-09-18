@@ -55,6 +55,7 @@ static int md_shader_source(const char *key) {
     while(*p>='0' && *p<='9') p++;
     return !*p;
 }
+#include "preset_source.h"
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     static const char *keys[] = {"zoom", "rot", "warp", "fWarpAnimSpeed", "fWarpScale",
                                  "fDecay", "wave_r", "wave_g", "wave_b"};
@@ -125,6 +126,8 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     unsigned int seen = 0;
     memset(error, 0, sizeof(*error));
     if (!file) {int code=errno==ENOENT?MD_FILE_MISSING:MD_FILE_IO;free(working);return md_file_error(error,code,0,"");}
+    MdSourceBlock *sources=md_source_create(working);
+    if(!sources) {fclose(file);free(working);return md_file_error(error,MD_FILE_IO,0,"formula allocation");}
     for (;;) {
         int ch, used = 0, index;
         char *key, *value, *equal, *end;
@@ -143,17 +146,25 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         }
         if (ch == EOF && ferror(file)) { result = md_file_error(error, MD_FILE_IO, number, ""); goto done; }
         if (ch == EOF && !used) break;
-        line[used] = 0; key = md_trim(line);
+        if(used && line[used-1]=='\r')used--;
+        line[used] = 0; key = line;
+        while(isspace((unsigned char)*key))key++;
         /* ASCII fields, UTF-8 comments. Accept an optional UTF-8 BOM. */
-        if (number == 1 && strlen(key) >= 3 && !memcmp(key, "\xef\xbb\xbf", 3)) key = md_trim(key+3);
+        if (number == 1 && strlen(key) >= 3 && !memcmp(key, "\xef\xbb\xbf", 3)) {
+            key+=3;while(isspace((unsigned char)*key))key++;
+        }
         if (!*key || *key == ';' || *key == '#' || !strncmp(key, "//", 2)) continue;
-        if (!strcmp(key, "[preset00]")) {
+        if (!strncmp(key, "[preset00]",10) && !*md_trim(key+10)) {
             if (section) { result = md_file_error(error, MD_FILE_INVALID, number, key); goto done; }
             section = 1; continue;
         }
         equal = strchr(key, '=');
         if (!equal) { result = md_file_error(error, MD_FILE_INVALID, number, key); goto done; }
-        *equal = 0; key = md_trim(key); value = md_trim(equal+1);
+        *equal = 0; key = md_trim(key); value = equal+1;
+        /* Keep formula whitespace: Desktop removes only record delimiters,
+         * not spaces intentionally separating tokens at their boundaries. */
+        if(strncmp(key,"per_frame_",10) && strncmp(key,"per_pixel_",10) &&
+           strncmp(key,"shape_",6) && strncmp(key,"wave_",5))value=md_trim(value);
         /* Original file keys; keep our earlier aliases for shipped presets. */
         if(!strcmp(key,"ob_a"))key="ob_alpha";
         else if(!strcmp(key,"ib_a"))key="ib_alpha";
@@ -233,13 +244,9 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         if(!strncmp(key,"wave_",5) && isdigit((unsigned char)key[5])) {
             int slot=key[5]-'0';
             if(strlen(key)<8 || slot<0 || slot>=MD_CUSTOM_WAVES || key[6]!='_') {result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;}
-            MdCustomWave *w=&next.waves[slot];
             int init=!strncmp(key+7,"init",4),point=!strncmp(key+7,"per_point",9);
-            PmProgram *program=init?&w->init:point?&w->point:&w->frame;
-            char expected[40]; snprintf(expected,sizeof(expected),init?"wave_%d_init%d":point?"wave_%d_per_point%d":"wave_%d_per_frame%d",slot,program->lines+1);
-            if(strcmp(key,expected)) {result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;}
-            int code=pm_compile_wave(program,value,number,point?&w->point_symbols:&w->symbols,point);
-            if(code!=PM_OK) {result=md_file_error(error,code==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,number,key); goto done;}
+            result=md_source_add(sources+3+MD_SHAPES*2+slot*3+(init?0:point?2:1),key,value,number,error);
+            if(result!=MD_FILE_OK)goto done;
             wave_seen[slot]|=1U<<31; continue;
         }
         if (!strncmp(key,"shape_",6)) {
@@ -247,14 +254,9 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(strlen(key)<9 || slot<0 || slot>=MD_SHAPES || key[7]!='_') {
                 result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;
             }
-            MdShapeProgram *shape=&next.shape_program[slot];
             int init=!strncmp(key+8,"init",4);
-            PmProgram *program=init?&shape->init:&shape->frame;
-            char expected[40];
-            snprintf(expected,sizeof(expected),init?"shape_%d_init%d":"shape_%d_per_frame%d",slot,program->lines+1);
-            if(strcmp(key,expected)) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
-            int code=pm_compile_shape(program,value,number,&shape->symbols);
-            if(code!=PM_OK) { result=md_file_error(error,code==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,number,key); goto done; }
+            result=md_source_add(sources+3+slot*2+(init?0:1),key,value,number,error);
+            if(result!=MD_FILE_OK)goto done;
             shape_seen[slot]|=1U<<31;
             continue;
         }
@@ -294,20 +296,10 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             shape_seen[slot]|=1U<<k; continue;
         }
         if (!strncmp(key, "per_frame_", 10) || !strncmp(key,"per_pixel_",10)) {
-            char expected[32];
             int init=!strncmp(key,"per_frame_init_",15);
             int pixel=!strncmp(key,"per_pixel_",10);
-            PmProgram *program=pixel?&next.pixel_program:init?&next.init_program:&next.program;
-            snprintf(expected, sizeof(expected), pixel?"per_pixel_%d":init?"per_frame_init_%d":"per_frame_%d", program->lines+1);
-            if (strcmp(key, expected)) {
-                result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;
-            }
-            int compiled = pixel?pm_compile_pixel_symbols(program,value,number,&next.pixel_symbols):
-                pm_compile_symbols(program, value, number, &next.symbols);
-            if (compiled != PM_OK) {
-                result = md_file_error(error, compiled == PM_UNSUPPORTED ?
-                    MD_FILE_UNSUPPORTED : MD_FILE_INVALID, number, key); goto done;
-            }
+            result=md_source_add(sources+(pixel?2:init?0:1),key,value,number,error);
+            if(result!=MD_FILE_OK)goto done;
             continue;
         }
         for (index = 0; index < 9 && strcmp(key, keys[index]); index++) {}
@@ -342,6 +334,8 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         *values[index] = md_limit(parsed,low[index],high[index]); seen |= 1U << index;
     }
     next.wave_mode=(int)wave_mode; next.wrap=(int)wrap;
+    result=md_source_compile(sources,error);
+    if(result!=MD_FILE_OK)goto done;
     if(old_motion_seen && !(extra_seen&1ULL))next.motion[0]=(float)old_motion_enabled;
     if (next.wave_mode>=0) next.legacy=1;
     if (!section || (!seen && !extra_seen && !old_motion_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
@@ -351,6 +345,7 @@ done:
     if (fclose(file) && result == MD_FILE_OK)
         result = md_file_error(error, MD_FILE_IO, number, "");
     if (result == MD_FILE_OK) *out = next;
+    md_source_free(sources);
     free(working);
 #undef next
     return result;

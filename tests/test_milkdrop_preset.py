@@ -143,6 +143,74 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
 
+    def test_multirecord_formulas_in_every_context(self):
+        cases=[('per_frame_',lambda p:p.program),('per_frame_init_',lambda p:p.init_program),
+               ('per_pixel_',lambda p:p.pixel_program),
+               ('shape_0_init',lambda p:p.shape_program[0].init),
+               ('shape_0_per_frame',lambda p:p.shape_program[0].frame),
+               ('wave_0_init',lambda p:p.waves[0].init),
+               ('wave_0_per_frame',lambda p:p.waves[0].frame),
+               ('wave_0_per_point',lambda p:p.waves[0].point)]
+        for prefix,get in cases:
+            with self.subTest(prefix=prefix):
+                lines=['q1=if(1,','(2+','3),4);']
+                data='[preset00]\n'+'\n'.join(f'{prefix}{i+1}={line}' for i,line in enumerate(lines))
+                code,preset,error=self.parse(data.encode())
+                self.assertEqual(code,0,(error.line,error.key))
+                code,flat,error=self.parse(f'[preset00]\n{prefix}1=q1=if(1,(2+3),4);'.encode())
+                self.assertEqual(code,0,(error.line,error.key))
+                block,reference=get(preset),get(flat)
+                self.assertEqual(block.lines,3)
+                self.assertEqual([(o.op,o.arg,o.value) for o in block.code[:block.count]],
+                                 [(o.op,o.arg,o.value) for o in reference.code[:reference.count]])
+
+    def test_multirecord_comments_tokens_and_interleaved_blocks(self):
+        code,preset,error=self.parse(b'[preset00]\n'
+            b'per_frame_init_1=is_beat=2;\n'
+            b'per_frame_1=`q1=is_\n'
+            b'per_frame_init_2=q2=0;\n'
+            b'per_frame_2=beat; /* opening\n'
+            b'per_frame_3=comment */ loop(3, // line comment\n'
+            b'per_frame_4=q2+=1;\\\\ Desktop comment\n'
+            b'per_frame_5=); q3=1e\n'
+            b'per_frame_6=-2;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertEqual(list(state.frame_q)[:2],[2,3])
+        self.assertAlmostEqual(state.frame_q[2],.01)
+
+    def test_multirecord_error_locations_and_existing_limits(self):
+        code,_,error=self.parse(b'[preset00]\nper_frame_1=q1=(1+\n; unrelated physical line\nper_frame_2=);\n')
+        self.assertEqual(code,2)
+        self.assertEqual((error.line,error.key),(4,b'per_frame_2'))
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=rot=1/(\n; unrelated physical line\nper_frame_2=0);\n')
+        self.assertEqual(code,0)
+        state=PresetState();before=bytes(state)
+        code,_,error=self.evaluate_state(preset,state,0)
+        self.assertEqual(code,2)
+        self.assertEqual(error.line,4)
+        self.assertEqual(bytes(state),before)
+        for body in ('per_frame_1=q1=(\nper_frame_3=2);',
+                     'per_frame_1=q1=(\nper_frame_1=2);',
+                     'per_frame_1=/* unclosed\nper_frame_2=comment',
+                     '\n'.join(f'per_frame_{i}=// comment' for i in range(1,130))):
+            self.assertNotEqual(self.parse(('[preset00]\nzoom=1\n'+body).encode())[0],0)
+        # Explicit boundary whitespace must NOT be erased into the number 12.
+        self.assertNotEqual(self.parse(b'[preset00]\r\nper_frame_1=q1=1 \r\nper_frame_2=2;\r\n')[0],0)
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=q1=1<\nper_frame_2==2;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertEqual(state.frame_q[0],1)
+
+    def test_multiline_demo_runs(self):
+        code,preset,error=self.parse((ROOT/'psp-client/presets/multiline-formula-demo.milk').read_bytes())
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        for frame in range(600):
+            self.assertEqual(self.evaluate_state(preset,state,frame/30)[0],0)
+
     def test_desktop_boolean_switches_and_old_motion_default(self):
         code,preset,error=self.parse(b'[preset00]\nbTexWrap=-2\nbWaveDots=3\nbInvert=-1\n')
         self.assertEqual(code,0,(error.line,error.key))

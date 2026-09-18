@@ -27,7 +27,7 @@ reference version changes.
 | Custom waves | Integer flags/counts and float gains/colors imported | Audit sample limiting, smoothing and per-point semantics before widening |
 | Zoom/rotation/warp/stretch/centers | Float import, not editor bounds | PSP still imposes conservative bounds; singular transforms and GE overflow need explicit handling |
 | Decay/gamma | Float import; renderer determines result | PSP range and integer-conversion safety need joint review |
-| Echo | Float zoom/alpha; integer orientation | PSP rejects zoom below 1; Desktop editor even permits .01–100 |
+| Echo | Float zoom/alpha; integer orientation | Zoom .01–100 implemented, including values below 1 |
 | Borders | Float import; draw behavior separate | PSP normalized colors and sizes remain restrictive |
 | `fShader` | Legacy hue effect, distinct from HLSL source | Desktop corner-color equations, GU interpolation; strength 0–1 |
 | HLSL / blur metadata | Desktop shader pipeline | Shader source and associated blur metadata intentionally ignored |
@@ -77,7 +77,7 @@ No per-frame warnings/popups are emitted.
 | Warp speed/scale, decay | 0–4 / .1–8 / .8–1 | Historical limits; not hardware maxima |
 | Translation, centers, stretch | ±1, 0–1, .25–4 | Conservative geometry limits |
 | Zoom exponent | .01–100 | Current safe-input budget, derived from Desktop editor range |
-| Echo zoom/alpha/orientation, gamma | 1–100 / 0–1 / 0–3, gamma 1–4 | Pass/geometry budget; gamma affects GU-list usage |
+| Echo zoom/alpha/orientation, gamma | .01–100 / 0–1 / 0–3, gamma 1–4 | Pass/geometry budget; gamma affects GU-list usage |
 | Built-in wave mode | 0–8; out-of-range values select nearest mode | Supported mode set |
 | Borders / motion vectors | Border size 0–.5; colors/alpha 0–1; motion grid at most 64×48 | Geometry budget / Desktop motion-grid rule |
 | Feedback and mesh | 512×256 feedback, 8×8-cell mesh | Current memory/quality tradeoff; larger buffers/mesh: **Umbau nötig** |
@@ -122,8 +122,9 @@ Remaining differences found, **not hardware-limit claims**:
 - Other native inputs such as `time`, `fps` and audio values remain read-only
   here. Desktop registers writable EEL values; extending mutability needs a
   separate check of which modified values flow into later evaluation stages.
-- Numbered formula records are compiled individually. Desktop concatenates
-  them, so expressions/loops spanning records can fail here. **Umbau nötig**.
+- Numbered formula records now compile as complete context blocks, matching
+  Desktop record/comment preprocessing, with physical diagnostic line mappings.
+  **Completed:** see [the collection comparison](MILKDROP_MULTILINE_AUDIT.md).
 - Compiled instruction counts, locals, memory and execution budgets remain
   bounded. Example: a 200000-iteration memory-initialization loop cannot simply
   be accepted or truncated without deciding the intended reduced behavior.

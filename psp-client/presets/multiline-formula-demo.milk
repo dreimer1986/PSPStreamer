@@ -1,0 +1,30 @@
+[preset00]
+; Complete numbered blocks, including loops and split function arguments.
+nWaveMode=0
+fDecay=.97
+fShader=.5
+per_frame_init_1=phase=0;
+per_frame_1=loop(3,
+per_frame_2=phase+=.003;
+per_frame_3=); rot=.02*sin(
+per_frame_4=phase); wave_r=.5+.5*sin(phase);
+per_pixel_1=dx=.01*sin(
+per_pixel_2=y*6+time);dy=.01*cos(x*6+time);
+shapecode_0_enabled=1
+shapecode_0_sides=32
+shapecode_0_rad=.12
+shapecode_0_a=.6
+shapecode_0_a2=0
+shape_0_init1=t1=(
+shape_0_init2=.5);
+shape_0_per_frame1=x=t1+.2*cos(
+shape_0_per_frame2=time);y=.5+.2*sin(time);
+wavecode_0_enabled=1
+wavecode_0_samples=64
+wavecode_0_a=.6
+wave_0_init1=t1=(
+wave_0_init2=.5);
+wave_0_per_frame1=r=.5+.5*sin(
+wave_0_per_frame2=time);g=.8;b=1;
+wave_0_per_point1=x=sample;y=t1+.1*(
+wave_0_per_point2=value1);

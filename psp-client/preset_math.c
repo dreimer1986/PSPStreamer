@@ -39,11 +39,29 @@ int pm_assignment_line(const PmProgram *program, int variable) {
             return program->code[i].line;
     return 0;
 }
-typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; int pixel; } Parser;
+typedef struct { const char *p; PmProgram *code; int line, depth, error; PmSymbols *symbols; int pixel;
+    const char *source; const PmSourceLocation *locations; int location_count; } Parser;
+static int source_line(const Parser *p,int previous) {
+    if(!p->location_count)return p->line;
+    const char *at=p->p;
+    if(previous && at>p->source) {
+        at--;
+        while(at>p->source && isspace((unsigned char)*at))at--;
+    }
+    int lo=0,hi=p->location_count;
+    while(lo+1<hi) {
+        int mid=(lo+hi)/2;
+        if(p->locations[mid].offset<=at-p->source)lo=mid;else hi=mid;
+    }
+    return p->locations[lo].line;
+}
 static void space(Parser *p) {
     for (;;) {
         while (isspace((unsigned char)*p->p)) p->p++;
-        if (p->p[0]=='/' && p->p[1]=='/') {p->p+=strlen(p->p);return;}
+        if (p->p[0]=='/' && p->p[1]=='/') {
+            while(*p->p && *p->p!='\n')p->p++;
+            continue;
+        }
         if (p->p[0]!='/' || p->p[1]!='*') return;
         const char *end=strstr(p->p+2,"*/");
         if (!end) {p->error=PM_INVALID;return;}
@@ -52,7 +70,7 @@ static void space(Parser *p) {
 }
 static int emit(Parser *p, int op, int arg, float value) {
     if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
-    p->code->code[p->code->count++] = (PmOp){op,arg,p->line,value};
+    p->code->code[p->code->count++] = (PmOp){op,arg,source_line(p,1),value};
     return 1;
 }
 static int name(Parser *p, char text[32]) {
@@ -152,6 +170,11 @@ unsupported:
     return -1;
 }
 #include "preset_expression.h"
+int pm_compile_mapped(PmProgram *program,const char *source,const PmSourceLocation *locations,
+                      int count,PmSymbols *symbols,int context,int *error_line) {
+    if(count<1 || count>128 || context<0 || context>4)return PM_INVALID;
+    return compile_context_mapped(program,source,locations[0].line,symbols,context,locations,count,error_line);
+}
 int pm_compile(PmProgram *program, const char *source, int line) {
     return compile_context(program,source,line,NULL,0);
 }

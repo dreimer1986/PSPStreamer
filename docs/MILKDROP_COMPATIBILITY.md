@@ -151,9 +151,16 @@ for the limits requiring an architectural change (**Umbau nötig**).
 The engine uses single-precision floats, not desktop EEL doubles. Integer
 operations therefore inherit float precision limits. Source numbering remains
 sequential (`per_frame_1`, `_2`, etc.). Output fields retain their existing
-safe PSP ranges; arbitrary desktop ranges, unbounded loops/allocations, multiline
-comments spanning separate preset entries and desktop host/plugin APIs are not
-provided. Audio analysis is normalized for this player. The renderer retains
+safe PSP ranges; arbitrary desktop ranges, unbounded loops/allocations and
+desktop host/plugin APIs are not provided. Numbered records now compile as
+complete context blocks, including expressions, loops and block comments that
+span entries. Desktop `//` and double-backslash line comments and the optional
+leading backtick are handled before concatenation. Record separators disappear
+(even identifiers can span entries), but explicit whitespace is preserved.
+Physical source-line mappings survive into runtime diagnostics. Source buffers
+are import-only; all existing VM budgets remain unchanged. Try
+`multiline-formula-demo.milk`; see [the collection comparison](MILKDROP_MULTILINE_AUDIT.md).
+Audio analysis is normalized for this player. The renderer retains
 snapshot transitions rather than running two full preset engines simultaneously.
 The legacy `fShader` hue effect uses the Desktop no-shader corner-color equations
 and GU interpolated vertex colors (strength clamped to 0–1). It reuses the

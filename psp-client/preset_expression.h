@@ -208,20 +208,29 @@ static int sequence(Parser *p) {
     }
     return 1;
 }
-static int compile_context(PmProgram *program,const char *source,int line,PmSymbols *symbols,int pixel) {
+static int compile_context_mapped(PmProgram *program,const char *source,int line,PmSymbols *symbols,int pixel,
+                                  const PmSourceLocation *locations,int location_count,int *error_line) {
     int before=program->count;
     PmSymbols saved;
     if(symbols) {
         if(symbols->count<0 || symbols->count>PM_USER_COUNT) return PM_INVALID;
         saved=*symbols;
     }
-    Parser p={source,program,line,0,PM_INVALID,symbols,pixel};space(&p);
-    if(program->lines>=128 || before<0 || before>PM_MAX_OPS) return PM_INVALID;
-    if(!*p.p){program->lines++;return PM_OK;} /* exported blank/comment-only record */
+    Parser p={.p=source,.code=program,.line=line,.error=PM_INVALID,.symbols=symbols,.pixel=pixel,
+              .source=source,.locations=locations,.location_count=location_count};
+    int records=location_count?location_count:1;
+    if(error_line)*error_line=line;
+    if(program->lines+records>128 || before<0 || before>PM_MAX_OPS) return PM_INVALID;
+    space(&p);
+    if(!*p.p){program->lines+=records;return PM_OK;} /* exported blank/comment-only block */
     if(!sequence(&p) || !emit(&p,DROP,0,0)) goto fail;
     space(&p);
     if(*p.p || ((pixel==1 || pixel==4) && program->count>PM_PIXEL_OPS)) goto fail;
-    program->lines++;return PM_OK;
+    program->lines+=records;return PM_OK;
 fail:
+    if(error_line)*error_line=source_line(&p,0);
     program->count=before;if(symbols) *symbols=saved;return p.error;
+}
+static int compile_context(PmProgram *program,const char *source,int line,PmSymbols *symbols,int pixel) {
+    return compile_context_mapped(program,source,line,symbols,pixel,NULL,0,NULL);
 }
