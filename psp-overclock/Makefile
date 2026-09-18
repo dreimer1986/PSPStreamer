@@ -8,4 +8,4 @@ LDFLAGS = -nostartfiles
 LIBS = -lpsppower_driver -lpspge_driver -lgcc
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
-main.o: clock_math.h power_callback_slot.h config_parse.h report_io.h overlay_pixels.h
+main.o: clock_math.h power_callback_slot.h config_parse.h report_io.h overlay_pixels.h overlay_vblank.h

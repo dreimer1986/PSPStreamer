@@ -43,7 +43,9 @@ static volatile int pending_suspend_flags;
 static volatile unsigned long long suspend_tick;
 static int overlay_enabled;
 static unsigned long long overlay_until;
+static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
+#include "overlay_vblank.h"
 
 static void overlay_update(int toggle) {
     if(!overlay_enabled)return;
@@ -53,6 +55,11 @@ static void overlay_update(int toggle) {
     if(toggle)overlay_until=overlay_until?0:now+5000000ULL;
     if(overlay_until && now>=overlay_until)overlay_until=0;
     if(!overlay_until && !overlay.valid)return;
+    if(overlay_until && now<overlay_next_draw && !toggle)return;
+    /* Bounded polling, not an unbounded VBlank wait: display shutdown or
+     * cable removal must not strand module_stop. Only active OSD waits. */
+    if(!oc_overlay_vblank())return;
+    if(suspended){overlay.valid=0;overlay_until=0;return;}
     void *base=NULL;int stride,format,mode,width,height;
     if(sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
        sceDisplayGetMode(&mode,&width,&height)<0 ||
@@ -74,6 +81,7 @@ static void overlay_update(int toggle) {
     snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
     oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
+    overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }
 
 /* Same pipeline-settle loop as the reference, but every ready wait is bounded. */
@@ -244,7 +252,7 @@ static int thread_main(SceSize args,void *argp) {
     unsigned long long window=sceKernelGetSystemTimeWide();
     unsigned long long next_clock_check=0;
     while(running) {
-        sceKernelDelayThreadCB(overlay_enabled?100000:500000);
+        sceKernelDelayThreadCB(overlay_until?16666:overlay_enabled?100000:500000);
         if(!running)break;
         if(suspended==1){overlay_update(0);continue;}
         if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME) {

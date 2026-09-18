@@ -164,8 +164,12 @@ L+R+SELECT still appends a snapshot to the log. `overlay=0` is the default;
 the overlay is independent of `report`. Key combinations are not consumed,
 so the application can also react to them.
 
-This is a small ASCII overlay at the upper left, refreshed at up to 10 Hz only
-while visible. The clock enforcement check remains at 500 ms. No GU state,
+This is a small ASCII overlay at the upper left, refreshed at up to 30 Hz only
+while visible. Drawing starts in a detected VBlank; polling yields and is
+bounded to 20 ms. A missing display or suspend cancels the wait. This reduces
+the gap between redraws but cannot prevent applications overwriting the OSD,
+nor guarantee that all pixel writes fit inside the blanking interval.
+The clock enforcement check remains at 500 ms. No GU state,
 display mode, frame-buffer selection or syscall/display hooks are changed.
 The rasterizer accepts validated VRAM-backed 565/5551/4444/8888 surfaces up to
 720x480 and uses their actual stride. Unsupported/main-RAM framebuffers are

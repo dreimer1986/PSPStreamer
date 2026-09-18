@@ -3,7 +3,18 @@
 #include <string.h>
 #include "overlay_pixels.h"
 static OcOverlay overlay;
+static int running=1,suspended,blank_result,become_blank,cancel_at;
+static unsigned long long tick;
+static unsigned long long sceKernelGetSystemTimeWide(void){return tick;}
+static int sceDisplayIsVblank(void){return become_blank && tick>=1000?1:blank_result;}
+static void sceKernelDelayThreadCB(int us){tick+=us;if(cancel_at && tick>=400)suspended=1;}
+#include "overlay_vblank.h"
 int main(void) {
+    assert(!oc_overlay_vblank() && tick==20000);
+    tick=0;become_blank=1;assert(oc_overlay_vblank() && tick==1000);
+    tick=0;become_blank=0;blank_result=-1;assert(!oc_overlay_vblank() && !tick);
+    blank_result=0;cancel_at=1;assert(!oc_overlay_vblank() && tick==400);
+    suspended=0;running=0;assert(!oc_overlay_vblank());
     char lines[3][40]={{0}};
     strcpy(lines[0],"OC CPU 382.9 BUS 382.9 MHZ EST");
     strcpy(lines[1],"TARGET 383 SONY 333 MHZ");
