@@ -502,6 +502,10 @@ Numbered formula entries now compile together, including multiline loops,
 comments and split tokens. Try `multiline-formula-demo.milk`.
 The [collection audit](docs/MILKDROP_MULTILINE_AUDIT.md) separates successful
 loading from host-side formula execution and actual PSP playback testing.
+The [parser/density update](docs/MILKDROP_PARSER_DENSITY.md) adds larger compiled
+formula blocks, empty-statement/point-input compatibility, a 16×16 warp grid
+with a budget-aware fallback, and up to 1024 custom-wave points. Test with
+`extended-formula-demo.milk`, `fine-mesh-demo.milk`, and `dense-wave-demo.milk`.
 The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
 is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,

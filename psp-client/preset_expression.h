@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Private recursive-descent compiler for bounded EEL expressions. */
 static int writable(Parser *p,int id) {
+    /* Desktop registers these as mutable EEL values. Assigning num_inst does
+     * not resize the native instance loop; sample/value inputs reset per point. */
+    if(p->pixel==2 && (id==PM_ENGINE_BASE || id==PM_ENGINE_BASE+1))return 1;
+    if(p->pixel==4 && id>PM_WAVE_BASE && id<PM_EFFECT_BASE)return 1;
     /* Desktop pixel coordinates are initialized per mesh point, but remain
      * writable EEL values for subsequent equations in that same point. */
     if(p->pixel==1 && id>=PM_COORD_BASE && id<PM_COORD_BASE+4)return 1;
@@ -198,10 +202,14 @@ static int assignment(Parser *p) {
     int ok=assignment_body(p);p->depth--;return ok;
 }
 static int sequence(Parser *p) {
+    space(p);
+    int empty=*p->p==';';
+    while(*p->p==';') {p->p++;space(p);}
+    if(empty && (!*p->p || *p->p==')'))return emit(p,PUSH,0,0);
     if(!assignment(p)) return 0;
     space(p);
     while(*p->p==';') {
-        p->p++;space(p);
+        do {p->p++;space(p);} while(*p->p==';');
         if(!*p->p || *p->p==')' || *p->p==',' || *p->p==']' || *p->p==':') break;
         if(!emit(p,DROP,0,0) || !assignment(p)) return 0;
         space(p);
@@ -220,7 +228,7 @@ static int compile_context_mapped(PmProgram *program,const char *source,int line
               .source=source,.locations=locations,.location_count=location_count};
     int records=location_count?location_count:1;
     if(error_line)*error_line=line;
-    if(program->lines+records>128 || before<0 || before>PM_MAX_OPS) return PM_INVALID;
+    if(program->lines+records>PM_MAX_RECORDS || before<0 || before>PM_MAX_OPS) return PM_INVALID;
     space(&p);
     if(!*p.p){program->lines+=records;return PM_OK;} /* exported blank/comment-only block */
     if(!sequence(&p) || !emit(&p,DROP,0,0)) goto fail;

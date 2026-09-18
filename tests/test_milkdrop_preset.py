@@ -2,12 +2,19 @@ import ctypes
 import math
 import os
 import random
+import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get('PSP_MILKDROP_SOURCE_ROOT', Path(__file__).resolve().parents[1]))
+def source_constant(header, name):
+    return int(re.search(r'\b'+name+r'\s*=\s*(\d+)', (ROOT/'psp-client'/header).read_text()).group(1))
+MAX_OPS = source_constant('preset_math.h', 'PM_MAX_OPS')
+GRID = source_constant('milkdrop_warp.h', 'MD_GRID')
+GRID_POINTS = (GRID+1)**2
+CUSTOM_POINTS = source_constant('milkdrop_preset.h', 'MD_CUSTOM_POINTS')
 
 
 class Warp(ctypes.Structure):
@@ -39,7 +46,7 @@ class Op(ctypes.Structure):
 
 
 class Program(ctypes.Structure):
-    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * 512)]
+    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * MAX_OPS)]
 
 
 class Symbols(ctypes.Structure):
@@ -180,6 +187,37 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(list(state.frame_q)[:2],[2,3])
         self.assertAlmostEqual(state.frame_q[2],.01)
 
+    def test_empty_statements_and_extended_compiled_programs(self):
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=;;;q1=1;; /* gap */ ;q2=(q1+=2;;;q1*2;);;;;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertEqual(list(state.frame_q)[:2],[3,6])
+        records='\n'.join(f'per_frame_{i}=q1+=1;' for i in range(1,301))
+        code,preset,error=self.parse(('[preset00]\n'+records).encode())
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertGreater(preset.program.count,512)
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertEqual(state.frame_q[0],300)
+        self.assertEqual(len(state.runtime.memory),1024)
+        # More compiled space does not grant unbounded execution time.
+        code,preset,_=self.parse(b'[preset00]\nper_frame_1=loop(1000000,q1+=1;);')
+        self.assertEqual(code,0)
+        self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+
+    def test_mutable_shape_inputs_do_not_resize_native_loop(self):
+        code,preset,error=self.parse(b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_num_inst=2\n'
+            b'shape_0_init1=num_inst=99;instance=99;\n'
+            b'shape_0_per_frame1=x=instance/num_inst;num_inst=10000;instance=7;y=instance*.1;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        for frame in range(2):
+            self.assertEqual(self.evaluate_state(preset,PresetState(),frame)[0],0)
+            self.assertEqual(self.last_decor.shapes[0].x,0)
+            self.assertEqual(self.last_decor.shapes[4].x,.5)
+            self.assertAlmostEqual(self.last_decor.shapes[0].y,.7,places=6)
+            self.assertFalse(self.last_decor.shapes[5].enabled)
+
     def test_multirecord_error_locations_and_existing_limits(self):
         code,_,error=self.parse(b'[preset00]\nper_frame_1=q1=(1+\n; unrelated physical line\nper_frame_2=);\n')
         self.assertEqual(code,2)
@@ -194,7 +232,7 @@ class PresetTests(unittest.TestCase):
         for body in ('per_frame_1=q1=(\nper_frame_3=2);',
                      'per_frame_1=q1=(\nper_frame_1=2);',
                      'per_frame_1=/* unclosed\nper_frame_2=comment',
-                     '\n'.join(f'per_frame_{i}=// comment' for i in range(1,130))):
+                     '\n'.join(f'per_frame_{i}=// comment' for i in range(1,514))):
             self.assertNotEqual(self.parse(('[preset00]\nzoom=1\n'+body).encode())[0],0)
         # Explicit boundary whitespace must NOT be erased into the number 12.
         self.assertNotEqual(self.parse(b'[preset00]\r\nper_frame_1=q1=1 \r\nper_frame_2=2;\r\n')[0],0)
@@ -210,6 +248,28 @@ class PresetTests(unittest.TestCase):
         state=PresetState()
         for frame in range(600):
             self.assertEqual(self.evaluate_state(preset,state,frame/30)[0],0)
+
+    def test_dense_grid_reserves_wave_budget_and_interpolates(self):
+        fn=self.library.md_eval_pixel_grid
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                     ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        code,preset,error=self.parse(b'[preset00]\nper_pixel_1=counter+=1;dx=x*.1;dy=y*.1;\n'
+            b'wavecode_0_samples=1024\nwave_0_per_point1=loop(10000,x=.5;);\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        for enabled,expected in ((0,GRID_POINTS),(1,81)):
+            preset.waves[0].enabled=enabled
+            state=PresetState();code,warp,error=self.evaluate_state(preset,state,0)
+            self.assertEqual(code,0)
+            points=(Warp*GRID_POINTS)()
+            before=self.library.pm_frame_remaining()
+            self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(warp),0,None,
+                ctypes.byref(state),points,ctypes.byref(error)),0)
+            self.assertEqual(state.pixel_user[0],expected)
+            self.assertLess(self.library.pm_frame_remaining(),before)
+            for y in range(GRID+1):
+                for x in range(GRID+1):
+                    self.assertAlmostEqual(points[y*(GRID+1)+x].dx,.1*x/GRID,places=6)
+                    self.assertAlmostEqual(points[y*(GRID+1)+x].dy,.1*y/GRID,places=6)
 
     def test_desktop_boolean_switches_and_old_motion_default(self):
         code,preset,error=self.parse(b'[preset00]\nbTexWrap=-2\nbWaveDots=3\nbInvert=-1\n')
@@ -255,7 +315,7 @@ class PresetTests(unittest.TestCase):
                      'Geiss - Cauldron - painterly 5 (saturation remix).milk'):
             code,preset,error=self.parse((base/name).read_bytes())
             self.assertEqual(code,0,(name,error.line,error.key))
-            state=PresetState();points=(Warp*81)()
+            state=PresetState();points=(Warp*GRID_POINTS)()
             for frame_no in range(600):
                 now=frame_no*.05
                 code,warp,error=self.evaluate_state(preset,state,now)
@@ -474,7 +534,7 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(state.frame_q[0],480)
             self.assertEqual(state.frame_q[1],272)
             self.assertAlmostEqual(state.frame_q[2],480/272,places=5)
-            self.assertEqual(state.frame_q[3],8)
+            self.assertEqual(state.frame_q[3],GRID)
 
     def test_eel_frame_budget_is_shared_and_stays_exhausted(self):
         program,symbols=Program(),Symbols()
@@ -500,14 +560,14 @@ class PresetTests(unittest.TestCase):
         fn=self.library.md_eval_pixel_grid
         fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
                      ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
-        state=PresetState();points=(Warp*81)();error=Error()
+        state=PresetState();points=(Warp*GRID_POINTS)();error=Error()
         for frame_number in range(2):
             _,frame,_=self.evaluate_state(preset,state,frame_number)
             self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),frame_number,None,
                                 ctypes.byref(state),points,ctypes.byref(error)),0)
-            self.assertAlmostEqual(points[80].dx,.081,places=6)
-            self.assertAlmostEqual(points[80].dy,.0081*(frame_number+1),places=6)
-            self.assertEqual(state.pixel_runtime.memory[0],81*(frame_number+1))
+            self.assertAlmostEqual(points[GRID_POINTS-1].dx,.001*GRID_POINTS,places=5)
+            self.assertAlmostEqual(points[GRID_POINTS-1].dy,.0001*GRID_POINTS*(frame_number+1),places=5)
+            self.assertEqual(state.pixel_runtime.memory[0],GRID_POINTS*(frame_number+1))
             self.assertEqual(state.frame_q[0],0)
 
     def test_expanded_file_and_line_limits(self):
@@ -614,11 +674,11 @@ class PresetTests(unittest.TestCase):
     def test_formula_rejections_and_budgets(self):
         for source in ("rot==;", "rot=;", "rot=(1;", "rot=nan;",
                        "time=0;", "fps=1;", "rot=unknown_func(1);", "rot=1e99;",
-                       "rot=" + "("*18 + "0" + ")"*18 + ";",
-                       "rot=" + "+".join(["0"]*260) + ";"):
+                       "rot=" + "("*70 + "0" + ")"*70 + ";",
+                       "rot=" + "+".join(["0"]*1100) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
         for lines in ("per_frame_2=rot=0;", "per_frame_1=rot=0;\nper_frame_1=rot=0;",
-                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,130))):
+                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,514))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
 
     def test_finite_render_limits_are_silent_and_state_keeps_advancing(self):
@@ -635,7 +695,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
         self.assertEqual(code,0,(error.line,error.key))
         self.assertEqual(preset.wave_mode,8)
         self.assertEqual(preset.shape_instances[0],8)
-        self.assertEqual(preset.waves[0].samples,512)
+        self.assertEqual(preset.waves[0].samples,CUSTOM_POINTS)
         self.assertEqual(preset.waves[0].sep,128)
         state=PresetState()
         for frame in range(20):
@@ -650,7 +710,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
                 shape=self.last_decor.shapes[i]
                 self.assertEqual((shape.x,shape.rad,shape.a),(1,1,99))
                 self.assertAlmostEqual(shape.tex_zoom,.1)
-            points=(Warp*81)()
+            points=(Warp*GRID_POINTS)()
             fn=self.library.md_eval_pixel_grid
             fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
                          ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
@@ -710,7 +770,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
 
     def test_formula_fuzz_and_total_instruction_limit(self):
         # Short valid lines individually fit; their combined bytecode must not.
-        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,50))
+        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,200))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
         rng = random.Random(121)
         alphabet = "rot=0123.+-*/(); time_sincosabs\t"
@@ -1035,7 +1095,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
         self.assertEqual(code,0)
         state=PresetState(); result,warp,_=self.evaluate_state(preset,state,1)
         self.assertEqual(result,0)
-        grid=(Warp*81)(); error=Error()
+        grid=(Warp*GRID_POINTS)(); error=Error()
         self.library.md_eval_pixel_grid.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
         self.assertEqual(self.library.md_eval_pixel_grid(ctypes.byref(preset),ctypes.byref(warp),1,None,ctypes.byref(state),grid,ctypes.byref(error)),0)
         self.assertAlmostEqual(grid[0].rotation,.02,places=6)
@@ -1103,9 +1163,9 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
                            "if(1,,3)","if(1,2,)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
         expression="0"
-        for _ in range(18): expression=f"if(0,0,{expression})"
+        for _ in range(70): expression=f"if(0,0,{expression})"
         self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
-        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,40))
+        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,150))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         # A failed append never changes the previously compiled instructions.
         program=Program()
@@ -1236,7 +1296,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         class Vertex(ctypes.Structure):
             _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
         class Geometry(ctypes.Structure):
-            _fields_=[('count',ctypes.c_int),('vertices',Vertex*512)]
+            _fields_=[('count',ctypes.c_int),('vertices',Vertex*CUSTOM_POINTS)]
         code,preset,_=self.parse(b'''[preset00]
 wavecode_0_enabled=1
 wavecode_0_samples=64
@@ -1274,9 +1334,35 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
             code,preset,_=self.parse(f'[preset00]\nwavecode_0_{key}={value}'.encode())
             self.assertEqual(code,0)
             self.assertEqual(getattr(preset.waves[0],{'bSpectrum':'spectrum'}.get(key,key)),
-                             {'samples':512,'bSpectrum':1,'sep':128}[key])
-        for expr in ('sample=1;','value1=0;','time=0;'):
+                             {'samples':513,'bSpectrum':1,'sep':128}[key])
+        for expr in ('time=0;',):
             self.assertNotEqual(self.parse(('[preset00]\nwave_0_per_point1='+expr).encode())[0],0)
+
+        # New wave density and mutable point inputs: all PCM reads stay inside
+        # the original 576-sample snapshot, including odd/maximal separation.
+        for samples in (513,576,1024,1000000):
+            for sep in (0,1,127,128):
+                code,preset,error=self.parse(f'''[preset00]
+wavecode_0_enabled=1
+wavecode_0_samples={samples}
+wavecode_0_sep={sep}
+wavecode_0_smoothing=0
+wave_0_per_point1=sample=1-sample;value1=0;value2=0;x=sample;y=.5;
+'''.encode())
+                self.assertEqual(code,0,(error.line,error.key))
+                self.library.pm_begin_frame()
+                self.assertEqual(fn(ctypes.byref(preset),0,None,right,left,spectral,spectral,
+                    ctypes.byref(PresetState()),out,ctypes.byref(error)),0)
+                count=min(samples,CUSTOM_POINTS)
+                self.assertEqual(out[0].count,count)
+                self.assertEqual(out[0].vertices[0].x,256)
+                self.assertEqual(out[0].vertices[count-1].x,0)
+                self.assertEqual(out[0].vertices[count-1].y,128)
+                # Exercise the spectrum interpolation path as well.
+                preset.waves[0].spectrum=1
+                self.library.pm_begin_frame()
+                self.assertEqual(fn(ctypes.byref(preset),0,None,right,left,spectral,spectral,
+                    ctypes.byref(PresetState()),out,ctypes.byref(error)),0)
 
     def test_combined_pcm_fft_snapshot(self):
         capture=ctypes.c_int.in_dll(self.library,'md_wave_capture')
@@ -1320,7 +1406,7 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         for v in output:
             self.assertTrue(0<=v.x<=256 and 0<=v.y<=256)
         self.assertEqual(self.library.md_wave_smooth(output,source,1),0)
-        self.assertEqual(self.library.md_wave_smooth(output,source,513),0)
+        self.assertEqual(self.library.md_wave_smooth(output,source,CUSTOM_POINTS+1),0)
 
     def test_image_effect_flags(self):
         for key in ('bDarkenCenter','bBrighten','bDarken','bSolarize','bInvert'):
@@ -1350,7 +1436,7 @@ per_frame_1=wave_r=progress;
                 self.assertEqual(self.last_decor.shapes[index].enabled,1)
                 self.assertAlmostEqual(self.last_decor.shapes[index].x,i/8)
             for key in ('instance','instances'):
-                self.assertNotEqual(self.parse(f'[preset00]\nshape_0_per_frame1={key}=1;'.encode())[0],0)
+                self.assertEqual(self.parse(f'[preset00]\nshape_0_per_frame1={key}=1;'.encode())[0],0)
             code,limited,_=self.parse(b'[preset00]\nshapecode_0_num_inst=311')
             self.assertEqual(code,0)
             self.assertEqual(limited.shape_instances[0],8)
@@ -1385,8 +1471,8 @@ per_frame_1=wave_r=progress;
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
                       "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
-                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,130)),
-                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,50))):
+                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,514)),
+                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,200))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=1/0;\n")
         self.assertEqual(code,0)
@@ -1480,13 +1566,13 @@ per_frame_1=wave_r=progress;
         state=PresetState()
         result,frame,_=self.evaluate_state(preset,state,0)
         self.assertEqual(result,0)
-        points=(Warp*81)(); error=Error()
+        points=(Warp*GRID_POINTS)(); error=Error()
         self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,ctypes.byref(state),points,ctypes.byref(error)),0)
-        for y in range(9):
-            for x in range(9):
-                self.assertAlmostEqual(points[y*9+x].dx,x/8*.1,places=6)
-                self.assertAlmostEqual(points[y*9+x].dy,y/8*.1,places=6)
-        self.assertEqual(points[40].rotation,0)
+        for y in range(GRID+1):
+            for x in range(GRID+1):
+                self.assertAlmostEqual(points[y*(GRID+1)+x].dx,x/GRID*.1,places=6)
+                self.assertAlmostEqual(points[y*(GRID+1)+x].dy,y/GRID*.1,places=6)
+        self.assertEqual(points[GRID_POINTS//2].rotation,0)
         # Desktop permits coordinate assignments within one mesh point.
         # Every subsequent point/evaluation starts with fresh coordinates.
         code,modified,_=self.parse(b'[preset00]\nper_pixel_1=x=x*.5; y=1-y; rad=rad+1; ang=0;\n'
@@ -1495,11 +1581,11 @@ per_frame_1=wave_r=progress;
         for _ in range(2):
             self.assertEqual(fn(ctypes.byref(modified),ctypes.byref(frame),0,None,
                                 ctypes.byref(state),points,ctypes.byref(error)),0)
-            for y in range(9):
-                for x in range(9):
-                    self.assertAlmostEqual(points[y*9+x].dx,x/16,places=6)
-                    self.assertAlmostEqual(points[y*9+x].dy,1-y/8,places=6)
-                    self.assertEqual(points[y*9+x].rotation,0)
+            for y in range(GRID+1):
+                for x in range(GRID+1):
+                    self.assertAlmostEqual(points[y*(GRID+1)+x].dx,x/(2*GRID),places=6)
+                    self.assertAlmostEqual(points[y*(GRID+1)+x].dy,1-y/GRID,places=6)
+                    self.assertEqual(points[y*(GRID+1)+x].rotation,0)
         # A late grid-point failure cannot partially replace a prepared grid.
         code,preset,_=self.parse(b"[preset00]\nper_pixel_1=dx=.01/(1-x);\n")
         self.assertEqual(code,0)
@@ -1510,7 +1596,7 @@ per_frame_1=wave_r=progress;
     def test_pixel_restrictions_and_demo(self):
         for formula in ("time=0;",):
             self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
-        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,26))
+        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,100))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         self.assertEqual(self.parse(b"[preset00]\nper_pixel_2=dx=0;")[0],2)
         code,preset,_=self.parse((ROOT / "psp-client/presets/grid-twist-demo.milk").read_bytes())

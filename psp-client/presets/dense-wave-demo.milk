@@ -1,0 +1,13 @@
+; Original PSPStreamer test: explicit 1024-point interpolated custom wave.
+[preset00]
+nWaveMode=0
+fWaveAlpha=0
+fDecay=.94
+fGammaAdj=1.2
+wavecode_0_enabled=1
+wavecode_0_samples=1024
+wavecode_0_scaling=.35
+wavecode_0_smoothing=.2
+wavecode_0_bDrawThick=1
+wave_0_per_frame1=r=.3;g=.8;b=1;
+wave_0_per_point1=x=.04+.92*sample;y=.5+.25*value1+.08*sin(sample*100.53096+time*2);

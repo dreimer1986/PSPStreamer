@@ -2,6 +2,7 @@
  * Bounded PSP implementation of MilkDrop DrawWave modes 2,3,5,6,7,8.
  * Original geometry semantics, PSP sample normalization and FFT front-end. */
 #include "milkdrop_wave.h"
+#include "milkdrop_preset.h"
 #include <math.h>
 
 /* UI-thread-only scratch, never shared with the PCM producer. */
@@ -10,7 +11,7 @@ static int fft_ready;
 /* MilkDrop SmoothWave coefficients. Preserve endpoints and input colors;
  * clamp interpolation overshoot to the valid feedback rectangle. */
 int md_wave_smooth(MdVertex *out,const MdVertex *in,int count) {
-    if(count<2 || count>512) return 0;
+    if(count<2 || count>MD_CUSTOM_POINTS) return 0;
     for(int i=0;i<count-1;i++) {
         int below=i?i-1:0,above=i+2<count?i+2:count-1;
         out[2*i]=in[i]; out[2*i+1]=in[i];

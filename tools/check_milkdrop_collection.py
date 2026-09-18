@@ -4,20 +4,16 @@ import argparse
 import ctypes
 import json
 import math
+import os
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tests'))
-import test_milkdrop_preset as fixtures
-from test_milkdrop_preset import PresetTests, Preset, PresetState, Error, Signal, Warp
 
 class Vertex(ctypes.Structure):
     _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
               ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
-
-class Geometry(ctypes.Structure):
-    _fields_=[('count',ctypes.c_int),('vertices',Vertex*512)]
 
 def main():
     parser = argparse.ArgumentParser()
@@ -28,7 +24,11 @@ def main():
     args = parser.parse_args()
     if args.frames<0:
         parser.error('--frames must be nonnegative')
-    fixtures.ROOT=args.source_root.resolve()
+    os.environ['PSP_MILKDROP_SOURCE_ROOT']=str(args.source_root.resolve())
+    from test_milkdrop_preset import (PresetTests, Preset, PresetState, Error,
+                                     Signal, Warp, GRID_POINTS, CUSTOM_POINTS)
+    class Geometry(ctypes.Structure):
+        _fields_=[('count',ctypes.c_int),('vertices',Vertex*CUSTOM_POINTS)]
     PresetTests.setUpClass()
     test = PresetTests()
     records = []
@@ -43,7 +43,7 @@ def main():
     right=(ctypes.c_short*576)(*[int(12000*math.sin(i*.09)) for i in range(576)])
     left=(ctypes.c_short*576)(*[int(16000*math.sin(i*.07)) for i in range(576)])
     spectrum=(ctypes.c_float*512)(*[.2/(1+i*.05) for i in range(512)])
-    points=(Warp*81)();geometry=(Geometry*4)()
+    points=(Warp*GRID_POINTS)();geometry=(Geometry*4)()
     try:
         for path in sorted(args.collection.rglob('*.milk')):
             preset, error = Preset(), Error()

@@ -1,12 +1,12 @@
 /* Import-only buffers: physical records become one Desktop-style program.
  * No source text/mapping allocation survives activation. File size still caps
- * aggregate text at 64 KiB; each context retains its 128-record budget. */
+ * aggregate text at 64 KiB; each context has a bounded record budget. */
 enum { MD_SOURCE_BLOCKS=3+MD_SHAPES*2+MD_CUSTOM_WAVES*3 };
 typedef struct {
     char *text;
     int used,count,context;
     char prefix[32];
-    PmSourceLocation locations[128];
+    PmSourceLocation locations[PM_MAX_RECORDS];
     PmProgram *program;
     PmSymbols *symbols;
 } MdSourceBlock;
@@ -40,7 +40,7 @@ static MdSourceBlock *md_source_create(MdFilePreset *p) {
 }
 static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int line,MdFileError *error) {
     char expected[48];snprintf(expected,sizeof(expected),"%s%d",b->prefix,b->count+1);
-    if(strcmp(key,expected) || b->count>=128)return md_file_error(error,MD_FILE_INVALID,line,key);
+    if(strcmp(key,expected) || b->count>=PM_MAX_RECORDS)return md_file_error(error,MD_FILE_INVALID,line,key);
     if(*text=='`')text++; /* Desktop's optional exported-line marker. */
     /* state.cpp StripLinefeedCharsAndComments removes the record delimiter,
      * rather than replacing it with whitespace (despite its old comment).

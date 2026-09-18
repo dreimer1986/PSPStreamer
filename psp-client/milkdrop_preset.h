@@ -6,7 +6,8 @@
 #include "milkdrop_decor.h"
 typedef struct { PmProgram init, frame; PmSymbols symbols; } MdShapeProgram;
 typedef struct { int ready; float t[8], user[PM_USER_COUNT]; PmRuntime runtime; } MdShapeState;
-enum { MD_CUSTOM_WAVES=4, MD_CUSTOM_POINTS=512 };
+/* Requests above Desktop's 512 points use interpolated input, not extra PCM. */
+enum { MD_CUSTOM_WAVES=4, MD_CUSTOM_POINTS=1024 };
 typedef struct {
     float enabled,samples,sep,spectrum,dots,thick,additive,scaling,smoothing,r,g,b,a;
     PmProgram init,frame,point; PmSymbols symbols,point_symbols;

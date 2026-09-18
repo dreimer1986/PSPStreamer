@@ -14,6 +14,7 @@ _Static_assert(offsetof(MdShape,border_a)==21*sizeof(float),"shape field layout"
 _Static_assert(offsetof(MdShape,thick_outline)==22*sizeof(float),"shape outline field layout");
 _Static_assert(offsetof(MdDecor,shapes)==MD_DECOR_VALUES*sizeof(float),"decor field layout");
 _Static_assert(offsetof(MdCustomWave,a)==12*sizeof(float),"custom wave field layout");
+_Static_assert(sizeof(MdPreset)==13*sizeof(float),"warp interpolation layout");
 
 MdFilePreset md_custom_preset={.wave_mode=-1,.wrap=1,.gamma=1,
     .decor={.wave_x=.5f,.wave_y=.5f,.echo_zoom=1}};
@@ -496,6 +497,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
         memcpy(sv+PM_T_BASE,local->t,sizeof(local->t));
         memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
+        sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;
         if(!pm_execute_runtime(&program->frame,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
         for(int k=0;k<23;k++) {
             float value=sv[PM_SHAPE_BASE+k],lo=0,hi=1;
@@ -560,16 +562,38 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(ws->frame.user,v+PM_USER_BASE,sizeof(ws->frame.user));
         float colors[4]; memcpy(colors,v+PM_SHAPE_BASE+10,sizeof(colors));
         memcpy(v+PM_USER_BASE,ws->point_user,sizeof(ws->point_user));
-        int count=(int)n,offset=(576-count)/2,sep=(int)w->sep;
-        if(!w->spectrum && count+sep>576)sep=576-count;
+        int count=(int)n,sep=(int)w->sep;
+        /* Keep <=512-point presets byte-for-byte on their old sample path.
+         * Larger explicit requests span the available PCM window using linear
+         * interpolation. Spectrum bins likewise interpolate only above 512. */
+        int source_count=count>576?576:count;
+        int offset=(576-source_count)/2;
+        if(!w->spectrum && count<=512 && count+sep>576)sep=576-count;
+        if(!w->spectrum && count>512) {
+            source_count=576-sep;
+            offset=sep/2;
+        }
         float a[MD_CUSTOM_POINTS],b[MD_CUSTOM_POINTS];
         float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*p->wave_scale/32768.0f;
         for(int i=0;i<count;i++) {
             if(w->spectrum) {
-                int bin=i*(512-sep)/count;
+                float pos=(float)i*(512-sep)/count;
+                int bin=(int)pos;
                 float sg=w->scaling*p->wave_scale;
-                a[i]=spectrum_left[bin]*sg; b[i]=spectrum_right[bin]*sg;
-            } else {a[i]=left[offset+i-sep/2]*gain; b[i]=right[offset+i+sep/2]*gain;}
+                float frac=count>512?pos-bin:0;
+                int end=bin<511?bin+1:bin;
+                a[i]=(spectrum_left[bin]+frac*(spectrum_left[end]-spectrum_left[bin]))*sg;
+                b[i]=(spectrum_right[bin]+frac*(spectrum_right[end]-spectrum_right[bin]))*sg;
+            } else if(count<=512) {
+                a[i]=left[offset+i-sep/2]*gain; b[i]=right[offset+i+sep/2]*gain;
+            } else {
+                float pos=(float)i*(source_count-1)/(count-1);
+                int j=(int)pos,end=j+1<source_count?j+1:j;
+                float frac=pos-j;
+                int l=offset-sep/2,r=offset+sep/2;
+                a[i]=(left[l+j]+frac*(left[l+end]-left[l+j]))*gain;
+                b[i]=(right[r+j]+frac*(right[r+end]-right[r+j]))*gain;
+            }
             if(i) {a[i]=a[i]*(1-mix)+a[i-1]*mix; b[i]=b[i]*(1-mix)+b[i-1]*mix;}
         }
         for(int i=count-2;i>=0;i--) {a[i]=a[i]*(1-mix)+a[i+1]*mix; b[i]=b[i]*(1-mix)+b[i+1]*mix;}
@@ -606,13 +630,27 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
     memset(error,0,sizeof(*error));
     if(p->pixel_program.count<0 || p->pixel_program.count>PM_PIXEL_OPS)
         return md_file_error(error,MD_FILE_INVALID,0,"pixel budget");
-    for(int y=0;y<=MD_GRID;y++) for(int x=0;x<=MD_GRID;x++) {
+    /* Reserve ordinary custom-wave work before spending extra fuel on the
+     * finer lattice. Complex loops/bulk-memory code get conservative hints.
+     * This only selects density; the VM's hard limits still apply unchanged. */
+    unsigned long long work=(unsigned)pm_program_work_hint(&p->pixel_program)*MD_GRID_POINTS;
+    for(int i=0;i<MD_CUSTOM_WAVES;i++) if(p->waves[i].enabled) {
+        const MdCustomWave *w=&p->waves[i];
+        int samples=(int)md_limit(w->samples,2,MD_CUSTOM_POINTS);
+        if(w->frame.count)samples=MD_CUSTOM_POINTS;
+        work+=(unsigned)pm_program_work_hint(&w->point)*samples;
+        work+=pm_program_work_hint(&w->frame)+pm_program_work_hint(&w->init);
+    }
+    int grid=work>(unsigned)pm_frame_remaining()?8:MD_GRID;
+    int stride=MD_GRID/grid;
+    for(int y=0;y<=grid;y++) for(int x=0;x<=grid;x++) {
         float v[PM_VALUES]={frame->zoom,frame->rotation,frame->warp,frame->warp_speed,
             frame->warp_scale,frame->decay,0,0,0,seconds};
         v[23]=frame->dx; v[24]=frame->dy; v[25]=frame->cx; v[26]=frame->cy;
         v[27]=frame->sx; v[28]=frame->sy; v[29]=frame->zoomexp;
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
         md_inputs(v);
+        v[PM_INPUT_BASE]=grid;v[PM_INPUT_BASE+1]=grid;
         memcpy(v+PM_Q_BASE,q,sizeof(q));memcpy(v+PM_USER_BASE,users,sizeof(users));
         v[PM_META_BASE]=state->frames?(float)(state->frames-1):0;
         v[PM_META_BASE+1]=state->fps;
@@ -620,8 +658,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         memcpy(v+PM_DYNAMIC_BASE+1,state->motion,sizeof(state->motion));
         memcpy(v+PM_EFFECT_BASE,state->effects,sizeof(state->effects));
         v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
-        float px=2.0f*x/MD_GRID-1, py=1-2.0f*y/MD_GRID;
-        v[PM_COORD_BASE]=(float)x/MD_GRID; v[PM_COORD_BASE+1]=(float)y/MD_GRID;
+        float px=2.0f*x/grid-1, py=1-2.0f*y/grid;
+        v[PM_COORD_BASE]=(float)x/grid; v[PM_COORD_BASE+1]=(float)y/grid;
         v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);
         v[PM_COORD_BASE+3]=(px==0 && py==0)?0:atan2f(py,px);
         int line=0;
@@ -634,9 +672,23 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
             if(!isfinite(v[ids[i]]))return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
             v[ids[i]]=md_limit(v[ids[i]],lo[i],hi[i]);
         }
-        next[y*(MD_GRID+1)+x]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
+        next[y*stride*(MD_GRID+1)+x*stride]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
             v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
         memcpy(q,v+PM_Q_BASE,sizeof(q));memcpy(users,v+PM_USER_BASE,sizeof(users));
+    }
+    if(stride>1) for(int y=0;y<=MD_GRID;y++) for(int x=0;x<=MD_GRID;x++) {
+        if(x%stride==0 && y%stride==0)continue;
+        int x0=x/stride*stride,y0=y/stride*stride;
+        int x1=x0+stride>MD_GRID?MD_GRID:x0+stride;
+        int y1=y0+stride>MD_GRID?MD_GRID:y0+stride;
+        float a[13],b[13],c[13],d[13],out[13];
+        memcpy(a,&next[y0*(MD_GRID+1)+x0],sizeof(a));
+        memcpy(b,&next[y0*(MD_GRID+1)+x1],sizeof(b));
+        memcpy(c,&next[y1*(MD_GRID+1)+x0],sizeof(c));
+        memcpy(d,&next[y1*(MD_GRID+1)+x1],sizeof(d));
+        float tx=(float)(x-x0)/stride,ty=(float)(y-y0)/stride;
+        for(int k=0;k<13;k++)out[k]=(a[k]*(1-tx)+b[k]*tx)*(1-ty)+(c[k]*(1-tx)+d[k]*tx)*ty;
+        memcpy(&next[y*(MD_GRID+1)+x],out,sizeof(out));
     }
     memcpy(points,next,sizeof(next));
     state->pixel_runtime=runtime;memcpy(state->pixel_user,users,sizeof(users));

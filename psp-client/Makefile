@@ -39,6 +39,7 @@ main.o: music_caption.h
 milkdrop_preset.o: preset_source.h
 main.o milkdrop_gu.o milkdrop_wave.o: milkdrop_wave.h milkdrop_warp.h
 milkdrop_wave_extra.o: milkdrop_wave.h milkdrop_decor.h milkdrop_warp.h
+milkdrop_wave_extra.o: milkdrop_preset.h preset_math.h
 main.o milkdrop_gu.o milkdrop_wave.o milkdrop_preset.o milkdrop_decor.o: milkdrop_decor.h
 milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h

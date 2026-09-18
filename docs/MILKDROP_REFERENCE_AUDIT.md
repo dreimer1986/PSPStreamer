@@ -68,7 +68,7 @@ No per-frame warnings/popups are emitted.
 | Area | Current fallback | Classification |
 | --- | --- | --- |
 | Shapes | Four slots, at most eight instances each, 3–100 sides | Instances: **Umbau nötig**; sides follow Desktop draw cap |
-| Custom waves | Four slots, 2–512 points; separation 0–128 and further reduced to fit the 576-sample PCM window | Buffer/work budget; more points: **Umbau nötig** |
+| Custom waves | Four slots, 2–1024 points; separation 0–128; above 512 points PCM/FFT inputs are interpolated | Expanded; Desktop itself clamps computed points to 512 |
 | Custom wave gain/smoothing | 0–4 / 0–1; normalized colors and positions 0–1 | Conservative existing renderer limits, not hardware maxima |
 | Shape position/radius | 0–1; angles −100..100; texture zoom .1–10 | Conservative existing renderer limits; offscreen fidelity remains future work |
 | Shape colors | Finite floats; convert to byte using truncation and wrapping | Desktop semantics; safe extension for values overflowing Desktop integer conversion |
@@ -80,9 +80,9 @@ No per-frame warnings/popups are emitted.
 | Echo zoom/alpha/orientation, gamma | .01–100 / 0–1 / 0–3, gamma 1–4 | Pass/geometry budget; gamma affects GU-list usage |
 | Built-in wave mode | 0–8; out-of-range values select nearest mode | Supported mode set |
 | Borders / motion vectors | Border size 0–.5; colors/alpha 0–1; motion grid at most 64×48 | Geometry budget / Desktop motion-grid rule |
-| Feedback and mesh | 512×256 feedback, 8×8-cell mesh | Current memory/quality tradeoff; larger buffers/mesh: **Umbau nötig** |
+| Feedback and mesh | 512×256 feedback, 16×16-cell mesh; budget-aware 8×8 formula fallback | Mesh expanded; larger feedback buffers: **Umbau nötig** |
 | External textures | Four, at most 256×256 RGBA each; JPEG source up to 1024×1024 | Loader/memory budget; not GE's absolute texture limit |
-| GU list | 1 MiB; tested maximum vertex payload 994016 bytes with reserved command headroom | Current allocation; batching: **Umbau nötig** |
+| GU list | 1.5 MiB; tested maximum vertex payload 1414496 bytes with reserved command headroom | Current allocation; batching: **Umbau nötig** |
 
 Dynamic booleans use the EEL truth threshold (absolute value at least .00001);
 integer file switches use nonzero as true. Formula-selected modes/orientations
@@ -118,6 +118,10 @@ registrations in Desktop `state.cpp`, plus identifier/register resolution in
   lifetimes and point-local coordinate initialization are independently tested.
 
 Remaining differences found, **not hardware-limit claims**:
+
+- Completed: empty statements and mutable shape instance/wave-point inputs;
+  larger compiled programs without increasing execution fuel or megabuf memory.
+  See [the parser/density report](MILKDROP_PARSER_DENSITY.md).
 
 - Other native inputs such as `time`, `fps` and audio values remain read-only
   here. Desktop registers writable EEL values; extending mutability needs a

@@ -1,0 +1,17 @@
+; Original PSPStreamer test: nonlinear per-pixel warp on the 16x16 grid.
+[preset00]
+nWaveMode=0
+fWaveAlpha=.7
+fDecay=.97
+fGammaAdj=1.2
+bWaveThick=1
+shapecode_0_enabled=1
+shapecode_0_sides=4
+shapecode_0_rad=.06
+shapecode_0_r=.3
+shapecode_0_g=.8
+shapecode_0_b=1
+shapecode_0_a=.5
+shape_0_per_frame1=x=.5+.3*sin(time*.4);y=.5+.3*cos(time*.6);ang=time*.3;
+per_frame_1=q1=.015+.015*psp_low;wave_r=.7;wave_g=.3;wave_b=.9;
+per_pixel_1=dx=q1*sin(y*25.13274+time);dy=q1*cos(x*25.13274-time);zoom=1.012;

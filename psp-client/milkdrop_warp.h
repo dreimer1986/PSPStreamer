@@ -4,7 +4,7 @@
 
 /* GU-compatible textured/color vertex; also exercised by the host tests. */
 typedef struct { float u, v; uint32_t color; float x, y, z; } MdVertex;
-enum { MD_GRID = 8, MD_TEXTURE = 256, MD_MESH_VERTICES = MD_GRID * MD_GRID * 6 };
+enum { MD_GRID = 16, MD_TEXTURE = 256, MD_MESH_VERTICES = MD_GRID * MD_GRID * 6 };
 enum { MD_GRID_POINTS = (MD_GRID+1)*(MD_GRID+1) };
 typedef struct {
     float zoom, rotation, warp, warp_speed, warp_scale, decay;

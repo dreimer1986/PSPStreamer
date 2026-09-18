@@ -134,15 +134,15 @@ the video/audio playback clocks or chosen video frame rate.
 | Resource | Limit |
 | --- | --- |
 | Preset file / physical line | 64 KiB / 2047 bytes |
-| Compiled init/frame program | 512 instructions, 128 numbered lines |
-| Compiled pixel/point program | 256 instructions |
+| Compiled init/frame program | 2048 instructions, 512 numbered lines |
+| Compiled pixel/point program | 1024 instructions |
 | Named locals | 64 per context, 31-character names |
-| Operand stack / parser depth | 48 / 16 |
+| Operand stack / parser depth | 48 / 64 |
 | Local memory per context / shared memory | 1024 float slots each |
 | Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
-| Mesh | 8 × 8 cells, interpolated by GU |
+| Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
 | Shapes | 4 × 8 instances, 100 sides each |
-| Custom waves | 4 × 512 points |
+| Custom waves | 4 × 1024 points; requests above 512 use interpolated audio input |
 
 These are current implementation/resource budgets, **not measured hardware
 maxima**. See [the fallback inventory](MILKDROP_REFERENCE_AUDIT.md#silent-psp-fallbacks)
@@ -158,8 +158,14 @@ span entries. Desktop `//` and double-backslash line comments and the optional
 leading backtick are handled before concatenation. Record separators disappear
 (even identifiers can span entries), but explicit whitespace is preserved.
 Physical source-line mappings survive into runtime diagnostics. Source buffers
-are import-only; all existing VM budgets remain unchanged. Try
+are import-only; execution and megabuf budgets remain unchanged. Try
 `multiline-formula-demo.milk`; see [the collection comparison](MILKDROP_MULTILINE_AUDIT.md).
+Empty statements (`;;`) are accepted. Custom-wave `sample`, `value1`, `value2`
+and shape `instance`, `num_inst`/`instances` may be assigned within their formula
+context; native point/instance loops are not resized by these assignments.
+For the expanded compiler and geometry limits, see the
+[parser and density batch](MILKDROP_PARSER_DENSITY.md) and try
+`extended-formula-demo.milk`, `dense-wave-demo.milk`, `fine-mesh-demo.milk`.
 Audio analysis is normalized for this player. The renderer retains
 snapshot transitions rather than running two full preset engines simultaneously.
 The legacy `fShader` hue effect uses the Desktop no-shader corner-color equations

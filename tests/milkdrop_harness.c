@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include "milkdrop_warp.h"
 #include "milkdrop_decor.h"
+#include "milkdrop_preset.h"
 enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D=8,
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
@@ -132,7 +133,7 @@ static void *sceGuGetMemory(int bytes) {
     void *result=list_base+list_used;
     list_used+=(bytes+15)&~15;
     if(list_used>list_peak) list_peak=list_used;
-    assert(list_used<1048576-32768); /* reserve at least 32 KiB for GU commands */
+    assert(list_used<1572864-32768); /* reserve at least 32 KiB for GU commands */
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
@@ -162,7 +163,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(type==GU_LINES) { assert(count<=MD_MOTION_MAX_VERTICES && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
-        assert(count==512 || count==1023 || count==192 || count==383 || count==64 || count==127 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=MD_SHAPE_SIDES+1)); ring_calls++;
+        assert(count==MD_CUSTOM_POINTS || count==2*MD_CUSTOM_POINTS-1 || count==512 || count==1023 || count==192 || count==383 || count==64 || count==127 || count==97 || count==170 || count==240 || count==241 || count==256 || count==480 || (count>=4 && count<=MD_SHAPE_SIDES+1)); ring_calls++;
         if((count<=33 || count==MD_SHAPE_SIDES+1) && count!=16 && count!=31) {
             static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
             assert(shape_fan && outline_pass<4);
@@ -227,7 +228,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==28);
+    assert(argc==31);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -389,7 +390,7 @@ int main(int argc,char **argv) {
     /* Maximum static layer combination: stays within one fixed GU list. */
     for(int i=0;i<5;i++) md_custom_preset.effects[i]=1;
     for(int i=0;i<MD_SHAPES;i++) md_custom_preset.shape_instances[i]=MD_SHAPE_INSTANCES;
-    for(int i=0;i<MD_CUSTOM_WAVES;i++) md_custom_preset.waves[i]=(MdCustomWave){.enabled=1,.samples=512,.thick=1,.scaling=.1f,.r=1,.g=1,.b=1,.a=1};
+    for(int i=0;i<MD_CUSTOM_WAVES;i++) md_custom_preset.waves[i]=(MdCustomWave){.enabled=1,.samples=MD_CUSTOM_POINTS,.thick=1,.scaling=.1f,.r=1,.g=1,.b=1,.a=1};
     expected_ring_color=0; expected_passes=8;
     md_custom_preset.gamma=4;
     MdDecor *decor=&md_custom_preset.decor;
@@ -433,7 +434,7 @@ int main(int argc,char **argv) {
     MdFileError demo_error;
     expected_passes=4; expected_ring_color=0;
     for(int fixture=1;fixture<argc;fixture++) {
-    expected_passes=fixture<=23?4:1;
+    expected_passes=fixture<=23?4:(fixture==28 || fixture==29)?2:1;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
@@ -508,6 +509,7 @@ int main(int argc,char **argv) {
      * Scanout format stays 32-bit even when TV feedback becomes RGB565. */
     /* Four independent slots, then a partial load failure: neither case may
      * leave allocations alive after a preset reset or corrupt the GU list. */
+    assert(md_load_preset(argv[27],&md_custom_preset,&demo_error)==MD_FILE_OK);
     assert(md_start());
     for(int i=1;i<MD_SHAPES;i++) strcpy(md_custom_preset.texture_path[i],md_custom_preset.texture_path[0]);
     assert(md_images_prepare());
@@ -536,7 +538,7 @@ int main(int argc,char **argv) {
     md_stop();
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
-    printf("Visualization maximum vertex storage: %zu / 1048576 bytes\n",list_peak);
+    printf("Visualization maximum vertex storage: %zu / %d bytes\n",list_peak,MD_LIST_BYTES);
     assert(thick_outline_draws>0);
     munmap(vram,edram_size);
     return 0;

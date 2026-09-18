@@ -19,7 +19,8 @@
 static int md_texture_base, md_texture_bytes, md_pixel_format;
 #define MD_TEXTURE_BYTES md_texture_bytes
 #define MD_TEXTURE_BASE md_texture_base
-#define MD_LIST_BYTES 1048576
+/* Main RAM, not EDRAM: four 1024-point thick waves plus a 16x16 mesh. */
+#define MD_LIST_BYTES 1572864
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
 static int md_front;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef PSPSTREAMER_PRESET_MATH_H
 #define PSPSTREAMER_PRESET_MATH_H
-enum { PM_MAX_OPS = 512, PM_STACK = 48, PM_DEPTH = 16,
+enum { PM_MAX_OPS = 2048, PM_MAX_RECORDS = 512, PM_STACK = 48, PM_DEPTH = 64,
        PM_Q_BASE = 55, PM_Q_COUNT = 32, PM_USER_BASE = PM_Q_BASE + PM_Q_COUNT,
        PM_USER_COUNT = 64, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
        PM_META_BASE = PM_COORD_BASE + 4, PM_DYNAMIC_BASE = PM_META_BASE + 2,
@@ -9,7 +9,7 @@ enum { PM_MAX_OPS = 512, PM_STACK = 48, PM_DEPTH = 16,
        PM_WAVE_BASE = PM_T_BASE + 8, PM_EFFECT_BASE = PM_WAVE_BASE + 4,
        PM_ENGINE_BASE = PM_EFFECT_BASE + 5, PM_INPUT_BASE = PM_ENGINE_BASE + 3,
        PM_MONITOR = PM_INPUT_BASE + 6, PM_WRAP = PM_MONITOR + 1, PM_VALUES = PM_WRAP + 1,
-       PM_PIXEL_OPS = 256, PM_MEMORY = 1024, PM_FUEL = 4096 };
+       PM_PIXEL_OPS = 1024, PM_MEMORY = 1024, PM_FUEL = 4096 };
 typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
@@ -40,6 +40,9 @@ int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_lin
 int pm_execute_runtime(const PmProgram *program, float values[PM_VALUES], int *error_line, PmRuntime *runtime);
 /* Call once per visualization frame. Limits total work across all points. */
 void pm_begin_frame(void);
+/* Conservative scheduling hints; neither function grants additional fuel. */
+int pm_frame_remaining(void);
+int pm_program_work_hint(const PmProgram *program);
 void pm_reset_globals(void);
 int pm_assignment_line(const PmProgram *program, int variable);
 #endif

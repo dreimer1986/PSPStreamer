@@ -33,6 +33,14 @@ static int function(const char *name) {
         if(!strcmp(name,list[i].name)) return list[i].op;
     return -1;
 }
+int pm_program_work_hint(const PmProgram *program) {
+    if(program->count<0 || program->count>PM_MAX_OPS)return PM_FUEL;
+    for(int i=0;i<program->count;i++) {
+        int op=program->code[i].op;
+        if(op==LOOP || op==WHILE || op==MEMCPY || op==MEMSET)return PM_FUEL;
+    }
+    return program->count;
+}
 int pm_assignment_line(const PmProgram *program, int variable) {
     for (int i = program->count-1; i >= 0; i--)
         if ((program->code[i].op == STORE || program->code[i].op == KEEP) && program->code[i].arg == variable)
@@ -172,7 +180,7 @@ unsupported:
 #include "preset_expression.h"
 int pm_compile_mapped(PmProgram *program,const char *source,const PmSourceLocation *locations,
                       int count,PmSymbols *symbols,int context,int *error_line) {
-    if(count<1 || count>128 || context<0 || context>4)return PM_INVALID;
+    if(count<1 || count>PM_MAX_RECORDS || context<0 || context>4)return PM_INVALID;
     return compile_context_mapped(program,source,locations[0].line,symbols,context,locations,count,error_line);
 }
 int pm_compile(PmProgram *program, const char *source, int line) {
@@ -201,6 +209,7 @@ void pm_reset_globals(void) {
     memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
     memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
 }
+int pm_frame_remaining(void) {return frame_fuel<0?262144:frame_fuel;}
 /* Only memory-using programs pay for journaling. Roll back on invalid math,
  * bytecode, address, or exhausted execution budget; no allocations in playback. */
 typedef struct {float *address,old;} Write;
@@ -247,7 +256,7 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
             stack[used++] = result; continue;
         }
         if (op->op == STORE || op->op==KEEP) {
-            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || (op->arg>=PM_ENGINE_BASE && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
+            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || op->arg>=PM_VALUES || (op->arg>=PM_ENGINE_BASE+2 && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) ||
                 (op->arg >= 9 && op->arg < 23) ||
                 (op->arg>=PM_META_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
             local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
