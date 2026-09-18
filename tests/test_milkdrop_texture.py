@@ -2,6 +2,9 @@ import ctypes
 import subprocess
 import tempfile
 import unittest
+import io
+import os
+from PIL import Image as PillowImage
 from pathlib import Path
 from tools.generate_texture_fixture import png_bytes
 
@@ -20,7 +23,7 @@ class TextureTests(unittest.TestCase):
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
                             '-shared', '-fPIC', '-fsanitize=undefined',
                             str(ROOT / 'psp-client/milkdrop_texture.c'),
-                            '-lpng', '-lz', '-o', str(library)], check=True)
+                            '-lpng', '-ljpeg', '-lz', '-o', str(library)], check=True)
             lib = ctypes.CDLL(str(library))
             lib.md_image_load.argtypes = [ctypes.c_char_p, ctypes.POINTER(Image)]
             lib.md_image_free.argtypes = [ctypes.POINTER(Image)]
@@ -49,6 +52,44 @@ class TextureTests(unittest.TestCase):
                 self.assertEqual((image.pixels, image.width, image.height), (None, 7, 9))
             self.assertEqual(lib.md_image_load(str(root/'missing.png').encode(), ctypes.byref(image)), 0)
             self.assertEqual((ROOT/'psp-client/presets/textures/checker.png').read_bytes(), png_bytes())
+            def jpeg(w,h,mode='RGB',progressive=False):
+                stream=io.BytesIO()
+                color=(40,120,200) if mode=='RGB' else 120 if mode=='L' else (0,0,0,0)
+                PillowImage.new(mode,(w,h),color).save(stream,format='JPEG',quality=95,progressive=progressive)
+                return stream.getvalue()
+            for w,h,mode,progressive in ((150,150,'RGB',False),(1024,512,'RGB',False),
+                                         (33,65,'RGB',True),(1,1,'L',False)):
+                path.write_bytes(jpeg(w,h,mode,progressive))
+                image=Image()
+                self.assertEqual(lib.md_image_load(str(path).encode(),ctypes.byref(image)),1)
+                expected=lambda n: min(256,max(16,1<<(n-1).bit_length()))
+                self.assertEqual((image.width,image.height),(expected(w),expected(h)))
+                self.assertEqual(image.pixels%64,0)
+                pixels=ctypes.string_at(image.pixels,image.width*image.height*4)
+                self.assertTrue(all(a==255 for a in pixels[3::4]))
+                reference=(40,120,200) if mode=='RGB' else (120,120,120)
+                for offset in range(0,len(pixels),4):
+                    self.assertTrue(all(abs(pixels[offset+c]-reference[c])<=3 for c in range(3)))
+                lib.md_image_free(ctypes.byref(image))
+            for data in (jpeg(1025,16),jpeg(16,16,'CMYK'),jpeg(150,150)[:-30],b'\xff\xd8'+b'x'*100):
+                path.write_bytes(data)
+                image=Image(None,7,9)
+                self.assertEqual(lib.md_image_load(str(path).encode(),ctypes.byref(image)),0)
+                self.assertEqual((image.pixels,image.width,image.height),(None,7,9))
+            if os.environ.get('GEISS_PRESET_DIR'):
+                source=Path(os.environ['GEISS_PRESET_DIR'])/'Geiss - Artifact 6d (junky warp distortion).jpg'
+                image=Image()
+                self.assertEqual(lib.md_image_load(str(source).encode(),ctypes.byref(image)),1)
+                self.assertEqual((image.width,image.height),(256,256))
+                with PillowImage.open(source) as original:
+                    rgb=original.convert('RGB')
+                    pixels=ctypes.string_at(image.pixels,256*256*4)
+                    for y in range(256):
+                        for x in range(256):
+                            pos=((y//8)*64+x//4)*128+(y%8)*16+(x%4)*4
+                            expected=rgb.getpixel((x*rgb.width//256,y*rgb.height//256))
+                            self.assertTrue(all(abs(pixels[pos+c]-expected[c])<=3 for c in range(3)))
+                lib.md_image_free(ctypes.byref(image))
 
     def test_no_fixed_startup_fps(self):
         for language in ('de', 'en'):

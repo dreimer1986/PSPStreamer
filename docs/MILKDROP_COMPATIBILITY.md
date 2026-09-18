@@ -175,7 +175,7 @@ it has not been implemented or benchmarked. References:
 [MilkDrop authoring](https://github.com/clangen/milkdrop2-musikcube/blob/master/resources/Milkdrop2/docs/milkdrop_preset_authoring.html),
 [PSPSDK GU](https://pspdev.github.io/pspsdk/group__GU.html).
 
-## External PNG textures: baseline
+## External PNG and JPEG textures
 
 This is an explicit PSP extension, not a claim to execute desktop shader
 samplers. Add `psp_texture_0=checker.png` to a preset's `[preset00]` section and
@@ -185,8 +185,13 @@ map to custom shapes 0–3, including all their instances. Enable the matching
 exactly as before. Rotation/zoom use the existing `tex_ang` and `tex_zoom`
 shape fields; vertex colors and alpha modulate the PNG's RGBA pixels.
 
-Each dimension must independently be a power of two from 16 through 256
-(for example 128×64). No automatic image resizing occurs. Files are limited
+PNG dimensions must independently be powers of two from 16 through 256
+(for example 128×64). JPEG/JPG supports baseline and progressive RGB/YCbCr or
+grayscale images up to 1024×1024. JPEG dimensions are rounded up to powers of two,
+clamped to 16–256, using decoder downscaling where possible and nearest-neighbor
+resizing once at activation. JPEG alpha is opaque; CMYK is not supported.
+The originals are never modified. These are conservative loader limits, not
+claims about the PSP's absolute hardware maximum. Files are limited
 to 1 MiB each; decoded RGBA storage is at most 1 MiB total for four slots,
 plus temporary decoder/input memory during activation. Images live in aligned
 main RAM, **not additional TV framebuffer/feedback VRAM**. They are decoded
@@ -198,10 +203,15 @@ The existing frame pacing, audio priority and display-switching paths remain
 unchanged. Shader sampling, automatic file discovery and image animation are
 not part of this implementation.
 
-Names must be basenames ending in `.png`; directory separators, `..`, drive
+Names must be basenames ending in `.png`, `.jpg` or `.jpeg` (case insensitive);
+directory separators, `..`, drive
 prefixes and control characters are rejected. Missing, invalid or oversized
 images go through the existing preset error display (`psp_texture_N`) rather
 than silently rendering a different texture or stopping music.
+
+For example, use `psp_texture_0=example.jpg` and copy the image to
+`textures/example.jpg` beside the preset. JPEG preview images named after presets
+are not automatically assigned as textures. This does not implement HLSL samplers.
 
 Test `external-texture-demo.milk`: a rotating orange/cyan circular checkerboard
 with transparent corners and a music-reactive size. Copy its accompanying

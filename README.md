@@ -453,7 +453,11 @@ arbitrary texture sampling remain excluded. Numbered warp/composite shader
 source is silently skipped so supported non-shader parts can run. Other preset
 errors still report normally; shader-heavy presets can look different or blank.
 Try `shader-fallback-demo.milk` to check this fallback. Building the PSP client now also
-requires PSP libpng and zlib (host rendering tests require their host libraries).
+requires PSP libpng, libjpeg and zlib (host rendering tests require their host
+libraries; texture fixture tests also use Python Pillow). JPEG/JPG textures are
+supported alongside PNG via `psp_texture_0=example.jpg` in the preset and a
+`textures/example.jpg` file beside it. JPEG images are resized once on loading;
+see the texture limits in `docs/MILKDROP_COMPATIBILITY.md`.
 During music, **Circle** opens the in-app preset browser: Up/Down selects,
 L/R pages, Cross applies, Circle cancels. The chosen filename is saved as
 `music_preset=filename.milk` in the PSP config; manual `active.milk` replacement

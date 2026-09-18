@@ -41,7 +41,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/milkdrop_wave_extra.c"),
                             str(ROOT / "psp-client/milkdrop_decor.c"),
                             str(ROOT / "psp-client/milkdrop_texture.c"),
-                            "-lpng", "-lz", "-lm", "-o", str(binary)], check=True)
+                            "-lpng", "-ljpeg", "-lz", "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary),str(ROOT / "psp-client/presets/branch-beat-demo.milk"),
                             str(ROOT / "psp-client/presets/init-orbit-demo.milk"),
                             str(ROOT / "psp-client/presets/memory-pulse-demo.milk"),

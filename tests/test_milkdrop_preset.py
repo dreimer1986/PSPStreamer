@@ -251,10 +251,12 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(bytes(preset.texture_path[0]).split(b'\0')[0],
                          str(self.root / 'textures/checker.png').encode())
         for value in (b'../secret.png', b'/secret.png', b'ms0:secret.png', b'a\\b.png',
-                      b'foo.jpg', b'x'*128+b'.png', b'a\x01.png'):
+                      b'foo.gif', b'x'*128+b'.png', b'a\x01.png'):
             self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_0='+value+b'\n')[0],0)
         self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_0=a.png\npsp_texture_0=b.png\n')[0],0)
         self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_4=a.png\n')[0],0)
+        for name in (b'foo.jpg',b'foo.JPEG',b'foo.PNG'):
+            self.assertEqual(self.parse(b'[preset00]\nzoom=1\npsp_texture_0='+name+b'\n')[0],0)
     def execute_eel(self, source, runtime=None, success=True):
         program,symbols=Program(),Symbols()
         compile_fn=self.library.pm_compile_symbols
