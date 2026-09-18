@@ -22,9 +22,10 @@ the maximum combined layer case is checked by the host renderer harness.
 
 The unmodified Geiss Artifact 6d (junky warp distortion) and Trampoline files
 are tested through frame/pixel evaluation when `GEISS_PRESET_DIR` is supplied.
-Hyperdrive remains covered by `HYPERDRIVE_PRESET`. Explosion nz+ still requests
-311 instances of shape 1, exceeding our **eight instances per shape**: it is
-explicitly rejected, not silently simplified. Shader-heavy presets can look
+Hyperdrive remains covered by `HYPERDRIVE_PRESET`. Explosion nz+ requests
+311 instances of shape 1 and 281 of shape 2. These now silently use **eight
+instances per shape**, including the effective `instances` formula input.
+This is a simplified rendering, not full Desktop equivalence. Shader-heavy presets can look
 very different even when all their non-shader records are accepted. This is a
 targeted compatibility pass, not yet a complete audit of all parameter ranges.
 
@@ -134,8 +135,12 @@ the video/audio playback clocks or chosen video frame rate.
 | Local memory per context / shared memory | 1024 float slots each |
 | Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
 | Mesh | 8 × 8 cells, interpolated by GU |
-| Shapes | 4 × 8 instances, 32 sides each |
+| Shapes | 4 × 8 instances, 100 sides each |
 | Custom waves | 4 × 512 points |
+
+These are current implementation/resource budgets, **not measured hardware
+maxima**. See [the fallback inventory](MILKDROP_REFERENCE_AUDIT.md#silent-psp-fallbacks)
+for the limits requiring an architectural change (**Umbau nötig**).
 
 The engine uses single-precision floats, not desktop EEL doubles. Integer
 operations therefore inherit float precision limits. Source numbering remains

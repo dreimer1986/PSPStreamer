@@ -20,9 +20,9 @@ reference version changes.
 | Global supported boolean switches | Integer unequal to zero is true | Now normalized on import; fractional/malformed input still rejected |
 | Old `bMotionVectorsOn` | Default for `mv_a`; explicit `mv_a` always wins | Implemented independently of file order |
 | Motion density | Fraction retained; draw count limited to 64 × 48 | Implemented previously |
-| Shape instances | Import integer; draw each instance | **Only eight per shape on PSP; not compatible with Explosion's 311** |
+| Shape instances | Import integer; draw each instance | Silently limited to eight per shape; full Explosion density: **Umbau nötig** |
 | Shape sides | Import integer; formulas may produce fractions; draw truncates and clamps to 3–100 | Implemented; original value remains visible to formulas, allocation uses the clamped count |
-| Shape colors | Draw converts to integer bytes with `& 0xff` | PSP normalized limits differ; review safe conversion of large/negative floats |
+| Shape colors | Draw converts to integer bytes with `& 0xff` | Implemented with overflow-safe conversion, including border alpha |
 | Shape coordinates/radius/angles | Float import; geometry evaluated when drawing | PSP ranges remain narrower; widen only with geometry and allocation guards |
 | Custom waves | Integer flags/counts and float gains/colors imported | Audit sample limiting, smoothing and per-point semantics before widening |
 | Zoom/rotation/warp/stretch/centers | Float import, not editor bounds | PSP still imposes conservative bounds; singular transforms and GE overflow need explicit handling |
@@ -48,6 +48,50 @@ already close to its reserved command headroom.
 
 Next architectural step: evaluate/draw instances in bounded batches, preserving
 instance order, shared per-shape variables and rollback/error semantics. Budget
-checks must account for sides, outlines and wave vertices. Do not silently cap
-311 to eight or disable that shape. Audio scheduling and A/V timing must remain
-unchanged. This work is still pending; the preset is not fixed by this batch.
+checks must account for sides, outlines and wave vertices. Silently capping
+311 to eight was previously disallowed. Following the user's explicit preference
+for usable approximations, the current fallback now does exactly that: up to
+eight instances are evaluated, with `instance=0..7` and effective `instances=8`.
+This changes density and the evolution of stateful per-instance equations.
+Full-density rendering still needs the architectural change (**Umbau nötig**).
+Audio scheduling and A/V timing remain unchanged.
+
+## Silent PSP fallbacks
+
+Finite values outside supported numerical ranges no longer stop a preset.
+The importer bounds stored fields and the evaluator bounds outputs after the
+equations have run. Ordinary user variables continue to evolve; bounded outputs
+are not written back into them. This intentionally approximates the Desktop:
+import-time bounding also means equations see the bounded static defaults.
+No per-frame warnings/popups are emitted.
+
+| Area | Current fallback | Classification |
+| --- | --- | --- |
+| Shapes | Four slots, at most eight instances each, 3–100 sides | Instances: **Umbau nötig**; sides follow Desktop draw cap |
+| Custom waves | Four slots, 2–512 points; separation 0–128 and further reduced to fit the 576-sample PCM window | Buffer/work budget; more points: **Umbau nötig** |
+| Custom wave gain/smoothing | 0–4 / 0–1; normalized colors and positions 0–1 | Conservative existing renderer limits, not hardware maxima |
+| Shape position/radius | 0–1; angles −100..100; texture zoom .1–10 | Conservative existing renderer limits; offscreen fidelity remains future work |
+| Shape colors | Finite floats; convert to byte using truncation and wrapping | Desktop semantics; safe extension for values overflowing Desktop integer conversion |
+| Static zoom / frame zoom | .8–1.2 / legacy frame .1–64, otherwise .8–1.2 | Historical renderer limits; not Desktop limits or proven hardware limits |
+| Rotation / warp | ±.2 / ±4 | Historical limits; further safe widening is still possible |
+| Warp speed/scale, decay | 0–4 / .1–8 / .8–1 | Historical limits; not hardware maxima |
+| Translation, centers, stretch | ±1, 0–1, .25–4 | Conservative geometry limits |
+| Zoom exponent | .01–100 | Current safe-input budget, derived from Desktop editor range |
+| Echo zoom/alpha/orientation, gamma | 1–100 / 0–1 / 0–3, gamma 1–4 | Pass/geometry budget; gamma affects GU-list usage |
+| Built-in wave mode | 0–8; out-of-range values select nearest mode | Supported mode set |
+| Borders / motion vectors | Border size 0–.5; colors/alpha 0–1; motion grid at most 64×48 | Geometry budget / Desktop motion-grid rule |
+| Feedback and mesh | 512×256 feedback, 8×8-cell mesh | Current memory/quality tradeoff; larger buffers/mesh: **Umbau nötig** |
+| External textures | Four, at most 256×256 RGBA each; JPEG source up to 1024×1024 | Loader/memory budget; not GE's absolute texture limit |
+| GU list | 1 MiB; tested maximum vertex payload 994016 bytes with reserved command headroom | Current allocation; batching: **Umbau nötig** |
+
+Dynamic booleans use the EEL truth threshold (absolute value at least .00001);
+integer file switches use nonzero as true. Formula-selected modes/orientations
+are truncated after bounding. PCM separation is reduced instead of reading
+outside the sample window.
+
+Still reported: malformed/unknown fields, broken assets, NaN/infinity,
+undefined formula operations, syntax errors and exhausted interpreter budgets.
+Programs are not silently truncated: this could remove loop exits or state
+updates. Parser/VM budgets and missing legacy effects are not yet converted to
+approximation fallbacks. This is a numerical/resource fallback pass, **not a
+claim of complete Desktop compatibility or a completed hardware-limit study**.

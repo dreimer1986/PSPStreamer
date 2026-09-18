@@ -6,6 +6,21 @@ static unsigned int channel(float x) { return (unsigned int)(fminf(1,fmaxf(0,x))
 unsigned int md_rgba(float r,float g,float b,float a) {
     return channel(r)|(channel(g)<<8)|(channel(b)<<16)|(channel(a)<<24);
 }
+static unsigned int shape_channel(float value) {
+    /* Desktop shapes use int(value*255) & 255, not normalized saturation.
+     * Reduce before integer conversion to avoid overflow on extreme inputs.
+     * Preserve the Desktop's single-precision product when it is finite. */
+    if(!isfinite(value))return 0;
+    float product=value*255.0f;
+    if(product>=-2147483648.0f && product<2147483648.0f)
+        return (unsigned int)(int)product&255U;
+    double byte=fmod(trunc(isfinite(product)?(double)product:(double)value*255.0),256.0);
+    if(byte<0)byte+=256;
+    return (unsigned int)byte;
+}
+unsigned int md_shape_rgba(float r,float g,float b,float a) {
+    return shape_channel(r)|(shape_channel(g)<<8)|(shape_channel(b)<<16)|(shape_channel(a)<<24);
+}
 float md_wave_opacity(const MdDecor *d,int mode,float bass,float mid,float treble) {
     /* MilkDrop 2 milkdropfs.cpp DrawWave: mode gain, then the unbounded
      * volume factor, then final alpha saturation. 512-wide feedback factors.
@@ -34,8 +49,8 @@ int md_shape_sides(float value) {
 int md_shape_vertices(MdVertex *v,const MdShape *p,float aspect) {
     int sides=md_shape_sides(p->sides);
     if(!sides || p->tex_zoom<=0) return 0;
-    unsigned int edge=md_rgba(p->r2,p->g2,p->b2,p->a2);
-    v[0]=(MdVertex){128,128,md_rgba(p->r,p->g,p->b,p->a),p->x*256,p->y*256,0};
+    unsigned int edge=md_shape_rgba(p->r2,p->g2,p->b2,p->a2);
+    v[0]=(MdVertex){128,128,md_shape_rgba(p->r,p->g,p->b,p->a),p->x*256,p->y*256,0};
     for(int i=0;i<sides;i++) {
         float angle=i*(6.283185307f/sides)+.785398163f;
         v[i+1]=(MdVertex){128+128*cosf(angle+p->tex_ang)*aspect/p->tex_zoom,

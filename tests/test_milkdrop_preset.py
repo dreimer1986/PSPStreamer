@@ -180,7 +180,8 @@ class PresetTests(unittest.TestCase):
         fn=self.library.md_eval_pixel_grid
         fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
                      ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
-        for name in ('Geiss - Artifact 6d (junky warp distortion).milk','Geiss - Trampoline.milk'):
+        for name in ('Geiss - Artifact 6d (junky warp distortion).milk','Geiss - Trampoline.milk',
+                     'Geiss - Explosion nz+.milk'):
             code,preset,error=self.parse((base/name).read_bytes())
             self.assertEqual(code,0,(name,error.line,error.key))
             state=PresetState();points=(Warp*81)()
@@ -190,9 +191,9 @@ class PresetTests(unittest.TestCase):
                 self.assertEqual(code,0,(name,frame_no,error.line,error.key))
                 self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(warp),now,None,
                     ctypes.byref(state),points,ctypes.byref(error)),0,(name,error.line,error.key))
-        code,_,error=self.parse((base/'Geiss - Explosion nz+.milk').read_bytes())
-        self.assertNotEqual(code,0)
-        self.assertEqual(error.key,b'shapecode_1_num_inst') # 311 instances: explicit hardware limit
+        code,preset,error=self.parse((base/'Geiss - Explosion nz+.milk').read_bytes())
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(preset.shape_instances[1],8) # current implementation budget, not hardware maximum
 
     def test_reference_wave_gain_and_alpha(self):
         evaluate=self.library.md_eval_preset_visual
@@ -421,7 +422,7 @@ class PresetTests(unittest.TestCase):
 
     def test_invalid_numbers_duplicates_and_sections(self):
         for value in ("nan", "inf", "-inf", "1e99", "1e-999", "", "1 + bass",
-                      "1; trailing", "0", "2", ".799", "1.201"):
+                      "1; trailing"):
             result, _, error = self.parse(("[preset00]\nzoom=" + value).encode())
             self.assertEqual(result, 2, value)
             self.assertEqual(error.line, 2)
@@ -437,7 +438,12 @@ class PresetTests(unittest.TestCase):
             for value in (low, high):
                 self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0], 0)
             for value in (low-.01, high+.01):
-                self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0], 2)
+                code,preset,_=self.parse(f"[preset00]\n{key}={value}".encode())
+                self.assertEqual(code,0)
+                fields={'zoom':preset.warp.zoom,'rot':preset.warp.rotation,'warp':preset.warp.warp,
+                        'fWarpAnimSpeed':preset.warp.warp_speed,'fWarpScale':preset.warp.warp_scale,
+                        'fDecay':preset.warp.decay,'wave_r':preset.red,'wave_g':preset.green,'wave_b':preset.blue}
+                self.assertAlmostEqual(fields[key],min(high,max(low,value)),places=5)
 
     def test_limits_binary_and_missing(self):
         for data in (b"[preset00]\nzoom=1\x00", b" " * 256,
@@ -488,8 +494,47 @@ class PresetTests(unittest.TestCase):
                       "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,130))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
 
+    def test_finite_render_limits_are_silent_and_state_keeps_advancing(self):
+        code,preset,error=self.parse(b'''[preset00]
+nWaveMode=99
+shapecode_0_enabled=1
+shapecode_0_num_inst=1000000000
+wavecode_0_samples=1000000000
+wavecode_0_sep=1000000000
+per_frame_1=counter=counter+1; zoom=0; rot=99; mv_a=20; gamma=99; wave_a=20;
+shape_0_per_frame1=x=99; rad=99; sides=1e30; tex_zoom=0; a=99;
+per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
+''')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(preset.wave_mode,8)
+        self.assertEqual(preset.shape_instances[0],8)
+        self.assertEqual(preset.waves[0].samples,512)
+        self.assertEqual(preset.waves[0].sep,128)
+        state=PresetState()
+        for frame in range(20):
+            code,warp,error=self.evaluate_state(preset,state,frame)
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertEqual(state.user[0],frame+1)
+            self.assertAlmostEqual(warp.zoom,.1)
+            self.assertAlmostEqual(warp.rotation,.2)
+            self.assertEqual(self.last_decor.gamma,4)
+            self.assertEqual(self.last_decor.wave_alpha,20)
+            for i in (0,4,5,6,7,8,9,10):
+                shape=self.last_decor.shapes[i]
+                self.assertEqual((shape.x,shape.rad,shape.a),(1,1,99))
+                self.assertAlmostEqual(shape.tex_zoom,.1)
+            points=(Warp*81)()
+            fn=self.library.md_eval_pixel_grid
+            fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                         ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+            self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(warp),frame,None,
+                                ctypes.byref(state),points,ctypes.byref(error)),0)
+            self.assertAlmostEqual(points[0].zoom,.1)
+            self.assertAlmostEqual(points[0].sx,.25)
+            self.assertAlmostEqual(points[0].cx,1)
+
     def test_runtime_errors_are_atomic(self):
-        for source in ("rot=1/(time-1);", "warp=3e38*3e38;", "zoom=0;", "wave_r=2;"):
+        for source in ("rot=1/(time-1);", "warp=3e38*3e38;"):
             result, preset, _ = self.parse(f"[preset00]\nper_frame_1={source}".encode())
             self.assertEqual(result, 0)
             code, _, _, error = self.evaluate(preset, 1)
@@ -626,8 +671,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(warp.zoom,2)
         self.assertAlmostEqual(warp.dx,.01)
         self.assertAlmostEqual(warp.dy,-.02)
-        for field,value in (("fVideoEchoAlpha",2),("ob_alpha",2),("bInvert",.5),
-                            ("nWaveMode",9),("cx",1.6),("fWaveParam",2)):
+        for field,value in (("bInvert",.5),("nWaveMode",1.5)):
             self.assertEqual(self.parse(f"presetName=test\n{field}={value}".encode())[0],3)
         for data in (b"presetName=x\npresetName=x",b"[preset00]\ndx=0\ndx=0"):
             self.assertEqual(self.parse(data)[0],2)
@@ -664,14 +708,14 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(code,0)
         self.assertAlmostEqual(self.evaluate(preset,0)[1].cx,.5)
         self.assertEqual(self.evaluate(preset,0)[1].sy,1)
-        for key,value in (("sx",0),("sy",-1),("fZoomExponent",101),("bWaveDots",.5),
+        for key,value in (("bWaveDots",.5),
                           ("nVideoEchoOrientation",1.5)):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         for key in ("cx","cy","sx","sy","zoomexp"):
             value=101 if key=='zoomexp' else 10
             code,preset,_=self.parse(f"[preset00]\nper_frame_1={key}={value};".encode())
             self.assertEqual(code,0)
-            self.assertEqual(self.evaluate(preset,0)[0],2)
+            self.assertEqual(self.evaluate(preset,0)[0],0)
         code,preset,_=self.parse(b"[preset00]\nshapecode_0_enabled=1\nshapecode_0_sides=32\n"
             b"shapecode_0_textured=1\nshapecode_0_border_a=.5\nfVideoEchoAlpha=.5\n"
             b"nVideoEchoOrientation=3\nob_size=.1\nob_alpha=.5\nbWaveThick=1\n")
@@ -680,8 +724,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(preset.decor.echo_orient,3)
         self.assertEqual(preset.decor.wave_thick,1)
         for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",3.5),
-            ("shapecode_0_textured",.5),("shapecode_0_tex_zoom",0),("shapecode_0_per_frame1",0)):
-            self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
+            ("shapecode_0_textured",.5),("shapecode_0_per_frame1",0)):
+            self.assertNotEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],0)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
         self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
 
@@ -725,7 +769,7 @@ class PresetTests(unittest.TestCase):
                 self.assertAlmostEqual(vertices[i].y,y,delta=.003)
                 self.assertEqual(vertices[i].color,0xff123456)
         self.assertEqual(self.parse(b'[preset00]\nnWaveMode=4')[0],0)
-        for mode in (-1,4.5,9):
+        for mode in (4.5,):
             self.assertNotEqual(self.parse(f'[preset00]\nnWaveMode={mode}'.encode())[0],0)
 
     def test_spiral_wave_geometry(self):
@@ -814,10 +858,9 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(self.evaluate_state(preset,state,mode)[0],0)
             self.assertEqual(state.wave_mode,mode)
             self.assertAlmostEqual(state.motion[8],mode+1)
-        before=bytes(state)
-        self.assertNotEqual(self.evaluate_state(preset,state,9)[0],0)
-        self.assertEqual(bytes(state),before)
-        for expression in ('wave_mode=2.5;','wave_mode=-1;','mv_x=1/0;','mv_y=1/0;','mv_a=2;','mv_l=11;','mv_dx=2;'):
+        self.assertEqual(self.evaluate_state(preset,state,9)[0],0)
+        self.assertEqual(state.wave_mode,8)
+        for expression in ('mv_x=1/0;','mv_y=1/0;'):
             code,preset,_=self.parse(f'[preset00]\nper_frame_1={expression}'.encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
@@ -858,7 +901,7 @@ class PresetTests(unittest.TestCase):
                 code,preset,_=self.parse(f"[preset00]\nshapecode_{slot}_thickOutline={value}".encode())
                 self.assertEqual(code,0)
                 self.assertEqual(preset.decor.shapes[slot].thick_outline,value)
-        for value in ('-1','2','.5','nan','inf'):
+        for value in ('.5','nan','inf'):
             self.assertNotEqual(self.parse(f"[preset00]\nshapecode_0_thickOutline={value}".encode())[0],0)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_thickOutline=1\nshapecode_0_thickOutline=0")[0],2)
 
@@ -957,6 +1000,22 @@ class PresetTests(unittest.TestCase):
         self.last_decor=decor
         return result,warp,error
 
+    def test_reference_shape_color_bytes_wrap_without_undefined_casts(self):
+        fn=self.library.md_shape_rgba
+        fn.argtypes=[ctypes.c_float]*4
+        fn.restype=ctypes.c_uint
+        for value in (0,.5,1,2,-1,-.5,99,1e30,-1e30):
+            stored=ctypes.c_float(value).value
+            product=ctypes.c_float(stored*255).value
+            byte=math.trunc(product if math.isfinite(product) else stored*255)&255
+            self.assertEqual(fn(value,value,value,value),byte*0x01010101)
+        code,preset,_=self.parse(b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_r=2\n'
+                                b'shape_0_per_frame1=g=-1; a=2; border_a=-.5;\n')
+        self.assertEqual(code,0)
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        shape=self.last_decor.shapes[0]
+        self.assertEqual((shape.r,shape.g,shape.a,shape.border_a),(2,-1,2,-.5))
+
     def test_shape_side_limit_is_applied_after_formulas(self):
         fn=self.library.md_shape_sides
         fn.argtypes=[ctypes.c_float]
@@ -999,7 +1058,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         disabled=PresetState()
         self.assertEqual(self.evaluate_state(preset,disabled,0)[0],0)
         self.assertFalse(disabled.shape[0].ready)
-        for expr in ('rad=2;','sides=1/0;','x=1/0;','textured=.5;'):
+        for expr in ('sides=1/0;','x=1/0;'):
             code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
@@ -1045,7 +1104,10 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         self.assertEqual(fn(ctypes.byref(preset),1,None,right,left,spectral,spectral,ctypes.byref(fresh),out,ctypes.byref(error)),0)
         self.assertAlmostEqual(out[0].vertices[0].y,.25*256,places=4)
         for key,value in [('samples','513'),('bSpectrum','2'),('sep','129')]:
-            self.assertNotEqual(self.parse(f'[preset00]\nwavecode_0_{key}={value}'.encode())[0],0)
+            code,preset,_=self.parse(f'[preset00]\nwavecode_0_{key}={value}'.encode())
+            self.assertEqual(code,0)
+            self.assertEqual(getattr(preset.waves[0],{'bSpectrum':'spectrum'}.get(key,key)),
+                             {'samples':512,'bSpectrum':1,'sep':128}[key])
         for expr in ('sample=1;','value1=0;','samples=4;','time=0;'):
             self.assertNotEqual(self.parse(('[preset00]\nwave_0_per_point1='+expr).encode())[0],0)
 
@@ -1103,7 +1165,8 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         self.assertEqual(list(state.effects),[1]*5)
         code,preset,_=self.parse(b'[preset00]\nper_frame_1=invert=time;')
         self.assertEqual(code,0)
-        self.assertNotEqual(self.evaluate_state(preset,state,.5)[0],0)
+        self.assertEqual(self.evaluate_state(preset,state,.5)[0],0)
+        self.assertEqual(state.effects[4],1)
 
     def test_shape_instances_and_progress(self):
         code,preset,_=self.parse(b'''[preset00]
@@ -1121,7 +1184,9 @@ per_frame_1=wave_r=progress;
                 self.assertAlmostEqual(self.last_decor.shapes[index].x,i/8)
             for key in ('instance','instances'):
                 self.assertNotEqual(self.parse(f'[preset00]\nshape_0_per_frame1={key}=1;'.encode())[0],0)
-            self.assertNotEqual(self.parse(b'[preset00]\nshapecode_0_num_inst=9')[0],0)
+            code,limited,_=self.parse(b'[preset00]\nshapecode_0_num_inst=311')
+            self.assertEqual(code,0)
+            self.assertEqual(limited.shape_instances[0],8)
             self.assertNotEqual(self.parse(b'[preset00]\nper_frame_1=progress=1;')[0],0)
         finally: duration.value=old
 
@@ -1198,9 +1263,11 @@ per_frame_1=wave_r=progress;
             self.assertEqual(state.user[0],frame+1)
             self.assertEqual(state.q[0],2)
         self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,1)
-        # An output-range failure must not advance persistent state.
-        self.assertEqual(self.evaluate_state(preset,state,5)[0],2)
-        self.assertEqual(state.user[0],4)
+        # A bounded output still advances ordinary persistent variables.
+        code,warp,_=self.evaluate_state(preset,state,5)
+        self.assertEqual(code,0)
+        self.assertEqual(warp.warp,4)
+        self.assertEqual(state.user[0],5)
         code,preset,_=self.parse(b"[preset00]\nper_frame_1=warp=unset_value;\n")
         self.assertEqual(code,0)
         self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,0)

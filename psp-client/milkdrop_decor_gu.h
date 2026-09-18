@@ -42,7 +42,8 @@ static void md_shapes(const MdDecor *decor,float aspect) {
             sceGuTexFlush();
         } else sceGuDisable(GU_TEXTURE_2D);
         sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,v);
-        if(p->border_a>0) {
+        unsigned int border_color=md_shape_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
+        if(border_color>>24) {
             int passes=p->thick_outline!=0?4:1;
             /* Four one-feedback-texel offsets, following MilkDrop 2's
              * fixed-function border. Its positive D3D y is upward; our GU
@@ -51,7 +52,7 @@ static void md_shapes(const MdDecor *decor,float aspect) {
              * One allocation avoids per-pass padding at maximum sides. */
             static const float dx[4]={0,1,1,0},dy[4]={0,0,-1,-1};
             MdVertex *edges=sceGuGetMemory(passes*(count-1)*sizeof(*edges));
-            unsigned int color=md_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
+            unsigned int color=border_color;
             sceGuDisable(GU_TEXTURE_2D);
             for(int pass=0;pass<passes;pass++) {
                 MdVertex *edge=edges+pass*(count-1);
