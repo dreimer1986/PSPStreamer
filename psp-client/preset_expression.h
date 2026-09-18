@@ -213,7 +213,8 @@ static int compile_context(PmProgram *program,const char *source,int line,PmSymb
         saved=*symbols;
     }
     Parser p={source,program,line,0,PM_INVALID,symbols,pixel};space(&p);
-    if(!*p.p || program->lines>=128 || before<0 || before>PM_MAX_OPS) return PM_INVALID;
+    if(program->lines>=128 || before<0 || before>PM_MAX_OPS) return PM_INVALID;
+    if(!*p.p){program->lines++;return PM_OK;} /* exported blank/comment-only record */
     if(!sequence(&p) || !emit(&p,DROP,0,0)) goto fail;
     space(&p);
     if(*p.p || ((pixel==1 || pixel==4) && program->count>PM_PIXEL_OPS)) goto fail;

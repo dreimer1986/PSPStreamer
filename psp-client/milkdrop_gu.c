@@ -19,7 +19,7 @@
 static int md_texture_base, md_texture_bytes, md_pixel_format;
 #define MD_TEXTURE_BYTES md_texture_bytes
 #define MD_TEXTURE_BASE md_texture_base
-#define MD_LIST_BYTES 786432
+#define MD_LIST_BYTES 1048576
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
 static unsigned int *md_list;
 static int md_front;
@@ -230,10 +230,15 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_warp_mesh_varying(mesh, preset == 3 ? &evaluated : &md_presets[preset],
         preset==3 && md_custom_preset.pixel_program.count?md_pixel_points:NULL, seconds);
     md_expand(mesh, MD_MESH_VERTICES, 1);
+    for(int i=0;i<MD_MESH_VERTICES;i++) if(!isfinite(mesh[i].u)||!isfinite(mesh[i].v)) {
+        md_runtime_error.code=MD_FILE_INVALID;md_runtime_error.line=0;
+        snprintf(md_runtime_error.key,sizeof(md_runtime_error.key),"warp geometry");
+        sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);return -1;
+    }
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
     if(preset==3 && md_preset_state.motion[0]>0) {
-        MdVertex *vectors=sceGuGetMemory(16*12*2*sizeof(*vectors));
+        MdVertex *vectors=sceGuGetMemory(MD_MOTION_MAX_VERTICES*sizeof(*vectors));
         int count=md_motion_vertices(vectors,mesh,md_preset_state.motion);
         if(count) { md_blend(0); sceGuDisable(GU_TEXTURE_2D); sceGuDrawArray(GU_LINES,MD_FORMAT,count,NULL,vectors); }
         sceGuDisable(GU_BLEND);

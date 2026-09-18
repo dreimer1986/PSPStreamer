@@ -45,11 +45,14 @@ void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v) {
 /* Reverse sample the same two triangles used by the warp, including its
  * per-grid equations. Positions and UVs here are physical feedback texels. */
 int md_motion_vertices(MdVertex *out,const MdVertex *mesh,const float p[9]) {
-    int nx=(int)p[4],ny=(int)p[5],count=0;
-    if(p[0]<=0 || nx<1 || ny<1 || nx>16 || ny>12) return 0;
+    /* MilkDrop truncates fractional density, limiting the grid to 64x48.
+     * Clamp before conversion so huge finite values cannot overflow int. */
+    float density_x=p[4]>=65?64:p[4],density_y=p[5]>=49?48:p[5];
+    if(!isfinite(density_x)||!isfinite(density_y)||density_x<1||density_y<1||p[0]<=0)return 0;
+    int nx=(int)density_x,ny=(int)density_y,count=0;
     unsigned int color=md_rgba(p[1],p[2],p[3],p[0]);
     for(int y=0;y<ny;y++) for(int x=0;x<nx;x++) {
-        float px=(x+.25f)/(p[4]-.75f)+p[6],py=(y+.25f)/(p[5]-.75f)-p[7];
+        float px=(x+.25f)/(density_x-.75f)+p[6],py=(y+.25f)/(density_y-.75f)-p[7];
         if(px<=.0001f || px>=.9999f || py<=.0001f || py>=.9999f) continue;
         int gx=(int)(px*8),gy=(int)(py*8);
         float fx=px*8-gx,fy=py*8-gy,w[3];

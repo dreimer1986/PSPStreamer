@@ -73,7 +73,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     struct { const char *key; float low, high; float *out; } extra[] = {
         {"mv_a",0,1,&next.motion[0]}, {"mv_r",0,1,&next.motion[1]},
         {"mv_g",0,1,&next.motion[2]}, {"mv_b",0,1,&next.motion[3]},
-        {"mv_x",0,16,&next.motion[4]}, {"mv_y",0,12,&next.motion[5]},
+        {"mv_x",-FLT_MAX,FLT_MAX,&next.motion[4]}, {"mv_y",-FLT_MAX,FLT_MAX,&next.motion[5]},
         {"mv_dx",-1,1,&next.motion[6]}, {"mv_dy",-1,1,&next.motion[7]},
         {"mv_l",0,10,&next.motion[8]},
         {"dx",-1,1,&next.warp.dx}, {"dy",-1,1,&next.warp.dy},
@@ -82,7 +82,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
          * Alpha is saturated only after mode/volume modulation at draw time. */
         {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",-FLT_MAX,FLT_MAX,&next.wave_scale},
         {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",-FLT_MAX,FLT_MAX,&next.wave_alpha},
-        {"fRating",0,5,NULL}, {"fZoomExponent",.5f,2,&next.warp.zoomexp},
+        {"fRating",0,5,NULL}, {"fZoomExponent",.01f,100,&next.warp.zoomexp},
         {"cx",0,1,&next.warp.cx}, {"cy",0,1,&next.warp.cy},
         {"sx",.25f,4,&next.warp.sx}, {"sy",.25f,4,&next.warp.sy},
         {"wave_x",0,1,&next.decor.wave_x}, {"wave_y",0,1,&next.decor.wave_y},
@@ -146,6 +146,11 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         equal = strchr(key, '=');
         if (!equal) { result = md_file_error(error, MD_FILE_INVALID, number, key); goto done; }
         *equal = 0; key = md_trim(key); value = md_trim(equal+1);
+        /* Original file keys; keep our earlier aliases for shipped presets. */
+        if(!strcmp(key,"ob_a"))key="ob_alpha";
+        else if(!strcmp(key,"ib_a"))key="ib_alpha";
+        else if(!strcmp(key,"nMotionVectorsX"))key="mv_x";
+        else if(!strcmp(key,"nMotionVectorsY"))key="mv_y";
         /* MilkDrop 2 writes these numeric headers before [preset00].
          * Accept the envelope without claiming its shader capabilities. */
         if(!strcmp(key,"MILKDROP_PRESET_VERSION") || !strcmp(key,"PSVERSION") ||
@@ -163,6 +168,15 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         }
         if (!section) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
         if(md_shader_source(key)) continue;
+        if(!strcmp(key,"b1n")||!strcmp(key,"b2n")||!strcmp(key,"b3n")||
+           !strcmp(key,"b1x")||!strcmp(key,"b2x")||!strcmp(key,"b3x")||!strcmp(key,"b1ed")) {
+            /* Blur levels feed only the skipped desktop shader passes. */
+            errno=0;parsed=strtof(value,&end);
+            if(end==value||*md_trim(end)||errno==ERANGE||!isfinite(parsed)) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;
+            }
+            continue;
+        }
         if(!strncmp(key,"psp_texture_",12)) {
             int slot=key[12]-'0';
             size_t len=strlen(value);
@@ -232,7 +246,8 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             }
             if(!strcmp(key+12,"num_inst")) {
                 errno=0; parsed=strtof(value,&end);
-                if(end==value || *md_trim(end) || errno || !isfinite(parsed) || parsed<1 || parsed>MD_SHAPE_INSTANCES || parsed!=floorf(parsed) || (shape_seen[slot]&(1U<<30))) {result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;}
+                if(end==value || *md_trim(end) || errno || !isfinite(parsed) || parsed<1 || parsed!=floorf(parsed) || (shape_seen[slot]&(1U<<30))) {result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;}
+                if(parsed>MD_SHAPE_INSTANCES){result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key);goto done;}
                 next.shape_instances[slot]=(int)parsed;shape_seen[slot]|=1U<<30;continue;
             }
             int k; for(k=0;k<23 && strcmp(key+12,names[k]);k++) {}
@@ -391,7 +406,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     if (!isfinite(v[23]) || !isfinite(v[24]) || fabsf(v[23])>1 || fabsf(v[24])>1)
         return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,23),"translation");
     for(int i=25;i<30;i++) {
-        float lo=i<27?0:i<29?.25f:.5f, hi=i<27?1:i<29?4:2;
+        float lo=i<27?0:i<29?.25f:.01f, hi=i<27?1:i<29?4:100;
         if(!isfinite(v[i]) || v[i]<lo || v[i]>hi)
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,i),"transform");
     }
@@ -412,6 +427,7 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         return md_file_error(error,MD_FILE_INVALID,mode_line,"wave mode");
     for(int i=0;i<9;i++) {
         float lo=(i==6 || i==7)?-1:0, hi=i==4?16:i==5?12:i==8?10:1;
+        if(i==4||i==5){lo=-FLT_MAX;hi=FLT_MAX;}
         float value=v[PM_DYNAMIC_BASE+1+i];
         if(!isfinite(value) || value<lo || value>hi)
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,PM_DYNAMIC_BASE+1+i),"motion vectors");
@@ -580,8 +596,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");
         const int ids[]={0,1,2,23,24,25,26,27,28,29};
-        const float lo[]={.1f,-.2f,-4,-1,-1,0,0,.25f,.25f,.5f};
-        const float hi[]={64,.2f,4,1,1,1,1,4,4,2};
+        const float lo[]={.1f,-.2f,-4,-1,-1,0,0,.25f,.25f,.01f};
+        const float hi[]={64,.2f,4,1,1,1,1,4,4,100};
         for(int i=0;i<10;i++) if(!isfinite(v[ids[i]]) || v[ids[i]]<lo[i] || v[ids[i]]>hi[i])
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
         next[y*(MD_GRID+1)+x]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],

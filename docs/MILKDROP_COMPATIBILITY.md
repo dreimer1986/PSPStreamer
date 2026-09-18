@@ -7,6 +7,27 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
+Geiss export compatibility: original `ob_a`/`ib_a` and
+`nMotionVectorsX`/`nMotionVectorsY` map to the same fields as the earlier aliases.
+Empty/comment-only numbered equation records are accepted; numbering and real
+syntax errors are still checked. Global/pixel `t` names are ordinary named
+variables, distinct from custom shape/wave t1–t8 registers. Shader-only blur
+metadata (`b1n` … `b3x`, `b1ed`) is validated but unused with shaders skipped.
+Zoom exponent supports the original editor range 0.01–100 in static, frame and
+pixel contexts; this is an explicit supported range, not a claim that the
+desktop file importer rejects values outside it. Motion-vector density follows
+the reference's fractional grid and 64x48 draw cap. Shapes support up to 100
+sides. The temporary GU list grows from 768 KiB to 1 MiB while MilkDrop is active;
+the maximum combined layer case is checked by the host renderer harness.
+
+The unmodified Geiss Artifact 6d (junky warp distortion) and Trampoline files
+are tested through frame/pixel evaluation when `GEISS_PRESET_DIR` is supplied.
+Hyperdrive remains covered by `HYPERDRIVE_PRESET`. Explosion nz+ still requests
+311 instances of shape 1, exceeding our **eight instances per shape**: it is
+explicitly rejected, not silently simplified. Shader-heavy presets can look
+very different even when all their non-shader records are accepted. This is a
+targeted compatibility pass, not yet a complete audit of all parameter ranges.
+
 `fWaveScale` and `fWaveAlpha` follow MilkDrop 2's float import rather than a
 0–1 input restriction. Values above one (and finite negative values) are
 accepted. Scale multiplies audio amplitudes; negative scale reverses them.

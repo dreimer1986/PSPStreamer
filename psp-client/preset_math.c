@@ -139,7 +139,9 @@ static int variable(Parser *p,const char *s) {
     if(!p->symbols || function(s)>=0) goto unsupported;
     for(unsigned int i=0;i<sizeof(reserved)/sizeof(reserved[0]);i++)
         if(!strcmp(s,reserved[i])) goto unsupported;
-    if(((s[0]=='q' || s[0]=='Q' || s[0]=='t') && isdigit((unsigned char)s[1])) ||
+    /* t registers belong to custom wave/shape contexts. In global/pixel
+     * code (e.g. Geiss Artifact's t2), these are ordinary named variables. */
+    if(((s[0]=='q' || s[0]=='Q' || (s[0]=='t' && p->pixel>=2)) && isdigit((unsigned char)s[1])) ||
        (!strncmp(s,"reg",3) && isdigit((unsigned char)s[3]))) goto unsupported;
     for(int i=0;i<p->symbols->count;i++)
         if(!strcmp(s,p->symbols->names[i])) return PM_USER_BASE+i;

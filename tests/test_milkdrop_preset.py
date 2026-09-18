@@ -143,6 +143,40 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
 
+    def test_geiss_export_names_and_ranges(self):
+        data=(b'[preset00]\nnWaveMode=5\nfZoomExponent=3.6\nob_a=.2\nib_a=.3\n'
+              b'nMotionVectorsX=23.52\nnMotionVectorsY=17.832\nb1n=0\nb1x=1\nb1ed=.25\n'
+              b'shapecode_0_enabled=1\nshapecode_0_sides=100\n'
+              b'per_frame_1=\nper_frame_2=// comment\nper_frame_3=t2=time*6;\n'
+              b'per_frame_4=wave_x=.5+.1*sin(t2);\nper_pixel_1=zoomexp=3.6;\n')
+        code,preset,error=self.parse(data)
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertAlmostEqual(preset.motion[4],23.52,places=4)
+        self.assertEqual(preset.decor.shapes[0].sides,100)
+        self.assertEqual(self.evaluate(preset,1)[0],0)
+        self.assertNotEqual(self.parse(data+b'ob_alpha=.4\n')[0],0)
+        self.assertNotEqual(self.parse(b'[preset00]\nzoom=1\nb1n=nan')[0],0)
+
+    @unittest.skipUnless(os.environ.get('GEISS_PRESET_DIR'), 'External Geiss presets not supplied')
+    def test_external_geiss_presets(self):
+        base=Path(os.environ['GEISS_PRESET_DIR'])
+        fn=self.library.md_eval_pixel_grid
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                     ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        for name in ('Geiss - Artifact 6d (junky warp distortion).milk','Geiss - Trampoline.milk'):
+            code,preset,error=self.parse((base/name).read_bytes())
+            self.assertEqual(code,0,(name,error.line,error.key))
+            state=PresetState();points=(Warp*81)()
+            for frame_no in range(600):
+                now=frame_no*.05
+                code,warp,error=self.evaluate_state(preset,state,now)
+                self.assertEqual(code,0,(name,frame_no,error.line,error.key))
+                self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(warp),now,None,
+                    ctypes.byref(state),points,ctypes.byref(error)),0,(name,error.line,error.key))
+        code,_,error=self.parse((base/'Geiss - Explosion nz+.milk').read_bytes())
+        self.assertNotEqual(code,0)
+        self.assertEqual(error.key,b'shapecode_1_num_inst') # 311 instances: explicit hardware limit
+
     def test_reference_wave_gain_and_alpha(self):
         evaluate=self.library.md_eval_preset_visual
         evaluate.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),
@@ -611,11 +645,12 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(code,0)
         self.assertAlmostEqual(self.evaluate(preset,0)[1].cx,.5)
         self.assertEqual(self.evaluate(preset,0)[1].sy,1)
-        for key,value in (("sx",0),("sy",-1),("fZoomExponent",10),("bWaveDots",.5),
+        for key,value in (("sx",0),("sy",-1),("fZoomExponent",101),("bWaveDots",.5),
                           ("nVideoEchoOrientation",1.5)):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         for key in ("cx","cy","sx","sy","zoomexp"):
-            code,preset,_=self.parse(f"[preset00]\nper_frame_1={key}=10;".encode())
+            value=101 if key=='zoomexp' else 10
+            code,preset,_=self.parse(f"[preset00]\nper_frame_1={key}={value};".encode())
             self.assertEqual(code,0)
             self.assertEqual(self.evaluate(preset,0)[0],2)
         code,preset,_=self.parse(b"[preset00]\nshapecode_0_enabled=1\nshapecode_0_sides=32\n"
@@ -625,7 +660,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(preset.decor.shapes[0].sides,32)
         self.assertEqual(preset.decor.echo_orient,3)
         self.assertEqual(preset.decor.wave_thick,1)
-        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",33),
+        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",101),
             ("shapecode_0_textured",.5),("shapecode_0_tex_zoom",0),("shapecode_0_per_frame1",0)):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
@@ -763,7 +798,7 @@ class PresetTests(unittest.TestCase):
         before=bytes(state)
         self.assertNotEqual(self.evaluate_state(preset,state,9)[0],0)
         self.assertEqual(bytes(state),before)
-        for expression in ('wave_mode=2.5;','wave_mode=-1;','mv_x=17;','mv_y=13;','mv_a=2;','mv_l=11;','mv_dx=2;'):
+        for expression in ('wave_mode=2.5;','wave_mode=-1;','mv_x=1/0;','mv_y=1/0;','mv_a=2;','mv_l=11;','mv_dx=2;'):
             code,preset,_=self.parse(f'[preset00]\nper_frame_1={expression}'.encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
@@ -930,7 +965,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         disabled=PresetState()
         self.assertEqual(self.evaluate_state(preset,disabled,0)[0],0)
         self.assertFalse(disabled.shape[0].ready)
-        for expr in ('rad=2;','sides=100;','x=1/0;','textured=.5;'):
+        for expr in ('rad=2;','sides=101;','x=1/0;','textured=.5;'):
             code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
@@ -1142,7 +1177,7 @@ per_frame_1=wave_r=progress;
         self.assertEqual(code,0)
         self.assertEqual(preset.symbols.count,64)
         self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1=extra=1;\n{lines}".encode())[0],2)
-        for name in ("fps","frame","x","rad","t1","reg100","sin","q33"):
+        for name in ("fps","frame","x","rad","reg100","sin","q33"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0],0)
         self.assertEqual(self.parse(("[preset00]\nper_frame_1="+"a"*31+"=1;").encode())[0],0)
         self.assertNotEqual(self.parse(("[preset00]\nper_frame_1="+"a"*32+"=1;").encode())[0],0)
