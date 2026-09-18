@@ -236,6 +236,13 @@ not overwritten. No server update is needed for this MilkDrop batch.
 
 ## Code audit changes
 
+The ongoing [Desktop parameter audit](MILKDROP_REFERENCE_AUDIT.md) distinguishes
+import rules from editor sliders and draw-time limits. Supported global boolean
+file switches accept nonzero integers; the legacy `bMotionVectorsOn` supplies the
+default only when `mv_a` is absent. Shape sides are preserved for equations and
+truncated/clamped to 3–100 at rendering/allocation time, matching the Desktop
+draw rule. This does **not** remove the eight-instance-per-shape resource limit.
+
 Larger compiled presets are parsed in checked heap storage rather than on the
 PSP stack; rendering uses static single-render-thread scratch for large candidate
 states. The compiler reports roughly 116 KiB for the largest evaluator and

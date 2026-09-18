@@ -23,9 +23,17 @@ float md_wave_opacity(const MdDecor *d,int mode,float bass,float mid,float trebl
     if(alpha>=1)return 1;
     return isfinite(alpha)?(float)alpha:0;
 }
+int md_shape_sides(float value) {
+    if(!isfinite(value))return 0;
+    /* Clamp before conversion so extreme finite formula results cannot
+     * overflow an int. Desktop truncates then clamps to the same 3..100. */
+    if(value<3)return 3;
+    if(value>MD_SHAPE_SIDES)return MD_SHAPE_SIDES;
+    return (int)value;
+}
 int md_shape_vertices(MdVertex *v,const MdShape *p,float aspect) {
-    int sides=(int)p->sides;
-    if(sides<3 || sides>MD_SHAPE_SIDES || p->tex_zoom<=0) return 0;
+    int sides=md_shape_sides(p->sides);
+    if(!sides || p->tex_zoom<=0) return 0;
     unsigned int edge=md_rgba(p->r2,p->g2,p->b2,p->a2);
     v[0]=(MdVertex){128,128,md_rgba(p->r,p->g,p->b,p->a),p->x*256,p->y*256,0};
     for(int i=0;i<sides;i++) {

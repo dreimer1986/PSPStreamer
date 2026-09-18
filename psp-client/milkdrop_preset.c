@@ -107,6 +107,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"ib_b",0,1,&next.decor.inner.b}, {"ib_alpha",0,1,&next.decor.inner.a}
     };
     unsigned long long extra_seen = 0;
+    int old_motion_seen=0,old_motion_enabled=0;
     int named = 0;
     float *values[] = {&next.warp.zoom, &next.warp.rotation, &next.warp.warp,
         &next.warp.warp_speed, &next.warp.warp_scale, &next.warp.decay,
@@ -161,6 +162,16 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
             continue;
+        }
+        /* Desktop uses this old switch only as the default for mv_a,
+         * independent of the ordering of the two fields in the file. */
+        if (!strcmp(key,"bMotionVectorsOn")) {
+            errno=0; parsed=strtof(value,&end);
+            if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed) ||
+               parsed!=floorf(parsed) || old_motion_seen) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;
+            }
+            old_motion_seen=1;old_motion_enabled=parsed!=0;continue;
         }
         if (!strcmp(key,"presetName")) {
             if (named || !*value) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
@@ -254,7 +265,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(k==23) { result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done; }
             errno=0; parsed=strtof(value,&end);
             float lo=0,hi=1;
-            if(k==1) {lo=3;hi=MD_SHAPE_SIDES;}
+            if(k==1) {lo=-FLT_MAX;hi=FLT_MAX;} /* draw-time clamp */
             if(k==7 || k==8) {lo=-100;hi=100;}
             if(k==9) {lo=.1f;hi=10;}
             if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed) ||
@@ -297,6 +308,10 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 (extra_seen & (1ULL<<k))) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
+            /* Supported Desktop boolean switches use integer != 0, not a
+             * 0..1 editor-slider restriction. Unsupported effects stay errors. */
+            if(key[0]=='b' && extra[k].out && parsed==floorf(parsed))
+                parsed=parsed!=0;
             if (parsed<extra[k].low || parsed>extra[k].high ||
                 (!strcmp(key,"nWaveMode") && parsed!=floorf(parsed)) ||
                 ((key[0]=='b' || !strcmp(key,"nVideoEchoOrientation")) && parsed!=floorf(parsed))) {
@@ -313,10 +328,11 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         *values[index] = parsed; seen |= 1U << index;
     }
     next.wave_mode=(int)wave_mode; next.wrap=(int)wrap;
+    if(old_motion_seen && !(extra_seen&1ULL))next.motion[0]=(float)old_motion_enabled;
     if(next.decor.wave_mod_alpha && next.decor.wave_mod_end<=next.decor.wave_mod_start)
         result=md_file_error(error,MD_FILE_INVALID,number,"wave alpha range");
     if (next.wave_mode>=0) next.legacy=1;
-    if (!section || (!seen && !extra_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
+    if (!section || (!seen && !extra_seen && !old_motion_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
         !(shape_seen[0]|shape_seen[1]|shape_seen[2]|shape_seen[3]) &&
         !(wave_seen[0]|wave_seen[1]|wave_seen[2]|wave_seen[3]))) result = md_file_error(error, MD_FILE_INVALID, number, "empty");
 done:
@@ -471,10 +487,10 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         if(!pm_execute_runtime(&program->frame,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
         for(int k=0;k<23;k++) {
             float value=sv[PM_SHAPE_BASE+k],lo=0,hi=1;
-            if(k==1) {lo=3;hi=MD_SHAPE_SIDES;}
+            if(k==1) {lo=-FLT_MAX;hi=FLT_MAX;} /* draw-time clamp */
             if(k==7 || k==8) {lo=-100;hi=100;}
             if(k==9) {lo=.1f;hi=10;}
-            if(!isfinite(value) || value<lo || value>hi || ((k<4 || k==22) && value!=floorf(value)))
+            if(!isfinite(value) || value<lo || value>hi || (((k<4 && k!=1) || k==22) && value!=floorf(value)))
                 return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&program->frame,PM_SHAPE_BASE+k),"shape range");
         }
         int output=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;

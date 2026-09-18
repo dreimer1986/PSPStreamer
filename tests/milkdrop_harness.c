@@ -389,7 +389,7 @@ int main(int argc,char **argv) {
     decor->outer=(MdBorder){.03f,1,0,0,.5f};
     decor->inner=(MdBorder){.03f,0,0,1,.5f};
     for(int i=0;i<MD_SHAPES;i++) decor->shapes[i]=(MdShape){
-        .enabled=1,.sides=MD_SHAPE_SIDES,.additive=i%2,.textured=i%2,.x=.5f,.y=.5f,.rad=.4f,
+        .enabled=1,.sides=1e30f,.additive=i%2,.textured=i%2,.x=.5f,.y=.5f,.rad=.4f,
         .tex_zoom=1,.r=1,.g=.3f,.b=.2f,.a=.5f,.r2=.2f,.g2=.3f,.b2=1,.a2=.1f,
         .border_r=1,.border_g=1,.border_b=1,.border_a=.3f,.thick_outline=1};
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {

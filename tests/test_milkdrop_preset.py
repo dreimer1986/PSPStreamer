@@ -143,6 +143,23 @@ class PresetTests(unittest.TestCase):
         self.assertAlmostEqual(preset.warp.zoom, 1.018, places=5)
         self.assertAlmostEqual(preset.blue, 1)
 
+    def test_desktop_boolean_switches_and_old_motion_default(self):
+        code,preset,error=self.parse(b'[preset00]\nbTexWrap=-2\nbWaveDots=3\nbInvert=-1\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(preset.wrap,1)
+        self.assertEqual(preset.decor.wave_dots,1)
+        self.assertEqual(preset.effects[4],1)
+        for fields,alpha in ((b'bMotionVectorsOn=-2\n',1),
+                             (b'bMotionVectorsOn=0\n',0),
+                             (b'bMotionVectorsOn=1\nmv_a=.25\n',.25),
+                             (b'mv_a=.25\nbMotionVectorsOn=1\n',.25)):
+            code,preset,error=self.parse(b'[preset00]\n'+fields)
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertEqual(preset.motion[0],alpha)
+        for fields in (b'bMotionVectorsOn=1\nbMotionVectorsOn=0',b'bMotionVectorsOn=.5',
+                       b'bTexWrap=.5',b'bRedBlueStereo=2',b'bMotionVectorsOn=nan'):
+            self.assertNotEqual(self.parse(b'[preset00]\n'+fields)[0],0)
+
     def test_geiss_export_names_and_ranges(self):
         data=(b'[preset00]\nnWaveMode=5\nfZoomExponent=3.6\nob_a=.2\nib_a=.3\n'
               b'nMotionVectorsX=23.52\nnMotionVectorsY=17.832\nb1n=0\nb1x=1\nb1ed=.25\n'
@@ -607,7 +624,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(warp.zoom,2)
         self.assertAlmostEqual(warp.dx,.01)
         self.assertAlmostEqual(warp.dy,-.02)
-        for field,value in (("fVideoEchoAlpha",2),("ob_alpha",2),("bInvert",2),
+        for field,value in (("fVideoEchoAlpha",2),("ob_alpha",2),("bInvert",.5),
                             ("nWaveMode",9),("cx",1.6),("fWaveParam",2)):
             self.assertEqual(self.parse(f"presetName=test\n{field}={value}".encode())[0],3)
         for data in (b"presetName=x\npresetName=x",b"[preset00]\ndx=0\ndx=0"):
@@ -660,7 +677,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(preset.decor.shapes[0].sides,32)
         self.assertEqual(preset.decor.echo_orient,3)
         self.assertEqual(preset.decor.wave_thick,1)
-        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",101),
+        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",3.5),
             ("shapecode_0_textured",.5),("shapecode_0_tex_zoom",0),("shapecode_0_per_frame1",0)):
             self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],3)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
@@ -938,6 +955,21 @@ class PresetTests(unittest.TestCase):
         self.last_decor=decor
         return result,warp,error
 
+    def test_shape_side_limit_is_applied_after_formulas(self):
+        fn=self.library.md_shape_sides
+        fn.argtypes=[ctypes.c_float]
+        fn.restype=ctypes.c_int
+        for value,expected in ((-1e30,3),(0,3),(3.9,3),(99.9,99),(101,100),(1e30,100),
+                               (float('nan'),0),(float('inf'),0)):
+            self.assertEqual(fn(value),expected)
+        code,preset,error=self.parse(b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_sides=101\n'
+                                    b'shape_0_per_frame1=x=sides/202; sides=99.9;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(preset.decor.shapes[0].sides,101)
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        self.assertEqual(self.last_decor.shapes[0].x,.5)
+        self.assertAlmostEqual(self.last_decor.shapes[0].sides,99.9,places=4)
+
     def test_shape_contexts_and_atomic_failure(self):
         code,preset,error=self.parse(b'''[preset00]
 per_frame_1=q1=.25;
@@ -965,7 +997,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         disabled=PresetState()
         self.assertEqual(self.evaluate_state(preset,disabled,0)[0],0)
         self.assertFalse(disabled.shape[0].ready)
-        for expr in ('rad=2;','sides=101;','x=1/0;','textured=.5;'):
+        for expr in ('rad=2;','sides=1/0;','x=1/0;','textured=.5;'):
             code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)

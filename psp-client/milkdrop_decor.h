@@ -22,6 +22,7 @@ unsigned int md_rgba(float r,float g,float b,float a);
 #define MD_MOTION_MAX_VERTICES (64*48*2)
 float md_wave_opacity(const MdDecor *decor,int mode,float bass,float mid,float treble);
 int md_shape_vertices(MdVertex *out,const MdShape *shape,float aspect);
+int md_shape_sides(float value);
 void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v);
 int md_motion_vertices(MdVertex *out,const MdVertex *expanded_mesh,const float settings[9]);
 #endif

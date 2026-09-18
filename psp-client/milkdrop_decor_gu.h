@@ -14,7 +14,9 @@ static void md_shapes(const MdDecor *decor,float aspect) {
         int index=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
         const MdShape *p=&decor->shapes[index];
         if(!p->enabled) continue;
-        MdVertex *v=sceGuGetMemory(((int)p->sides+2)*sizeof(*v));
+        int sides=md_shape_sides(p->sides);
+        if(!sides)continue;
+        MdVertex *v=sceGuGetMemory((sides+2)*sizeof(*v));
         int count=md_shape_vertices(v,p,aspect);
         if(!count) continue;
         md_expand(v,count,0);
