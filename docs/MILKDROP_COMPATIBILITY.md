@@ -155,16 +155,20 @@ safe PSP ranges; arbitrary desktop ranges, unbounded loops/allocations, multilin
 comments spanning separate preset entries and desktop host/plugin APIs are not
 provided. Audio analysis is normalized for this player. The renderer retains
 snapshot transitions rather than running two full preset engines simultaneously.
-The legacy `fShader` hue effect and red/blue stereo flag are validated but
-silently omitted; the remaining preset is retained. This does not claim those
-effects are implemented. Other unknown fields still report errors.
+The legacy `fShader` hue effect uses the Desktop no-shader corner-color equations
+and GU interpolated vertex colors (strength clamped to 0–1). It reuses the
+existing echo/gamma composition passes, without another buffer or drawing pass.
+Random phases, rasterization and aspect handling can differ from Desktop.
+Red/blue stereo remains silently omitted. Other unknown fields report errors.
+Compare `legacy-shading-demo.milk` with `legacy-shading-off-demo.milk` on hardware;
+both also exercise echo zoom below 1 (supported down to 0.01).
 
 Reversed wave-alpha modulation endpoints follow the Desktop's signed interval.
 Equal endpoints use a safe step instead of division by zero (an approximation).
 
 Still excluded: warp/composite shaders, shader blur stages, arbitrary shader
 texture sampling, random texture selection, animated textures and desktop
-image formats other than PNG. No DirectX or desktop shader execution is involved.
+image formats other than PNG/JPEG. No DirectX or desktop shader execution is involved.
 
 ### Shader preset fallback
 
@@ -180,7 +184,7 @@ Unknown non-shader fields, formula errors, invalid textures and malformed
 numeric headers still report errors. Existing file/line/encoding limits remain
 in force, even on skipped shader records. A preset containing only headers and
 shader code still fails the empty-preset check. The legacy `fShader` color
-effect is not HLSL source and retains its existing validation.
+effect is not HLSL source and is rendered through fixed-function vertex colors.
 
 Rationale: MilkDrop 2's `state.cpp` exports the numbered source and shader
 version headers, while `utility.cpp` loads `D3DXCompileShader`. PSP GU instead

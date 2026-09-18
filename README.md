@@ -447,6 +447,9 @@ During music, **Square** toggles between **spectrum analysis and MilkDrop**.
 MilkDrop uses the selected preset file (initially `presets/active.milk`). Copy
 the supplied `psp-client/presets` folder beside EBOOT. The three early built-in
 test effects are no longer part of the user-facing selection.
+Legacy `fShader` hue shading now uses fixed-function corner colors; compare
+`legacy-shading-demo.milk` and `legacy-shading-off-demo.milk`. Both also exercise
+echo zoom below 1. This is not HLSL shader support.
 The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
 is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,

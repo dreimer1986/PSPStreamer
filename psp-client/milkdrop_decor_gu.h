@@ -85,7 +85,7 @@ static void md_border(const MdBorder *p,float inset) {
     sceGuDisable(GU_BLEND);
 }
 static void md_present(int left,int top,int width,int height,float gamma,
-                       float echo_zoom,float echo_alpha,int orientation) {
+                       float echo_zoom,float echo_alpha,int orientation,const float shade[4][3]) {
     int layers=echo_alpha>0?2:1,draws=0;
     for(int layer=0;layer<layers;layer++) {
         float mix=layer?echo_alpha:1-echo_alpha;
@@ -95,6 +95,23 @@ static void md_present(int left,int top,int width,int height,float gamma,
             float strength=gamma-pass; if(strength>1) strength=1;
             unsigned int tint=md_rgba(strength*mix,strength*mix,strength*mix,1);
             if(draws++) { sceGuEnable(GU_BLEND); sceGuBlendFunc(GU_ADD,GU_FIX,GU_FIX,0xffffff,0xffffff); }
+            if(shade) {
+                /* Same corner order/diagonal as Desktop's two-triangle quad.
+                 * Sprites cannot interpolate four independent corner colors.
+                 * Apply here once, not in feedback or final screen stretching. */
+                static const int corners[6]={0,1,2,1,3,2};
+                MdVertex *v=sceGuGetMemory(6*sizeof(*v));
+                sceGuShadeModel(GU_SMOOTH);
+                for(int j=0;j<6;j++) {
+                    int i=corners[j],x=i&1,y=i>>1;
+                    v[j]=(MdVertex){.x=(float)(left+x*width),.y=(float)(top+y*height),
+                        .color=md_rgba(strength*mix*shade[i][0],strength*mix*shade[i][1],strength*mix*shade[i][2],1)};
+                    md_echo_uv((float)x,(float)y,zoom,orient,&v[j].u,&v[j].v);
+                    v[j].u*=2;
+                }
+                sceGuDrawArray(GU_TRIANGLES,MD_FORMAT,6,NULL,v);
+                continue;
+            }
             for(int x=0;x<width;x+=32) {
                 int end=x+32<width?x+32:width;
                 MdVertex *v=sceGuGetMemory(2*sizeof(*v));

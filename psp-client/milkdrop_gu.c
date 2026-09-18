@@ -39,6 +39,9 @@ static MdWaveGeometry md_custom_geometry[MD_CUSTOM_WAVES];
 static void *md_fade_image;
 static unsigned long long md_fade_start;
 static unsigned int md_fade_ms;
+static float md_shader_phase[4];
+static unsigned long long md_shader_epoch;
+static int md_shader_seeded;
 static MdImage md_images[MD_SHAPES];
 static int md_images_ready;
 static void md_images_clear(void) {
@@ -107,6 +110,17 @@ int md_start(void) {
     if (sceGuInit() < 0) {
         free(md_list); md_list = NULL;
         return 0;
+    }
+    if(!md_shader_seeded) {
+        static const unsigned int ranges[4]={64841,53751,42661,31571};
+        md_shader_epoch=sceKernelGetSystemTimeWide();
+        unsigned int seed=(unsigned int)md_shader_epoch^0x9e3779b9U;
+        if(!seed)seed=1;
+        for(int i=0;i<4;i++) {
+            seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;
+            md_shader_phase[i]=(seed%ranges[i])*.01f;
+        }
+        md_shader_seeded=1;
     }
     md_front = 0; md_origin = md_next = 0;
     md_last_tv = md_last_fullscreen = -1;
@@ -325,8 +339,15 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexWrap(GU_CLAMP, GU_CLAMP);
     sceGuTexFlush();
     const MdDecor *d=&frame_decor;
+    float shade[4][3];
+    const float (*shading)[3]=NULL;
+    if(preset==3 && md_custom_preset.shader_amount>.001f) {
+        md_shader_colors(shade,(float)(now-md_shader_epoch)/1000000,
+                         md_custom_preset.shader_amount,md_shader_phase);
+        shading=shade;
+    }
     md_present(0,0,MD_WIDTH,MD_HEIGHT,preset==3?d->gamma:1,
-        preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0);
+        preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0,shading);
     if(preset==3) md_image_effects(md_preset_state.effects);
     if(md_fade_image) {
         unsigned long long elapsed=now-md_fade_start;
@@ -352,7 +373,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuTexFlush();
     /* Slice the final stretch into narrow sprites, as recommended for PSP
      * texture-cache locality. It never copies the full scanout on the CPU. */
-    md_present(left,top,width,height,1,1,0,0);
+    md_present(left,top,width,height,1,1,0,0,NULL);
     sceGuFinish();
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_front = target;

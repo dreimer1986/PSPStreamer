@@ -20,6 +20,7 @@ typedef struct {
 } MdDecor;
 unsigned int md_rgba(float r,float g,float b,float a);
 unsigned int md_shape_rgba(float r,float g,float b,float a);
+void md_shader_colors(float colors[4][3],float seconds,float amount,const float phase[4]);
 #define MD_MOTION_MAX_VERTICES (64*48*2)
 float md_wave_opacity(const MdDecor *decor,int mode,float bass,float mid,float treble);
 int md_shape_vertices(MdVertex *out,const MdShape *shape,float aspect);

@@ -93,7 +93,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"sx",.25f,4,&next.warp.sx}, {"sy",.25f,4,&next.warp.sy},
         {"wave_x",0,1,&next.decor.wave_x}, {"wave_y",0,1,&next.decor.wave_y},
         {"fWaveParam",-1,1,&next.decor.wave_param},
-        {"fVideoEchoZoom",1,100,&next.decor.echo_zoom},
+        {"fVideoEchoZoom",.01f,100,&next.decor.echo_zoom},
         {"fVideoEchoAlpha",0,1,&next.decor.echo_alpha},
         {"nVideoEchoOrientation",0,3,&next.decor.echo_orient},
         {"bWaveDots",0,1,&next.decor.wave_dots}, {"bWaveThick",0,1,&next.decor.wave_thick},
@@ -101,10 +101,9 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"bMaximizeWaveColor",0,1,&next.decor.wave_brighten},
         {"bWaveScaleAtLeft",0,0,NULL}, {"bWaveWaveformAtLeft",0,0,NULL},
         {"bMaxContrast",0,0,NULL}, {"bRoundWarp",0,0,NULL}, {"bDarkenCenter",0,1,&next.effects[0]},
-        /* Known unsupported visual effects: omit these layers, not the preset.
-         * fShader is legacy hue shading, distinct from HLSL source records. */
+        /* Stereo remains omitted; fShader is fixed-function hue shading. */
         {"bRedBlueStereo",-FLT_MAX,FLT_MAX,NULL}, {"bBrighten",0,1,&next.effects[1]}, {"bDarken",0,1,&next.effects[2]},
-        {"bSolarize",0,1,&next.effects[3]}, {"bInvert",0,1,&next.effects[4]}, {"fShader",-FLT_MAX,FLT_MAX,NULL},
+        {"bSolarize",0,1,&next.effects[3]}, {"bInvert",0,1,&next.effects[4]}, {"fShader",0,1,&next.shader_amount},
         {"fModWaveAlphaStart",0,4,&next.decor.wave_mod_start},
         {"fModWaveAlphaEnd",0,4,&next.decor.wave_mod_end},
         {"bModWaveAlphaByVolume",0,1,&next.decor.wave_mod_alpha},
@@ -444,7 +443,8 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     }
     for(int i=0;i<MD_DECOR_VALUES;i++) {
         float lo=i==2?-1:0, hi=(i==8 || i==9 || i==23)?4:i==10?100:i==12?3:(i==13 || i==18)?.5f:1;
-        if(i==10 || i==23) lo=1;
+        if(i==10)lo=.01f;
+        if(i==23)lo=1;
         if(i==24){lo=-FLT_MAX;hi=FLT_MAX;} /* wave_a: preserve gain until rendering */
         float value=v[30+i];
         if(!isfinite(value))

@@ -1,0 +1,24 @@
+[preset00]
+; Neutral comparison for legacy-shading-demo.milk.
+nWaveMode=0
+fShader=0
+fWaveAlpha=.6
+wave_r=1
+wave_g=1
+wave_b=1
+fDecay=.96
+fGammaAdj=1.2
+fVideoEchoZoom=.65
+fVideoEchoAlpha=.2
+shapecode_0_enabled=1
+shapecode_0_sides=4
+shapecode_0_rad=.75
+shapecode_0_r=1
+shapecode_0_g=1
+shapecode_0_b=1
+shapecode_0_a=.12
+shapecode_0_r2=1
+shapecode_0_g2=1
+shapecode_0_b2=1
+shapecode_0_a2=.12
+per_frame_1=rot=.005*sin(time*.2);

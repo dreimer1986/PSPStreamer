@@ -45,7 +45,7 @@ feedback coordinates; it is not the desktop renderer's aspect-adjusted mesh.
 | `bMaximizeWaveColor` | `wave_brighten` | 0/1, normalize brightest RGB component to 1 |
 | `bModWaveAlphaByVolume` | `wave_mod_alpha` | 0/1, modulate with mean relative bass/mid/treble |
 | `fModWaveAlphaStart/End` | `wave_mod_start/end` | 0–4; end must exceed start when enabled |
-| `fVideoEchoZoom` | `echo_zoom` | 1–100 |
+| `fVideoEchoZoom` | `echo_zoom` | 0.01–100 |
 | `fVideoEchoAlpha` | `echo_alpha` | 0–1, mix weight |
 | `nVideoEchoOrientation` | `echo_orient` | Integer 0–3: none, horizontal, vertical, both flips |
 | `fGammaAdj` | `gamma` | 1–4, additive output brightness |

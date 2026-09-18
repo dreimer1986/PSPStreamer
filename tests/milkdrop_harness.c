@@ -69,7 +69,9 @@ static void sceGuScissor(int x,int y,int w,int h) {
     assert(!x && !y && w==target_width && h==target_height);
 }
 static void sceGuDisable(int what) { (void)what; }
-enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX,GU_POINTS,GU_TRIANGLE_FAN,GU_TCC_RGB };
+enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX,GU_POINTS,GU_TRIANGLE_FAN,GU_TCC_RGB,GU_SMOOTH };
+static void sceGuShadeModel(int mode){assert(mode==GU_SMOOTH);}
+static int shade_draws;
 static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b) {
     assert(op==GU_ADD);
     assert((src==GU_SRC_ALPHA && dst==GU_ONE_MINUS_SRC_ALPHA && !a && !b) ||
@@ -136,7 +138,15 @@ static void *sceGuGetMemory(int bytes) {
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     const MdVertex *v=data;
     assert(format==15 && !indices);
-    if(type==GU_TRIANGLES) {
+    if(type==GU_TRIANGLES && count==6) {
+        assert(target_changes==2 && target_offset==raw_source && texture_offset==raw_target);
+        assert(v[0].x==0 && v[0].y==0 && v[4].x==512 && v[4].y==256);
+        assert(v[1].color==v[3].color && v[2].color==v[5].color);
+        assert(v[0].color!=v[1].color || v[0].color!=v[2].color);
+        composition_width+=512;shade_draws++;
+        assert(composition_width<=512*expected_passes);
+    }
+    else if(type==GU_TRIANGLES) {
         assert(count==MD_MESH_VERTICES && target_changes==1);
         assert(target_width==512 && target_height==256);
         raw_target=target_offset; raw_source=texture_offset;
@@ -399,12 +409,16 @@ int main(int argc,char **argv) {
         assert(md_start());
         for(int mode=0;mode<=8;mode++) for(int orientation=0;orientation<4;orientation++) {
             md_custom_preset.wave_mode=mode;
+            md_custom_preset.shader_amount=(mode&1)?1:0;
+            decor->echo_zoom=(orientation&1)?.25f:2;
             float motion[]={.5f,1,1,1,64,48,0,0,2};
             memcpy(md_custom_preset.motion,motion,sizeof(motion));
             decor->echo_orient=orientation;
             if(mode==4 && orientation==1) md_begin_preset(1500);
             test_time+=100000;
+            int before_shade=shade_draws;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
+            assert(shade_draws-before_shade==((mode&1)?expected_passes:0));
             assert(covered_width==expected_width);
             float reference=.25f;
             if(md_preset_state.effects[1]) reference=1-(1-reference)*(1-reference);

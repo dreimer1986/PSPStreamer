@@ -21,6 +21,19 @@ static unsigned int shape_channel(float value) {
 unsigned int md_shape_rgba(float r,float g,float b,float a) {
     return shape_channel(r)|(shape_channel(g)<<8)|(shape_channel(b)<<16)|(shape_channel(a)<<24);
 }
+void md_shader_colors(float colors[4][3],float seconds,float amount,const float phase[4]) {
+    /* MilkDrop 2's ShowToUser_NoShaders: four normalized, time-varying
+     * corner colors mixed with white. No per-pixel CPU color processing. */
+    amount=fminf(1,fmaxf(0,amount));
+    for(int i=0;i<4;i++) {
+        if(amount<=.001f) {colors[i][0]=colors[i][1]=colors[i][2]=1;continue;}
+        colors[i][0]=.6f+.3f*sinf(seconds*30*.0143f+3+i*21+phase[3]);
+        colors[i][1]=.6f+.3f*sinf(seconds*30*.0107f+1+i*13+phase[1]);
+        colors[i][2]=.6f+.3f*sinf(seconds*30*.0129f+6+i*9+phase[2]);
+        float peak=fmaxf(colors[i][0],fmaxf(colors[i][1],colors[i][2]));
+        for(int k=0;k<3;k++)colors[i][k]=(.5f+.5f*colors[i][k]/peak)*amount+1-amount;
+    }
+}
 float md_wave_opacity(const MdDecor *d,int mode,float bass,float mid,float treble) {
     /* MilkDrop 2 milkdropfs.cpp DrawWave: mode gain, then the unbounded
      * volume factor, then final alpha saturation. 512-wide feedback factors.

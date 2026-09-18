@@ -69,7 +69,7 @@ class Preset(ctypes.Structure):
                 ("gamma",ctypes.c_float),("wave_scale",ctypes.c_float),
                 ("wave_smoothing",ctypes.c_float),("wave_alpha",ctypes.c_float),("decor",Decor),
                 ("init_program",Program),("symbols",Symbols),("pixel_program",Program),("motion",ctypes.c_float*9),
-                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4),("pixel_symbols",Symbols),("texture_path",(ctypes.c_char*512)*4)]
+                ("shape_program",ShapeProgram*4),("waves",CustomWave*4),("effects",ctypes.c_float*5),("shape_instances",ctypes.c_int*4),("pixel_symbols",Symbols),("texture_path",(ctypes.c_char*512)*4),("shader_amount",ctypes.c_float)]
 
 
 class PresetState(ctypes.Structure):
@@ -239,6 +239,7 @@ class PresetTests(unittest.TestCase):
         code,preset,error=self.parse(b'[preset00]\nfShader=.75\nbRedBlueStereo=1\n')
         self.assertEqual(code,0,(error.line,error.key))
         self.assertEqual(self.evaluate(preset,0)[0],0)
+        self.assertEqual(preset.shader_amount,.75)
         for data in (b'fShader=nan',b'fShader=.5\nfShader=.7',b'fUnknownShader=1',
                      b'bRedBlueStereo=.5'):
             self.assertNotEqual(self.parse(b'[preset00]\n'+data)[0],0)
@@ -246,6 +247,44 @@ class PresetTests(unittest.TestCase):
                                 b'per_frame_1=wave_mod_start=1; wave_mod_end=0;\n')
         self.assertEqual(code,0)
         self.assertEqual(self.evaluate(preset,0)[0],0)
+
+    def test_reference_legacy_shading(self):
+        row=ctypes.c_float*3
+        colors=(row*4)()
+        phase=(ctypes.c_float*4)(1,2,3,4)
+        shade=self.library.md_shader_colors
+        shade.argtypes=[ctypes.POINTER(row),ctypes.c_float,ctypes.c_float,
+                        ctypes.POINTER(ctypes.c_float)]
+        for seconds in (0,12,120):
+            for amount in (-1,0,.0005,.5,1,2):
+                shade(colors,seconds,amount,phase)
+                strength=min(1,max(0,amount))
+                for i in range(4):
+                    raw=[.6+.3*math.sin(seconds*30*rate+offset+i*step+phase[p])
+                         for rate,offset,step,p in ((.0143,3,21,3),(.0107,1,13,1),(.0129,6,9,2))]
+                    for k in range(3):
+                        expected=1 if strength<=.001 else (.5+.5*raw[k]/max(raw))*strength+1-strength
+                        self.assertAlmostEqual(colors[i][k],expected,delta=.00001)
+        for amount,expected in ((-2,0),(.75,.75),(4,1)):
+            code,preset,_=self.parse(f'[preset00]\nfShader={amount}\n'.encode())
+            self.assertEqual(code,0)
+            self.assertEqual(preset.shader_amount,expected)
+        for name,amount in (('legacy-shading-demo.milk',1),('legacy-shading-off-demo.milk',0)):
+            code,preset,error=self.parse((ROOT/'psp-client/presets'/name).read_bytes())
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertEqual(preset.shader_amount,amount)
+            self.assertAlmostEqual(preset.decor.echo_zoom,.65)
+            self.assertEqual(self.evaluate(preset,2)[0],0)
+
+    def test_echo_zoom_below_one(self):
+        for value in (.001,.01,.65,1):
+            code,preset,error=self.parse(f'[preset00]\nfVideoEchoZoom={value}\n'.encode())
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertAlmostEqual(preset.decor.echo_zoom,max(.01,value))
+            code,preset,error=self.parse(f'[preset00]\nper_frame_1=echo_zoom={value};\n'.encode())
+            self.assertEqual(code,0,(error.line,error.key))
+            self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+            self.assertAlmostEqual(self.last_decor.echo_zoom,max(.01,value))
 
     def test_reference_wave_scale_geometry(self):
         class Vertex(ctypes.Structure):

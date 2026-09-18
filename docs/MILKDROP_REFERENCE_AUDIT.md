@@ -29,7 +29,7 @@ reference version changes.
 | Decay/gamma | Float import; renderer determines result | PSP range and integer-conversion safety need joint review |
 | Echo | Float zoom/alpha; integer orientation | PSP rejects zoom below 1; Desktop editor even permits .01–100 |
 | Borders | Float import; draw behavior separate | PSP normalized colors and sizes remain restrictive |
-| `fShader` | Legacy hue effect, distinct from HLSL source | Validated numeric field, effect silently omitted as requested |
+| `fShader` | Legacy hue effect, distinct from HLSL source | Desktop corner-color equations, GU interpolation; strength 0–1 |
 | HLSL / blur metadata | Desktop shader pipeline | Shader source and associated blur metadata intentionally ignored |
 | Formula variables | Registered per context, then evaluated | Namespace audit below; input mutability and other listed gaps remain |
 
@@ -127,9 +127,9 @@ Remaining differences found, **not hardware-limit claims**:
 - Compiled instruction counts, locals, memory and execution budgets remain
   bounded. Example: a 200000-iteration memory-initialization loop cannot simply
   be accepted or truncated without deciding the intended reduced behavior.
-- `fShader` is a legacy hue effect, not HLSL. The field is accepted but the effect
-  is silently omitted, as requested. Red/blue stereo is also omitted rather
-  than rejecting the rest of the preset. Neither effect is claimed implemented.
+- `fShader` now uses the Desktop fixed-function corner-color equations in the
+  existing composition pass. Random phases and raster/aspect details can differ.
+  Red/blue stereo is still omitted rather than rejecting the preset.
 - Shader blur variables currently behave as locals rather than having the
   Desktop's imported defaults/output processing; skipped shader rendering does
   not make this fully equivalent if other formulas read them.

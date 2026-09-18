@@ -28,6 +28,7 @@ typedef struct {
     int shape_instances[MD_SHAPES];
     PmSymbols pixel_symbols;
     char texture_path[MD_SHAPES][512]; /* PSP PNG shape extension, preset-relative. */
+    float shader_amount; /* Legacy fixed-function hue shading, not HLSL. */
 } MdFilePreset;
 /* Per-activation seeds. Frame q writes never accumulate into these seeds. */
 typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM_Q_COUNT];
