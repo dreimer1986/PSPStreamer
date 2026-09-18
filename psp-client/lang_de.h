@@ -149,8 +149,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_INFO_CONTROLS] = "O / TRIANGLE ZURÜCK     X ZUR BIBLIOTHEK",
 
     /* Status messages */
-    [TXT_CONNECTING_WIFI] = "WLAN wird verbunden...",
-    [TXT_WIFI_NOT_READY] = "WLAN/HTTP noch nicht bereit",
+    [TXT_CONNECTING_WIFI] = "WLAN verbindet (O: Abbruch)",
+    [TXT_WIFI_NOT_READY] = "WLAN aus - Quadrat: verbinden",
     [TXT_LOADING_LIBRARY] = "Bibliothek wird geladen ...",
     [TXT_SERVER_ERROR] = "Serverfehler: %08X",
     [TXT_NETWORK_FAILED] = "%s fehlgeschlagen: %08X",

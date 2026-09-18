@@ -551,57 +551,25 @@ void setup_callbacks(void) {
     if (thread_id >= 0) sceKernelStartThread(thread_id, 0, NULL);
 }
 
+static int wifi_wait_tick(void) {
+    SceCtrlData pad;
+    sceCtrlPeekBufferPositive(&pad,1);
+    if(pad.Buttons & PSP_CTRL_CIRCLE)return 1;
+    keep_awake();
+    sceKernelDelayThreadCB(100000);
+    return 0;
+}
+#include "wifi_connection.h"
 static int wait_for_network(int connect_wifi) {
-    int state = 0;
-    int elapsed;
-    int result;
-    int profile;
-    failure_step = "Network Common";
-    result = sceUtilityLoadNetModule(PSP_NET_MODULE_COMMON);
-    if (result < 0) return result;
-    failure_step = "Network INET";
-    result = sceUtilityLoadNetModule(PSP_NET_MODULE_INET);
-    if (result < 0) return result;
-    failure_step = "sceNetInit";
-    result = sceNetInit(128 * 1024, 42, 0, 42, 0);
-    if (result < 0) return result;
-    failure_step = "sceNetInetInit";
-    result = sceNetInetInit();
-    if (result < 0) return result;
-    failure_step = "sceNetApctlInit";
-    result = sceNetApctlInit(0x1800, 48);
-    if (result < 0) return result;
-    if (!connect_wifi) return -1; /* Offline launch: modules live, no association. */
-    sceNetApctlGetState(&state);
-    if (state == PSP_NET_APCTL_STATE_GOT_IP) return 0;
-    profile = PSP_NETWORK_PROFILE;
-    if (profile == 0) {
-        for (profile = 1; profile <= 100; profile++) {
-            if (sceUtilityCheckNetParam(profile) == 0) break;
-        }
-        if (profile > 100) return -4;
-    }
-    active_network_profile = profile;
-    failure_step = "Wi-Fi connection";
-    result = sceNetApctlConnect(profile);
-    if (result < 0) return result;
-    for (elapsed = 0; elapsed < 150; elapsed++) {
-        sceNetApctlGetState(&state);
-        if (state == PSP_NET_APCTL_STATE_GOT_IP) return 0;
-        sceKernelDelayThread(100000);
-    }
-    return -3;
+    int result=wifi_initialize();
+    if(result<0)return result;
+    return connect_wifi?wifi_associate(0):-1;
 }
 
 static int wait_for_network_restore(void) {
-    int state = 0, elapsed;
-    for (elapsed = 0; elapsed < 40; elapsed++) {
-        sceNetApctlGetState(&state);
-        if (state == PSP_NET_APCTL_STATE_GOT_IP) return 0;
-        if (state == 0 && active_network_profile > 0) sceNetApctlConnect(active_network_profile);
-        sceKernelDelayThread(500000);
-    }
-    return -1;
+    int result=wifi_associate(0);
+    network_ready=http_ready=(result==0);
+    return result;
 }
 
 static int http_get_wait(const char *path, char *buffer, int buffer_size, int idle_timeout_ms) {
@@ -2621,6 +2589,7 @@ static void show(int selected) {
         tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
         tv_text(34,286,48,1,TV_CYAN,"%s",tr(TXT_SETTINGS_HINT));
         if(tls_notice())tv_text(34,302,48,1,TV_AMBER,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
+        else if(!network_ready)tv_text(34,302,48,1,TV_AMBER,"%s",status);
         tv_present();return;
     }
     first = item_count ? (selected / GUI_LIST_ROWS) * GUI_LIST_ROWS : 0;
@@ -2653,6 +2622,7 @@ static void show(int selected) {
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     gui_text(38,156,0x00FFFFFF,"%s",tr(TXT_SETTINGS_HINT));
     if(tls_notice())gui_text(38,166,0x0000D8FF,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
+    else if(!network_ready)gui_text(38,166,0x0000D8FF,"%.48s",status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
 }
 
@@ -2900,7 +2870,25 @@ int main(void) {
             if(app_settings()>0) {selected=0;refresh_library();}
             dirty=1;old_buttons=PSP_CTRL_SELECT|PSP_CTRL_START|PSP_CTRL_CIRCLE;continue;
         }
-        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) { tls_notice_clear(); refresh_library(); dirty = 1; }
+        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) {
+            int state=0;
+            tls_notice_clear();
+            /* Remote worker was joined above. Only the idle browser may
+             * explicitly tear down an association; no decoder/module reset. */
+            if((pad.Buttons & PSP_CTRL_LTRIGGER) || !network_ready ||
+               sceNetApctlGetState(&state)<0 || state!=PSP_NET_APCTL_STATE_GOT_IP) {
+                network_ready=http_ready=0;
+                snprintf(status,sizeof(status),"%s",tr(TXT_CONNECTING_WIFI));show(selected);
+                result=wifi_associate((pad.Buttons & PSP_CTRL_LTRIGGER)!=0);
+                if(result==0) {
+                    network_ready=http_ready=1;
+                    have_cached_server_address=0;
+                    refresh_library();
+                } else snprintf(status,sizeof(status),tr(TXT_NETWORK_FAILED),failure_step,result);
+            } else refresh_library();
+            if(selected>=item_count)selected=item_count?item_count-1:0;
+            dirty=1;old_buttons=pad.Buttons;continue;
+        }
         if (item_count && (pad.Buttons & (PSP_CTRL_DOWN | PSP_CTRL_UP))) {
             unsigned long long now = sceKernelGetSystemTimeWide();
             unsigned int direction = pad.Buttons & (PSP_CTRL_DOWN | PSP_CTRL_UP);

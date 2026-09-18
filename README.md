@@ -77,7 +77,14 @@ Decoder errors are tolerated only for silent lead-in frames whose required
 preceding data has not yet been fed. After that, errors still stop playback.
 Local playback makes no server or
 remote-control requests, including for subtitles. Hold **R while launching**
-to skip Wi-Fi association entirely; restart normally to return online.
+to skip Wi-Fi association entirely; Square in the main library can connect later.
+
+If Wi-Fi fails at startup or drops while browsing, press **Square** in the main
+library to reconnect and reload without restarting the app. **L + Square** forces
+a disconnect/reconnect even if the PSP still reports an IP address. Association
+waits up to 30 seconds (plus at most 3 seconds to disconnect); **Circle** cancels.
+Network modules initialize only once, including after a partially failed startup.
+These controls do not change stream/subtitle preparation timeouts.
 
 Files live under
 `ms0:/PSP/VIDEO/PSPStreamer/<job-id>/<original-name>.flv`, with a subtitle
