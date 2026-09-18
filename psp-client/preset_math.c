@@ -103,7 +103,7 @@ static int variable(Parser *p,const char *s) {
     if(p->pixel>=3) {
         static const char *names[]={"r","g","b","a"};
         for(int i=0;i<4;i++) if(!strcmp(s,names[i])) return PM_SHAPE_BASE+10+i;
-        if(!strcmp(s,"samples")) return PM_WAVE_BASE;
+        if(p->pixel==3 && !strcmp(s,"samples")) return PM_WAVE_BASE;
         if(p->pixel==4) {
             if(!strcmp(s,"x")) return PM_SHAPE_BASE+4;
             if(!strcmp(s,"y")) return PM_SHAPE_BASE+5;
@@ -126,23 +126,21 @@ static int variable(Parser *p,const char *s) {
     }
     int id=builtin_variable(s);
     if(id>=0) {
-        if(p->pixel>=2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE) || id==PM_ENGINE_BASE+2 || (id>=PM_INPUT_BASE && id<PM_MONITOR))) goto unsupported;
+        if(p->pixel>=2 && !((id>=9 && id<23) || (id>=PM_Q_BASE && id<PM_USER_BASE) || (id>=PM_META_BASE && id<PM_DYNAMIC_BASE) || id==PM_ENGINE_BASE+2 || (id>=PM_INPUT_BASE && id<PM_MONITOR))) goto local;
         if(p->pixel==1 && !(id<3 || id==5 || (id>=9 && id<=29) ||
-                        (id>=PM_Q_BASE && id<PM_USER_BASE) || id>=PM_META_BASE)) goto unsupported;
+                        (id>=PM_Q_BASE && id<PM_USER_BASE) || id>=PM_META_BASE)) goto local;
         return id;
     }
-    /* Do not silently turn unsupported engine inputs or misspelled q/t/reg
-     * registers into user state. Built-in function names are reserved too. */
-    static const char *reserved[]={"nan","inf","infinity","fps","frame","progress",
-        "monitor","x","y","rad","ang","sample","samples","value1","value2",
-        "meshx","meshy","pixelsx","pixelsy","aspectx","aspecty"};
+local:
+    /* Desktop VMs register fields per context; an identifier absent there
+     * becomes ordinary VM-local state, even if another context knows it.
+     * Only actual q1..32/t1..8/reg00..99 are special, not their prefixes.
+     * Keep non-finite spellings and function names reserved in this parser. */
+    ;
+    static const char *reserved[]={"nan","inf","infinity"};
     if(!p->symbols || function(s)>=0) goto unsupported;
     for(unsigned int i=0;i<sizeof(reserved)/sizeof(reserved[0]);i++)
         if(!strcmp(s,reserved[i])) goto unsupported;
-    /* t registers belong to custom wave/shape contexts. In global/pixel
-     * code (e.g. Geiss Artifact's t2), these are ordinary named variables. */
-    if(((s[0]=='q' || s[0]=='Q' || (s[0]=='t' && p->pixel>=2)) && isdigit((unsigned char)s[1])) ||
-       (!strncmp(s,"reg",3) && isdigit((unsigned char)s[3]))) goto unsupported;
     for(int i=0;i<p->symbols->count;i++)
         if(!strcmp(s,p->symbols->names[i])) return PM_USER_BASE+i;
     if(p->symbols->count>=PM_USER_COUNT) { p->error=PM_INVALID; return -1; }
@@ -228,7 +226,7 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
         if (op->op == STORE || op->op==KEEP) {
             if (!used || (op->op==STORE && used!=1) || op->arg < 0 || (op->arg>=PM_ENGINE_BASE && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) || (op->arg>PM_WAVE_BASE && op->arg<PM_EFFECT_BASE) ||
                 (op->arg >= 9 && op->arg < 23) ||
-                (op->arg>=PM_COORD_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
+                (op->arg>=PM_META_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
             local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
         }
 

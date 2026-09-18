@@ -29,9 +29,9 @@ reference version changes.
 | Decay/gamma | Float import; renderer determines result | PSP range and integer-conversion safety need joint review |
 | Echo | Float zoom/alpha; integer orientation | PSP rejects zoom below 1; Desktop editor even permits .01–100 |
 | Borders | Float import; draw behavior separate | PSP normalized colors and sizes remain restrictive |
-| `fShader` | Legacy hue effect, distinct from HLSL source | Nonzero still unsupported; must not silently treat it as HLSL |
+| `fShader` | Legacy hue effect, distinct from HLSL source | Validated numeric field, effect silently omitted as requested |
 | HLSL / blur metadata | Desktop shader pipeline | Shader source and associated blur metadata intentionally ignored |
-| Formula variables | Registered per context, then evaluated | Separate audit needed; file field names are not a complete formula-variable inventory |
+| Formula variables | Registered per context, then evaluated | Namespace audit below; input mutability and other listed gaps remain |
 
 Useful examples of **editor** limits that must not be mistaken for import limits:
 gamma 1–8; centers −1–2; log controls commonly .01–100; wave alpha .001–100.
@@ -92,6 +92,59 @@ outside the sample window.
 Still reported: malformed/unknown fields, broken assets, NaN/infinity,
 undefined formula operations, syntax errors and exhausted interpreter budgets.
 Programs are not silently truncated: this could remove loop exits or state
-updates. Parser/VM budgets and missing legacy effects are not yet converted to
+updates. Parser/VM budgets are not yet converted to
 approximation fallbacks. This is a numerical/resource fallback pass, **not a
 claim of complete Desktop compatibility or a completed hardware-limit study**.
+
+## Formula namespace audit
+
+Compared with the per-frame, per-vertex, custom-shape, wave-frame and wave-point
+registrations in Desktop `state.cpp`, plus identifier/register resolution in
+`ns-eel2/nseel-eval.c`:
+
+- Fixed: `ang`, `rad`, `x`, `y` were incorrectly reserved in global formulas.
+  Cauldron painterly **5**, physical line 233 (`per_frame_11`), exposed this.
+- Fixed: fields from another context were rejected rather than becoming local
+  variables. Examples: `zoom` in shape code, `wave_r` in pixel code, `sample`
+  outside wave-point code. In wave-point code, `samples` is now an ordinary
+  local, as it is not registered there by the Desktop.
+- Fixed: q/t/reg prefixes were over-reserved. `q33`, `q01`, `t9`, `reg100`, etc.
+  are valid ordinary names, not unsupported registers. Actual registered ranges
+  retain their original bindings. Unknown identifiers therefore no longer
+  diagnose presumed typos, matching the Desktop's local-variable behavior.
+- Fixed: pixel coordinates may be assigned inside a point's formula program.
+  They are reinitialized for each mesh point and do not modify the engine mesh.
+- Already correct: identifiers/functions are case-insensitive; registered q/t
+  lifetimes and point-local coordinate initialization are independently tested.
+
+Remaining differences found, **not hardware-limit claims**:
+
+- Other native inputs such as `time`, `fps` and audio values remain read-only
+  here. Desktop registers writable EEL values; extending mutability needs a
+  separate check of which modified values flow into later evaluation stages.
+- Numbered formula records are compiled individually. Desktop concatenates
+  them, so expressions/loops spanning records can fail here. **Umbau nötig**.
+- Compiled instruction counts, locals, memory and execution budgets remain
+  bounded. Example: a 200000-iteration memory-initialization loop cannot simply
+  be accepted or truncated without deciding the intended reduced behavior.
+- `fShader` is a legacy hue effect, not HLSL. The field is accepted but the effect
+  is silently omitted, as requested. Red/blue stereo is also omitted rather
+  than rejecting the rest of the preset. Neither effect is claimed implemented.
+- Shader blur variables currently behave as locals rather than having the
+  Desktop's imported defaults/output processing; skipped shader rendering does
+  not make this fully equivalent if other formulas read them.
+- Function names and non-finite spellings remain reserved in this parser.
+  Existing PSP extension inputs are retained rather than removed for exact
+  namespace equivalence.
+
+Collection check: 1530 `.milk` files in the user's supplied folder. After the
+namespace and pixel-coordinate fixes, 683 parsed and 268 first failed on
+`fShader`. With the explicit legacy-effect fallbacks and alpha-interval fix,
+**876 parse successfully**. This is **parse acceptance only**, not proof of
+complete rendering or playback. Cauldron painterly 3/4/5 and the original Geiss
+fixtures are also exercised through frame/pixel evaluation.
+
+Wave alpha modulation also no longer rejects reversed/equal endpoints. Reversed
+intervals use the Desktop signed division. Equal endpoints use a deterministic
+step (off at/below the threshold, ordinary alpha above it), avoiding division
+by zero. This zero-width-interval rule is an explicit PSP approximation.

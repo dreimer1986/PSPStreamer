@@ -157,7 +157,7 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(code,0,(error.line,error.key))
             self.assertEqual(preset.motion[0],alpha)
         for fields in (b'bMotionVectorsOn=1\nbMotionVectorsOn=0',b'bMotionVectorsOn=.5',
-                       b'bTexWrap=.5',b'bRedBlueStereo=2',b'bMotionVectorsOn=nan'):
+                       b'bTexWrap=.5',b'bRedBlueStereo=.5',b'bMotionVectorsOn=nan'):
             self.assertNotEqual(self.parse(b'[preset00]\n'+fields)[0],0)
 
     def test_geiss_export_names_and_ranges(self):
@@ -181,7 +181,10 @@ class PresetTests(unittest.TestCase):
         fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
                      ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
         for name in ('Geiss - Artifact 6d (junky warp distortion).milk','Geiss - Trampoline.milk',
-                     'Geiss - Explosion nz+.milk'):
+                     'Geiss - Explosion nz+.milk',
+                     'Geiss - Cauldron - painterly 3 (saturation remix).milk',
+                     'Geiss - Cauldron - painterly 4 (saturation remix).milk',
+                     'Geiss - Cauldron - painterly 5 (saturation remix).milk'):
             code,preset,error=self.parse((base/name).read_bytes())
             self.assertEqual(code,0,(name,error.line,error.key))
             state=PresetState();points=(Warp*81)()
@@ -223,9 +226,26 @@ class PresetTests(unittest.TestCase):
         out.wave_alpha=.2;out.wave_mod_alpha=1;out.wave_mod_start=0;out.wave_mod_end=1
         # Reference multiplies by >1 volume factors BEFORE the final clamp.
         self.assertAlmostEqual(opacity(ctypes.byref(out),0,3,3,3),.2*9*.333,places=5)
+        out.wave_mod_start=1;out.wave_mod_end=0
+        self.assertAlmostEqual(opacity(ctypes.byref(out),0,.5,.5,.5),.2*(1-1.5*.333),places=5)
+        out.wave_mod_start=out.wave_mod_end=.5
+        self.assertEqual(opacity(ctypes.byref(out),0,0,0,0),0)
+        self.assertAlmostEqual(opacity(ctypes.byref(out),0,1,1,1),.2,places=5)
         for key in ('fWaveScale','fWaveAlpha'):
             for bad in ('nan','inf','-inf','1e99','abc'):
                 self.assertNotEqual(self.parse(f'[preset00]\n{key}={bad}\n'.encode())[0],0)
+
+    def test_legacy_effect_fallbacks_are_explicit_not_unknown_field_skipping(self):
+        code,preset,error=self.parse(b'[preset00]\nfShader=.75\nbRedBlueStereo=1\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(self.evaluate(preset,0)[0],0)
+        for data in (b'fShader=nan',b'fShader=.5\nfShader=.7',b'fUnknownShader=1',
+                     b'bRedBlueStereo=.5'):
+            self.assertNotEqual(self.parse(b'[preset00]\n'+data)[0],0)
+        code,preset,_=self.parse(b'[preset00]\nbModWaveAlphaByVolume=1\n'
+                                b'per_frame_1=wave_mod_start=1; wave_mod_end=0;\n')
+        self.assertEqual(code,0)
+        self.assertEqual(self.evaluate(preset,0)[0],0)
 
     def test_reference_wave_scale_geometry(self):
         class Vertex(ctypes.Structure):
@@ -533,6 +553,46 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
             self.assertAlmostEqual(points[0].sx,.25)
             self.assertAlmostEqual(points[0].cx,1)
 
+    def test_coordinates_are_ordinary_global_locals(self):
+        code,preset,error=self.parse(b'[preset00]\nper_frame_init_1=rad=2; x=3; y=4;\n'
+                                    b'per_frame_1=ang=time*2; q1=cos(ang); q2=rad+x+y;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        for now in (0,.5,2,50):
+            self.assertEqual(self.evaluate_state(preset,state,now)[0],0)
+            self.assertAlmostEqual(state.frame_q[0],math.cos(now*2),places=5)
+            self.assertEqual(state.frame_q[1],9)
+        for name in ('x','y','rad','ang'):
+            self.assertEqual(self.parse(f'[preset00]\nper_pixel_1={name}=0;'.encode())[0],0)
+
+    def test_desktop_names_resolve_per_context(self):
+        # Names with register-like prefixes are normal variables unless they
+        # exactly identify a register. Case folding must not split state.
+        code,preset,error=self.parse(b'[preset00]\nper_frame_init_1=Q33=1; q01=2; reg100=3; t9=4; sample=5;\n'
+                                    b'per_frame_1=q1=q33+Q01+REG100+T9+sample;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertEqual(state.frame_q[0],15)
+        for prefix,locals_ in (
+                ('per_frame_',('x','y','rad','ang','sample','samples','value1','value2','q0','q33','q1x','reg100')),
+                ('per_pixel_',('wave_r','wave_a','sample','samples','value1','q33','t9','reg100')),
+                ('shape_0_per_frame',('zoom','wave_r','sample','samples','value1','t9','reg100')),
+                ('wave_0_per_frame',('zoom','x','y','rad','ang','sample','value1','t9','reg100')),
+                ('wave_0_per_point',('zoom','rad','ang','samples','t9','reg100'))):
+            for name in locals_:
+                code,preset,error=self.parse(f'[preset00]\n{prefix}1={name}=2;'.encode())
+                self.assertEqual(code,0,(prefix,name,error.line,error.key))
+        # Existing meanings remain unchanged: shape output, pixel coordinate,
+        # wave point input and global frame variable cannot alias each other.
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=zoom=1;\n'
+            b'shapecode_0_enabled=1\nshape_0_per_frame1=zoom=zoom+.1; x=zoom;\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        state=PresetState()
+        for i in range(1,4):
+            self.assertEqual(self.evaluate_state(preset,state,i)[0],0)
+            self.assertAlmostEqual(self.last_decor.shapes[0].x,i*.1)
+
     def test_runtime_errors_are_atomic(self):
         for source in ("rot=1/(time-1);", "warp=3e38*3e38;"):
             result, preset, _ = self.parse(f"[preset00]\nper_frame_1={source}".encode())
@@ -727,7 +787,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
             ("shapecode_0_textured",.5),("shapecode_0_per_frame1",0)):
             self.assertNotEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],0)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
-        self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],2)
+        self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],0)
 
     def test_stereo_script_wave(self):
         class Vertex(ctypes.Structure):
@@ -1062,7 +1122,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
             code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
             self.assertEqual(code,0)
             self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
-        for expr in ('time=2;','zoom=1;','t9=1;'):
+        for expr in ('time=2;',):
             self.assertNotEqual(self.parse(('[preset00]\nshape_0_per_frame1='+expr).encode())[0],0)
 
     def test_custom_wave_context_and_geometry(self):
@@ -1108,7 +1168,7 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
             self.assertEqual(code,0)
             self.assertEqual(getattr(preset.waves[0],{'bSpectrum':'spectrum'}.get(key,key)),
                              {'samples':512,'bSpectrum':1,'sep':128}[key])
-        for expr in ('sample=1;','value1=0;','samples=4;','time=0;'):
+        for expr in ('sample=1;','value1=0;','time=0;'):
             self.assertNotEqual(self.parse(('[preset00]\nwave_0_per_point1='+expr).encode())[0],0)
 
     def test_combined_pcm_fft_snapshot(self):
@@ -1214,7 +1274,7 @@ per_frame_1=wave_r=progress;
         for time in range(10): self.assertEqual(self.evaluate_state(preset,state,time)[1].warp,1)
 
     def test_init_q_validation_atomicity_and_budgets(self):
-        for name in ("q0","q33","q01","q999999999999999999999","q1x","fps"):
+        for name in ("fps",):
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
                       "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
@@ -1278,7 +1338,7 @@ per_frame_1=wave_r=progress;
         self.assertEqual(code,0)
         self.assertEqual(preset.symbols.count,64)
         self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1=extra=1;\n{lines}".encode())[0],2)
-        for name in ("fps","frame","x","rad","reg100","sin","q33"):
+        for name in ("fps","frame","sin"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0],0)
         self.assertEqual(self.parse(("[preset00]\nper_frame_1="+"a"*31+"=1;").encode())[0],0)
         self.assertNotEqual(self.parse(("[preset00]\nper_frame_1="+"a"*32+"=1;").encode())[0],0)
@@ -1320,6 +1380,19 @@ per_frame_1=wave_r=progress;
                 self.assertAlmostEqual(points[y*9+x].dx,x/8*.1,places=6)
                 self.assertAlmostEqual(points[y*9+x].dy,y/8*.1,places=6)
         self.assertEqual(points[40].rotation,0)
+        # Desktop permits coordinate assignments within one mesh point.
+        # Every subsequent point/evaluation starts with fresh coordinates.
+        code,modified,_=self.parse(b'[preset00]\nper_pixel_1=x=x*.5; y=1-y; rad=rad+1; ang=0;\n'
+                                  b'per_pixel_2=dx=x; dy=y; rot=ang; q1=rad;\n')
+        self.assertEqual(code,0)
+        for _ in range(2):
+            self.assertEqual(fn(ctypes.byref(modified),ctypes.byref(frame),0,None,
+                                ctypes.byref(state),points,ctypes.byref(error)),0)
+            for y in range(9):
+                for x in range(9):
+                    self.assertAlmostEqual(points[y*9+x].dx,x/16,places=6)
+                    self.assertAlmostEqual(points[y*9+x].dy,1-y/8,places=6)
+                    self.assertEqual(points[y*9+x].rotation,0)
         # A late grid-point failure cannot partially replace a prepared grid.
         code,preset,_=self.parse(b"[preset00]\nper_pixel_1=dx=.01/(1-x);\n")
         self.assertEqual(code,0)
@@ -1328,7 +1401,7 @@ per_frame_1=wave_r=progress;
         self.assertEqual(bytes(points),before)
 
     def test_pixel_restrictions_and_demo(self):
-        for formula in ("x=0;","wave_r=1;","dx=wave_r;"):
+        for formula in ("time=0;",):
             self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
         lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,26))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)

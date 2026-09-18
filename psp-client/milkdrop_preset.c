@@ -101,8 +101,10 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"bMaximizeWaveColor",0,1,&next.decor.wave_brighten},
         {"bWaveScaleAtLeft",0,0,NULL}, {"bWaveWaveformAtLeft",0,0,NULL},
         {"bMaxContrast",0,0,NULL}, {"bRoundWarp",0,0,NULL}, {"bDarkenCenter",0,1,&next.effects[0]},
-        {"bRedBlueStereo",0,0,NULL}, {"bBrighten",0,1,&next.effects[1]}, {"bDarken",0,1,&next.effects[2]},
-        {"bSolarize",0,1,&next.effects[3]}, {"bInvert",0,1,&next.effects[4]}, {"fShader",0,0,NULL},
+        /* Known unsupported visual effects: omit these layers, not the preset.
+         * fShader is legacy hue shading, distinct from HLSL source records. */
+        {"bRedBlueStereo",-FLT_MAX,FLT_MAX,NULL}, {"bBrighten",0,1,&next.effects[1]}, {"bDarken",0,1,&next.effects[2]},
+        {"bSolarize",0,1,&next.effects[3]}, {"bInvert",0,1,&next.effects[4]}, {"fShader",-FLT_MAX,FLT_MAX,NULL},
         {"fModWaveAlphaStart",0,4,&next.decor.wave_mod_start},
         {"fModWaveAlphaEnd",0,4,&next.decor.wave_mod_end},
         {"bModWaveAlphaByVolume",0,1,&next.decor.wave_mod_alpha},
@@ -342,8 +344,6 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     }
     next.wave_mode=(int)wave_mode; next.wrap=(int)wrap;
     if(old_motion_seen && !(extra_seen&1ULL))next.motion[0]=(float)old_motion_enabled;
-    if(next.decor.wave_mod_alpha && next.decor.wave_mod_end<=next.decor.wave_mod_start)
-        result=md_file_error(error,MD_FILE_INVALID,number,"wave alpha range");
     if (next.wave_mode>=0) next.legacy=1;
     if (!section || (!seen && !extra_seen && !old_motion_seen && !next.program.count && !next.init_program.count && !next.pixel_program.count &&
         !(shape_seen[0]|shape_seen[1]|shape_seen[2]|shape_seen[3]) &&
@@ -452,8 +452,6 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
         v[30+i]=(i>=3 && i<=7)?fabsf(value)>=.00001f:md_limit(value,lo,hi);
         if(i==12)v[30+i]=floorf(v[30+i]);
     }
-    if(v[37] && v[39]<=v[38])
-        return md_file_error(error,MD_FILE_INVALID,0,"wave alpha range");
     float mode=v[PM_DYNAMIC_BASE];
     int mode_line=pm_assignment_line(&p->program,PM_DYNAMIC_BASE);
     if(!isfinite(mode))

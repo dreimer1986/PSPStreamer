@@ -31,8 +31,10 @@ float md_wave_opacity(const MdDecor *d,int mode,float bass,float mid,float trebl
     if(mode==3)alpha=.15*1.3*treble*treble;
     if(d->wave_mod_alpha) {
         double span=(double)d->wave_mod_end-d->wave_mod_start;
-        if(span<=0)return 0; /* loader/evaluator also reject this interval */
-        alpha*=(((double)bass+mid+treble)*.333-d->wave_mod_start)/span;
+        double level=((double)bass+mid+treble)*.333-d->wave_mod_start;
+        /* Negative intervals invert modulation on Desktop. Equal endpoints
+         * use a deterministic PSP step instead of dividing by zero. */
+        alpha*=span!=0?level/span:(level>0?1:0);
     }
     if(alpha<=0)return 0;
     if(alpha>=1)return 1;

@@ -13,6 +13,12 @@ Empty/comment-only numbered equation records are accepted; numbering and real
 syntax errors are still checked. Global/pixel `t` names are ordinary named
 variables, distinct from custom shape/wave t1–t8 registers. Shader-only blur
 metadata (`b1n` … `b3x`, `b1ed`) is validated but unused with shaders skipped.
+Global init/frame code also permits ordinary locals named `x`, `y`, `rad` and
+`ang`, as used by Cauldron painterly 5. In pixel formulas these are initialized
+per mesh point and may be changed for subsequent equations in that point.
+Shape fields keep their existing meaning. Names not registered in a context
+become ordinary locals there; `zoom` inside shape code does not change global
+zoom. Register-like names outside actual q1–32/t1–8/reg00–99 are ordinary locals.
 Zoom exponent supports the original editor range 0.01–100 in static, frame and
 pixel contexts; this is an explicit supported range, not a claim that the
 desktop file importer rejects values outside it. Motion-vector density follows
@@ -149,8 +155,12 @@ safe PSP ranges; arbitrary desktop ranges, unbounded loops/allocations, multilin
 comments spanning separate preset entries and desktop host/plugin APIs are not
 provided. Audio analysis is normalized for this player. The renderer retains
 snapshot transitions rather than running two full preset engines simultaneously.
-Obsolete flags without an active path in the reference MilkDrop 2 renderer are
-not silently accepted as implemented effects.
+The legacy `fShader` hue effect and red/blue stereo flag are validated but
+silently omitted; the remaining preset is retained. This does not claim those
+effects are implemented. Other unknown fields still report errors.
+
+Reversed wave-alpha modulation endpoints follow the Desktop's signed interval.
+Equal endpoints use a safe step instead of division by zero (an approximation).
 
 Still excluded: warp/composite shaders, shader blur stages, arbitrary shader
 texture sampling, random texture selection, animated textures and desktop

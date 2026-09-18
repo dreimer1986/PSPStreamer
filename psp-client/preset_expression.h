@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Private recursive-descent compiler for bounded EEL expressions. */
 static int writable(Parser *p,int id) {
+    /* Desktop pixel coordinates are initialized per mesh point, but remain
+     * writable EEL values for subsequent equations in that same point. */
+    if(p->pixel==1 && id>=PM_COORD_BASE && id<PM_COORD_BASE+4)return 1;
     if(id==PM_MONITOR || id==PM_WRAP) return p->pixel==0;
     if(id<0 || id>=PM_ENGINE_BASE || (id>=9 && id<23) ||
        (id>=PM_COORD_BASE && id<PM_DYNAMIC_BASE) ||
