@@ -196,8 +196,14 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         if (current_duration_seconds > 0.0f)
             tv_text(34, 160, 38, 1, TV_MUTED, tr(TXT_DURATION), (int)current_duration_seconds / 60, (int)current_duration_seconds % 60);
         else tv_text(34, 160, 38, 2, TV_MUTED, "%s", tr(TXT_DURATION_UNKNOWN));
-        tv_text(34, 200, 38, 1, TV_MUTED, tr(TXT_AUDIO_TRACKS), audio_track_count);
-        tv_text(34, 228, 38, 1, TV_MUTED, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+        if(items[selected].is_audio) {
+            tv_text(34,200,38,1,TV_WHITE,"%s",current_media_title);
+            tv_text(34,228,38,1,TV_MUTED,"%s",current_media_artist);
+            tv_text(34,256,38,1,TV_MUTED,"%s",current_media_album);
+        } else {
+            tv_text(34, 200, 38, 1, TV_MUTED, tr(TXT_AUDIO_TRACKS), audio_track_count);
+            tv_text(34, 228, 38, 1, TV_MUTED, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+        }
         tv_text(562, 66, 10, 1, TV_AMBER, "%s", tr(TXT_STREAMS));
         for (i = 0; i < audio_track_count && i < 6; i++)
             tv_text(562, 94 + i * 18, 10, 1, TV_WHITE, "A%d %s", i + 1, audio_tracks[i].language);
@@ -209,7 +215,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         tv_rect(&tv_canvas, 32, 105 + row * (audio_only ? 60 : 40), 498, audio_only ? 48 : 38, 0x003B4824);
         if (audio_only) {
             tv_text(34, 110, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-            tv_text(34, 170, 38, 2, TV_WHITE, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
+            if(audio_only!=2)tv_text(34, 170, 38, 2, TV_WHITE, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
         } else {
             tv_text(34, 110, 38, 2, TV_WHITE, tr(TXT_AUDIO_LABEL),
                 audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),

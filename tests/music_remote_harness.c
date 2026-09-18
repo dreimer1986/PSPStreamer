@@ -109,5 +109,15 @@ int main(int argc,char **argv) {
     count_reply = 1; remote_control_running = 1;
     remote_control_thread(0, NULL);
     assert(remote_control_action == 1 && remote_control_sequence == 11);
+    reset();
+    strcpy(music_radio_id,"radio.0123456789abcdef0123456789abcdef");
+    music_radio_ready=0;
+    replies[0]="{\"seq\":10,\"action\":\"idle\",\"radio_station\":\"MiniDisc Player\",\"radio_title\":\"Björk - Song\"}";
+    count_reply=1;
+    assert(music_remote_start()==0);music_remote_worker(0,NULL);
+    assert(music_radio_ready && !strcmp(music_radio_station,"MiniDisc Player"));
+    assert(!strcmp(music_radio_title,"Björk - Song"));
+    assert(remote_control_sequence==10 && music_remote_action==MUSIC_REMOTE_NONE);
+    music_remote_stop();music_radio_id[0]=0;music_radio_ready=0;
     return 0;
 }

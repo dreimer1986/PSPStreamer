@@ -29,7 +29,7 @@ class TvGuiTests(unittest.TestCase):
 
     def test_music_priority_scope_and_initial_draw_precede_audio(self):
         source = (ROOT / "psp-client/main.c").read_text()
-        music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         self.assertLess(music.index("tv_draw_music(title, 0);"),
                         music.index('sceKernelCreateThread("PSPStreamerMusic"'))
         self.assertLess(music.index("lcd_draw_music(title, 0);"),

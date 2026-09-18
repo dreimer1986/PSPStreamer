@@ -2,6 +2,7 @@
 set -euo pipefail
 export MEDIA_ROOTS=/media
 export PSP_STREAMER_DOWNLOAD_DIR=/data/downloads
+export PSP_STREAMER_RADIO_DIR=/data
 export PORT="$(bashio::config 'port')"
 export MAX_TRANSCODES="$(bashio::config 'max_transcodes')"
 export PSP_STREAMER_PASSWORD="$(bashio::config 'password')"

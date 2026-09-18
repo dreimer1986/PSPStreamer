@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import re
+import select
 import unicodedata
 import zipfile
 from contextlib import ExitStack
@@ -29,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .pgs import PgsCue, parse_pgs
 from .settings import PasswordSettings
+from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -374,6 +376,10 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/radio':
+                return self.send_json(self.server.radio.list())
+            if parsed.path.startswith('/api/radio/status/'):
+                return self.send_json(self.server.radio.status(parsed.path.rsplit('/', 1)[-1]))
             if parsed.path == '/api/offline/preferences':
                 return self.send_json(self.server.offline.preferences())
             if parsed.path == "/api/offline/jobs":
@@ -401,11 +407,26 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == "/api/remote/next":
                 after = max(0, int(query.get("after", ["0"])[0]))
-                return self.send_json(self.server.remote_after(after))
+                reply = self.server.remote_after(after)
+                if query.get('radio'):
+                    try:
+                        reply.update(self.server.radio.status(query['radio'][0]))
+                    except ValueError:
+                        pass  # A removed sender must not block Stop/Play commands.
+                return self.send_json(reply)
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
-                return self.send_json(self.server.library.browse(root, query.get("path", [""])[0]))
+                path = query.get("path", [""])[0]
+                if path == RADIO_PATH:
+                    return self.send_json(self.server.radio.browse(root))
+                listing = self.server.library.browse(root, path)
+                if not path:
+                    listing['folders'].insert(0, {'name': 'Internet radio', 'path': RADIO_PATH})
+                return self.send_json(listing)
             if parsed.path.startswith("/api/media-next/"):
+                if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
+                    self.server.radio.get(parsed.path.rsplit('/', 1)[-1])
+                    return self.send_json({})
                 return self.send_json(self.server.library.next_media(
                     parsed.path.rsplit("/", 1)[-1], query.get("shuffle", ["0"])[0] == "1",
                     query.get("direction", ["next"])[0] == "previous"))
@@ -492,6 +513,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.settings.change(settings.get("current", ""), settings.get("password"))
                 return self.send_json({"ok": True})
             if parsed.path != "/api/remote/command":
+                if parsed.path == '/api/radio':
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 2 <= length <= 8192:
+                        self.close_connection = True
+                        raise ValueError('Invalid station settings length')
+                    return self.send_json(self.server.radio.change(json.loads(self.rfile.read(length))))
                 return self.send_error_json(HTTPStatus.NOT_FOUND, "Not found")
             length = int(self.headers.get("Content-Length", "0"))
             if not 2 <= length <= 8192:
@@ -507,12 +534,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 token = command.get("id")
                 if not isinstance(token, str) or len(token) > 1024:
                     raise ValueError("Invalid media id")
-                source = self.server.library.decode(token)[1]
+                live = token.startswith('radio.')
+                source = None if live else self.server.library.decode(token)[1]
+                station = self.server.radio.get(token) if live else None
                 clean["id"] = token
-                clean["kind"] = "audio" if source.suffix.lower() in AUDIO_EXTENSIONS else "video"
+                clean["kind"] = "audio" if live or source.suffix.lower() in AUDIO_EXTENSIONS else "video"
                 clean["audio"] = max(0, min(7, int(command.get("audio", 0))))
                 clean["subtitle"] = max(-1, min(31, int(command.get("subtitle", -1))))
                 clean["start"] = max(0, min(86400, int(command.get("start", 0))))
+                if live:
+                    clean.update(live=True, name=display_text(station['name']), audio=0, subtitle=-1, start=0)
                 for name, allowed in (("audio_quality", {"96k", "128k", "160k", "v6", "v5", "v4", "v3"}),
                                       ("video_fps", {"20", "24000/1001"})):
                     if name in command:
@@ -619,12 +650,15 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def metadata(self, token: str) -> None:
+        if token.startswith('radio.'):
+            station = self.server.radio.get(token)
+            return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
         cached = self.server.metadata_cache.get(token)
         if cached is not None:
             return self.send_json(cached)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title", "-of", "json", str(source)],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_tags=language,title,artist,album,album_artist", "-of", "json", str(source)],
             capture_output=True, text=True, timeout=20, check=False,
         )
         if result.returncode:
@@ -641,6 +675,18 @@ class AppHandler(BaseHTTPRequestHandler):
                 subtitles.append({"n": str(len(subtitles)), "l": language, "t": title})
         duration = json.loads(result.stdout).get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
+        if source.suffix.lower() in AUDIO_EXTENSIONS:
+            probe = json.loads(result.stdout)
+            tags = {}
+            for stream in streams:
+                if stream.get('codec_type') == 'audio':
+                    tags = {k.lower(): v for k, v in stream.get('tags', {}).items()}
+                    break
+            tags.update({k.lower(): v for k, v in probe.get('format', {}).get('tags', {}).items() if v})
+            title = display_text(tags.get('title') or source.name)
+            artist = display_text(tags.get('artist') or tags.get('album_artist'))
+            payload.update(title=title, artist=artist, album=display_text(tags.get('album')),
+                           name=display_text(f'{artist} - {title}' if artist else title, 126))
         # ffprobe can take a few seconds when an SMB share or its disk has
         # just spun up.  Track layouts do not change while a PSP session is
         # active, so retain this tiny response for subsequent openings.
@@ -743,10 +789,14 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20") -> None:
-        source = self.server.library.decode(token)[1]
+        live = token.startswith('radio.')
+        if live and (container != 'mp3' or start_seconds or subtitle_track != -1):
+            raise ValueError('Radio supports live MP3 playback only (no seek or subtitles)')
+        source = self.server.radio.get(token)['url'] if live else self.server.library.decode(token)[1]
         if not self.server.transcode_slots.acquire(blocking=False):
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
+        radio_lease = None
         try:
             # A PSP that crashes or suspends mid-stream can otherwise leave a
             # blocking socket write and monopolise the sole transcode slot.
@@ -771,8 +821,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
                 if not subtitle_source.exists():
                     os.symlink(source, subtitle_source)
+            command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)
+            if live:
+                radio_lease = self.server.radio.begin(token)
             process = subprocess.Popen(
-                ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps),
+                command,
                 # Use the host's already-populated fontconfig cache.  The
                 # earlier private cache avoided a directory scan but made
                 # libass rebuild its font database for every transcode on
@@ -780,7 +833,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 # stderr was never consumed.  A libass warning repeated for
                 # each subtitle event can fill that pipe and consequently
                 # stop ffmpeg's video writer after only a few seconds.
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE if live else subprocess.DEVNULL,
             )
             self.send_response(HTTPStatus.OK)
             content_type = {"flv": "video/x-flv", "mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
@@ -789,6 +842,32 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             assert process.stdout is not None
+            if live:
+                # Poll the client as well: Stop during an upstream stall must
+                # release this transcode slot without waiting for more audio.
+                self.close_connection = True
+                self.connection.settimeout(10)
+                last_data = time.monotonic()
+                icy = IcyLogReader(self.server.radio, token, radio_lease)
+                watched = [process.stdout, process.stderr, self.connection]
+                while time.monotonic() - last_data < 25:
+                    ready, _, _ = select.select(watched, [], [], 1)
+                    if self.connection in ready:
+                        break
+                    if process.stderr in ready:
+                        data = os.read(process.stderr.fileno(), 4096)
+                        if data:
+                            icy.feed(data)
+                        else:
+                            watched.remove(process.stderr)
+                    if process.stdout in ready:
+                        chunk = os.read(process.stdout.fileno(), 4096)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                        last_data = time.monotonic()
+                return
             # read() waits until its complete request is filled. For low-rate
             # MJPEG that used to batch several frames into a 64-KB burst, so
             # the PSP paused and then caught up. read1() returns what ffmpeg
@@ -801,6 +880,8 @@ class AppHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             pass
         finally:
+            if radio_lease:
+                self.server.radio.end(token, radio_lease)
             if process and process.poll() is None:
                 process.send_signal(signal.SIGTERM)
                 try:
@@ -810,6 +891,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     process.wait()
             if process and process.stdout:
                 process.stdout.close()
+            if process and process.stderr:
+                process.stderr.close()
             self.server.transcode_slots.release()
 
 
@@ -829,6 +912,8 @@ class AppServer(ThreadingHTTPServer):
             self.tls_context.load_cert_chain(cert, key)
         super().__init__(address, AppHandler)
         self.library = library
+        self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
+            os.environ.get('PSP_STREAMER_SETTINGS_DIR') or str(Path.home() / '.cache/psp-streamer'))
         self.metadata_cache: dict[str, object] = {}
         self.subtitle_cache: dict[tuple[str, int], object] = {}
         self.subtitle_cache_lock = threading.Lock()

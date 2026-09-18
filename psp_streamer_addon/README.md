@@ -4,6 +4,12 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.33** adds Internet radio management in the web UI, a radio folder
+on the PSP, ICY sender/current-title display and ID3 music tags. Install the
+matching PSP build. Station URLs persist in `/data/radio.json`; no additional
+app options are required. Pause disconnects radio, Resume rejoins live. Ordinary
+Docker has identical features. Use trusted sender URLs and the server password.
+
 Version **0.1.32** removes the obsolete synthetic A/V calibration streams and
 hardens media root validation. Ordinary media conversion/playback is unchanged.
 The PSP debug switch is a client setting, not an app/server option.

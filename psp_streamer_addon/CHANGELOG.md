@@ -1,3 +1,10 @@
+# 0.1.33
+
+- Persistent Internet radio station management and virtual radio library.
+- Direct HTTP(S) audio and bounded M3U/PLS resolution, live MP3 transcoding.
+- Same radio/server/web features as ordinary Docker; stations persist in /data.
+- ICY/Shoutcast current titles and sender names; ID3/container music tags.
+
 # 0.1.32
 
 - Remove obsolete synthetic A/V calibration streams and their special routes.

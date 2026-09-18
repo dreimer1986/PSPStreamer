@@ -359,6 +359,8 @@ static BitmapCue *bitmap_cues;
 static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1, bitmap_bytes;
 static int subtitle_client_side;
 static float current_duration_seconds;
+static char current_media_name[TITLE_SIZE], current_media_title[192];
+static char current_media_artist[192], current_media_album[192];
 static int playback_reached_end;
 static volatile int playback_paused;
 static int video_fullscreen = 1;
@@ -551,10 +553,11 @@ void setup_callbacks(void) {
     if (thread_id >= 0) sceKernelStartThread(thread_id, 0, NULL);
 }
 
+static int radio_connect_wait;
 static int wifi_wait_tick(void) {
     SceCtrlData pad;
     sceCtrlPeekBufferPositive(&pad,1);
-    if(pad.Buttons & PSP_CTRL_CIRCLE)return 1;
+    if(pad.Buttons & PSP_CTRL_CIRCLE || (radio_connect_wait && (pad.Buttons & PSP_CTRL_START)))return 1;
     keep_awake();
     sceKernelDelayThreadCB(100000);
     return 0;
@@ -627,7 +630,7 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
 
 static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
     struct sockaddr_in server;
-    char request[2048], header[4096], *body;
+    char request[2048], header[4096], *body = NULL;
     int socket_fd, received = 0, header_size = 0, body_size, content_length = -1, idle_ms = 0;
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) return -1;
@@ -1405,7 +1408,7 @@ static void gui_library_shell(const char *section);
 
 static int audio_thread(SceSize args, void *argp) {
     struct sockaddr_in server;
-    char request[2048], header[4096], *body;
+    char request[2048], header[4096], *body = NULL;
     int socket_fd = -1, header_size = 0, received, output_thread_id = -1;
     TimedPacket timed_packet = {0};
     unsigned int block_pts = 0;
@@ -1440,6 +1443,11 @@ static int audio_thread(SceSize args, void *argp) {
     if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { audio_state = -12; goto cleanup; }
     if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { audio_state = -13; goto cleanup; }
     while (header_size < (int)sizeof(header) - 1) {
+        if(!strncmp(audio_media_id,"radio.",6)) {
+            if(!audio_running)goto cleanup;
+            received=stream_recv(socket_fd,header+header_size,sizeof(header)-1-header_size,250);
+            if(received==-2)continue;
+        } else
         received = (int)connection_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
         if (received <= 0) { audio_state = -14; goto cleanup; }
         header_size += received; header[header_size] = '\0'; body = strstr(header, "\r\n\r\n");
@@ -1581,6 +1589,7 @@ cleanup:
 #include "tv_gui.h"
 #include "lcd_music.h"
 #include "spectrum_fullscreen.h"
+#include "music_caption.h"
 #include "video_controls.h"
 
 static void draw_fullscreen_spectrum(void) {
@@ -1611,8 +1620,19 @@ static int json_integer(const char *from, const char *key, int fallback);
  * Video uses its own presentation state; application restart resets these. */
 static int music_saved_visual_preset;
 static int music_saved_fullscreen;
+/* 1: reconnect at live edge; 2: paused with all network/codec resources freed. */
+static int radio_next_action;
+static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
-static int play_audio(const char *media_id, const char *title) {
+static int play_audio_once(const char *media_id, const char *title) {
+    int live=radio_is_live(media_id), last_radio_blocks=0;
+    char radio_station[192],radio_song[192]="";
+    snprintf(radio_station,sizeof(radio_station),"%s",title);
+    snprintf(music_radio_id,sizeof(music_radio_id),"%s",live?media_id:"");
+    music_radio_ready=0;
+    unsigned long long radio_progress=sceKernelGetSystemTimeWide();
+    radio_next_action=0;
+    if(live)stream_start_seconds=0;
     video_file_direction=0;
     int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
     int previous_ui_priority = -1;
@@ -1673,6 +1693,8 @@ static int play_audio(const char *media_id, const char *title) {
         else visual_preset = 0;
     }
     if (fullscreen && !music_visual_active) draw_fullscreen_spectrum();
+    /* A held Select that resumed live radio must not immediately pause again. */
+    { SceCtrlData initial; sceCtrlPeekBufferPositive(&initial,1); old=initial.Buttons; }
     audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, server_https?0x10000:0x4000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
@@ -1691,6 +1713,10 @@ static int play_audio(const char *media_id, const char *title) {
         SceCtrlData pad;
         int action = music_remote_action;
         int seek_seconds = music_remote_seconds;
+        if(live && action==MUSIC_REMOTE_SEEK) {music_remote_action=0;action=0;}
+        if(live && action==MUSIC_REMOTE_PAUSE) {
+            radio_next_action=2;stopped_by_user=1;break;
+        }
         if (action == MUSIC_REMOTE_PAUSE || action == MUSIC_REMOTE_RESUME) {
             paused = action == MUSIC_REMOTE_PAUSE;
             audio_start = !paused;
@@ -1706,6 +1732,17 @@ static int play_audio(const char *media_id, const char *title) {
             break;
         }
         if (action) music_remote_action = MUSIC_REMOTE_NONE;
+        if(live && music_radio_ready) {
+            __sync_synchronize();
+            snprintf(radio_station,sizeof(radio_station),"%s",music_radio_station);
+            snprintf(radio_song,sizeof(radio_song),"%s",music_radio_title);
+            __sync_synchronize();music_radio_ready=0;
+        }
+        if(live) {
+            unsigned long long now=sceKernelGetSystemTimeWide();
+            if(audio_played_blocks!=last_radio_blocks) {last_radio_blocks=audio_played_blocks;radio_progress=now;}
+            if(now-radio_progress>30000000ULL)break;
+        }
         keep_awake();
         /* A true visualizer fullscreen owns all visible pixels. Do not draw
          * receiver controls between GU frames (including throttled frames). */
@@ -1718,6 +1755,8 @@ static int play_audio(const char *media_id, const char *title) {
             else lcd_draw_music(title, fullscreen);
         }
         if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
+        if(live)music_caption(radio_station,radio_song,fullscreen);
+        else if(current_media_title[0])music_caption(current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title,fullscreen);
         if(!audio_start) next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
         if(sequence && music_preset_auto && visual_preset==4 && (music_visual_active || preset_result!=MD_FILE_OK) && audio_start &&
            (unsigned long long)sceKernelGetSystemTimeWide()>=next_preset_tick) {
@@ -1793,7 +1832,10 @@ static int play_audio(const char *media_id, const char *title) {
             stopped_by_user = 1;
             break;
         }
-        if ((pad.Buttons & PSP_CTRL_SELECT) && !(old & PSP_CTRL_SELECT)) { paused = !paused; audio_start = !paused; }
+        if ((pad.Buttons & PSP_CTRL_SELECT) && !(old & PSP_CTRL_SELECT)) {
+            if(live) {radio_next_action=2;stopped_by_user=1;break;}
+            paused = !paused; audio_start = !paused;
+        }
         if (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN)) {
             unsigned int direction = (pad.Buttons & PSP_CTRL_UP) ? PSP_CTRL_UP : PSP_CTRL_DOWN;
             unsigned long long now = sceKernelGetSystemTimeWide();
@@ -1858,13 +1900,57 @@ static int play_audio(const char *media_id, const char *title) {
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song
      * end, just as video uses its rendered-frame clock. */
-    if (!stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
+    if (!live && !stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
         remote_result >= 0 &&
         stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
     music_ui_restore_priority(previous_ui_priority);
     video_watch_stop();
+    if(live && !stopped_by_user && remote_result>=0)radio_next_action=1;
     return remote_result < 0 ? remote_result : audio_state < 0 ? audio_state : 0;
+}
+
+/* Every retry joins the old workers and releases the codec first. The waiting
+ * screen owns no audio socket, PCM queue or GU list. Never autoplay a station. */
+static int play_audio(const char *media_id,const char *title) {
+    int result;
+    do {
+        result=play_audio_once(media_id,title);
+        if(!radio_is_live(media_id) || !radio_next_action)return result;
+        int paused=radio_next_action==2;
+        unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
+        unsigned int old=~0U;
+        lcd_music_reset();tv_music_reset();
+        const char *message=tr(paused?TXT_RADIO_PAUSED:TXT_RADIO_RECONNECT);
+        if(tv_ui_active)tv_draw_music(message,0);else lcd_draw_music(message,0);
+        if(music_remote_start()<0)return result<0?result:-1;
+        while(1) {
+            SceCtrlData pad;keep_awake();sceCtrlPeekBufferPositive(&pad,1);
+            int action=music_remote_action;
+            if(action==MUSIC_REMOTE_STOP || action==MUSIC_REMOTE_PLAY ||
+               ((pad.Buttons & (PSP_CTRL_START|PSP_CTRL_CIRCLE)) & ~old)) {
+                music_remote_stop();return 0;
+            }
+            if(action==MUSIC_REMOTE_PAUSE && !paused) {
+                paused=1;lcd_music_reset();tv_music_reset();
+                if(tv_ui_active)tv_draw_music(tr(TXT_RADIO_PAUSED),0);else lcd_draw_music(tr(TXT_RADIO_PAUSED),0);
+            }
+            if(action==MUSIC_REMOTE_RESUME ||
+               ((pad.Buttons & (PSP_CTRL_SELECT|PSP_CTRL_CROSS|PSP_CTRL_SQUARE)) & ~old) ||
+               (!paused && (unsigned long long)sceKernelGetSystemTimeWide()>=retry))break;
+            music_remote_action=0;old=pad.Buttons;sceKernelDelayThread(20000);
+        }
+        music_remote_stop();
+        int state=0;
+        if(sceNetApctlGetState(&state)<0 || state!=PSP_NET_APCTL_STATE_GOT_IP) {
+            radio_connect_wait=1;
+            int connected=wait_for_network_restore();
+            radio_connect_wait=0;
+            if(connected<0)return 0;
+        }
+        stream_start_seconds=0;resume_pending=seek_requested=0;
+        sceKernelDelayThread(250000);
+    } while(1);
 }
 
 static int play_h264(const char *media_id) {
@@ -2303,9 +2389,15 @@ static void load_media_metadata(const char *media_id) {
     int result;
     snprintf(path, sizeof(path), "/api/metadata/%s", media_id);
     current_duration_seconds = 0.0f;
+    current_media_name[0]=0;
+    current_media_title[0]=current_media_artist[0]=current_media_album[0]=0;
     result = http_get(path, response, sizeof(response));
     audio_track_count = subtitle_track_count = 0;
     if (result < 0) return;
+    json_value(response,"name",current_media_name,sizeof(current_media_name));
+    json_value(response,"title",current_media_title,sizeof(current_media_title));
+    json_value(response,"artist",current_media_artist,sizeof(current_media_artist));
+    json_value(response,"album",current_media_album,sizeof(current_media_album));
     parse_stream_tracks("\"a\":[", audio_tracks, &audio_track_count);
     parse_stream_tracks("\"s\":[", subtitle_tracks, &subtitle_track_count);
     current_duration_seconds = json_value(response, "d", duration, sizeof(duration)) ? (float)atof(duration) : 0.0f;
@@ -2421,6 +2513,7 @@ static void parse_library(void) {
         char *object = strchr(cursor, '{');
         if (!object || !json_value(object, "name", items[item_count].title, TITLE_SIZE)) break;
         if (!json_value(object, "path", items[item_count].value, ID_SIZE)) break;
+        if(!strcmp(items[item_count].value,":radio:"))snprintf(items[item_count].title,TITLE_SIZE,"%s",tr(TXT_RADIO));
         items[item_count].is_folder = 1;
         item_count++;
         cursor = strchr(object, '}');
@@ -2650,8 +2743,14 @@ static void media_info(int selected) {
             if (current_duration_seconds > 0.0f)
                 gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
             else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
-            gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
-            gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+            if(items[selected].is_audio) {
+                gui_text(38,112,0x00FFFFFF,"%.39s",current_media_title);
+                gui_text(38,126,0x008A9BAA,"%.39s",current_media_artist);
+                gui_text(38,140,0x008A9BAA,"%.39s",current_media_album);
+            } else {
+                gui_text(38, 112, 0x008A9BAA, tr(TXT_AUDIO_TRACKS), audio_track_count);
+                gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
+            }
             gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
             if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
             for (i = 0; i < audio_track_count && i < 6; i++)
@@ -2692,7 +2791,7 @@ static int playback_options(int audio_only) {
                 if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
                 if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
                 gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-                gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
+                if(audio_only!=2)gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
                 gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
                 gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
                 gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
@@ -2725,8 +2824,8 @@ static int playback_options(int audio_only) {
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
-        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % 2;
-        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 2;
+        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % (audio_only==2?1:2);
+        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % (audio_only==2?1:2);
         if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 4) % 5;
         if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 5;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
@@ -2823,7 +2922,7 @@ int main(void) {
                 snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 do {
-                    result = remote_is_audio ? play_audio(remote_media_id, "Remote stream") : play_h264(remote_media_id);
+                    result = remote_is_audio ? play_audio(remote_media_id, current_media_name[0]?current_media_name:"Remote stream") : play_h264(remote_media_id);
                     if (result < 0) break;
                     if (resume_pending && seek_requested) {
                         seek_requested = 0;
@@ -2948,7 +3047,7 @@ int main(void) {
                 stream_start_seconds = 0;
                 show_metadata_loading();
                 load_media_metadata(items[selected].value);
-                if (!playback_options(items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
+                if (!playback_options(radio_is_live(items[selected].value)?2:items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
                 if(!items[selected].is_audio && download_before_play) {
                     offline_enqueue_play(items[selected].value);
                     dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;

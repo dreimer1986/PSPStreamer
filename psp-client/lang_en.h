@@ -155,4 +155,8 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_MUSIC_ENDED] = "Music ended | Audio %d",
     [TXT_VIDEO_ENDED] = "Video ended: %d frames",
     [TXT_NEXT_EPISODE] = "Next episode: %.58s",
-    [TXT_NEXT_TRACK] = "Next track: %.58s"};
+    [TXT_NEXT_TRACK] = "Next track: %.58s",
+
+    [TXT_RADIO] = "Internet radio",
+    [TXT_RADIO_PAUSED] = "Radio paused - SELECT: live START: stop",
+    [TXT_RADIO_RECONNECT] = "Radio retry in 5s - START: stop"};

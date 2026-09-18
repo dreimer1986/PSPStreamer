@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MilkDropTests(unittest.TestCase):
     def test_square_only_toggles_spectrum_and_file_preset(self):
         source=(ROOT / "psp-client/main.c").read_text()
-        music=source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        music=source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         block=music[music.index("if ((pad.Buttons & PSP_CTRL_SQUARE)"):]
         block=block[:block.index("old = pad.Buttons;")]
         harness=(ROOT / "tests/music_visual_toggle.c").read_text().replace("/* SQUARE_BLOCK */",block)
@@ -55,7 +55,7 @@ class MilkDropTests(unittest.TestCase):
 
     def test_opt_in_and_teardown(self):
         source = (ROOT / "psp-client/main.c").read_text()
-        music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         self.assertIn("music_visual_active = 0;", music)
         self.assertIn("visual_preset == 4", music)
         self.assertLess(music.index("md_load_preset("), music.index("sceKernelCreateThread("))
@@ -75,7 +75,7 @@ class MilkDropTests(unittest.TestCase):
 
     def test_music_view_survives_track_replacement_without_retaining_gu(self):
         source = (ROOT / "psp-client/main.c").read_text()
-        music = source[source.index("static int play_audio("):source.index("static int play_h264(")]
+        music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         self.assertIn("fullscreen = music_saved_fullscreen", music)
         self.assertIn("visual_preset = music_saved_visual_preset == 4 ? 4 : 0", music)
         self.assertIn("music_saved_fullscreen = fullscreen;", music)

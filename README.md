@@ -2,6 +2,54 @@
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
+### Internet radio and music tags (server 0.1.33)
+
+Update the server **and the PSP build**. In the web UI, open **Internet radio —
+manage stations**, enter a name and a direct HTTP(S) audio URL, then save.
+Stations appear in the PSP's **Internet radio / Internetradio** library folder;
+press Square to refresh. Select a station, choose audio quality and start it.
+The web remote can select/play stations and replace music/video playback too.
+
+- Direct MP3, AAC, Ogg/Opus/Vorbis, FLAC and WAV inputs use the existing
+  44.1-kHz stereo MP3 output and quality settings. Existing file encoding is
+  unchanged. Simple URL-based `.m3u` and `.pls` lists resolve their first entry
+  (up to 64 KiB, bounded nesting). HLS/M3U8 and HTML-page scraping are excluded.
+- **Select** pauses by disconnecting. Select/X resumes at the live programme;
+  **Start** stops. The web Pause/Resume/Stop buttons do the same. Radio has no
+  seek, download, shuffle or automatic next-station playback. Spectrum and
+  MilkDrop work as for music; fullscreen visualizations stay overlay-free.
+- Interrupted radio playback shows a retry screen and reconnects after five
+  seconds; Square/X can retry sooner, Start/Circle cancels. If Wi-Fi association
+  itself fails, return to the library and use its existing Square reconnect.
+  Silent senders are detected after 30 seconds without audio progress, not
+  mistaken for the end of a song. No file/video timeouts were shortened.
+- ICY/Shoutcast `StreamTitle` and `icy-name` are requested on the actual audio
+  connection. Titles appear in the web remote and normal PSP music view.
+  Missing metadata falls back to the saved station name. UTF-8 and legacy
+  Windows-1252 text are handled; titles can lead audible playback by the small
+  transcode/audio buffer. No exact ICY-title timestamp synchronization is claimed.
+- Music files now display **title and artist** from ID3/container tags, falling
+  back to the filename. The file-information screen (Triangle) also shows the
+  album. MP3 ID3 and equivalent FFprobe-readable FLAC/Ogg/M4A tags are supported;
+  embedded artwork and tag editing are not included.
+
+Stations persist in `radio.json`: `/data/radio.json` in Docker and Home Assistant.
+For standalone Python, use `PSP_STREAMER_RADIO_DIR`, otherwise
+`PSP_STREAMER_SETTINGS_DIR`, otherwise `~/.cache/psp-streamer`. Keep the Docker
+`/data` volume mounted. HA 0.1.33 and ordinary Docker ship identical server/UI
+features. Sender edits do not interrupt an already playing connection; restart
+that sender to apply its changed URL.
+
+Radio management is protected by the existing server password and same-origin
+JSON rules. Only configure trusted URLs: fetching stations intentionally permits
+access to LAN senders, including HA-NetMD. Do not expose an unprotected server.
+URLs stay on the server; PSP clients receive opaque station IDs. Basic auth
+credentials inside sender URLs are not supported. Stream redirects are limited
+to FFmpeg's HTTP(S) transport; local-file demux/protocol inputs are disabled.
+The ICY adapter consumes the metadata events from
+[FFmpeg's HTTP implementation](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/http.c),
+without opening an additional receiver connection or logging arbitrary sender output.
+
 ### Software encoding / Main with CABAC (0.1.29)
 
 All deployments use software `libx264` again; VA-API/NVENC support and its

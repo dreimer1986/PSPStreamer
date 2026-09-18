@@ -8,18 +8,28 @@ enum { MUSIC_REMOTE_NONE, MUSIC_REMOTE_PAUSE, MUSIC_REMOTE_RESUME,
 static volatile int music_remote_running, music_remote_action;
 static volatile int music_remote_seconds;
 static int music_remote_thread_id = -1;
+/* One-slot metadata mailbox. The worker never touches GUI memory. */
+static char music_radio_id[48], music_radio_station[192], music_radio_title[192];
+static volatile int music_radio_ready;
 
 static int music_remote_worker(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
     (void)args; (void)argp;
     while (music_remote_running) {
-        char path[64], reply[2048], action[16];
+        char path[128], reply[2048], action[16];
         int next, event = MUSIC_REMOTE_NONE;
         if (music_remote_action) { sceKernelDelayThread(10000); continue; }
-        snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
+        snprintf(path, sizeof(path), "/api/remote/next?after=%d%s%s", sequence,
+                 music_radio_id[0]?"&radio=":"",music_radio_id);
         if (remote_http_get(path, reply, sizeof(reply), &music_remote_running) >= 0 &&
             music_remote_running && json_value(reply, "action", action, sizeof(action))) {
             if (remote_state_reset(reply, &sequence)) continue;
+            if(music_radio_id[0] && !music_radio_ready &&
+               json_value(reply,"radio_station",music_radio_station,sizeof(music_radio_station))) {
+                music_radio_title[0]=0;
+                json_value(reply,"radio_title",music_radio_title,sizeof(music_radio_title));
+                __sync_synchronize();music_radio_ready=1;
+            }
             next = json_integer(reply, "seq", sequence);
             if (next > sequence) {
                 /* Leave Play unconsumed for the library dispatcher, which
