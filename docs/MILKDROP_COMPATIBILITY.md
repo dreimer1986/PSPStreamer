@@ -29,9 +29,10 @@ the maximum combined layer case is checked by the host renderer harness.
 The unmodified Geiss Artifact 6d (junky warp distortion) and Trampoline files
 are tested through frame/pixel evaluation when `GEISS_PRESET_DIR` is supplied.
 Hyperdrive remains covered by `HYPERDRIVE_PRESET`. Explosion nz+ requests
-311 instances of shape 1 and 281 of shape 2. These now silently use **eight
-instances per shape**, including the effective `instances` formula input.
-This is a simplified rendering, not full Desktop equivalence. Shader-heavy presets can look
+311 instances of shape 1 and 281 of shape 2. The batched renderer now supports
+both requested counts within the unchanged formula budget. Other expensive
+presets can still use a reduced effective instance count. This is not full
+Desktop equivalence. Shader-heavy presets can look
 very different even when all their non-shader records are accepted. This is a
 targeted compatibility pass, not yet a complete audit of all parameter ranges.
 
@@ -54,7 +55,7 @@ independent of these non-shader parameters.
   dots, thick/additive lines, volume-dependent alpha and color normalization.
 * Four custom waves with independent init/frame/point contexts, up to 512
   points (1023 vertices after smoothing), per-point position and RGBA.
-* Four custom shapes, up to eight instances each, polygon fills/gradients,
+* Four custom shapes, up to 512 instances each with budget-aware fallback, polygon fills/gradients,
   outlines, thick outlines, additive drawing, existing feedback sampling and
   optional external PNG images through the PSP extension described below.
 * Zoom/exponent, rotation, translation, center, stretch, warp and per-mesh
@@ -141,12 +142,14 @@ the video/audio playback clocks or chosen video frame rate.
 | Local memory per context / shared memory | 2048 float slots each |
 | Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
-| Shapes | 4 × 8 instances, 100 sides each |
+| Shapes | Up to 4 × 512 instances, budget-aware fallback; 100 sides each; GPU batches of 32 shapes |
 | Custom waves | 4 × 1024 points; requests above 512 use interpolated audio input |
 
 The latest [formula-storage expansion](MILKDROP_MEMORY_EXPANSION.md) documents
 the collection comparison, additional RAM/stack cost and test presets
 `extended-memory-demo.milk` and `extended-point-program-demo.milk`.
+See [shape batching](MILKDROP_SHAPE_BATCHES.md) for instance planning, memory
+ownership, framebuffer restoration and the `shape-batches-demo.milk` test.
 
 These are current implementation/resource budgets, **not measured hardware
 maxima**. See [the fallback inventory](MILKDROP_REFERENCE_AUDIT.md#silent-psp-fallbacks)

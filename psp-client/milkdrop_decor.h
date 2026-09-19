@@ -3,12 +3,16 @@
 #define PSPSTREAMER_MILKDROP_DECOR_H
 #include "milkdrop_warp.h"
 enum { MD_SHAPES=4, MD_SHAPE_INSTANCES=8, MD_RENDER_SHAPES=32, MD_SHAPE_SIDES=100, MD_DECOR_VALUES=25 };
+enum { MD_SHAPE_MAX_INSTANCES=512, MD_SHAPE_BATCH=32 };
 typedef struct {
     float enabled,sides,additive,textured;
     float x,y,rad,ang,tex_ang,tex_zoom;
     float r,g,b,a,r2,g2,b2,a2,border_r,border_g,border_b,border_a;
     float thick_outline;
 } MdShape;
+/* Compact evaluated parameters, not expanded GU geometry. Renderer scratch;
+ * contents are consumable only after successful frame evaluation. */
+typedef struct { MdShape shapes[MD_SHAPES][MD_SHAPE_MAX_INSTANCES]; int count[MD_SHAPES]; } MdShapeFrame;
 typedef struct { float size,r,g,b,a; } MdBorder;
 typedef struct {
     float wave_x,wave_y,wave_param,wave_dots,wave_thick,wave_additive,wave_brighten;

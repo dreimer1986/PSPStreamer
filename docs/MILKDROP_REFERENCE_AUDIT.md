@@ -20,7 +20,7 @@ reference version changes.
 | Global supported boolean switches | Integer unequal to zero is true | Now normalized on import; fractional/malformed input still rejected |
 | Old `bMotionVectorsOn` | Default for `mv_a`; explicit `mv_a` always wins | Implemented independently of file order |
 | Motion density | Fraction retained; draw count limited to 64 × 48 | Implemented previously |
-| Shape instances | Import integer; draw each instance | Silently limited to eight per shape; full Explosion density: **Umbau nötig** |
+| Shape instances | Import integer; draw each instance | Up to 512 per shape, budget-aware fallback; batched renderer supports Explosion's 311/281 counts |
 | Shape sides | Import integer; formulas may produce fractions; draw truncates and clamps to 3–100 | Implemented; original value remains visible to formulas, allocation uses the clamped count |
 | Shape colors | Draw converts to integer bytes with `& 0xff` | Implemented with overflow-safe conversion, including border alpha |
 | Shape coordinates/radius/angles | Float import; geometry evaluated when drawing | PSP ranges remain narrower; widen only with geometry and allocation guards |
@@ -38,7 +38,11 @@ gamma 1–8; centers −1–2; log controls commonly .01–100; wave alpha .001�
 Changing only the importer can expose invalid divisions, unsafe float-to-int
 casts, excessive work or GU-list overflow in our renderer.
 
-## Explosion is not a one-line fix
+## Explosion: original limitation and subsequent batching
+
+**Update:** the [batched renderer](MILKDROP_SHAPE_BATCHES.md) now implements
+the architectural step described below. This paragraph records the earlier
+eight-instance limitation, not the current playback path.
 
 `Geiss - Explosion nz+.milk`, line 162, sets `shapecode_1_num_inst=311`.
 The current evaluator stores all instances in a fixed-size `MdDecor` array.
@@ -67,7 +71,7 @@ No per-frame warnings/popups are emitted.
 
 | Area | Current fallback | Classification |
 | --- | --- | --- |
-| Shapes | Four slots, at most eight instances each, 3–100 sides | Instances: **Umbau nötig**; sides follow Desktop draw cap |
+| Shapes | Four slots, at most 512 instances each with execution-budget fallback, 3–100 sides | Batched; sides follow Desktop draw cap; not unlimited Desktop density |
 | Custom waves | Four slots, 2–1024 points; separation 0–128; above 512 points PCM/FFT inputs are interpolated | Expanded; Desktop itself clamps computed points to 512 |
 | Custom wave gain/smoothing | 0–4 / 0–1; normalized colors and positions 0–1 | Conservative existing renderer limits, not hardware maxima |
 | Shape position/radius | 0–1; angles −100..100; texture zoom .1–10 | Conservative existing renderer limits; offscreen fidelity remains future work |
@@ -82,7 +86,7 @@ No per-frame warnings/popups are emitted.
 | Borders / motion vectors | Border size 0–.5; colors/alpha 0–1; motion grid at most 64×48 | Geometry budget / Desktop motion-grid rule |
 | Feedback and mesh | 512×256 feedback, 16×16-cell mesh; budget-aware 8×8 formula fallback | Mesh expanded; larger feedback buffers: **Umbau nötig** |
 | External textures | Four, at most 256×256 RGBA each; JPEG source up to 1024×1024 | Loader/memory budget; not GE's absolute texture limit |
-| GU list | 1.5 MiB; tested maximum vertex payload 1414496 bytes with reserved command headroom | Current allocation; batching: **Umbau nötig** |
+| GU list | 1.5 MiB; 1206368-byte vertex peak in layer stress test; shapes submitted in batches of 32 | Shape batching implemented; other layers retain bounded allocations |
 
 Dynamic booleans use the EEL truth threshold (absolute value at least .00001);
 integer file switches use nonzero as true. Formula-selected modes/orientations

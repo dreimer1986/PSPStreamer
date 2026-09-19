@@ -8,14 +8,23 @@ static void md_blend(int additive) {
     sceGuEnable(GU_BLEND);
     sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,additive?GU_FIX:GU_ONE_MINUS_SRC_ALPHA,0,additive?0xffffff:0);
 }
-static void md_shapes(const MdDecor *decor,float aspect) {
-    for(int i=0;i<MD_RENDER_SHAPES;i++) {
-        int slot=i/MD_SHAPE_INSTANCES,instance=i%MD_SHAPE_INSTANCES;
-        int index=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
-        const MdShape *p=&decor->shapes[index];
+static int md_shapes(const MdShapeFrame *shapes,float aspect) {
+    int submitted=0;
+    for(int slot=0;slot<MD_SHAPES;slot++) for(int instance=0;instance<shapes->count[slot];instance++) {
+        const MdShape *p=&shapes->shapes[slot][instance];
         if(!p->enabled) continue;
         int sides=md_shape_sides(p->sides);
         if(!sides)continue;
+        if(submitted==MD_SHAPE_BATCH) {
+            /* Never reuse vertex/list storage while GE is reading it.
+             * A new DIRECT list can restore the SDK's screen framebuffer;
+             * explicitly reselect our feedback target before any drawing. */
+            sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+            if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
+            md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+            submitted=0;
+        }
+        submitted++;
         MdVertex *v=sceGuGetMemory((sides+2)*sizeof(*v));
         int count=md_shape_vertices(v,p,aspect);
         if(!count) continue;
@@ -67,6 +76,7 @@ static void md_shapes(const MdDecor *decor,float aspect) {
     sceGuTexMode(md_pixel_format,0,0,0);
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);
     sceGuDisable(GU_TEXTURE_2D); sceGuDisable(GU_BLEND);
+    return 1;
 }
 static void md_border(const MdBorder *p,float inset) {
     if(p->a<=0 || p->size<=0) return;

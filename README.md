@@ -252,7 +252,8 @@ preset switching for a clean comparison.
 
 These are wall-clock measurements: thread preemption is included and CPU/GPU
 work overlaps. `gpu_wait` measures only the remaining wait after submission,
-not the GPU's total execution time. Throttled calls are not failed frames;
+not the GPU's total execution time. With batched shapes, intermediate GPU waits
+are included in `geometry_submit`. Throttled calls are not failed frames;
 the existing scheduler deliberately leaves time for audio and controls.
 Counters stay in RAM during playback and are appended only at music teardown.
 With `debug=0`, profiling takes no timestamps and produces no report.

@@ -48,6 +48,9 @@ extern MdFilePreset md_custom_preset;
 extern MdFileError md_runtime_error;
 extern float md_preset_duration;
 extern int md_output_width,md_output_height;
+int md_eval_preset_shapes(const MdFilePreset *preset,float seconds,const MdSignal *signal,
+    MdPresetState *state,MdPreset *warp,unsigned int *color,MdDecor *decor,
+    MdFileError *error,MdShapeFrame *shapes);
 int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *signal,
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error);

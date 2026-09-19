@@ -16,6 +16,9 @@ MEMORY = source_constant('preset_math.h', 'PM_MEMORY')
 GRID = source_constant('milkdrop_warp.h', 'MD_GRID')
 GRID_POINTS = (GRID+1)**2
 CUSTOM_POINTS = source_constant('milkdrop_preset.h', 'MD_CUSTOM_POINTS')
+SHAPE_INSTANCES = (source_constant('milkdrop_decor.h', 'MD_SHAPE_MAX_INSTANCES')
+                   if 'MD_SHAPE_MAX_INSTANCES=' in (ROOT/'psp-client/milkdrop_decor.h').read_text()
+                   else source_constant('milkdrop_decor.h', 'MD_SHAPE_INSTANCES'))
 
 
 class Warp(ctypes.Structure):
@@ -32,6 +35,9 @@ class Shape(ctypes.Structure):
 
 class Border(ctypes.Structure):
     _fields_=[(key,ctypes.c_float) for key in ("size","r","g","b","a")]
+
+class ShapeFrame(ctypes.Structure):
+    _fields_=[('shapes',(Shape*SHAPE_INSTANCES)*4),('count',ctypes.c_int*4)]
 
 
 class Decor(ctypes.Structure):
@@ -325,7 +331,7 @@ class PresetTests(unittest.TestCase):
                     ctypes.byref(state),points,ctypes.byref(error)),0,(name,error.line,error.key))
         code,preset,error=self.parse((base/'Geiss - Explosion nz+.milk').read_bytes())
         self.assertEqual(code,0,(error.line,error.key))
-        self.assertEqual(preset.shape_instances[1],8) # current implementation budget, not hardware maximum
+        self.assertEqual(preset.shape_instances[1],311)
 
     def test_reference_wave_gain_and_alpha(self):
         evaluate=self.library.md_eval_preset_visual
@@ -753,7 +759,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
 ''')
         self.assertEqual(code,0,(error.line,error.key))
         self.assertEqual(preset.wave_mode,8)
-        self.assertEqual(preset.shape_instances[0],8)
+        self.assertEqual(preset.shape_instances[0],SHAPE_INSTANCES)
         self.assertEqual(preset.waves[0].samples,CUSTOM_POINTS)
         self.assertEqual(preset.waves[0].sep,128)
         state=PresetState()
@@ -1487,6 +1493,35 @@ wave_0_per_point1=sample=1-sample;value1=0;value2=0;x=sample;y=.5;
         self.assertEqual(self.evaluate_state(preset,state,.5)[0],0)
         self.assertEqual(state.effects[4],1)
 
+    def test_expanded_shape_order_budget_and_failure(self):
+        fn=self.library.md_eval_preset_shapes
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(PresetState),
+                     ctypes.POINTER(Warp),ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(Decor),ctypes.POINTER(Error),ctypes.POINTER(ShapeFrame)]
+        source=b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_num_inst=311\nshape_0_per_frame1=counter+=1;x=instance/num_inst;y=counter*.0001;'
+        code,preset,error=self.parse(source);self.assertEqual(code,0)
+        state=PresetState();out=ShapeFrame();warp=Warp();color=ctypes.c_uint();decor=Decor()
+        for frame in range(3):
+            self.assertEqual(fn(ctypes.byref(preset),frame,None,ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(out)),0)
+            self.assertEqual(list(out.count),[311,0,0,0])
+            for i in (0,7,8,31,32,310):
+                self.assertAlmostEqual(out.shapes[0][i].x,i/311,places=6)
+                self.assertAlmostEqual(out.shapes[0][i].y,(frame*311+i+1)*.0001,places=6)
+        code,bad,error=self.parse(source+b'\nshape_0_per_frame2=x=1/(310-instance);')
+        self.assertEqual(code,0);before=bytes(state),bytes(decor),bytes(warp),color.value
+        self.assertNotEqual(fn(ctypes.byref(bad),3,None,ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(out)),0)
+        self.assertEqual((bytes(state),bytes(decor),bytes(warp),color.value),before)
+        self.assertEqual(list(out.count),[0,0,0,0])
+        code,heavy,error=self.parse(b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_num_inst=512\nshape_0_per_frame1=loop(10,x=.5;);')
+        self.assertEqual(code,0);state=PresetState()
+        self.assertEqual(fn(ctypes.byref(heavy),0,None,ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(out)),0)
+        self.assertGreaterEqual(out.count[0],8);self.assertLess(out.count[0],512)
+        # Potentially expensive downstream waves must not lose their budget
+        # to extra shapes, even when their sample count is frame-dependent.
+        code,reserved,error=self.parse(source+b'\nwavecode_0_enabled=1\nwave_0_per_frame1=samples=64;\nwave_0_per_point1=loop(100,x=sample;);')
+        self.assertEqual(code,0);state=PresetState()
+        self.assertEqual(fn(ctypes.byref(reserved),0,None,ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(out)),0)
+        self.assertEqual(out.count[0],8)
+
     def test_shape_instances_and_progress(self):
         code,preset,_=self.parse(b'''[preset00]
 shapecode_0_enabled=1
@@ -1505,7 +1540,7 @@ per_frame_1=wave_r=progress;
                 self.assertEqual(self.parse(f'[preset00]\nshape_0_per_frame1={key}=1;'.encode())[0],0)
             code,limited,_=self.parse(b'[preset00]\nshapecode_0_num_inst=311')
             self.assertEqual(code,0)
-            self.assertEqual(limited.shape_instances[0],8)
+            self.assertEqual(limited.shape_instances[0],311)
             self.assertNotEqual(self.parse(b'[preset00]\nper_frame_1=progress=1;')[0],0)
         finally: duration.value=old
 

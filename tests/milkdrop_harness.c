@@ -25,6 +25,7 @@ static int target_bpp, composition_width, target_changes, texture_offset;
 static int raw_target, raw_source;
 static int gu_live, starts, syncs, target_offset, target_width, target_height, stride;
 static int fail_init, fail_start;
+static int pending_continue,restore_target,finish_syncs,fail_restart;
 static int edram_size = 2*1024*1024, mesh_calls, ring_calls, sprite_calls;
 static unsigned char *list_base;
 static size_t list_used;
@@ -42,20 +43,29 @@ static int sceGuInit(void) {
     assert(!gu_live); if(fail_init) return -1;
     gu_live=1; return 0;
 }
-static void sceGuTerm(void) { assert(gu_live); gu_live=0; }
+static void sceGuTerm(void) { assert(gu_live); gu_live=0;pending_continue=restore_target=0; }
 static int sceGuStart(int mode, void *list) {
-    if(fail_start) return -1;
+    if(fail_start || (fail_restart && pending_continue)) return -1;
     assert(gu_live && mode==GU_DIRECT); starts++; list_base=list; list_used=0;
+    if(pending_continue) {
+        assert(syncs>finish_syncs);
+        restore_target=target_offset;
+        target_offset=0; /* SDK may restore its normal framebuffer. */
+        pending_continue=0;return 0;
+    }
     covered_width=composition_width=target_changes=0;
     for(int i=0;i<8;i++) filter_values[i]=.25f;
     return 0;
 }
 static void sceGuSync(int a,int b) { assert(a==GU_SYNC_FINISH && b==GU_SYNC_WHAT_DONE); syncs++; }
-static void sceGuFinish(void) { test_time += render_cost; }
+static void sceGuFinish(void) { test_time += render_cost;pending_continue=target_changes==1;finish_syncs=syncs; }
 static void sceGuDrawBufferList(int format,void *offset,int width) {
     assert(format==GU_PSM_8888 || format==GU_PSM_5650);
     target_bpp=format==GU_PSM_8888?4:2;
-    target_changes++;
+    if(restore_target) {
+        assert((int)(uintptr_t)offset==restore_target && width==512);
+        restore_target=0;
+    } else target_changes++;
     target_offset=(int)(uintptr_t)offset; stride=width;
     assert(target_offset==0 || target_offset==1474560 || target_offset==1736704 ||
            target_offset==557056 || target_offset==1081344);
@@ -137,6 +147,7 @@ static void *sceGuGetMemory(int bytes) {
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
+    assert(!restore_target);
     const MdVertex *v=data;
     MdVertex unpacked[2*MD_CUSTOM_POINTS];
     assert((format==15 || format==14) && !indices);
@@ -219,7 +230,14 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     for(int i=0;i<count;i++) {
         assert(isfinite(v[i].u) && isfinite(v[i].v));
         assert(isfinite(v[i].x) && isfinite(v[i].y));
-        if(type==GU_LINES || count==170 || count==240 || count==256 || count==480) {
+        if(type==GU_TRIANGLE_FAN || (type==GU_LINE_STRIP &&
+           (count<=33 || count==MD_SHAPE_SIDES+1) && count!=16 && count!=31)) {
+            /* Valid normalized shape centers/radii can extend past feedback
+             * edges (Explosion does this). The unchanged scissor clips them. */
+            assert(target_width==512 && target_height==256 && target_changes==1);
+            assert(v[i].x>=-513 && v[i].x<=1025);
+            assert(v[i].y>=-257 && v[i].y<=513);
+        } else if(type==GU_LINES || count==170 || count==240 || count==256 || count==480) {
             /* Mode 4 intentionally moves its line beyond the texture edge;
              * the viewport scissor clips it, not coordinate clamping. */
             assert(target_width==512 && target_height==256 && target_changes==1);
@@ -239,7 +257,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==33);
+    assert(argc==34 || argc==35);
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -456,11 +474,29 @@ int main(int argc,char **argv) {
         }
         md_stop();
     }
+    /* More than one list, including all maximum layers. Reuse is safe only
+     * after sync; the stub also requires restoring the feedback framebuffer. */
+    for(int i=0;i<MD_SHAPES;i++)md_custom_preset.shape_instances[i]=MD_SHAPE_MAX_INSTANCES;
+    for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
+        expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
+        expected_width=full?(tv?720:480):tv?508:306;
+        expected_height=full?(tv?480:272):tv?208:75;
+        assert(md_start());int before=starts;
+        test_time+=100000;
+        assert(md_frame(tv,full,bands,75,test_time,3)==1);
+        assert(starts-before==MD_SHAPES*MD_SHAPE_MAX_INSTANCES/MD_SHAPE_BATCH);
+        assert(covered_width==expected_width);
+        md_stop();assert(!md_shape_frame);
+    }
+    assert(md_start());fail_restart=1;test_time+=100000;
+    assert(md_frame(1,1,bands,75,test_time,3)==0);
+    assert(!md_list && !md_shape_frame && !gu_live);fail_restart=0;
     /* Actual file/parser/interpreter/renderer path with alternating music. */
     MdFileError demo_error;
     expected_passes=4; expected_ring_color=0;
     for(int fixture=1;fixture<argc;fixture++) {
     expected_passes=fixture<=23?4:(fixture==28 || fixture==29)?2:1;
+    if(fixture==34)expected_passes=2;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
@@ -468,12 +504,14 @@ int main(int argc,char **argv) {
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
         assert(!md_preset_state.ready);
-        for(int frame=0;frame<600;frame++) {
+        for(int frame=0;frame<(fixture==34?30:600);frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
+            if(fixture==33)assert(md_shape_frame->count[0]==128);
+            if(fixture==34)assert(md_shape_frame->count[1]==311);
             if(fixture==27) {
                 assert(md_images_ready && md_images[0].pixels && external_binds>0);
                 if(frame==20) {md_begin_preset(500);assert(!md_images[0].pixels);}

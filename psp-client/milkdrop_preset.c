@@ -272,7 +272,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             if(!strcmp(key+12,"num_inst")) {
                 errno=0; parsed=strtof(value,&end);
                 if(end==value || *md_trim(end) || errno || !isfinite(parsed) || parsed<1 || parsed!=floorf(parsed) || (shape_seen[slot]&(1U<<30))) {result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;}
-                parsed=fminf(parsed,MD_SHAPE_INSTANCES);
+                parsed=fminf(parsed,MD_SHAPE_MAX_INSTANCES);
                 next.shape_instances[slot]=(int)parsed;shape_seen[slot]|=1U<<30;continue;
             }
             int k; for(k=0;k<23 && strcmp(key+12,names[k]);k++) {}
@@ -370,6 +370,11 @@ int md_eval_preset_visual(const MdFilePreset *p, float seconds, const MdSignal *
 int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *signal,
                           MdPresetState *state, MdPreset *warp, unsigned int *color,
                           MdDecor *decor, MdFileError *error) {
+    return md_eval_preset_shapes(p,seconds,signal,state,warp,color,decor,error,NULL);
+}
+int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *signal,
+    MdPresetState *state,MdPreset *warp,unsigned int *color,MdDecor *decor,
+    MdFileError *error,MdShapeFrame *shapes) {
     float v[PM_VALUES] = {p->warp.zoom, p->warp.rotation, p->warp.warp,
         p->warp.warp_speed, p->warp.warp_scale, p->warp.decay,
         p->red, p->green, p->blue, seconds};
@@ -470,11 +475,46 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
     memcpy(next.motion,v+PM_DYNAMIC_BASE+1,sizeof(next.motion));
     next.wrap=fabsf(v[PM_WRAP])>=.00001f;
     MdDecor evaluated=p->decor;
+    int counts[MD_SHAPES];
+    unsigned long long base_work=0,extra_work=0;
+    for(int slot=0;slot<MD_SHAPES;slot++) {
+        int requested=p->shape_instances[slot]>0?p->shape_instances[slot]:1;
+        if(requested>MD_SHAPE_MAX_INSTANCES)requested=MD_SHAPE_MAX_INSTANCES;
+        if(!p->decor.shapes[slot].enabled)requested=0;
+        counts[slot]=requested;
+        int base=requested>MD_SHAPE_INSTANCES?MD_SHAPE_INSTANCES:requested;
+        int work=pm_program_work_hint(&p->shape_program[slot].frame);
+        if(work<1)work=1;
+        base_work+=(unsigned)base*work;
+        if(requested && !next.shape[slot].ready)base_work+=pm_program_work_hint(&p->shape_program[slot].init);
+        extra_work+=(unsigned)(requested-base)*work;
+    }
+    /* Preserve the old eight-instance path. Additional instances share at
+     * most half the remaining frame fuel, after reserving pixel/wave work.
+     * This scheduling hint never grants fuel or hides a formula error. */
+    unsigned long long downstream=(unsigned)pm_program_work_hint(&p->pixel_program)*MD_GRID_POINTS;
+    for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) if(p->waves[slot].enabled) {
+        const MdCustomWave *w=&p->waves[slot];
+        int samples=w->frame.count?MD_CUSTOM_POINTS:(int)md_limit(w->samples,2,MD_CUSTOM_POINTS);
+        downstream+=(unsigned)pm_program_work_hint(&w->point)*samples;
+        downstream+=pm_program_work_hint(&w->frame);
+        if(!next.waves[slot].frame.ready)downstream+=pm_program_work_hint(&w->init);
+    }
+    unsigned long long budget=(unsigned)pm_frame_remaining()/2;
+    unsigned long long remaining=(unsigned)pm_frame_remaining();
+    unsigned long long spare=remaining>downstream?remaining-downstream:0;
+    if(budget>spare)budget=spare;
+    unsigned long long available=budget>base_work?budget-base_work:0;
+    for(int slot=0;slot<MD_SHAPES;slot++) {
+        int base=counts[slot]>MD_SHAPE_INSTANCES?MD_SHAPE_INSTANCES:counts[slot];
+        if(!shapes)counts[slot]=base;
+        else if(extra_work>available)counts[slot]=base+(int)((counts[slot]-base)*available/extra_work);
+        if(shapes)shapes->count[slot]=0;
+    }
     for(int slot=0;slot<MD_SHAPES;slot++) {
         const MdShapeProgram *program=&p->shape_program[slot];
         if(!p->decor.shapes[slot].enabled) continue;
-        int instances=p->shape_instances[slot]>0?p->shape_instances[slot]:1;
-        if(instances>MD_SHAPE_INSTANCES)instances=MD_SHAPE_INSTANCES;
+        int instances=counts[slot];
         for(int instance=0;instance<instances;instance++) {
         MdShapeState *local=&next.shape[slot];
         float sv[PM_VALUES]={0};
@@ -509,11 +549,15 @@ int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *s
                 return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&program->frame,PM_SHAPE_BASE+k),"shape range");
             sv[PM_SHAPE_BASE+k]=(k==0 || k==2 || k==3 || k==22)?fabsf(value)>=.00001f:md_limit(value,lo,hi);
         }
-        int output=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
-        memcpy(&evaluated.shapes[output],sv+PM_SHAPE_BASE,sizeof(MdShape));
+        if(instance<MD_SHAPE_INSTANCES) {
+            int output=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;
+            memcpy(&evaluated.shapes[output],sv+PM_SHAPE_BASE,sizeof(MdShape));
+        }
+        if(shapes)memcpy(&shapes->shapes[slot][instance],sv+PM_SHAPE_BASE,sizeof(MdShape));
         memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
         }
     }
+    if(shapes)memcpy(shapes->count,counts,sizeof(counts));
     *decor=evaluated;
     memcpy(decor,v+30,MD_DECOR_VALUES*sizeof(float));
     *warp = (MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],v[23],v[24],v[25],v[26],v[27],v[28],v[29]};

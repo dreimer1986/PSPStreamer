@@ -49,6 +49,7 @@ static int md_tv_top = 86, md_last_top;
 static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
 static MdPresetState md_preset_state;
+static MdShapeFrame *md_shape_frame;
 static MdPreset md_pixel_points[MD_GRID_POINTS];
 static int md_signal_active;
 static short md_right[MD_WAVE_SAMPLES];
@@ -128,7 +129,10 @@ int md_start(void) {
     if (sceGeEdramGetSize() < 2*1024*1024) return 0;
     md_list = memalign(64, MD_LIST_BYTES);
     if (!md_list) return 0;
+    md_shape_frame=malloc(sizeof(*md_shape_frame));
+    if(!md_shape_frame){free(md_list);md_list=NULL;return 0;}
     if (sceGuInit() < 0) {
+        free(md_shape_frame);md_shape_frame=NULL;
         free(md_list); md_list = NULL;
         return 0;
     }
@@ -163,6 +167,7 @@ void md_stop(void) {
     md_fade_clear();
     sceGuTerm();
     free(md_list); md_list = NULL;
+    free(md_shape_frame);md_shape_frame=NULL;
 }
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset) {
@@ -214,8 +219,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
         next_state=md_preset_state;
-        if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
-                                  &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
+        if (md_eval_preset_shapes(&md_custom_preset, seconds, &md_signal_state.signal,
+                                  &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error,md_shape_frame) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
         md_profile_mark(1);
         if(md_custom_preset.pixel_program.count &&
@@ -287,7 +292,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if(count) { md_blend(0); sceGuDisable(GU_TEXTURE_2D); sceGuDrawArray(GU_LINES,MD_FORMAT,count,NULL,vectors); }
         sceGuDisable(GU_BLEND);
     }
-    if(preset==3) md_shapes(&frame_decor,(float)height/width);
+    if(preset==3 && !md_shapes(md_shape_frame,(float)height/width)) {md_stop();return 0;}
     if(custom_waves) for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
         const MdCustomWave *w=&md_custom_preset.waves[slot];
         int count=md_custom_geometry[slot].count;

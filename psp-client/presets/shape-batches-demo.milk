@@ -1,0 +1,18 @@
+; Original PSPStreamer test: 128 ordered shapes across four GPU packets.
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=0
+fDecay=.95
+shapecode_0_enabled=1
+shapecode_0_num_inst=128
+shapecode_0_sides=4
+shapecode_0_a=.7
+shapecode_0_a2=.15
+shapecode_0_border_a=.5
+shapecode_0_thickOutline=1
+shape_0_init1=counter=0;
+shape_0_per_frame1=counter+=1;theta=instance*$pi*2/num_inst+time*.2;
+shape_0_per_frame2=x=.5+.34*cos(theta);y=.5+.34*sin(theta);ang=theta;
+shape_0_per_frame3=rad=.009+.005*bass_att;r=.2+.8*instance/num_inst;g=.8;b=1-r*.6;
+shape_0_per_frame4=border_r=r;border_g=g;border_b=b;

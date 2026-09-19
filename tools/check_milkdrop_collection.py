@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('collection', type=Path)
     parser.add_argument('--frames', type=int, default=0)
+    parser.add_argument('--expanded-shapes',action='store_true',help='Exercise the batched renderer shape evaluator')
     parser.add_argument('--source-root', type=Path, default=ROOT,
                         help='Compile another source snapshot for a like-for-like baseline')
     args = parser.parse_args()
@@ -26,7 +27,7 @@ def main():
         parser.error('--frames must be nonnegative')
     os.environ['PSP_MILKDROP_SOURCE_ROOT']=str(args.source_root.resolve())
     from test_milkdrop_preset import (PresetTests, Preset, PresetState, Error,
-                                     Signal, Warp, GRID_POINTS, CUSTOM_POINTS)
+                                     Signal, Warp, Decor, ShapeFrame, GRID_POINTS, CUSTOM_POINTS)
     class Geometry(ctypes.Structure):
         _fields_=[('count',ctypes.c_int),('vertices',Vertex*CUSTOM_POINTS)]
     PresetTests.setUpClass()
@@ -44,6 +45,12 @@ def main():
     left=(ctypes.c_short*576)(*[int(16000*math.sin(i*.07)) for i in range(576)])
     spectrum=(ctypes.c_float*512)(*[.2/(1+i*.05) for i in range(512)])
     points=(Warp*GRID_POINTS)();geometry=(Geometry*4)()
+    expanded=None
+    if args.expanded_shapes:
+        expanded=test.library.md_eval_preset_shapes
+        expanded.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(PresetState),
+            ctypes.POINTER(Warp),ctypes.POINTER(ctypes.c_uint),ctypes.POINTER(Decor),ctypes.POINTER(Error),ctypes.POINTER(ShapeFrame)]
+    shape_frame=ShapeFrame();decor=Decor();color=ctypes.c_uint()
     try:
         for path in sorted(args.collection.rglob('*.milk')):
             preset, error = Preset(), Error()
@@ -58,7 +65,12 @@ def main():
                         [1+.35*math.sin(frame*.11+i) for i in range(6)])))
                     test.library.pm_begin_frame()
                     stage='frame/shape'
-                    code, warp, error = test.evaluate_state(preset, state, frame/30, signal)
+                    if expanded:
+                        warp=Warp()
+                        code=expanded(ctypes.byref(preset),frame/30,ctypes.byref(signal),ctypes.byref(state),
+                            ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(shape_frame))
+                    else:
+                        code, warp, error = test.evaluate_state(preset, state, frame/30, signal)
                     if not code and preset.pixel_program.count:
                         stage='pixel'
                         code=pixel(ctypes.byref(preset),ctypes.byref(warp),frame/30,ctypes.byref(signal),
@@ -71,6 +83,7 @@ def main():
                         break
                 record.update(frame_eval=code, frame=frame, stage=stage, eval_line=error.line,
                               eval_key=error.key.decode(errors='replace'))
+                if expanded:record['shape_instances']=list(shape_frame.count)
             records.append(record)
         print(json.dumps({'total': len(records), 'parse_ok': sum(r['parse']==0 for r in records),
                           'frames_tested': args.frames, 'records': records}, ensure_ascii=False, indent=2))
