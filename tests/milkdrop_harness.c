@@ -322,16 +322,29 @@ int main(int argc,char **argv) {
     assert(md_start());
     render_cost=50000;
     assert(md_frame(0,0,bands,0,test_time,0));
-    assert(md_next==test_time+150000);
+    assert(md_next==test_time+100000);
     {
         int calls=starts;
-        test_time+=100000;
+        test_time+=99999;
         assert(md_frame(0,0,bands,0,test_time,0) && starts==calls);
+        test_time++;
+        assert(md_frame(0,0,bands,0,test_time,0) && starts==calls+1);
     }
     md_stop();
     assert(md_start());
     render_cost=0;
     assert(md_frame(0,0,bands,0,test_time,0));
+    assert(md_next==test_time+50000);
+    {
+        const unsigned long long costs[]={16667,24999,25000,25001,50000};
+        for(unsigned int i=0;i<sizeof(costs)/sizeof(costs[0]);i++) {
+            test_time=md_next;render_cost=costs[i];
+            assert(md_frame(0,0,bands,0,test_time,0));
+            unsigned long long idle=costs[i]>25000?costs[i]*2:50000;
+            assert(md_next==test_time+idle);
+        }
+        render_cost=0;
+    }
     {
         int calls=starts;
         expected_left=expected_top=0; expected_width=480; expected_height=272;

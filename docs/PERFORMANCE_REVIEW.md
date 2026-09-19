@@ -91,6 +91,22 @@ These are call counts with synthetic inputs, not PSP timing measurements.
 The existing render scheduler and all profiler measurements remain unchanged
 so this optimization can be evaluated independently of duty-cycle changes.
 
+## Follow-up: render idle factor 2
+
+The next PSP capture showed no clear Cauldron speedup from trig caching:
+custom-wave evaluation averaged 34.164 ms and total measured work 49.706 ms
+(692 LCD-fullscreen frames). Different music inputs prevent a strict A/B
+comparison. The cache is retained for this isolated scheduler test.
+
+The scheduler now waits `max(50000 us, 2 * frame_cost)` after completing a
+frame, instead of `max(50000 us, 3 * frame_cost)`. The branch boundary moves
+to 25 ms to preserve the 50 ms minimum idle interval without a discontinuity.
+At 50 ms work this gives a nominal 150 ms frame period instead of 200 ms;
+actual PSP scheduling may add delay. There is still no catch-up loop. The
+same policy applies on LCD and TV, windowed and fullscreen. Audio priorities,
+clocks, formula limits, geometry and diagnostics are unchanged. Hardware
+testing must verify sound, controls and track transitions under heavier load.
+
 ## Validation before claiming a gain
 
 Compare identical preset/audio inputs and fixed timestamps on host tests,

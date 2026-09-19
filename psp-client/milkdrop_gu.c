@@ -403,7 +403,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     finished = sceKernelGetSystemTimeWide();
     cost = finished - now;
     /* Never attempt catch-up frames. Expensive frames lower the visual rate,
-     * rather than changing audio clocks or consuming a whole CPU core. */
-    md_next = finished + (cost > 16666ULL ? cost*3 : 50000ULL);
+     * rather than changing audio clocks or consuming a whole CPU core.
+     * Retain at least 50 ms idle; expensive frames rest twice their cost. */
+    md_next = finished + (cost > 25000ULL ? cost*2 : 50000ULL);
     return 1;
 }
