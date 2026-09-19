@@ -135,14 +135,18 @@ the video/audio playback clocks or chosen video frame rate.
 | --- | --- |
 | Preset file / physical line | 64 KiB / 2047 bytes |
 | Compiled init/frame program | 2048 instructions, 512 numbered lines |
-| Compiled pixel/point program | 1024 instructions |
+| Compiled pixel/point program | 2048 instructions |
 | Named locals | 64 per context, 31-character names |
 | Operand stack / parser depth | 48 / 64 |
-| Local memory per context / shared memory | 1024 float slots each |
+| Local memory per context / shared memory | 2048 float slots each |
 | Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
 | Shapes | 4 × 8 instances, 100 sides each |
 | Custom waves | 4 × 1024 points; requests above 512 use interpolated audio input |
+
+The latest [formula-storage expansion](MILKDROP_MEMORY_EXPANSION.md) documents
+the collection comparison, additional RAM/stack cost and test presets
+`extended-memory-demo.milk` and `extended-point-program-demo.milk`.
 
 These are current implementation/resource budgets, **not measured hardware
 maxima**. See [the fallback inventory](MILKDROP_REFERENCE_AUDIT.md#silent-psp-fallbacks)

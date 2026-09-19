@@ -83,7 +83,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/presets/script-wave-demo.milk"),
                             str(ROOT / "psp-client/presets/spiral-wave-demo.milk"),
                             *[str(ROOT / ("psp-client/presets/"+name+"-demo.milk")) for name in
-                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch","shape-orbits","custom-wave","custom-wave-fft","custom-spectrum","smooth-wave","image-effects","shape-instances","large-wave","eel-memory-orbit","eel-grid-logic","eel-wave-loop","external-texture","dense-wave","fine-mesh","extended-formula")]],
+                              ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch","shape-orbits","custom-wave","custom-wave-fft","custom-spectrum","smooth-wave","image-effects","shape-instances","large-wave","eel-memory-orbit","eel-grid-logic","eel-wave-loop","external-texture","dense-wave","fine-mesh","extended-formula","extended-memory","extended-point-program")]],
                            check=True, timeout=60)
 
     def test_opt_in_and_teardown(self):

@@ -9,7 +9,7 @@ enum { PM_MAX_OPS = 2048, PM_MAX_RECORDS = 512, PM_STACK = 48, PM_DEPTH = 64,
        PM_WAVE_BASE = PM_T_BASE + 8, PM_EFFECT_BASE = PM_WAVE_BASE + 4,
        PM_ENGINE_BASE = PM_EFFECT_BASE + 5, PM_INPUT_BASE = PM_ENGINE_BASE + 3,
        PM_MONITOR = PM_INPUT_BASE + 6, PM_WRAP = PM_MONITOR + 1, PM_VALUES = PM_WRAP + 1,
-       PM_PIXEL_OPS = 1024, PM_MEMORY = 1024, PM_FUEL = 4096 };
+       PM_PIXEL_OPS = 2048, PM_MEMORY = 2048, PM_FUEL = 4096 };
 typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;

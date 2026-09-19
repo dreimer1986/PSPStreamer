@@ -12,6 +12,7 @@ ROOT = Path(os.environ.get('PSP_MILKDROP_SOURCE_ROOT', Path(__file__).resolve().
 def source_constant(header, name):
     return int(re.search(r'\b'+name+r'\s*=\s*(\d+)', (ROOT/'psp-client'/header).read_text()).group(1))
 MAX_OPS = source_constant('preset_math.h', 'PM_MAX_OPS')
+MEMORY = source_constant('preset_math.h', 'PM_MEMORY')
 GRID = source_constant('milkdrop_warp.h', 'MD_GRID')
 GRID_POINTS = (GRID+1)**2
 CUSTOM_POINTS = source_constant('milkdrop_preset.h', 'MD_CUSTOM_POINTS')
@@ -54,7 +55,7 @@ class Symbols(ctypes.Structure):
 
 
 class Runtime(ctypes.Structure):
-    _fields_=[("memory",ctypes.c_float*1024),("random",ctypes.c_uint)]
+    _fields_=[("memory",ctypes.c_float*MEMORY),("random",ctypes.c_uint)]
 
 
 class ShapeProgram(ctypes.Structure):
@@ -200,7 +201,7 @@ class PresetTests(unittest.TestCase):
         state=PresetState()
         self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
         self.assertEqual(state.frame_q[0],300)
-        self.assertEqual(len(state.runtime.memory),1024)
+        self.assertEqual(len(state.runtime.memory),MEMORY)
         # More compiled space does not grant unbounded execution time.
         code,preset,_=self.parse(b'[preset00]\nper_frame_1=loop(1000000,q1+=1;);')
         self.assertEqual(code,0)
@@ -508,8 +509,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(values['result'],16)
         values,_=self.execute_eel('memset(4,2,5);megabuf(4)+=3;freembuf(0);result=4[0]+megabuf(8);',first)
         self.assertEqual(values['result'],7)
-        for source in ('a=megabuf(1024);','megabuf(-1)=2;','gmegabuf(1e30)=0;',
-                       'memcpy(1023,0,2);','memset(0,1,1025);','a=1e30&2;'):
+        for source in (f'a=megabuf({MEMORY});','megabuf(-1)=2;','gmegabuf(1e30)=0;',
+                       f'memcpy({MEMORY-1},0,2);',f'memset(0,1,{MEMORY+1});','a=1e30&2;'):
             before=bytes(first)
             self.execute_eel(source,first,False)
             self.assertEqual(bytes(first),before)
@@ -561,6 +562,38 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(state.frame_q[1],272)
             self.assertAlmostEqual(state.frame_q[2],480/272,places=5)
             self.assertEqual(state.frame_q[3],GRID)
+
+    def test_extended_memory_boundaries_and_rollback(self):
+        self.assertGreaterEqual(MEMORY,2048)
+        self.library.pm_reset_globals()
+        runtime=Runtime()
+        result,_=self.execute_eel(f'megabuf(1024)=3;megabuf({MEMORY-1})=7;'
+            f'gmegabuf({MEMORY-1})=11;result=megabuf(1024)+megabuf({MEMORY-1});',runtime)
+        self.assertEqual(result['result'],10)
+        self.assertEqual(self.execute_eel(f'result=gmegabuf({MEMORY-1});')[0]['result'],11)
+        before=bytes(runtime)
+        self.execute_eel(f'megabuf({MEMORY-1})=99;gmegabuf({MEMORY-1})=99;result=1/0;',runtime,False)
+        self.assertEqual(bytes(runtime),before)
+        self.assertEqual(self.execute_eel(f'result=gmegabuf({MEMORY-1});')[0]['result'],11)
+        result,_=self.execute_eel('memset(1024,2,8);memcpy(1025,1024,7);result=megabuf(1031);',runtime)
+        self.assertEqual(result['result'],2)
+
+    def test_extended_point_program_space(self):
+        program, symbols=Program(),Symbols()
+        compile_fn=self.library.pm_compile_wave
+        compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols),ctypes.c_int]
+        code=b';'.join([b'x=x+.001']*220)+b';'
+        self.assertEqual(compile_fn(ctypes.byref(program),code,1,ctypes.byref(symbols),1),0)
+        self.assertGreater(program.count,1024)
+        values=(ctypes.c_float*218)();runtime=Runtime();error=ctypes.c_int()
+        fn=self.library.pm_execute_runtime
+        fn.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
+        self.library.pm_begin_frame()
+        self.assertEqual(fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),1)
+        before=bytes(program)
+        active_bytes=Program.code.offset+program.count*ctypes.sizeof(Op)
+        self.assertNotEqual(compile_fn(ctypes.byref(program),code,2,ctypes.byref(symbols),1),0)
+        self.assertEqual(bytes(program)[:active_bytes],before[:active_bytes])
 
     def test_eel_frame_budget_is_shared_and_stays_exhausted(self):
         program,symbols=Program(),Symbols()
@@ -1677,7 +1710,7 @@ per_frame_1=wave_r=progress;
     def test_pixel_restrictions_and_demo(self):
         for formula in ("time=0;",):
             self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
-        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,100))
+        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,300))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         self.assertEqual(self.parse(b"[preset00]\nper_pixel_2=dx=0;")[0],2)
         code,preset,_=self.parse((ROOT / "psp-client/presets/grid-twist-demo.milk").read_bytes())

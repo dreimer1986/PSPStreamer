@@ -239,7 +239,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==31);
+    assert(argc==33);
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];

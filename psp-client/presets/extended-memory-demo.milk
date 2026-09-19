@@ -1,0 +1,24 @@
+; Original PSPStreamer test: local/shared slots beyond the old 1024 limit.
+[preset00]
+fRating=4
+nWaveMode=7
+fDecay=.965
+zoom=1.008
+wave_r=.15
+wave_g=.6
+wave_b=1
+fWaveAlpha=.6
+per_frame_init_1=memset(1536,0,16);gmegabuf(2047)=0;
+per_frame_1=megabuf(2047)=.5+.5*sin(time*.6);gmegabuf(2047)=megabuf(2047);
+per_frame_2=i=0;loop(8,megabuf(1536+i)=.5+.5*sin(time+i*$pi/4);i+=1;);memcpy(1544,1536,8);
+per_frame_3=wave_r=.15+.7*megabuf(1544);wave_b=1-.5*megabuf(2047);
+shapecode_0_enabled=1
+shapecode_0_sides=6
+shapecode_0_num_inst=8
+shapecode_0_rad=.03
+shapecode_0_a=.7
+shapecode_0_a2=.1
+shapecode_0_border_a=.8
+shape_0_init1=megabuf(2047)=.03;
+shape_0_per_frame1=ang=time*.3+instance*$pi*2/num_inst;x=.5+.3*cos(ang);y=.5+.3*sin(ang);
+shape_0_per_frame2=r=.2+.8*gmegabuf(2047);g=.6;b=1-r*.6;rad=megabuf(2047)+.025*gmegabuf(2047);
