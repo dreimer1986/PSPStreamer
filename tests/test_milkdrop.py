@@ -83,7 +83,7 @@ class MilkDropTests(unittest.TestCase):
         self.assertIn("visual_preset != 4 || preset_result == MD_FILE_OK", music)
         self.assertLess(music.index("md_load_preset("), music.index("if (md_start())"))
         self.assertLess(music.index("if (md_start())"), music.index("sceKernelCreateThread("))
-        failure = music[music.index("if (start_result < 0)"):music.index("remote_result = music_remote_start()")]
+        failure = music[music.index("if (start_result < 0)"):music.index("remote_result = offline_music ? 0 : music_remote_start()")]
         self.assertIn("md_stop(); music_visual_active = 0;", failure)
         teardown = music[music.index("music_remote_stop();"):]
         self.assertIn("md_stop();", teardown)

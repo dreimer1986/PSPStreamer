@@ -51,5 +51,11 @@ int main(void) {
     assert(!offline_short_flv("PART.FLV.PART",13));
     assert(!offline_short_flv("123456789.FLVX",13));
     assert(!offline_short_flv("EÄ.FLV",13));
+    assert(offline_short_flv("MUSIK~1.MP3",13));
+    assert(!offline_short_flv("MUSIK.MP3.PART",14));
+    entries=1;read_error=0;
+    char music[512]="ms0:/PSP/VIDEO/PSPStreamer/job/Grüße.mp3";
+    /* Never resolve an MP3 to a same-size FLV in the directory. */
+    assert(offline_open_movie(music,sizeof(music),123456789)==(int)0x80010002);
     return 0;
 }

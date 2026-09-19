@@ -65,10 +65,29 @@ is not proof of PSP compatibility.
 ## Offline downloads (server/app 0.1.30 and matching PSP client)
 
 Choose **Streaming** or **Download, then play** in the PSP video options.
-The latter queues a full episode from its beginning, waits for conversion,
+The latter queues a complete file from its beginning, waits for conversion,
 downloads and verifies it, then starts the existing FLV/PTS player from the
-Memory Stick. It is not a general local-file browser. Music streaming is
-unchanged; offline jobs currently support video only.
+Memory Stick. It is not a general local-file browser.
+
+**Music downloads (server/app 0.1.34 and matching PSP client):** music options
+also offer **Streaming / Download, then play**. The server converts music files
+to stereo 44.1-kHz MP3 at the selected CBR/VBR quality. Download progress,
+resuming interrupted transfers, SHA256 checks and PC/USB ZIP export work just
+like video. Radio/live streams cannot be downloaded this way.
+
+Open downloaded songs in **Local storage**. Playback needs no server or WLAN,
+retains title/artist metadata and uses the normal music decoder, volume, pause,
+Spectrum/MilkDrop and fullscreen controls. Select pauses/resumes, Start stops.
+There is no local-music seek control in this batch. End-of-track advance stays
+within music entries; Shuffle visits each ready local song at most once per
+browser playback run. Videos are not mixed into that music sequence.
+
+The web **Convert for download** button accepts music too, without video-output
+or subtitle options. For an album, queue songs on the web and use **R** in the
+PSP server queue to transfer pending/ready entries. Starting a single download
+directly from the music options plays that song; use the Local storage browser
+for automatic multi-song playback. Keep the entire managed job folder even
+for MP3: metadata/ready and tiny empty sidecars retain the existing bundle format.
 
 For several episodes, use **Convert for download** in the web remote. Each
 job retains its own audio track, subtitle track, audio quality, frame rate and
@@ -93,7 +112,7 @@ Download and extract it on your PC, close PSP Streamer, then merge the contained
 Safely eject and open **Local storage**. The existing 0.1.30 PSP client needs
 no update. This works with HA and Docker without SSH or internal filesystem access.
 
-Copy the entire `PSP/VIDEO/PSPStreamer/<job-id>/` folder: FLV, `subtitles.ovl`,
+Copy the entire `PSP/VIDEO/PSPStreamer/<job-id>/` folder: FLV or MP3, `subtitles.ovl`,
 `seek.idx`, compact `job.json` and `ready`, not just the video. Multiple ZIPs
 can be merged thanks to unique job folders. Download ZIPs onto the PC first:
 the combined archive can exceed FAT32's limit even when individual files fit.

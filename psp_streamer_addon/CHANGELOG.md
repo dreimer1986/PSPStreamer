@@ -1,3 +1,10 @@
+# 0.1.34
+
+- Music conversion/download jobs: stereo 44.1-kHz MP3 with CBR/VBR quality.
+- Resume/checksum/Memory Stick ZIP support for music, with title/artist metadata.
+- Matching PSP client plays managed music downloads without Wi-Fi.
+- Same implementation and web controls as the ordinary Docker deployment.
+
 # 0.1.33
 
 - Persistent Internet radio station management and virtual radio library.

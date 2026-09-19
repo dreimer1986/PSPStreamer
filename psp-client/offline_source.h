@@ -3,6 +3,8 @@
 static char offline_movie[512], offline_directory[384];
 static unsigned long long offline_movie_size;
 static int offline_active, offline_seek_ms, offline_profile_tv;
+static int offline_music;
+static volatile int offline_music_eof;
 static unsigned int offline_seek_offset, offline_sprite_base;
 static SceUID offline_reader_fd = -1;
 static unsigned int offline_u32(const unsigned char *p) {

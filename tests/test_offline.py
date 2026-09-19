@@ -81,6 +81,43 @@ assert.equal(restoreTrack(select,'eng English'),false);
 assert.equal(select.value,'-1');
 '''], check=True)
 
+    def test_music_conversion_tags_quality_resume_and_zip(self):
+        source=self.root/'Musik Grüße.flac'
+        subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=sample_rate=48000:duration=1.3',
+                        '-metadata','title=Grüße','-metadata','artist=Künstler',str(source)],check=True)
+        token=self.library.encode(MediaItem(0,source.name))
+        for quality in ('96k','v5'):
+            code,_,body=self.request('POST','/api/offline/jobs',
+                {'id':token,'audio_quality':quality,'audio':4,'subtitle':3,'profile':'tv'})
+            self.assertEqual(code,200,body)
+            job=self.wait_ready(json.loads(body)['job'])
+            self.assertEqual((job['kind'],job['name'],job['audio'],job['subtitle']),
+                             ('audio','Musik Grüße.mp3',0,-1))
+            self.assertEqual((job['title'],job['artist']),('Grüße','Künstler'))
+            self.assertEqual(len(job['files']),3) # existing PSP bundle protocol
+            self.assertEqual(job['files'][2]['size'],0)
+            path=f"/api/offline/file/{job['job']}/0"
+            code,_,data=self.request('GET',path)
+            self.assertEqual(code,200)
+            self.assertEqual(data[0],255)
+            self.assertEqual(data[1]&0xfe,0xfa) # MPEG1 Layer III, no leading ID3
+            code,headers,tail=self.request('GET',path,headers={'Range':'bytes=113-'})
+            self.assertEqual(code,206)
+            self.assertEqual(data[113:],tail)
+            self.assertEqual(hashlib.sha256(data).hexdigest(),job['files'][0]['sha256'])
+            local=self.root/'output.mp3';local.write_bytes(data)
+            probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(local)]))
+            self.assertEqual(len(probe['streams']),1)
+            stream=probe['streams'][0]
+            self.assertEqual((stream['codec_name'],stream['sample_rate'],stream['channels']),('mp3','44100',2))
+            code,_,bundle=self.request('GET',f"/api/offline/export/{job['job']}")
+            self.assertEqual(code,200)
+            prefix=f"PSP/VIDEO/PSPStreamer/{job['job']}/"
+            with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+                self.assertEqual(archive.read(prefix+job['name']),data)
+                self.assertEqual(json.loads(archive.read(prefix+'job.json'))['kind'],'audio')
+                self.assertEqual(archive.read(prefix+'ready'),b'1')
+
     def test_pc_export_and_persistent_preferences(self):
         prefs = {'audio': 'jpn Japanese', 'subtitle': 'ger Deutsch', 'profile': 'tv',
                  'audio_quality': 'v5', 'video_fps': '24000/1001'}

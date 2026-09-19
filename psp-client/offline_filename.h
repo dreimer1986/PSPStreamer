@@ -1,6 +1,6 @@
 /* PC-created FAT long names are not necessarily addressable as UTF-8 by the
  * homebrew file API. Use the SDK's FAT short-name result, not a guessed ~1
- * alias or a global filesystem-encoding change. Each managed job has one FLV.
+ * alias or a global filesystem-encoding change. Each job has one FLV or MP3.
  * PSPSDK: SceIoFatDirentPrivate in pspiofilemgr_dirent.h. */
 static unsigned long long offline_manifest_movie_size(const char *meta) {
     const char *files=strstr(meta,"\"files\":["), *size, *end;
@@ -13,7 +13,7 @@ static int offline_short_flv(const char *name,size_t capacity) {
         unsigned char c=name[n++];
         if(c<33 || c>=127 || strchr("/\\:<>\"|?*",c))return 0;
     }
-    return n>4 && n<capacity && !strcasecmp(name+n-4,".flv");
+    return n>4 && n<capacity && (!strcasecmp(name+n-4,".flv") || !strcasecmp(name+n-4,".mp3"));
 }
 /* On success path contains the actual addressable filename. Only fall back
  * after ENOENT, and reject ambiguous, missing-size and directory matches. */
@@ -39,6 +39,9 @@ static SceUID offline_open_movie(char *path,size_t capacity,unsigned long long e
          * newer ones retain the size word and put it at offset four. */
         const char *alias=extra.size==sizeof(extra)?extra.s_name:(const char *)&extra;
         if(!offline_short_flv(alias,13))continue;
+        /* A same-sized unrelated media file is not the requested job output. */
+        const char *extension=strrchr(path,'.');
+        if(!extension || strcasecmp(extension,strrchr(alias,'.')))continue;
         int n=snprintf(candidate,sizeof(candidate),"%s/%s",folder,alias);
         if(n<0 || n>=(int)sizeof(candidate) || n>=(int)capacity){count=2;break;}
         if(++count>1)break;

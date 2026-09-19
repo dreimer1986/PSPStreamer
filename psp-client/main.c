@@ -1410,6 +1410,7 @@ static int audio_thread(SceSize args, void *argp) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body = NULL;
     int socket_fd = -1, header_size = 0, received, output_thread_id = -1;
+    SceUID local_fd = -1;
     TimedPacket timed_packet = {0};
     unsigned int block_pts = 0;
     int have = 0, frame_size, result, initial_size, frames_in_block = 0;
@@ -1432,7 +1433,10 @@ static int audio_thread(SceSize args, void *argp) {
     result = sceAudiocodecInit(mp3_codec, PSP_CODEC_MP3);
     codec_leave();
     if (result < 0) { audio_state = -23; goto cleanup; }
-    if (!timed_active) {
+    if (!timed_active && offline_music) {
+        local_fd=offline_open_movie(offline_movie,sizeof(offline_movie),offline_movie_size);
+        if(local_fd<0){audio_state=local_fd;goto cleanup;}
+    } else if (!timed_active) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
@@ -1499,7 +1503,14 @@ static int audio_thread(SceSize args, void *argp) {
             have = frame_size;
         } else {
         while (have < 4 && audio_running) {
-            received = stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+            received = offline_music ? sceIoRead(local_fd,mp3_input_buffer+have,MP3_INPUT_BUFFER_BYTES-have) :
+                stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+            if(offline_music && received<=0) {
+                if(received<0)audio_state=received;
+                else if(have)audio_state=-26;
+                else offline_music_eof=1;
+                goto cleanup;
+            }
             if (received == -2) continue;
             if (received <= 0) { audio_running = 0; break; }
             have += received;
@@ -1508,7 +1519,9 @@ static int audio_thread(SceSize args, void *argp) {
         frame_size = mp3_frame_size(mp3_input_buffer, have);
         if (frame_size < 0 || frame_size > MP3_MAX_FRAME_BYTES) { memmove(mp3_input_buffer, mp3_input_buffer + 1, --have); continue; }
         while (have < frame_size && audio_running) {
-            received = stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+            received = offline_music ? sceIoRead(local_fd,mp3_input_buffer+have,MP3_INPUT_BUFFER_BYTES-have) :
+                stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+            if(offline_music && received<=0){audio_state=received<0?received:-26;goto cleanup;}
             if (received == -2) continue;
             if (received <= 0) { audio_running = 0; break; }
             have += received;
@@ -1555,12 +1568,13 @@ static int audio_thread(SceSize args, void *argp) {
     }
 cleanup:
     free(timed_packet.data);
-    if (timed_active && frames_in_block && write_slot_reserved && audio_state >= 0 && timed_running) {
+    if ((timed_active || (offline_music && offline_music_eof)) && frames_in_block && write_slot_reserved && audio_state >= 0 && (timed_active?timed_running:audio_running)) {
         int used = frames_in_block * MP3_DECODE_SAMPLES * 2;
         short *slot = audio_samples + audio_queue_write * AUDIO_BLOCK_SAMPLES * 2;
         sceKernelDcacheInvalidateRange(slot, block_bytes);
         memset(slot + used, 0, block_bytes - used * sizeof(short));
-        audio_block_timestamp_ms[audio_queue_write] = block_pts;
+        audio_block_timestamp_ms[audio_queue_write] = timed_active ? block_pts :
+            (unsigned int)((unsigned long long)audio_blocks_published*audio_dac_samples*1000ULL/44100ULL);
         sceKernelDcacheWritebackRange(slot, block_bytes);
         audio_queue_write = (audio_queue_write + 1) % AUDIO_QUEUE_BLOCKS;
         sceKernelSignalSema(audio_queue_ready_sema, 1);
@@ -1573,6 +1587,12 @@ cleanup:
             sceKernelDelayThread(10000);
         timed_audio_done = 1;
     }
+    if(offline_music && offline_music_eof && audio_state>=0) {
+        audio_queue_primed=1;audio_state=15;
+        while(audio_running && audio_state>=0 && audio_played_blocks<audio_blocks_published)
+            sceKernelDelayThread(10000);
+    }
+    if(local_fd>=0)sceIoClose(local_fd);
     /* A decoder failure or end-of-stream must wake the UI and DAC worker.
      * Previously this flag could remain true after the producer had gone,
      * leaving the player apparently frozen with an empty audio queue. */
@@ -1625,6 +1645,8 @@ static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
 static int play_audio_once(const char *media_id, const char *title) {
+    offline_music_eof=0;
+    music_remote_action=MUSIC_REMOTE_NONE;
     int live=radio_is_live(media_id), last_radio_blocks=0;
     char radio_station[192],radio_song[192]="";
     snprintf(radio_station,sizeof(radio_station),"%s",title);
@@ -1707,7 +1729,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         free(sequence);
         return start_result;
     }
-    remote_result = music_remote_start();
+    remote_result = offline_music ? 0 : music_remote_start();
     while (audio_running && remote_result >= 0) {
         video_watch_ping("music loop");
         SceCtrlData pad;
@@ -1900,7 +1922,9 @@ static int play_audio_once(const char *media_id, const char *title) {
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song
      * end, just as video uses its rendered-frame clock. */
-    if (!live && !stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
+    if(offline_music && offline_music_eof && !stopped_by_user && audio_state>=15)
+        playback_reached_end=1;
+    if (!offline_music && !live && !stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
         remote_result >= 0 &&
         stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
@@ -2790,8 +2814,10 @@ static int playback_options(int audio_only) {
             if (audio_only) {
                 if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
                 if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
+                if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
                 gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
                 if(audio_only!=2)gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
+                if(audio_only!=2)gui_text(38, 104, 0x00FFFFFF, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
                 gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
                 gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
                 gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
@@ -2824,14 +2850,15 @@ static int playback_options(int audio_only) {
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
-        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 1) % (audio_only==2?1:2);
-        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % (audio_only==2?1:2);
+        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % (audio_only==2?1:3);
+        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % (audio_only==2?1:3);
         if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 4) % 5;
         if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 5;
         if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
             if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
-            else if (audio_only) audio_shuffle = !audio_shuffle;
+            else if (audio_only && row==1) audio_shuffle = !audio_shuffle;
+            else if (audio_only) download_before_play = !download_before_play;
             else if (row == 0 && audio_track_count)
                 selected_audio_track = (selected_audio_track + delta + audio_track_count) % audio_track_count;
             else if (row == 1) {
@@ -3048,8 +3075,8 @@ int main(void) {
                 show_metadata_loading();
                 load_media_metadata(items[selected].value);
                 if (!playback_options(radio_is_live(items[selected].value)?2:items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
-                if(!items[selected].is_audio && download_before_play) {
-                    offline_enqueue_play(items[selected].value);
+                if(!radio_is_live(items[selected].value) && download_before_play) {
+                    offline_enqueue_play(items[selected].value,items[selected].is_audio);
                     dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
                 }
             }

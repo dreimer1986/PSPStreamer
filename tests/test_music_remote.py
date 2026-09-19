@@ -32,7 +32,7 @@ class MusicRemoteTests(unittest.TestCase):
     def test_music_consumes_controls_and_joins_before_return(self):
         source = (ROOT / "psp-client/main.c").read_text()
         music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
-        self.assertIn("remote_result = music_remote_start();", music)
+        self.assertIn("remote_result = offline_music ? 0 : music_remote_start();", music)
         for action in ("PAUSE", "RESUME", "STOP", "PLAY", "SEEK"):
             self.assertIn("MUSIC_REMOTE_" + action, music)
         self.assertIn("stream_start_seconds = seek_seconds;", music)

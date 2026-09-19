@@ -4,7 +4,7 @@
 #include <mbedtls/sha256.h>
 #define OFFLINE_ROOT "ms0:/PSP/VIDEO/PSPStreamer"
 #define OFFLINE_JOBS 128
-typedef struct {char id[33],name[128],state[20],info[96];int progress;} OfflineEntry;
+typedef struct {char id[33],name[128],state[20],info[96];int progress,is_audio;} OfflineEntry;
 static OfflineEntry offline_entries[OFFLINE_JOBS];
 static int offline_count;
 static int download_catalog_request;
@@ -278,12 +278,18 @@ static void offline_scan(void) {
             if(offline_text_load(path,meta,sizeof(meta))>0) {
                 OfflineEntry *item=&offline_entries[offline_count];
                 if(json_value(meta,"name",item->name,sizeof(item->name)) && offline_leaf_valid(item->name)) {
+                    char kind[12]="";json_value(meta,"kind",kind,sizeof(kind));
+                    item->is_audio=!strcmp(kind,"audio");
                     snprintf(item->id,sizeof(item->id),"%s",entry.d_name);
                     snprintf(path,sizeof(path),"%s/%s/ready",OFFLINE_ROOT,entry.d_name);
                     snprintf(item->state,sizeof(item->state),"%s",offline_size(path)?"ready":"partial");
                     char audio[20]="",sub[20]="",profile[16]="";
                     json_value(meta,"audio_label",audio,sizeof(audio));json_value(meta,"subtitle_label",sub,sizeof(sub));json_value(meta,"profile",profile,sizeof(profile));
                     snprintf(item->info,sizeof(item->info),"%s | A%d %s | S%d %s",!strcmp(profile,"tv")?"TV 720x480":"LCD 480x272",json_integer(meta,"audio",0)+1,audio,json_integer(meta,"subtitle",-1)+1,sub);
+                    if(item->is_audio) {
+                        char quality[12]="";json_value(meta,"audio_quality",quality,sizeof(quality));
+                        snprintf(item->info,sizeof(item->info),"MP3 | 44.1 kHz | %s",quality);
+                    }
                     item->progress=!strcmp(item->state,"ready")?100:0;offline_count++;
                 }
             }
@@ -355,15 +361,21 @@ static int offline_play(const OfflineEntry *item) {
     char *duration=strstr(meta,"\"duration\":");current_duration_seconds=duration?atof(duration+11):0;
     offline_profile_tv=json_value(meta,"profile",profile,sizeof(profile))&&!strcmp(profile,"tv");
     offline_active=1;stream_start_seconds=0;resume_pending=seek_requested=0;
+    offline_music=item->is_audio;
+    current_media_title[0]=current_media_artist[0]=0;
+    if(offline_music) {
+        json_value(meta,"title",current_media_title,sizeof(current_media_title));
+        json_value(meta,"artist",current_media_artist,sizeof(current_media_artist));
+    }
     int result;
     do {
         seek_requested=0;
-        result=play_h264(item->id);
+        result=offline_music?play_audio(item->id,item->name):play_h264(item->id);
         ui_restore_after_playback();
         if(result<0 || !seek_requested)break;
         sceKernelDelayThread(250000);
     } while(1);
-    offline_active=0;offline_movie[0]=offline_directory[0]=0;resume_pending=seek_requested=0;
+    offline_active=offline_music=0;offline_movie[0]=offline_directory[0]=0;resume_pending=seek_requested=0;
     if(result<0) {
         snprintf(status,sizeof(status),"%s: %08X",video_step,result);
         settings_shell(tr(TXT_LOCAL_STORAGE));settings_line(1,0,video_step);
@@ -423,11 +435,22 @@ static void offline_browser(void) {
                 server=0;selected=0;offline_scan();
             } else {
                 int result;
+                unsigned char played[OFFLINE_JOBS]={0};
                 do {
+                    played[selected]=1;
                     result=offline_play(&offline_entries[selected]);
                     if(result<0 || (!playback_reached_end&&!video_file_direction))break;
-                    int next=selected+(video_file_direction<0?-1:1);
-                    if(next<0||next>=offline_count||strcmp(offline_entries[next].state,"ready"))break;
+                    int next=-1,direction=video_file_direction<0?-1:1;
+                    if(offline_entries[selected].is_audio && audio_shuffle) {
+                        int candidates[OFFLINE_JOBS],count=0;
+                        for(int i=0;i<offline_count;i++)if(!played[i] && offline_entries[i].is_audio && !strcmp(offline_entries[i].state,"ready"))candidates[count++]=i;
+                        if(count)next=candidates[(unsigned int)sceKernelGetSystemTimeWide()%count];
+                    } else for(int i=selected+direction;i>=0&&i<offline_count;i+=direction) {
+                        if(offline_entries[i].is_audio!=offline_entries[selected].is_audio)continue;
+                        if(!strcmp(offline_entries[i].state,"ready"))next=i;
+                        break;
+                    }
+                    if(next<0)break;
                     selected=next;sceKernelDelayThread(250000);
                 } while(1);
             }
@@ -437,11 +460,11 @@ static void offline_browser(void) {
         old=pad.Buttons;sceKernelDelayThread(30000);
     }
 }
-static void offline_enqueue_play(const char *media_id) {
+static void offline_enqueue_play(const char *media_id,int audio_only) {
     char post[1024];
     snprintf(post,sizeof(post),"{\"id\":\"%s\",\"audio\":%d,\"subtitle\":%d,\"audio_quality\":\"%s\",\"video_fps\":\"%s\",\"profile\":\"%s\"}",
-        media_id,selected_audio_track,selected_subtitle_track,audio_quality_name(),selected_video_fps?"24000/1001":"20",
-        (tvout_load_manager()==0 && pspDveMgrCheckVideoOut()==2)?"tv":PSP_STREAMER_PROFILE);
+        media_id,audio_only?0:selected_audio_track,audio_only?-1:selected_subtitle_track,audio_quality_name(),selected_video_fps?"24000/1001":"20",
+        audio_only?"normal":(tvout_load_manager()==0 && pspDveMgrCheckVideoOut()==2)?"tv":PSP_STREAMER_PROFILE);
     if(offline_transfer(NULL,post)==0) {
         offline_scan();for(int i=0;i<offline_count;i++)if(!strcmp(offline_entries[i].id,download_key)){offline_play(&offline_entries[i]);break;}
     }

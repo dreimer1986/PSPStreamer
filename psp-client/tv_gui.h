@@ -216,6 +216,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         if (audio_only) {
             tv_text(34, 110, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
             if(audio_only!=2)tv_text(34, 170, 38, 2, TV_WHITE, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
+            if(audio_only!=2)tv_text(34, 230, 38, 2, TV_WHITE, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
         } else {
             tv_text(34, 110, 38, 2, TV_WHITE, tr(TXT_AUDIO_LABEL),
                 audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),

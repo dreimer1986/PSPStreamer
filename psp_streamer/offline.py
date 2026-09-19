@@ -110,9 +110,10 @@ class OfflineQueue:
         if not isinstance(options.get('id'), str) or len(options['id']) > 4096:
             raise ValueError('Invalid media identifier')
         _, source = self.library.decode(str(options.get('id', '')))
-        from .server import VIDEO_EXTENSIONS
-        if source.suffix.lower() not in VIDEO_EXTENSIONS:
-            raise ValueError('Offline downloads currently support video only')
+        from .server import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS
+        music = source.suffix.lower() in AUDIO_EXTENSIONS
+        if source.suffix.lower() not in VIDEO_EXTENSIONS | AUDIO_EXTENSIONS:
+            raise ValueError('Offline downloads require a video or music file')
         clean = {'id': str(options['id']), 'audio': int(options.get('audio', 0)),
                  'subtitle': int(options.get('subtitle', -1)),
                  'audio_quality': str(options.get('audio_quality', '160k')),
@@ -122,6 +123,8 @@ class OfflineQueue:
                 clean['audio_quality'] not in {'96k', '128k', '160k', 'v6', 'v5', 'v4', 'v3'} or
                 clean['video_fps'] not in {'20', '24000/1001'} or clean['profile'] not in {'normal', 'low', 'tv'}):
             raise ValueError('Invalid conversion options')
+        if music:
+            clean.update(audio=0, subtitle=-1, profile='normal')
         # FAT-safe leaf names. Unique job directories keep variants separate.
         name = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '_', source.stem).strip(' .') or 'Video'
         while len(name.encode('utf-8')) > 110:
@@ -130,7 +133,8 @@ class OfflineQueue:
         with self.lock:
             if len(self.jobs) >= MAX_JOBS:
                 raise ValueError('Queue full; remove old server jobs first')
-            job = dict(clean, job=uuid.uuid4().hex, name=name + '.flv', state='queued',
+            job = dict(clean, job=uuid.uuid4().hex, kind='audio' if music else 'video',
+                       name=name + ('.mp3' if music else '.flv'), state='queued',
                        progress=0, bytes=0, duration=0, created=time.time(), error='', files=[])
             self.jobs[job['job']] = job
             self._save(job)
@@ -232,9 +236,12 @@ class OfflineQueue:
         folder = self.root / job['job']
         probe = json.loads(self._capture(['ffprobe', '-v', 'error', '-show_streams', '-show_format',
                                          '-of', 'json', str(source)], job))
-        if not any(s.get('codec_type') == 'video' for s in probe['streams']):
+        music = job.get('kind') == 'audio'
+        if not music and not any(s.get('codec_type') == 'video' for s in probe['streams']):
             raise ValueError('No video stream')
         audio = [s for s in probe['streams'] if s.get('codec_type') == 'audio']
+        if music and not audio:
+            raise ValueError('No audio stream')
         if audio and job['audio'] >= len(audio):
             raise ValueError('Selected audio track does not exist')
         job['audio_label'] = audio[job['audio']].get('tags', {}).get('language', 'und') if audio else 'none'
@@ -242,15 +249,23 @@ class OfflineQueue:
         job['subtitle_label'] = (subtitles[job['subtitle']].get('tags', {}).get('language', 'und')
                                  if 0 <= job['subtitle'] < len(subtitles) else 'off')
         job['duration'] = float(probe.get('format', {}).get('duration', 0))
+        if music:
+            from .radio import display_text
+            tags = {k.lower(): v for stream in audio for k, v in stream.get('tags', {}).items()}
+            tags.update({k.lower(): v for k, v in probe.get('format', {}).get('tags', {}).items()})
+            job.update(title=display_text(tags.get('title') or source.stem),
+                       artist=display_text(tags.get('artist') or tags.get('album_artist')))
         if shutil.disk_usage(folder).free < 32 * 1024 * 1024:
             raise ValueError('Insufficient server disk space')
         burn = self._subtitles(job, source, probe, folder)
         bitmap = burn >= 0
-        command = self.command_builder(source, job['audio'], 'flv', job['profile'] == 'low',
+        command = self.command_builder(source, job['audio'], 'mp3' if music else 'flv', job['profile'] == 'low',
                                       burn, job['audio_quality'], None, 0, bitmap, job['profile'] == 'tv', job['video_fps'])
-        command.remove('-re')
-        i = command.index('-readrate_initial_burst')
-        del command[i:i+2]
+        if '-re' in command:
+            command.remove('-re')
+        if '-readrate_initial_burst' in command:
+            i = command.index('-readrate_initial_burst')
+            del command[i:i+2]
         temporary = folder / 'video.part'
         command[-1] = str(temporary)
         command[1:1] = ['-y', '-progress', 'pipe:1', '-nostats']
@@ -274,10 +289,10 @@ class OfflineQueue:
         temporary.replace(folder / job['name'])
         # Compact seek index: timestamp and byte position of each AVC keyframe.
         with (folder / job['name']).open('rb') as video, (folder / 'seek.idx').open('wb') as index:
-            if video.read(3) != b'FLV':
+            if not music and video.read(3) != b'FLV':
                 raise ValueError('Invalid conversion output')
             video.seek(13)
-            while True:
+            while not music:
                 if self.stopping.is_set() or job['state'] == 'cancelled':
                     raise ValueError('Cancelled')
                 offset = video.tell()
