@@ -106,7 +106,9 @@ class OfflineQueue:
                 raise ValueError('Unknown download job')
             return dict(self.jobs[key])
 
-    def add(self, options):
+    def prepare(self, options):
+        if not isinstance(options, dict):
+            raise ValueError('Invalid conversion options')
         if not isinstance(options.get('id'), str) or len(options['id']) > 4096:
             raise ValueError('Invalid media identifier')
         _, source = self.library.decode(str(options.get('id', '')))
@@ -129,17 +131,32 @@ class OfflineQueue:
         name = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '_', source.stem).strip(' .') or 'Video'
         while len(name.encode('utf-8')) > 110:
             name = name[:-1]
+        return dict(clean, job=uuid.uuid4().hex, kind='audio' if music else 'video',
+                    name=name + ('.mp3' if music else '.flv'), state='queued',
+                    progress=0, bytes=0, duration=0, created=time.time(), error='', files=[])
+
+    def add(self, options):
+        return self.add_many([options])[0]
+
+    def add_many(self, options):
+        if not isinstance(options, list) or not 1 <= len(options) <= MAX_JOBS:
+            raise ValueError('Choose between 1 and 128 files')
+        # Validate the whole request before publishing even the first job.
+        prepared = [self.prepare(item) for item in options]
         self.start()
         with self.lock:
-            if len(self.jobs) >= MAX_JOBS:
+            if len(self.jobs) + len(prepared) > MAX_JOBS:
                 raise ValueError('Queue full; remove old server jobs first')
-            job = dict(clean, job=uuid.uuid4().hex, kind='audio' if music else 'video',
-                       name=name + ('.mp3' if music else '.flv'), state='queued',
-                       progress=0, bytes=0, duration=0, created=time.time(), error='', files=[])
-            self.jobs[job['job']] = job
-            self._save(job)
+            try:
+                for job in prepared:
+                    self._save(job)
+            except OSError:
+                for job in prepared:
+                    shutil.rmtree(self.root / job['job'], ignore_errors=True)
+                raise
+            self.jobs.update((job['job'], job) for job in prepared)
         self.wake.set()
-        return dict(job)
+        return [dict(job) for job in prepared]
 
     def cancel(self, key):
         with self.lock:

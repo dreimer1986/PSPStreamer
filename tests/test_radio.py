@@ -184,7 +184,7 @@ class RadioIntegrationTests(unittest.TestCase):
                     self.assertEqual(status, 200)
                     key = station['id']
                     listing = request('GET', '/api/library')[1]
-                    self.assertEqual(listing['folders'][0]['path'], ':radio:')
+                    self.assertIn({'name':'Internet Radio','path':':radio:'}, listing['folders'])
                     stations = request('GET', '/api/library?path=%3Aradio%3A')[1]['videos']
                     self.assertEqual(stations[0]['id'], key)
                     self.assertTrue(stations[0]['live'])

@@ -1,3 +1,12 @@
+# 0.1.38
+
+- Password login page, bounded browser sessions, logout and CSRF protection; PSP Basic authentication stays compatible.
+- Responsive Library / Remote control / Downloads / Settings navigation, English/German selection and existing app artwork.
+- Files, Plex and Internet Radio share a stable source overview; mounted roots are grouped under Files, including correct parent navigation.
+- Convert selected files or entire folders, optionally including subfolders. Preview matches language/title per file and excludes missing or ambiguous tracks.
+- Hide irrelevant controls for music and until a media file is selected. Preserve subtitle index zero and saved playback preferences.
+- Identical server and web assets in Home Assistant and ordinary Docker.
+
 # 0.1.37
 
 - Plex originals stream directly over the selected HTTP(S) connection: no path mappings or shared network required.

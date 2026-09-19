@@ -33,6 +33,8 @@ from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
 from .plex_media import RemoteSource
+from .web_session import WebSessions
+from .catalogue import browse as browse_catalogue, folder_media
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -344,6 +346,9 @@ class AppHandler(BaseHTTPRequestHandler):
     server: "AppServer"
 
     def authorized(self) -> bool:
+        self.web_csrf = self.server.web_sessions.get(self.headers.get('Cookie'))
+        if self.web_csrf:
+            return True
         if not self.server.settings.protected:
             return True
         supplied = b""
@@ -359,6 +364,17 @@ class AppHandler(BaseHTTPRequestHandler):
         if self.server.settings.verify(supplied):
             return True
         self.close_connection = True  # Do not interpret an unread POST body as another request.
+        if (urlparse(self.path).path in ('/', '/index.html') or
+                self.headers.get('Sec-Fetch-Mode') == 'navigate' or
+                'text/html' in self.headers.get('Accept', '')):
+            self.send_response(HTTPStatus.SEE_OTHER)
+            self.send_header('Location', '/login')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return False
+        if self.headers.get('X-PSP-Web') == '1' or self.headers.get('Sec-Fetch-Mode'):
+            self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Please sign in')
+            return False
         self.send_response(HTTPStatus.UNAUTHORIZED)
         self.send_header("WWW-Authenticate", 'Basic realm="PSP Streamer", charset="UTF-8"')
         self.send_header("Cache-Control", "no-store")
@@ -372,9 +388,14 @@ class AppHandler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
     def end_headers(self) -> None:
-        if self.server.settings.protected:
+        if getattr(self, 'session_cookie', None) is not None:
+            self.send_header('Set-Cookie', self.session_cookie)
+            self.session_cookie = None
+        if self.server.settings.protected or urlparse(self.path).path in ('/api/session', '/api/login', '/api/logout'):
             self.send_header("Cache-Control", "private, no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'same-origin')
         super().end_headers()
 
     def send_json(self, body: object, status: HTTPStatus = HTTPStatus.OK) -> None:
@@ -390,11 +411,20 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_json({"error": message}, status)
 
     def do_GET(self) -> None:  # noqa: N802
+        public = urlparse(self.path).path
+        if public in ('/login', '/login.html', '/login.js', '/web.css', '/i18n.js', '/logo.png'):
+            return self.static_file('/login.html' if public == '/login' else public)
         if not self.authorized():
             return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/session':
+                return self.send_json({'csrf': self.web_csrf or '', 'protected': self.server.settings.protected})
+            if parsed.path == '/api/library/files':
+                return self.send_json({'files': folder_media(self.server,
+                    int(query.get('root', ['0'])[0]), query.get('path', [''])[0],
+                    query.get('recursive', ['0'])[0] == '1')})
             if parsed.path == '/api/plex':
                 return self.send_json(self.server.plex.public())
             if parsed.path == '/api/plex/servers':
@@ -448,21 +478,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
                 path = query.get("path", [""])[0]
-                sources = self.server.plex.public()
-                if path.startswith(':plex:'):
-                    return self.send_json(self.server.plex.browse(root, path))
-                if path == RADIO_PATH and sources['radio']:
-                    return self.send_json(self.server.radio.browse(root))
-                if not sources['files'] and path:
-                    raise ValueError('Filesystem source is disabled')
-                listing = self.server.library.browse(root, path) if sources['files'] else {
-                    'root': root, 'path': '', 'parent': None, 'folders': [], 'videos': []}
-                if not path:
-                    if sources['radio']:
-                        listing['folders'].insert(0, {'name': 'Internet radio', 'path': RADIO_PATH})
-                    if sources['enabled']:
-                        listing['folders'].insert(0, {'name': 'Plex', 'path': ':plex:'})
-                return self.send_json(listing)
+                return self.send_json(browse_catalogue(self.server, root, path))
             if parsed.path.startswith("/api/media-next/"):
                 if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
                     self.server.radio.get(parsed.path.rsplit('/', 1)[-1])
@@ -513,7 +529,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, "Internal server error")
 
     def do_POST(self) -> None:  # noqa: N802
-        if not self.authorized():
+        login = urlparse(self.path).path == '/api/login'
+        if not login and not self.authorized():
             return
         # Native PSP clients only GET. Browser commands must be same-origin
         # JSON; reject form POSTs that could reuse cached Basic credentials.
@@ -524,6 +541,34 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
+            if login:
+                if not self.server.web_sessions.allow_login(self.client_address[0]):
+                    self.close_connection = True
+                    return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, 'Too many attempts; wait one minute')
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 2048:
+                    self.close_connection = True
+                    raise ValueError('Invalid login request')
+                data = json.loads(self.rfile.read(length))
+                password = data.get('password') if isinstance(data, dict) else None
+                if not isinstance(password, str) or not self.server.settings.verify(password.encode('utf-8')):
+                    return self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Incorrect password')
+                with self.server.settings.lock:
+                    # Recheck under the same lock as password changes.
+                    if not self.server.settings.verify(password.encode('utf-8')):
+                        return self.send_error_json(HTTPStatus.UNAUTHORIZED, 'Incorrect password')
+                    self.server.web_sessions.revoke(self.headers.get('Cookie'))
+                    token, _ = self.server.web_sessions.create()
+                self.session_cookie = self.cookie_value(token, WebSessions.lifetime)
+                return self.send_json({'ok': True})
+            if self.web_csrf and not hmac.compare_digest(self.web_csrf.encode(), self.headers.get('X-CSRF-Token', '').encode()):
+                self.close_connection = True
+                return self.send_error_json(HTTPStatus.FORBIDDEN, 'Invalid session token')
+            if parsed.path == '/api/logout':
+                self.close_connection = True
+                self.server.web_sessions.revoke(self.headers.get('Cookie'))
+                self.session_cookie = self.cookie_value('', 0)
+                return self.send_json({'ok': True})
             if parsed.path.startswith('/api/plex/'):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 2 <= length <= 8192:
@@ -546,7 +591,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_error_json(HTTPStatus.NOT_FOUND, 'Not found')
             if parsed.path.startswith('/api/offline/'):
                 length = int(self.headers.get('Content-Length', '0'))
-                if not 2 <= length <= 8192:
+                if not 2 <= length <= (131072 if parsed.path == '/api/offline/batch' else 8192):
                     self.close_connection = True
                     raise ValueError('Invalid request length')
                 data = json.loads(self.rfile.read(length).decode('utf-8'))
@@ -556,6 +601,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_json(self.server.offline.preferences(data))
                 if parsed.path == '/api/offline/jobs':
                     return self.send_json(self.server.offline.add(data))
+                if parsed.path == '/api/offline/batch':
+                    return self.send_json({'jobs': self.server.offline.add_many(data.get('items'))})
                 if parsed.path == '/api/offline/cancel':
                     return self.send_json(self.server.offline.cancel(str(data.get('job', ''))))
                 if parsed.path == '/api/offline/delete':
@@ -570,7 +617,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 settings = json.loads(self.rfile.read(length).decode("utf-8"))
                 if not isinstance(settings, dict):
                     raise ValueError("Invalid settings")
-                self.server.settings.change(settings.get("current", ""), settings.get("password"))
+                with self.server.settings.lock:
+                    self.server.settings.change(settings.get("current", ""), settings.get("password"))
+                    self.server.web_sessions.clear()
+                self.session_cookie = self.cookie_value('', 0)
                 return self.send_json({"ok": True})
             if parsed.path != "/api/remote/command":
                 if parsed.path == '/api/radio':
@@ -708,6 +758,12 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def cookie_value(self, token, age):
+        # A same-origin HTTPS Origin also covers TLS-terminating reverse proxies;
+        # arbitrary X-Forwarded-* headers are deliberately not trusted.
+        secure = bool(self.server.tls_context) or self.headers.get('Origin', '').startswith('https://')
+        return f'psp_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}' + ('; Secure' if secure else '')
 
     def metadata(self, token: str) -> None:
         if token.startswith('radio.'):
@@ -981,6 +1037,7 @@ class AppServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], library: Library):
         self.settings = PasswordSettings()
+        self.web_sessions = WebSessions()
         cert = os.environ.get("PSP_STREAMER_TLS_CERT", "")
         key = os.environ.get("PSP_STREAMER_TLS_KEY", "")
         self.tls_context = None

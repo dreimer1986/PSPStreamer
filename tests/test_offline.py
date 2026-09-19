@@ -66,7 +66,7 @@ class OfflineTests(unittest.TestCase):
 
     def test_web_preferred_track_matching(self):
         script = (Path(__file__).resolve().parents[1] / 'static/offline.js').read_text()
-        function = script[script.index('function restoreTrack('):script.index('choose=async')]
+        function = script
         subprocess.run(['node', '-e', function + '''
 const assert=require('node:assert/strict');
 const select={options:[{value:'-1',textContent:'Off'},
@@ -79,7 +79,28 @@ assert.equal(restoreTrack(select,'Off'),true);
 assert.equal(select.value,'-1');
 assert.equal(restoreTrack(select,'eng English'),false);
 assert.equal(select.value,'-1');
+assert.equal(preferredTrack([{n:'4',l:'ger',t:'Full'}],{language:'deu',title:'Full'},true),4);
+assert.equal(preferredTrack([{n:'0',l:'deu'},{n:'1',l:'deu'}],{language:'deu'}),null);
+assert.equal(preferredTrack([],{language:'deu'},true),null);
+assert.equal(preferredTrack([],'off',true),-1);
 '''], check=True)
+
+    def test_batch_http_validation_and_complete_conversions(self):
+        token = self.source()
+        code, _, _ = self.request('POST', '/api/offline/batch',
+                                  {'items': [{'id': token}, {'id': 'invalid'}]})
+        self.assertEqual(code, 400)
+        self.assertFalse(self.server.offline.list())
+        code, _, body = self.request('POST', '/api/offline/batch', {'items': [
+            {'id': token, 'subtitle': -1, 'audio_quality': 'v5'},
+            {'id': token, 'subtitle': 0, 'audio_quality': '96k'}]})
+        self.assertEqual(code, 200, body)
+        jobs = json.loads(body)['jobs']
+        self.assertEqual(len(jobs), 2)
+        for job in jobs:
+            finished = self.wait_ready(job['job'])
+            self.assertEqual(finished['subtitle'], job['subtitle'])
+            self.assertEqual(finished['audio_quality'], job['audio_quality'])
 
     def test_music_conversion_tags_quality_resume_and_zip(self):
         source=self.root/'Musik Grüße.flac'

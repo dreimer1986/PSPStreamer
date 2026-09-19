@@ -24,7 +24,7 @@ timeouts. TV bitmap burn-in skips the unused PSP sprite extraction entirely.
 Update **both the server and PSP application**. Docker and the Home Assistant app
 provide the same integration. No Plex password or token belongs in the PSP CFG.
 
-1. Open **Media sources / Plex** in the server web interface. Choose **Link Plex
+1. Open **Settings → Plex** in the server web interface. Choose **Link Plex
    account**, then **Open Plex sign-in**. Authorize PSPStreamer on Plex's own
    website. The local page detects completion; the link expires after five minutes.
 2. Select a discovered server connection and press **Use connection**. Prefer a
@@ -94,8 +94,8 @@ independent implementation; no Tautulli source was copied.
 
 ### Internet radio and music tags (server 0.1.33)
 
-Update the server **and the PSP build**. In the web UI, open **Internet radio —
-manage stations**, enter a name and a direct HTTP(S) audio URL, then save.
+Update the server **and the PSP build**. In the web UI, open **Settings → Internet Radio**,
+enter a name and a direct HTTP(S) audio URL, then save.
 Stations appear in the PSP's **Internet radio / Internetradio** library folder;
 press Square to refresh. Select a station, choose audio quality and start it.
 The web remote can select/play stations and replace music/video playback too.
@@ -179,7 +179,15 @@ directly from the music options plays that song; use the Local storage browser
 for automatic multi-song playback. Keep the entire managed job folder even
 for MP3: metadata/ready and tiny empty sidecars retain the existing bundle format.
 
-For several episodes, use **Convert for download** in the web remote. Each
+For several episodes, use the Library checkboxes and **Convert selected**, or
+**Convert this folder**. Subfolders are included only when explicitly enabled.
+In Downloads, choose audio/subtitle language, quality, frame rate and output,
+then **Check tracks**. The preview resolves language and title separately in
+every file, rather than copying a stream index across episodes. Missing or
+ambiguous tracks are shown and excluded; review the results, then **Queue
+checked files**. At most 128 files and 256 visited folders are allowed per
+batch, including Plex pages. All-music batches show only audio quality.
+Single files still use **Convert for download** in the web remote. Each
 job retains its own audio track, subtitle track, audio quality, frame rate and
 LCD/TV profile. Conversions run sequentially, without real-time throttling;
 the queue survives server restarts. A single conversion shares the server's
@@ -196,7 +204,7 @@ thread count automatically, with no single-core limit imposed by the queue.
 
 ### Recommended: PC/USB transfer (server 0.1.31)
 
-For a finished conversion, click **Download Memory Stick ZIP (PC / USB — recommended)**.
+For a finished conversion, click **Download Memory Stick ZIP** (PC / USB is recommended).
 Download and extract it on your PC, close PSP Streamer, then merge the contained
 **PSP** folder into the Memory Stick root (not into another PSP folder).
 Safely eject and open **Local storage**. The existing 0.1.30 PSP client needs
@@ -787,6 +795,14 @@ cp EBOOT.PBP release/PSPStreamer/EBOOT.PBP
 
 Keep the firmware bridge and TV-out PRX files from the working installation alongside the new EBOOT. The Makefile preserves the MPEG import-library order and embeds the receiver artwork.
 
+The default optimization remains `-O2 -G0`. An optional comparison build uses
+`make clean && make OPT_LEVEL=-O3`; clean first because make does not track
+compiler-flag changes. No fast-math options are enabled. Restore the baseline
+with `make clean && make`. Copy the matching EBOOT/PRX pair, keep your config,
+presets and firmware modules, and compare the same presets on LCD and TV.
+`-O3` is a hardware test candidate, not a guarantee of greater speed or stability.
+See [the O2/O3 comparison and test checklist](docs/OPTIMIZATION_COMPARISON.md).
+
 ## Tests
 
 See [music rendering ownership and performance](docs/MUSIC_RENDERING.md)
@@ -808,6 +824,14 @@ Client regression tests also exercise the first-picture/DAC startup barrier, lat
 python3 -m unittest discover -s tests -v
 ```
 
+Optional browser regression tests require Node.js, Playwright and its Chromium
+browser. Run `node tests/web_ui_browser.cjs` and
+`node tests/web_login_browser.cjs` (or set `PLAYWRIGHT_MODULE` to an installed
+Playwright module). The first uses deterministic media fixtures; the second
+starts an isolated local Python server and exercises real login/logout,
+password changes, navigation and remote commands. Neither contacts your
+personal server or Plex installation.
+
 Before treating a build as hardware-validated, test one complete episode on both LCD and TV, then pause/resume, seek, stop/start another file, subtitles and a WLAN disconnect/reconnect. A successful host test or build alone is not a claim of perfect real-device synchronization.
 
 ## License and reference
@@ -826,8 +850,8 @@ Set the HA app option `password`, or use **Server settings** in the Docker WebUI
 `PSP_STREAMER_PASSWORD` bootstraps Docker; a saved WebUI password takes precedence
 and survives restarts in the `/data` volume. HA still manages its password via
 its app options and requires a restart after changes there.
-All GET/POST routes, including media, metadata, subtitles, the website
-and remote control, require authentication when the password is nonempty.
+All media, metadata, subtitle and control routes require authentication when
+the password is nonempty. Only the login page and its static assets are public.
 An empty password preserves unauthenticated LAN use; it is **not safe for WAN**.
 
 Put the identical password in the PSP's Settings screen or `server_password=` in
@@ -837,12 +861,29 @@ enter consistently. The client preserves this setting when saving volume or
 other preferences. The password is stored in plaintext on the Memory Stick.
 Do not commit your real config or put credentials into URLs.
 
-The website uses the browser's HTTP Basic login dialog: username **psp**, plus
-the shared password. There are no user accounts; `psp` is a fixed protocol
-label. Wrong/missing credentials return HTTP 401 before any library/transcode
-work. Browser control commands require same-origin JSON. Protected responses
-are marked non-cacheable. Clear the browser's saved authentication or restart
-its session after changing passwords.
+The website has a password-only login page and **Sign out**. Browser sessions
+expire after 12 hours and are invalidated by logout, a WebUI password change,
+or server restart. Cookies use HttpOnly, SameSite=Strict and Secure on HTTPS;
+state-changing requests require same-origin JSON and the session's CSRF token.
+Protected responses are non-cacheable. Login attempts are limited per connecting
+IP (a reverse proxy may share this allowance). The native PSP and API clients
+continue to use HTTP Basic with fixed username **psp** and the same password.
+
+### Web navigation (server/HA app 0.1.38)
+
+**Library** groups mounted media roots under **Files**, alongside **Plex** and
+**Internet Radio**. Sources can be disabled in **Settings**. The Sources button
+always returns to that overview; returning from a filesystem folder no longer
+loses Plex or Radio. Jellyfin and DLNA are not implemented yet.
+
+**Remote control** shows Pause/Resume/Stop even without a selected file, but
+track/quality/seek/download options appear only after selection. Music hides
+video and subtitle controls; live radio also hides seeking and downloads.
+**Downloads** contains conversion previews and the persistent queue.
+**Settings** contains source switches, Plex, radio stations and the password.
+The language selector switches between English and German and is remembered
+in that browser; the PSP language setting is independent. Web translations
+are in `static/i18n.js`. Docker and Home Assistant ship identical web assets.
 
 **A password is not transport encryption.** HTTP remains available and is the
 default. Basic credentials are only Base64 encoded on HTTP

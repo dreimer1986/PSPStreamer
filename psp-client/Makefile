@@ -6,7 +6,8 @@ PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
 PSP_EBOOT_PIC1 = assets/pic1.png
 
-CFLAGS = -O2 -G0 -Wall -Wextra
+OPT_LEVEL ?= -O2
+CFLAGS = $(OPT_LEVEL) -G0 -Wall -Wextra
 # The compiler specs and build.mak already provide utility and network stubs.
 # Linking either a second time produces non-contiguous import tables on PSP.
 ## Point this at the PSP-built OpenH264 headers and libopenh264_dec_psp.a.

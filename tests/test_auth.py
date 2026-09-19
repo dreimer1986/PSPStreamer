@@ -19,7 +19,10 @@ class AuthTests(unittest.TestCase):
                 thread=threading.Thread(target=server.serve_forever); thread.start()
                 client=http.client.HTTPConnection(*server.server_address,timeout=3)
                 try:
-                    for path in ("/","/api/health","/api/library","/api/metadata/x","/api/subtitles/x","/api/transcode/x","/api/remote/next"):
+                    client.request('GET', '/')
+                    response=client.getresponse(); self.assertEqual(response.status,303)
+                    self.assertEqual(response.getheader('Location'),'/login'); response.read()
+                    for path in ("/api/health","/api/library","/api/metadata/x","/api/subtitles/x","/api/transcode/x","/api/remote/next"):
                         for auth in ("","Basic !!!","Basic "+base64.b64encode(b"psp:wrong").decode()):
                             client.request("GET",path,headers={"Authorization":auth})
                             response=client.getresponse()
