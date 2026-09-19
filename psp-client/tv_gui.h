@@ -196,7 +196,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         if (current_duration_seconds > 0.0f)
             tv_text(34, 160, 38, 1, TV_MUTED, tr(TXT_DURATION), (int)current_duration_seconds / 60, (int)current_duration_seconds % 60);
         else tv_text(34, 160, 38, 2, TV_MUTED, "%s", tr(TXT_DURATION_UNKNOWN));
-        if(items[selected].is_audio) {
+        if(items[selected].is_audio || current_media_plex) {
             tv_text(34,200,38,1,TV_WHITE,"%s",current_media_title);
             tv_text(34,228,38,1,TV_MUTED,"%s",current_media_artist);
             tv_text(34,256,38,1,TV_MUTED,"%s",current_media_album);

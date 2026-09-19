@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from .pgs import PgsCue, parse_pgs
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
+from .plex import Plex
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -122,12 +123,23 @@ class MediaItem:
 class Library:
     def __init__(self, roots: list[Path]):
         self.roots = roots
+        self.plex = None
 
     def encode(self, item: MediaItem) -> str:
         raw = json.dumps({"r": item.root, "p": item.relative}, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
     def decode(self, token: str) -> tuple[MediaItem, Path]:
+        if token.startswith('plex.') and self.plex:
+            source = self.plex.source(token)
+            if source.suffix.lower() not in MEDIA_EXTENSIONS:
+                raise ValueError('Unsupported Plex original format')
+            for index, root in enumerate(self.roots):
+                if root in source.parents:
+                    return MediaItem(index, source.relative_to(root).as_posix()), source
+            raise ValueError('Plex original is outside MEDIA_ROOTS')
+        if self.plex and not self.plex.config['files']:
+            raise ValueError('Filesystem source is disabled')
         try:
             raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
             data = json.loads(raw)
@@ -148,6 +160,8 @@ class Library:
         Video stops at the folder's end. Music may shuffle, excluding the
         current file.
         """
+        if token.startswith('plex.') and self.plex:
+            return self.plex.next_media(token, shuffle, previous)
         item, source = self.decode(token)
         root = self.roots[item.root]
         directory = (root / item.relative).parent.resolve()
@@ -376,6 +390,12 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/plex':
+                return self.send_json(self.server.plex.public())
+            if parsed.path == '/api/plex/servers':
+                return self.send_json(self.server.plex.servers())
+            if parsed.path.startswith('/api/plex/details/'):
+                return self.send_json(self.server.plex.details(parsed.path.rsplit('/', 1)[-1]))
             if parsed.path == '/api/radio':
                 return self.send_json(self.server.radio.list())
             if parsed.path.startswith('/api/radio/status/'):
@@ -406,6 +426,12 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == "/api/remote/next":
+                if query.get('plex'):
+                    try:
+                        self.server.plex.report(query['plex'][0], query.get('state', ['playing'])[0],
+                            query.get('position', ['0'])[0], query.get('duration', ['0'])[0])
+                    except ValueError:
+                        pass  # Reporting must never block or break the remote control.
                 after = max(0, int(query.get("after", ["0"])[0]))
                 reply = self.server.remote_after(after)
                 if query.get('radio'):
@@ -417,11 +443,20 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
                 path = query.get("path", [""])[0]
-                if path == RADIO_PATH:
+                sources = self.server.plex.public()
+                if path.startswith(':plex:'):
+                    return self.send_json(self.server.plex.browse(root, path))
+                if path == RADIO_PATH and sources['radio']:
                     return self.send_json(self.server.radio.browse(root))
-                listing = self.server.library.browse(root, path)
+                if not sources['files'] and path:
+                    raise ValueError('Filesystem source is disabled')
+                listing = self.server.library.browse(root, path) if sources['files'] else {
+                    'root': root, 'path': '', 'parent': None, 'folders': [], 'videos': []}
                 if not path:
-                    listing['folders'].insert(0, {'name': 'Internet radio', 'path': RADIO_PATH})
+                    if sources['radio']:
+                        listing['folders'].insert(0, {'name': 'Internet radio', 'path': RADIO_PATH})
+                    if sources['enabled']:
+                        listing['folders'].insert(0, {'name': 'Plex', 'path': ':plex:'})
                 return self.send_json(listing)
             if parsed.path.startswith("/api/media-next/"):
                 if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
@@ -484,6 +519,26 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.FORBIDDEN, "Same-origin JSON required")
         parsed = urlparse(self.path)
         try:
+            if parsed.path.startswith('/api/plex/'):
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 8192:
+                    self.close_connection = True
+                    raise ValueError('Invalid Plex settings length')
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict):
+                    raise ValueError('Invalid Plex settings')
+                action = parsed.path.rsplit('/', 1)[-1]
+                if action == 'link':
+                    return self.send_json(self.server.plex.link())
+                if action == 'poll':
+                    return self.send_json(self.server.plex.poll())
+                if action == 'select':
+                    return self.send_json(self.server.plex.select(data.get('server'), data.get('url')))
+                if action == 'settings':
+                    return self.send_json(self.server.plex.configure(data))
+                if action == 'disconnect':
+                    return self.send_json(self.server.plex.disconnect())
+                return self.send_error_json(HTTPStatus.NOT_FOUND, 'Not found')
             if parsed.path.startswith('/api/offline/'):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 2 <= length <= 8192:
@@ -654,7 +709,7 @@ class AppHandler(BaseHTTPRequestHandler):
             station = self.server.radio.get(token)
             return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
         cached = self.server.metadata_cache.get(token)
-        if cached is not None:
+        if cached is not None and not token.startswith('plex.'):
             return self.send_json(cached)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
@@ -690,7 +745,10 @@ class AppHandler(BaseHTTPRequestHandler):
         # ffprobe can take a few seconds when an SMB share or its disk has
         # just spun up.  Track layouts do not change while a PSP session is
         # active, so retain this tiny response for subsequent openings.
-        self.server.metadata_cache[token] = payload
+        if token.startswith('plex.'):
+            payload.update(self.server.plex.details(token))
+        else:
+            self.server.metadata_cache[token] = payload
         self.send_json(payload)
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False) -> None:
@@ -912,6 +970,9 @@ class AppServer(ThreadingHTTPServer):
             self.tls_context.load_cert_chain(cert, key)
         super().__init__(address, AppHandler)
         self.library = library
+        self.plex = Plex(os.environ.get('PSP_STREAMER_SETTINGS_DIR') or
+                         str(Path.home() / '.cache/psp-streamer'), library.roots)
+        library.plex = self.plex
         self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
             os.environ.get('PSP_STREAMER_SETTINGS_DIR') or str(Path.home() / '.cache/psp-streamer'))
         self.metadata_cache: dict[str, object] = {}
@@ -937,6 +998,8 @@ class AppServer(ThreadingHTTPServer):
             self.offline.start()
 
     def server_close(self):
+        if hasattr(self, 'plex'):
+            self.plex.close()
         if hasattr(self, 'offline'):
             self.offline.close()
         super().server_close()

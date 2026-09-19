@@ -2,6 +2,62 @@
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
+### Plex library and playlists (server 0.1.36)
+
+Update **both the server and PSP application**. Docker and the Home Assistant app
+provide the same integration. No Plex password or token belongs in the PSP CFG.
+
+1. Open **Media sources / Plex** in the server web interface. Choose **Link Plex
+   account**, then **Open Plex sign-in**. Authorize PSPStreamer on Plex's own
+   website. The local page detects completion; the link expires after five minutes.
+2. Select a discovered server connection and press **Use connection**. Prefer a
+   reachable HTTPS connection; an HTTP LAN connection also works, but does not
+   encrypt the token on that LAN. TLS verification is never disabled.
+3. Add a **path mapping** from Plex's media directory to the same mounted files
+   inside PSP Streamer. For example, Plex `/volume1/video` → PSP Streamer
+   `/media/video`. The destination must be inside `MEDIA_ROOTS`. Home Assistant
+   paths refer to the app's `/media` mount, **not** your desktop's mount paths.
+   Multiple mappings and Windows-style Plex paths are supported.
+4. Enable **Plex library**, optionally disable **Filesystem library** and/or
+   **Internet radio**, then **Save sources**. Refresh the PSP library with Square.
+   Enter **Plex** to browse films, series/seasons, music/artists/albums or playlists.
+
+This first integration uses Plex's **catalogue API plus mounted originals**. It
+does not download originals from Plex HTTP URLs and does not ask Plex to
+transcode. Existing H.264/MP3 encoding, LCD/TV profiles, subtitle overlays and
+offline conversion therefore use the same tested code as filesystem media.
+Missing mounts produce an explicit mapping error. Multipart originals are
+reported as unsupported rather than playing only the first part. For multiple
+versions, the first Plex media version is used.
+Track selection currently covers tracks embedded in that original; external
+subtitle sidecars managed only by Plex are not imported yet.
+
+- Large item lists have 100-entry pages. Playlist order is preserved; automatic
+  next/previous playback can cross item-page boundaries. Changed playlists stop
+  advancement rather than guessing the next item. Music shuffle stays within
+  the current Plex collection/playlist.
+- The web information area shows title, series/artist, season/album, year,
+  description, watched state and a **Resume at …** button. This button positions
+  the seek slider; press Play to start. PSP Triangle information displays Plex
+  title, series/artist and season/album. Poster rendering and an automatic resume
+  prompt on the PSP are not included in this first version.
+- During **online playback**, the updated PSP reports its actual played position
+  in milliseconds and pause/stop state. A bounded background worker forwards
+  Plex timeline updates at most every five seconds, plus state changes. The
+  server never infers watched status from transcoding or download completion;
+  Plex applies its own watched/resume rules. Reporting errors are shown under
+  Media sources, without interrupting playback. Final Stop reporting is
+  best-effort if the network fails. Offline playback progress is not synced yet.
+- Credentials are stored only in `plex.json` under `PSP_STREAMER_SETTINGS_DIR`
+  (`/data` in the containers; otherwise `~/.cache/psp-streamer`). The file has
+  owner-only permissions. Back it up securely; do not commit it. Disconnect
+  removes local credentials and restores the filesystem library. Revoke the
+  device in your Plex account as well if you want to invalidate its authorization.
+
+Protocol references: [Plex authentication flow](https://forums.plex.tv/t/authenticating-with-plex/609370)
+and [Plex Media Server API](https://developer.plex.tv/pms/). The adapter is an
+independent implementation; no Tautulli source was copied.
+
 ### Internet radio and music tags (server 0.1.33)
 
 Update the server **and the PSP build**. In the web UI, open **Internet radio —

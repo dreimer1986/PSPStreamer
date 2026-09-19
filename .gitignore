@@ -16,6 +16,7 @@ psp-client/third_party/
 
 # Local configuration
 .env
+plex.json
 certificates/
 *.pem
 *.key

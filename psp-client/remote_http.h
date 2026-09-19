@@ -3,11 +3,11 @@
 static volatile unsigned int remote_http_attempts, remote_http_completed;
 static volatile int remote_http_last_result;
 static const char * volatile remote_http_stage="idle";
-static int remote_http_get(const char *path,char *buffer,int capacity,volatile int *running) {
+static int remote_http_get_budget(const char *path,char *buffer,int capacity,volatile int *running,int budget_ms) {
     struct sockaddr_in server;
-    char request[512];
+    char request[1024];
     int fd=-1,result=-1005,nonblock=1,received=0,sent=0,header=-1,length=-1,tls_ready=0;
-    unsigned long long deadline=sceKernelGetSystemTimeWide()+(server_https?15000000ULL:2000000ULL);
+    unsigned long long deadline=sceKernelGetSystemTimeWide()+(budget_ms?budget_ms*1000ULL:(server_https?15000000ULL:2000000ULL));
     if(capacity<2 || !have_cached_server_address) return -1004;
     remote_http_attempts++;
     remote_http_stage="connect";
@@ -35,14 +35,18 @@ static int remote_http_get(const char *path,char *buffer,int capacity,volatile i
         }
         if(server_https && !tls_ready) {
             remote_http_stage="TLS handshake";
-            if(tls_open(fd,server_host,server_port,running,10000)<0)goto done;
+            int remaining=(int)(((long long)deadline-(long long)sceKernelGetSystemTimeWide())/1000);
+            if(remaining<=0)goto done;
+            if(tls_open(fd,server_host,server_port,running,budget_ms?remaining:10000)<0)goto done;
             tls_ready=1;
-            deadline=sceKernelGetSystemTimeWide()+2000000ULL;
+            if(!budget_ms)deadline=sceKernelGetSystemTimeWide()+2000000ULL;
         }
         if(sent<wanted) {
             remote_http_stage="send";
             if(!(pollfd.revents&SCE_NET_INET_POLLOUT)) goto done;
-            int n=server_https?tls_send(fd,request+sent,wanted-sent,running,2000):(int)sceNetInetSend(fd,request+sent,wanted-sent,0);
+            int remaining=budget_ms?(int)(((long long)deadline-(long long)sceKernelGetSystemTimeWide())/1000):2000;
+            if(remaining<=0)goto done;
+            int n=server_https?tls_send(fd,request+sent,wanted-sent,running,remaining):(int)sceNetInetSend(fd,request+sent,wanted-sent,0);
             if(n<=0) goto done;
             sent+=n; continue;
         }
@@ -74,4 +78,7 @@ done:
     remote_http_last_result=result;
     remote_http_stage="idle";
     return result;
+}
+static int remote_http_get(const char *path,char *buffer,int capacity,volatile int *running) {
+    return remote_http_get_budget(path,buffer,capacity,running,0);
 }

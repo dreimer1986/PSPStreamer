@@ -96,6 +96,7 @@ static const unsigned char *menu_skin;
 static LibraryItem items[MAX_ITEMS];
 static int item_count;
 static char current_path[ID_SIZE];
+static char current_parent_path[ID_SIZE];
 static int network_ready;
 static int http_ready;
 static int active_network_profile;
@@ -361,6 +362,7 @@ static int subtitle_client_side;
 static float current_duration_seconds;
 static char current_media_name[TITLE_SIZE], current_media_title[192];
 static char current_media_artist[192], current_media_album[192];
+static int current_media_plex;
 static int playback_reached_end;
 static volatile int playback_paused;
 static int video_fullscreen = 1;
@@ -1629,6 +1631,29 @@ static void draw_fullscreen_spectrum(void) {
 static int json_value(const char *from, const char *key, char *destination, size_t length);
 static int json_integer(const char *from, const char *key, int fallback);
 #include "remote_state.h"
+#define PSPSTREAMER_PLEX_REPORT 1
+/* Published by the playback loop; reporting piggybacks on the existing HTTP
+ * worker. Never contact Plex (or wait for it) from the DAC/display thread. */
+static char plex_playing_id[ID_SIZE];
+static volatile int plex_position_ms, plex_paused, plex_started;
+static void plex_report_path(char *path, size_t capacity, int sequence, int stopped) {
+    if (plex_playing_id[0] && plex_started)
+        snprintf(path, capacity, "/api/remote/next?after=%d&plex=%s&state=%s&position=%d&duration=%d",
+            sequence, plex_playing_id, stopped?"stopped":plex_paused?"paused":"playing",
+            plex_position_ms, (int)(current_duration_seconds*1000.0f));
+    else snprintf(path, capacity, "/api/remote/next?after=%d", sequence);
+}
+static void plex_report_begin(const char *id) {
+    snprintf(plex_playing_id,sizeof(plex_playing_id),"%s",!strncmp(id,"plex.",5)?id:"");
+    plex_position_ms=stream_start_seconds*1000;plex_paused=plex_started=0;
+}
+static void plex_report_stop(int sequence) {
+    if(plex_playing_id[0] && plex_started) {
+        char path[ID_SIZE+192],reply[2048];volatile int running=1;
+        plex_report_path(path,sizeof(path),sequence,1);
+        remote_http_get_budget(path,reply,sizeof(reply),&running,1500);
+    }
+}
 #include "music_remote.h"
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
@@ -1645,6 +1670,7 @@ static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
 static int play_audio_once(const char *media_id, const char *title) {
+    plex_report_begin(media_id);
     md_profile_reset(debug_enabled);
     offline_music_eof=0;
     music_remote_action=MUSIC_REMOTE_NONE;
@@ -1732,6 +1758,11 @@ static int play_audio_once(const char *media_id, const char *title) {
     }
     remote_result = offline_music ? 0 : music_remote_start();
     while (audio_running && remote_result >= 0) {
+        if(plex_playing_id[0]) {
+            plex_position_ms=stream_start_seconds*1000+(int)((unsigned long long)audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
+            plex_paused=paused;
+            plex_started=audio_played_blocks>0;
+        }
         video_watch_ping("music loop");
         SceCtrlData pad;
         int action = music_remote_action;
@@ -1985,6 +2016,7 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    plex_report_begin(media_id);
     video_controls.visible=video_controls.saved=0;
     video_controls.selected=3;
     video_file_direction=0;
@@ -2094,6 +2126,9 @@ static int play_h264(const char *media_id) {
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
+        plex_position_ms=playback_position_ms;
+        plex_paused=paused;
+        plex_started=video_first_presented;
         keep_awake();
         sceCtrlPeekBufferPositive(&pad, 1);
         if (remote_control_action) {
@@ -2416,6 +2451,7 @@ static void parse_stream_tracks(const char *array_key, StreamTrack *tracks, int 
 }
 
 static void load_media_metadata(const char *media_id) {
+    current_media_plex=!strncmp(media_id,"plex.",5);
     char path[ID_SIZE + 32], duration[24];
     int result;
     snprintf(path, sizeof(path), "/api/metadata/%s", media_id);
@@ -2485,12 +2521,12 @@ static int remote_control_thread(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
     (void)args; (void)argp;
     while (remote_control_running) {
-        char path[64], reply[2048], action[16];
+        char path[ID_SIZE+192], reply[2048], action[16];
         char *field;
         if (remote_control_action || remote_control_seek_seconds >= 0) {
             sceKernelDelayThread(10000); continue;
         }
-        snprintf(path, sizeof(path), "/api/remote/next?after=%d", sequence);
+        plex_report_path(path, sizeof(path), sequence, 0);
         if (remote_http_get(path, reply, sizeof(reply), &remote_control_running) >= 0 &&
             remote_control_running &&
             json_value(reply, "action", action, sizeof(action))) {
@@ -2515,6 +2551,7 @@ static int remote_control_thread(SceSize args, void *argp) {
         }
         sceKernelDelayThread(500000);
     }
+    plex_report_stop(sequence);
     return 0;
 }
 
@@ -2537,6 +2574,8 @@ static void show_metadata_loading(void) {
 
 static void parse_library(void) {
     char *cursor;
+    current_parent_path[0]=0;
+    json_value(response,"parent",current_parent_path,sizeof(current_parent_path));
     item_count = 0;
     cursor = strstr(response, "\"folders\":[");
     if (cursor) cursor = strchr(cursor, '[') + 1;
@@ -2583,6 +2622,10 @@ static void url_encode(const char *source, char *destination, size_t length) {
 }
 
 static void parent_path(void) {
+    if(!strncmp(current_path,":plex:",6)) {
+        snprintf(current_path,sizeof(current_path),"%s",current_parent_path);
+        return;
+    }
     char *last = strrchr(current_path, '/');
     if (last) *last = '\0'; else current_path[0] = '\0';
 }
@@ -2774,7 +2817,7 @@ static void media_info(int selected) {
             if (current_duration_seconds > 0.0f)
                 gui_text(38, 96, 0x008A9BAA, tr(TXT_DURATION), minutes, seconds);
             else gui_text(38, 96, 0x008A9BAA, "%s", tr(TXT_DURATION_UNKNOWN));
-            if(items[selected].is_audio) {
+            if(items[selected].is_audio || current_media_plex) {
                 gui_text(38,112,0x00FFFFFF,"%.39s",current_media_title);
                 gui_text(38,126,0x008A9BAA,"%.39s",current_media_artist);
                 gui_text(38,140,0x008A9BAA,"%.39s",current_media_album);
@@ -3110,6 +3153,19 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
+                if(!strncmp(items[selected].value,"plex.",5) && (playback_reached_end || video_file_direction)) {
+                    char following_id[ID_SIZE];
+                    snprintf(following_id,sizeof(following_id),"%s",items[selected].value);
+                    int following=remote_next_media(following_id,sizeof(following_id),items[selected].is_audio,video_file_direction);
+                    if(following>0) {
+                        snprintf(items[selected].value,sizeof(items[selected].value),"%s",following_id);
+                        stream_start_seconds=0;
+                        load_media_metadata(following_id);
+                        snprintf(items[selected].title,sizeof(items[selected].title),"%s",current_media_name);
+                        continue;
+                    }
+                    break;
+                }
                 next = (playback_reached_end || video_file_direction>0) ? next_media_index(selected, items[selected].is_audio) : -1;
                 if(video_file_direction<0) {
                     for(next=selected-1;next>=0;next--)
@@ -3132,6 +3188,10 @@ int main(void) {
                 sceKernelDelayThread(500000);
                 load_media_metadata(items[selected].value);
             } while (1);
+            if(!strncmp(items[selected].value,"plex.",5)) {
+                refresh_library();
+                if(selected>=item_count)selected=item_count?item_count-1:0;
+            }
             dirty = 1;
         }
         old_buttons = pad.Buttons;

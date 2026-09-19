@@ -27,6 +27,15 @@ static void sceKernelWaitThreadEnd(int id, void *timeout) {
     assert(id == 123 && !timeout); joined++;
 }
 static int remote_http_get(const char *path, char *reply, int capacity, volatile int *running);
+#define ID_SIZE 512
+static float current_duration_seconds;
+static int stream_start_seconds;
+static int stop_reports;
+static int remote_http_get_budget(const char *path, char *reply, int capacity, volatile int *running, int budget) {
+    (void)reply;(void)capacity;assert(*running && budget==1500);
+    assert(strstr(path,"state=stopped"));stop_reports++;return 0;
+}
+/* PLEX_REPORTING */
 #include "remote_state.h"
 #include "music_remote.h"
 /* VIDEO_REMOTE_WORKER */
@@ -58,6 +67,18 @@ static void reset(void) {
 }
 int main(int argc,char **argv) {
     (void)argv;
+    char report_path[1024];
+    current_duration_seconds=240;stream_start_seconds=15;
+    plex_report_begin("plex.42.p8.0.0123456789ab");
+    plex_report_path(report_path,sizeof(report_path),10,0);
+    assert(!strstr(report_path,"&plex=")); /* Do not mark buffering as playback. */
+    plex_started=1;plex_position_ms=17001;
+    plex_report_path(report_path,sizeof(report_path),10,0);
+    assert(strstr(report_path,"position=17001&duration=240000"));
+    plex_paused=1;plex_report_path(report_path,sizeof(report_path),10,0);
+    assert(strstr(report_path,"state=paused"));
+    plex_report_stop(10);assert(stop_reports==1);
+    plex_report_begin("filesystem-id");plex_report_stop(10);assert(stop_reports==1);
     server_https=argc>1;
     reset();
     strcpy(remote_session,"old");

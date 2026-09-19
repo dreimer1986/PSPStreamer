@@ -16,11 +16,14 @@ static int music_remote_worker(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
     (void)args; (void)argp;
     while (music_remote_running) {
-        char path[128], reply[2048], action[16];
+        char path[704], reply[2048], action[16];
         int next, event = MUSIC_REMOTE_NONE;
         if (music_remote_action) { sceKernelDelayThread(10000); continue; }
         snprintf(path, sizeof(path), "/api/remote/next?after=%d%s%s", sequence,
                  music_radio_id[0]?"&radio=":"",music_radio_id);
+#ifdef PSPSTREAMER_PLEX_REPORT
+        if(plex_playing_id[0]) plex_report_path(path,sizeof(path),sequence,0);
+#endif
         if (remote_http_get(path, reply, sizeof(reply), &music_remote_running) >= 0 &&
             music_remote_running && json_value(reply, "action", action, sizeof(action))) {
             if (remote_state_reset(reply, &sequence)) continue;
@@ -54,6 +57,9 @@ static int music_remote_worker(SceSize args, void *argp) {
         }
         sceKernelDelayThread(500000);
     }
+#ifdef PSPSTREAMER_PLEX_REPORT
+    plex_report_stop(sequence);
+#endif
     return 0;
 }
 

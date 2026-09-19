@@ -1,3 +1,12 @@
+# 0.1.36
+
+- Optional Plex account linking, discovered server selection and source switches.
+- Browse Plex libraries and playlists; map original files to existing media mounts.
+- Preserve the software transcoder, subtitle and offline download paths.
+- Matching PSP build reports real playback position, pause and stop to Plex.
+- Web metadata/resume controls and PSP title/series/album information.
+- Same implementation in Home Assistant and ordinary Docker; see README for setup and limitations.
+
 # 0.1.35
 
 - Fix CSS overriding hidden controls: music no longer shows frame rate or LCD/TV download output.

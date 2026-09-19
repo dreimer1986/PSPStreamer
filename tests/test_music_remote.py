@@ -19,6 +19,8 @@ class MusicRemoteTests(unittest.TestCase):
         worker = source[source.index("static int remote_control_thread(SceSize args, void *argp) {"):]
         worker = worker[:worker.index("\n}\n") + 3]
         harness = harness.replace("/* VIDEO_REMOTE_WORKER */", worker)
+        reporting = source[source.index('#define PSPSTREAMER_PLEX_REPORT'):source.index('#include "music_remote.h"')]
+        harness = harness.replace('/* PLEX_REPORTING */', reporting)
         with tempfile.TemporaryDirectory() as directory:
             c_file = Path(directory) / "remote.c"
             binary = Path(directory) / "remote"

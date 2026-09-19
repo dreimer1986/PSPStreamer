@@ -45,6 +45,7 @@ static int download_before_play;
 static int audio_running = 1, audio_start = 1;
 static float current_duration_seconds = 1442.0f;
 static char current_media_title[192],current_media_artist[192],current_media_album[192];
+static int current_media_plex;
 static int spectrum_levels[12], spectrum_display[12];
 static char current_path[512] = "/Series/Fullmetal Alchemist Brotherhood/Season 1";
 static char status[160] = "MP3 start: 807F00F0";
