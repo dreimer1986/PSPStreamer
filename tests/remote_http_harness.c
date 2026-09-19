@@ -47,7 +47,7 @@ int main(int argc,char **argv) {
     int n=remote_http_get("/api/remote/next?after=10",result,sizeof(result),&running);
     assert(closes==1 && remote_http_completed==1);
     assert(sceKernelGetSystemTimeWide()-start<2500000);
-    if(!strcmp(argv[2],"ok")) assert(n==2 && !strcmp(result,"{}"));
+    if(!strcmp(argv[2],"ok") || !strcmp(argv[2],"lowercase")) assert(n==2 && !strcmp(result,"{}"));
     else assert(n<0);
     return 0;
 }

@@ -4,6 +4,14 @@ PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-
 
 ### Plex library and playlists (server 0.1.36)
 
+Directory navigation uses a background request on the PSP. While loading,
+the status shows elapsed seconds; **Circle** requests cancellation. Failed or
+cancelled loads keep the previous directory. Network transfers have a separate
+30-second directory budget; media and subtitle timeouts are unchanged. Pending
+remote-control requests are cancelled cooperatively without an unbounded UI
+thread join. A worker that has not yet relinquished its resources is not killed
+or replaced: the UI displays the stopping state until safe cleanup is possible.
+
 Update **both the server and PSP application**. Docker and the Home Assistant app
 provide the same integration. No Plex password or token belongs in the PSP CFG.
 

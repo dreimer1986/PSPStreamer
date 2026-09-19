@@ -1,11 +1,12 @@
-/* Remote commands only. Never use this short, cancellable budget for media,
- * metadata or subtitle preparation. DNS was resolved by library/media setup. */
+/* Bounded control-plane requests. Directory workers supply their own budget;
+ * never use the short default for media, metadata or subtitle preparation. */
+#include <strings.h>
 static volatile unsigned int remote_http_attempts, remote_http_completed;
 static volatile int remote_http_last_result;
 static const char * volatile remote_http_stage="idle";
 static int remote_http_get_budget(const char *path,char *buffer,int capacity,volatile int *running,int budget_ms) {
     struct sockaddr_in server;
-    char request[1024];
+    char request[2048];
     int fd=-1,result=-1005,nonblock=1,received=0,sent=0,header=-1,length=-1,tls_ready=0;
     unsigned long long deadline=sceKernelGetSystemTimeWide()+(budget_ms?budget_ms*1000ULL:(server_https?15000000ULL:2000000ULL));
     if(capacity<2 || !have_cached_server_address) return -1004;
@@ -59,8 +60,10 @@ static int remote_http_get_budget(const char *path,char *buffer,int capacity,vol
         if(header<0) {
             char *body=strstr(buffer,"\r\n\r\n");
             if(body) {
-                char *cl=strstr(buffer,"Content-Length:");
-                if(strncmp(buffer,"HTTP/1.",7) || !strstr(buffer," 200 ") || !cl || cl>body) goto done;
+                char *cl=strstr(buffer,"\r\n");
+                while(cl && cl<body && strncasecmp(cl+2,"Content-Length:",15))cl=strstr(cl+2,"\r\n");
+                if(strncmp(buffer,"HTTP/1.",7) || strncmp(buffer+9,"200 ",4) || !cl || cl>=body) goto done;
+                cl+=2;
                 header=(int)(body+4-buffer); length=atoi(cl+15);
                 if(length<0 || length>capacity-1-header) goto done;
             }

@@ -16,15 +16,20 @@ static int browser_remote_worker(SceSize args, void *argp) {
     return 0;
 }
 
-static void browser_remote_stop(void) {
-    browser_remote_running = 0;
+static int browser_remote_reap(void) {
     if (browser_remote_thread_id >= 0) {
         /* Cooperative cancellation: the socket/TLS state remains worker-owned. */
-        sceKernelWaitThreadEnd(browser_remote_thread_id, NULL);
+        unsigned int timeout=1;
+        if(sceKernelWaitThreadEnd(browser_remote_thread_id, &timeout)<0)return 0;
         sceKernelDeleteThread(browser_remote_thread_id);
         browser_remote_thread_id = -1;
     }
     browser_remote_done = 0;
+    return 1;
+}
+static int browser_remote_stop(void) {
+    browser_remote_running=0;
+    return browser_remote_reap();
 }
 
 /* Return a completed reply, otherwise schedule at most one request per second.
@@ -33,9 +38,11 @@ static const char *browser_remote_poll(int sequence) {
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (browser_remote_thread_id >= 0) {
         if (!browser_remote_done) return NULL;
-        browser_remote_stop(); /* Join publishes the reply before parsing it. */
+        int deliver=browser_remote_running;
+        if(!browser_remote_reap())return NULL;
+        browser_remote_running=0;
         browser_remote_next = now + 1000000ULL;
-        return browser_remote_result >= 0 ? browser_remote_reply : NULL;
+        return deliver && browser_remote_result >= 0 ? browser_remote_reply : NULL;
     }
     if (now < browser_remote_next) return NULL;
     browser_remote_next = now + 1000000ULL;
@@ -43,7 +50,7 @@ static const char *browser_remote_poll(int sequence) {
     browser_remote_running = 1;
     browser_remote_done = 0;
     browser_remote_thread_id = sceKernelCreateThread("browser remote", browser_remote_worker,
-                                                    0x30, 0x8000, PSP_THREAD_ATTR_USER, NULL);
+                                                    0x41, 0x10000, PSP_THREAD_ATTR_USER, NULL);
     if (browser_remote_thread_id < 0) { browser_remote_running = 0; return NULL; }
     if (sceKernelStartThread(browser_remote_thread_id, 0, NULL) < 0) {
         sceKernelDeleteThread(browser_remote_thread_id);

@@ -32,7 +32,7 @@ class RemoteHttpTests(unittest.TestCase):
             subprocess.run(["cc", "-D_POSIX_C_SOURCE=200809L", "-std=c11", "-Wall", "-Wextra",
                             "-Werror", "-I", str(ROOT / "psp-client"),
                             str(ROOT / "tests/remote_http_harness.c"), "-o", str(binary)], check=True)
-            for mode in ("ok", "short", "oversize", "timeout", "cancel"):
+            for mode in ("ok", "lowercase", "short", "oversize", "timeout", "cancel"):
                 with self.subTest(mode=mode), socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     listener.listen()
@@ -48,6 +48,8 @@ class RemoteHttpTests(unittest.TestCase):
                                 return
                             packet = b"HTTP/1.0 200 OK\r\nContent-Length: "
                             packet += b"9000\r\n\r\n{}" if mode == "oversize" else b"2\r\n\r\n{}"
+                            if mode == "lowercase":
+                                packet=packet.replace(b"Content-Length:",b"content-length:")
                             if mode == "short":
                                 packet = packet[:-1]
                             try:

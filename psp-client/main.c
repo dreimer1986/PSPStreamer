@@ -2674,25 +2674,38 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     return 1;
 }
 
+static int library_fetch(const char *path,volatile int *running) {
+    if(!have_cached_server_address && resolve_server_address(&cached_server_address)<0)return -1004;
+    if(!*running)return -1005;
+    return remote_http_get_budget(path,response,sizeof(response),running,30000);
+}
+#include "library_request.h"
+
 static void refresh_library(void) {
-    int result;
     char encoded_path[ID_SIZE * 3 + 1];
-    char api_path[ID_SIZE * 3 + 32];
+    if(library_pending)return;
     if (!network_ready || !http_ready) {
         strcpy(status, tr(TXT_WIFI_NOT_READY));
         return;
     }
     strcpy(status, tr(TXT_LOADING_LIBRARY));
     url_encode(current_path, encoded_path, sizeof(encoded_path));
-    snprintf(api_path, sizeof(api_path), "/api/library?path=%s", encoded_path);
-    result = http_get(api_path, response, sizeof(response));
-    if (result < 0) {
-        snprintf(status, sizeof(status), tr(TXT_SERVER_ERROR), result);
+    snprintf(library_request_path, sizeof(library_request_path), "/api/library?path=%s", encoded_path);
+    library_pending=1;library_cancelled=0;library_result=-1005;
+    library_started=sceKernelGetSystemTimeWide();
+}
+
+static void finish_library_request(void) {
+    if (library_cancelled || library_result < 0) {
+        if(library_cancelled)snprintf(status,sizeof(status),"%s",tr(TXT_LIBRARY_CANCELLED));
+        else snprintf(status, sizeof(status), tr(TXT_SERVER_ERROR), library_result);
+        snprintf(current_path,sizeof(current_path),"%s",library_loaded_path);
         /* A just-restored hotspot often has IP before DNS.  Keep the useful
          * browser state visible so Square can simply be tried again. */
         return;
     }
     parse_library();
+    snprintf(library_loaded_path,sizeof(library_loaded_path),"%s",current_path);
     if(!current_path[0] && item_count<MAX_ITEMS) {
         memmove(items+1,items,item_count*sizeof(*items));
         memset(items,0,sizeof(*items));items[0].is_folder=2;
@@ -2933,6 +2946,8 @@ static int playback_options(int audio_only) {
 int main(void) {
     SceCtrlData pad;
     unsigned int old_buttons = 0;
+    unsigned int browser_deferred_buttons=0;
+    unsigned long long browser_wait_tick=0;
     unsigned long long next_repeat_tick = 0;
     unsigned long long next_page_repeat_tick = 0;
     unsigned long long next_tv_redraw_tick = 0;
@@ -2975,6 +2990,22 @@ int main(void) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();
+        if(library_pending) {
+            if(pad.Buttons & PSP_CTRL_CIRCLE)library_cancel();
+            int completed=library_request_poll();
+            if(completed==1) {
+                finish_library_request();
+                if(selected>=item_count)selected=item_count?item_count-1:0;
+                show(selected);
+            } else if(now>=next_tv_redraw_tick) {
+                snprintf(status,sizeof(status),"%s %us [O]",tr(library_cancelled?TXT_NETWORK_STOPPING:TXT_LOADING_LIBRARY),
+                    (unsigned int)((now-library_started)/1000000ULL));
+                show(selected);next_tv_redraw_tick=now+150000ULL;
+            }
+            old_buttons=pad.Buttons;
+            sceKernelDelayThread(20000);
+            continue;
+        }
         if (tv_ui_active && now >= next_tv_redraw_tick) {
             dirty = 1;
             next_tv_redraw_tick = now + 150000ULL;
@@ -2984,7 +3015,18 @@ int main(void) {
          * continue while HTTPS is connecting. Local input takes precedence. */
         unsigned int browser_action = pad.Buttons & (PSP_CTRL_START | PSP_CTRL_CIRCLE |
             PSP_CTRL_SELECT | PSP_CTRL_SQUARE | PSP_CTRL_LEFT | PSP_CTRL_TRIANGLE | PSP_CTRL_CROSS);
-        if (!network_ready || browser_action) browser_remote_stop();
+        pad.Buttons|=browser_deferred_buttons;
+        browser_action|=browser_deferred_buttons;
+        if ((!network_ready || browser_action) && !browser_remote_stop()) {
+            browser_deferred_buttons=browser_action;
+            if(now>=browser_wait_tick) {
+                snprintf(status,sizeof(status),"%s: %s",tr(TXT_NETWORK_STOPPING),remote_http_stage);
+                show(selected);browser_wait_tick=now+150000ULL;
+            }
+            sceKernelDelayThread(20000);
+            continue;
+        }
+        browser_deferred_buttons=0;
         if (network_ready && !browser_action) {
             char remote_media_id[ID_SIZE];
             int remote_audio, remote_subtitle, remote_is_audio, remote_start;
