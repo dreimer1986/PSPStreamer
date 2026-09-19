@@ -1,0 +1,26 @@
+[preset00]
+// Mutable EEL inputs never alter the playback clocks.
+fDecay=0.96
+zoom=1.015
+rot=0.3
+fWaveAlpha=0
+per_frame_1=time=time*.6; fps=max(1,fps); rot=.35*sin(time); q1=.5+.5*sin(time);
+per_pixel_1=time=time+.0001; rot=rot+.03*sin(time+x*6);
+shapecode_0_enabled=1
+shapecode_0_num_inst=12
+shapecode_0_sides=4
+shapecode_0_rad=0.09
+shapecode_0_r=0.2
+shapecode_0_g=0.8
+shapecode_0_b=1
+shapecode_0_a=0.8
+shapecode_0_a2=0.2
+shape_0_per_frame1=time=time*.5+instance*6.283185/num_inst; x=.5+.3*cos(time); y=.5+.3*sin(time); ang=time; r=q1;
+wavecode_0_enabled=1
+wavecode_0_samples=64
+wavecode_0_r=1
+wavecode_0_g=0.6
+wavecode_0_b=0.1
+wavecode_0_a=1
+wave_0_per_frame1=time=time*.3; r=.5+.5*sin(time);
+wave_0_per_point1=time=time+.001; x=sample; y=.5+.12*sin(sample*12+time)+value1*.1;

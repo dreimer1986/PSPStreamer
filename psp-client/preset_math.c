@@ -266,9 +266,8 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             stack[used++] = result; continue;
         }
         if (op->op == STORE || op->op==KEEP) {
-            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || op->arg>=PM_VALUES || (op->arg>=PM_ENGINE_BASE+2 && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) ||
-                (op->arg >= 9 && op->arg < 23) ||
-                (op->arg>=PM_META_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
+            if (!used || (op->op==STORE && used!=1) || op->arg < 0 || op->arg>=PM_VALUES ||
+                (op->arg >= 10 && op->arg < 17)) return 0;
             unsigned int bit=1U<<(op->arg&31);
             if(!(variables->dirty[op->arg/32]&bit)) {
                 variables->dirty[op->arg/32]|=bit;

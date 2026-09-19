@@ -257,7 +257,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==34 || argc==35);
+    assert(argc==35 || argc==36);
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -496,7 +496,7 @@ int main(int argc,char **argv) {
     expected_passes=4; expected_ring_color=0;
     for(int fixture=1;fixture<argc;fixture++) {
     expected_passes=fixture<=23?4:(fixture==28 || fixture==29)?2:1;
-    if(fixture==34)expected_passes=2;
+    if(fixture==35)expected_passes=2;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
@@ -504,14 +504,14 @@ int main(int argc,char **argv) {
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
         assert(!md_preset_state.ready);
-        for(int frame=0;frame<(fixture==34?30:600);frame++) {
+        for(int frame=0;frame<(fixture==35?30:600);frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
             if(fixture==33)assert(md_shape_frame->count[0]==128);
-            if(fixture==34)assert(md_shape_frame->count[1]==311);
+            if(fixture==35)assert(md_shape_frame->count[1]==311);
             if(fixture==27) {
                 assert(md_images_ready && md_images[0].pixels && external_binds>0);
                 if(frame==20) {md_begin_preset(500);assert(!md_images[0].pixels);}

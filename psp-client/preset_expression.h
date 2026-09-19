@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Private recursive-descent compiler for bounded EEL expressions. */
 static int writable(Parser *p,int id) {
+    /* Registered Desktop inputs are ordinary EEL variables. Native engine
+     * state is reseeded by each context, never written back by the VM. */
+    if(id==9 || (id>=17 && id<23) ||
+       (id>=PM_META_BASE && id<PM_DYNAMIC_BASE) ||
+       id==PM_ENGINE_BASE+2 || (id>=PM_INPUT_BASE && id<PM_MONITOR))return 1;
     /* Desktop registers these as mutable EEL values. Assigning num_inst does
      * not resize the native instance loop; sample/value inputs reset per point. */
     if(p->pixel==2 && (id==PM_ENGINE_BASE || id==PM_ENGINE_BASE+1))return 1;

@@ -124,7 +124,13 @@ then carry across points without writing back into the frame q values.
 `aspectx/aspecty` describe the active PSP visualization layout. The aspect
 inputs use inverse aspect factors (at least 1), as the reference registers do.
 `wave_usedots` aliases `wave_dots`; shape `num_inst` aliases `instances`.
-`wrap` is now writable per frame. Engine inputs remain read-only.
+`wrap` is writable per frame. Desktop engine inputs (`time`, `fps`, `frame`,
+`progress`, relative audio levels and layout inputs) are context-local mutable
+EEL variables. They never change playback clocks or native iteration counts.
+Pixel/point inputs retain assignments within that frame's point traversal and
+are reseeded next frame. Separate shape and wave contexts receive fresh engine
+inputs, not a preset-frame formula's modified values. PSP-specific `psp_*`
+audio inputs remain read-only. See [the native-input audit](MILKDROP_NATIVE_INPUTS.md).
 Visual `fps` starts at the renderer's nominal 20 Hz before a measured interval
 exists, then follows measured visual frame times. Same-time layout redraws keep
 the last rate. This prevents first-frame division by zero; it is unrelated to

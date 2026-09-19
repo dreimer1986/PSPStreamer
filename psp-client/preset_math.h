@@ -30,7 +30,7 @@ int pm_compile_mapped(PmProgram *program,const char *source,const PmSourceLocati
                       int count,PmSymbols *symbols,int context,int *error_line);
 /* values: zoom,rot,warp,warp speed,warp scale,decay,r,g,b,time,
  * psp_low,psp_mid,psp_high,psp_level,psp_low_smooth,psp_mid_smooth,psp_high_smooth.
- * Then bass,mid,treb,bass_att,mid_att,treb_att (read-only relative inputs).
+ * Then bass,mid,treb,bass_att,mid_att,treb_att (context-local mutable inputs).
  * Indices 23..29: translation, center, stretch, zoom exponent.
  * Indices 30..54: MdDecor scalar prefix (wave/echo/border/gamma/alpha outputs).
  * Execution commits values only on success. Lazy branches and structured loops

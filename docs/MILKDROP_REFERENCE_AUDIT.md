@@ -31,7 +31,7 @@ reference version changes.
 | Borders | Float import; draw behavior separate | PSP normalized colors and sizes remain restrictive |
 | `fShader` | Legacy hue effect, distinct from HLSL source | Desktop corner-color equations, GU interpolation; strength 0–1 |
 | HLSL / blur metadata | Desktop shader pipeline | Shader source and associated blur metadata intentionally ignored |
-| Formula variables | Registered per context, then evaluated | Namespace audit below; input mutability and other listed gaps remain |
+| Formula variables | Registered per context, then evaluated | Native input mutability implemented; other namespace/budget gaps listed below |
 
 Useful examples of **editor** limits that must not be mistaken for import limits:
 gamma 1–8; centers −1–2; log controls commonly .01–100; wave alpha .001–100.
@@ -77,7 +77,7 @@ No per-frame warnings/popups are emitted.
 | Shape position/radius | 0–1; angles −100..100; texture zoom .1–10 | Conservative existing renderer limits; offscreen fidelity remains future work |
 | Shape colors | Finite floats; convert to byte using truncation and wrapping | Desktop semantics; safe extension for values overflowing Desktop integer conversion |
 | Static zoom / frame zoom | .8–1.2 / legacy frame .1–64, otherwise .8–1.2 | Historical renderer limits; not Desktop limits or proven hardware limits |
-| Rotation / warp | ±.2 / ±4 | Historical limits; further safe widening is still possible |
+| Rotation / warp | ±100 radians / ±4 | Rotation widened consistently across import/frame/pixel; warp retains historical limit |
 | Warp speed/scale, decay | 0–4 / .1–8 / .8–1 | Historical limits; not hardware maxima |
 | Translation, centers, stretch | ±1, 0–1, .25–4 | Conservative geometry limits |
 | Zoom exponent | .01–100 | Current safe-input budget, derived from Desktop editor range |
@@ -127,9 +127,9 @@ Remaining differences found, **not hardware-limit claims**:
   larger compiled programs without increasing execution fuel or megabuf memory.
   See [the parser/density report](MILKDROP_PARSER_DENSITY.md).
 
-- Other native inputs such as `time`, `fps` and audio values remain read-only
-  here. Desktop registers writable EEL values; extending mutability needs a
-  separate check of which modified values flow into later evaluation stages.
+- Completed: native inputs such as `time`, `fps` and relative audio values are
+  mutable within their EEL contexts, with separate native reseeding and
+  point-traversal lifetimes. See [the input audit](MILKDROP_NATIVE_INPUTS.md).
 - Numbered formula records now compile as complete context blocks, matching
   Desktop record/comment preprocessing, with physical diagnostic line mappings.
   **Completed:** see [the collection comparison](MILKDROP_MULTILINE_AUDIT.md).

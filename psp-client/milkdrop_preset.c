@@ -27,8 +27,16 @@ static void md_inputs(float *v) {
     v[PM_INPUT_BASE+2]=w;v[PM_INPUT_BASE+3]=h;
     v[PM_INPUT_BASE+4]=w>=h?1:h/w;v[PM_INPUT_BASE+5]=h>=w?1:w/h;
 }
-static const float low[] = {.8f, -.2f, -4, 0, .1f, .8f, 0, 0, 0};
-static const float high[] = {1.2f, .2f, 4, 4, 8, 1, 1, 1, 1};
+static void md_engine_inputs(float *v,float seconds,const MdSignal *signal,float frame,float fps) {
+    md_inputs(v);
+    v[9]=seconds;
+    if(signal)memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
+    else memset(v+10,0,MD_SIGNAL_COUNT*sizeof(float));
+    v[PM_META_BASE]=frame;v[PM_META_BASE+1]=fps;
+    v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
+}
+static const float low[] = {.8f, -100, -4, 0, .1f, .8f, 0, 0, 0};
+static const float high[] = {1.2f, 100, 4, 4, 8, 1, 1, 1, 1};
 /* Resource/geometry limits are rendering fallbacks, not malformed presets.
  * Always reject non-finite input before using this helper. */
 static float md_limit(float value,float lo,float hi) {
@@ -518,14 +526,12 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
         for(int instance=0;instance<instances;instance++) {
         MdShapeState *local=&next.shape[slot];
         float sv[PM_VALUES]={0};
-        md_inputs(sv);
-        memcpy(sv+9,v+9,14*sizeof(float));
-        memcpy(sv+PM_META_BASE,v+PM_META_BASE,2*sizeof(float));
-        sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;sv[PM_ENGINE_BASE+2]=v[PM_ENGINE_BASE+2];
+        sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;
         memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
         memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
         memcpy(sv+PM_USER_BASE,local->user,sizeof(local->user));
         if(!local->ready) {
+            md_engine_inputs(sv,seconds,signal,(float)next.frames,next.fps);
             memcpy(sv+PM_Q_BASE,next.q,sizeof(next.q));
             if(!pm_execute_runtime(&program->init,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
             memcpy(local->t,sv+PM_T_BASE,sizeof(local->t));
@@ -537,6 +543,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
         memcpy(sv+PM_Q_BASE,v+PM_Q_BASE,PM_Q_COUNT*sizeof(float));
         memcpy(sv+PM_T_BASE,local->t,sizeof(local->t));
         memcpy(sv+PM_SHAPE_BASE,&p->decor.shapes[slot],sizeof(MdShape));
+        md_engine_inputs(sv,seconds,signal,(float)next.frames,next.fps);
         sv[PM_ENGINE_BASE]=(float)instance;sv[PM_ENGINE_BASE+1]=(float)instances;
         if(!pm_execute_runtime(&program->frame,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape frame");
         for(int k=0;k<23;k++) {
@@ -600,6 +607,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(v+PM_T_BASE,ws->frame.t,sizeof(ws->frame.t));
         memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
+        md_engine_inputs(v,seconds,signal,state->frames?(float)(state->frames-1):0,state->fps);
         if(!pm_execute_runtime(&w->frame,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave frame");
         float n=v[PM_WAVE_BASE];
         if(!isfinite(n)) return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&w->frame,PM_WAVE_BASE),"wave samples");
@@ -607,6 +615,9 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(ws->frame.user,v+PM_USER_BASE,sizeof(ws->frame.user));
         float colors[4]; memcpy(colors,v+PM_SHAPE_BASE+10,sizeof(colors));
         memcpy(v+PM_USER_BASE,ws->point_user,sizeof(ws->point_user));
+        /* Desktop seeds point inputs before running wave-frame code. Frame
+         * assignments must not leak into the separate point VM. */
+        md_engine_inputs(v,seconds,signal,state->frames?(float)(state->frames-1):0,state->fps);
         int count=(int)n,sep=(int)w->sep;
         /* Keep <=512-point presets byte-for-byte on their old sample path.
          * Larger explicit requests span the available PCM window using linear
@@ -732,8 +743,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");
         const int ids[]={0,1,2,23,24,25,26,27,28,29};
-        const float lo[]={.1f,-.2f,-4,-1,-1,0,0,.25f,.25f,.01f};
-        const float hi[]={64,.2f,4,1,1,1,1,4,4,100};
+        const float lo[]={.1f,-100,-4,-1,-1,0,0,.25f,.25f,.01f};
+        const float hi[]={64,100,4,1,1,1,1,4,4,100};
         for(int i=0;i<10;i++) {
             if(!isfinite(v[ids[i]]))return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
             v[ids[i]]=md_limit(v[ids[i]],lo[i],hi[i]);
@@ -741,6 +752,12 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         next[y*stride*(MD_GRID+1)+x*stride]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
             v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
         memcpy(q,v+PM_Q_BASE,sizeof(q));memcpy(users,v+PM_USER_BASE,sizeof(users));
+        /* Native inputs are seeded once per grid, then retain assignments
+         * across vertices in the Desktop point VM. Coordinates reset above. */
+        base[9]=v[9];memcpy(base+17,v+17,6*sizeof(float));
+        memcpy(base+PM_META_BASE,v+PM_META_BASE,2*sizeof(float));
+        base[PM_ENGINE_BASE+2]=v[PM_ENGINE_BASE+2];
+        memcpy(base+PM_INPUT_BASE,v+PM_INPUT_BASE,6*sizeof(float));
     }
     if(stride>1) for(int y=0;y<=MD_GRID;y++) for(int x=0;x<=MD_GRID;x++) {
         if(x%stride==0 && y%stride==0)continue;
