@@ -2,7 +2,7 @@
 const plexPanel = document.createElement('details');
 plexPanel.className = 'panel';
 plexPanel.innerHTML = `<summary>Media sources / Plex</summary>
-<p>Plex supplies the library and playlists; PSP Streamer reads the original files from your mounted media. No second Plex transcode.</p>
+<p>Link Plex, choose a reachable server connection and enable Plex below. Originals are read directly over HTTP(S), including across networks. Plex does not transcode them.</p>
 <button id="plexLink">Link Plex account</button> <a id="plexAuth" hidden target="_blank" rel="noopener noreferrer">Open Plex sign-in</a>
 <button id="plexServers">Refresh servers</button> <button id="plexDisconnect">Disconnect Plex</button>
 <label>Server connection <select id="plexConnection"></select></label><button id="plexSelect">Use connection</button>
@@ -11,9 +11,9 @@ plexPanel.innerHTML = `<summary>Media sources / Plex</summary>
 <label><input type="checkbox" id="sourceFiles"> Filesystem library</label>
 <label><input type="checkbox" id="sourcePlex"> Plex library</label>
 <label><input type="checkbox" id="sourceRadio"> Internet radio</label>
-<p>Path mappings: Plex's original directory → the same directory inside this server/container's MEDIA_ROOTS. For example, /volume1/video → /media/video. The files must already be mounted and readable.</p>
+<details><summary>Optional: use existing local media mounts</summary><p>No mapping is needed. If the same originals are already mounted here, a mapping can avoid the HTTP transfer. Otherwise Plex HTTP(S) is used automatically.</p>
 <div id="plexMappings"></div><button type="button" id="plexAddMapping">Add path mapping</button>
-<button type="submit">Save sources</button></form>`;
+</details><button type="submit">Save sources</button></form>`;
 document.querySelector('details').before(plexPanel);
 let plexPollTimer, plexGeneration = 0;
 function plexPost(action, data={}) {
@@ -85,7 +85,11 @@ $('#plexSources').onsubmit=async event=>{
 const plexDetails=document.createElement('div');$('#details').after(plexDetails);
 const plexBaseChoose=choose;
 choose=async(v,b)=>{
-  plexDetails.replaceChildren();await plexBaseChoose(v,b);
+  plexDetails.replaceChildren();
+  try{await plexBaseChoose(v,b);}catch(e){
+    if(selected===v){selected=null;$('#audio').replaceChildren();$('#subtitle').replaceChildren();$('#details').textContent=e.message;$('#status').textContent='Could not load media information.';}
+    return;
+  }
   if(selected!==v || !String(v.id).startsWith('plex.'))return;
   try{
     const data=await api('/api/plex/details/'+encodeURIComponent(v.id));if(selected!==v)return;

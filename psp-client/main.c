@@ -2450,7 +2450,7 @@ static void parse_stream_tracks(const char *array_key, StreamTrack *tracks, int 
     }
 }
 
-static void load_media_metadata(const char *media_id) {
+static int load_media_metadata(const char *media_id) {
     current_media_plex=!strncmp(media_id,"plex.",5);
     char path[ID_SIZE + 32], duration[24];
     int result;
@@ -2460,7 +2460,11 @@ static void load_media_metadata(const char *media_id) {
     current_media_title[0]=current_media_artist[0]=current_media_album[0]=0;
     result = http_get(path, response, sizeof(response));
     audio_track_count = subtitle_track_count = 0;
-    if (result < 0) return;
+    if (result < 0) {
+        video_step="Metadata";
+        snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),result);
+        return result;
+    }
     json_value(response,"name",current_media_name,sizeof(current_media_name));
     json_value(response,"title",current_media_title,sizeof(current_media_title));
     json_value(response,"artist",current_media_artist,sizeof(current_media_artist));
@@ -2477,6 +2481,7 @@ static void load_media_metadata(const char *media_id) {
      * Keeping this phase metadata-only guarantees that the options dialog
      * stays responsive; play_h264() prepares the selected overlay only once
      * the user has actually committed to starting the video. */
+    return 0;
 }
 
 static int json_integer(const char *from, const char *key, int fallback) {
@@ -3037,7 +3042,9 @@ int main(void) {
                 stream_start_seconds = remote_start;
                 resume_pending = 0;
                 seek_requested = 0;
-                load_media_metadata(remote_media_id);
+                if((result=load_media_metadata(remote_media_id))<0) {
+                    show(selected);old_buttons=pad.Buttons;continue;
+                }
                 snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 do {
@@ -3059,7 +3066,7 @@ int main(void) {
                     resume_pending = seek_requested = 0;
                     selected_audio_track = remote_audio;
                     selected_subtitle_track = remote_subtitle;
-                    load_media_metadata(remote_media_id);
+                    if((result=load_media_metadata(remote_media_id))<0)break;
                     sceKernelDelayThread(500000);
                 } while (1);
                 ui_restore_after_playback();
@@ -3134,7 +3141,9 @@ int main(void) {
              * same lightweight metadata request as X, but never begins a
              * transcode or subtitle preparation. */
             show_metadata_loading();
-            load_media_metadata(items[selected].value);
+            if(load_media_metadata(items[selected].value)<0) {
+                show(selected);old_buttons=pad.Buttons;continue;
+            }
             media_info(selected);
             dirty = 1;
             old_buttons = pad.Buttons;
@@ -3165,7 +3174,9 @@ int main(void) {
                 resume_pending = 0;
                 stream_start_seconds = 0;
                 show_metadata_loading();
-                load_media_metadata(items[selected].value);
+                if(load_media_metadata(items[selected].value)<0) {
+                    show(selected);old_buttons=pad.Buttons;continue;
+                }
                 if (!playback_options(radio_is_live(items[selected].value)?2:items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
                 if(!radio_is_live(items[selected].value) && download_before_play) {
                     offline_enqueue_play(items[selected].value,items[selected].is_audio);
@@ -3202,7 +3213,7 @@ int main(void) {
                     if(following>0) {
                         snprintf(items[selected].value,sizeof(items[selected].value),"%s",following_id);
                         stream_start_seconds=0;
-                        load_media_metadata(following_id);
+                        if(load_media_metadata(following_id)<0)break;
                         snprintf(items[selected].title,sizeof(items[selected].title),"%s",current_media_name);
                         continue;
                     }
@@ -3228,7 +3239,7 @@ int main(void) {
                 snprintf(status, sizeof(status), items[selected].is_audio ? tr(TXT_NEXT_TRACK) : tr(TXT_NEXT_EPISODE), items[selected].title);
                 show(selected);
                 sceKernelDelayThread(500000);
-                load_media_metadata(items[selected].value);
+                if(load_media_metadata(items[selected].value)<0)break;
             } while (1);
             if(!strncmp(items[selected].value,"plex.",5)) {
                 refresh_library();

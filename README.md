@@ -2,7 +2,7 @@
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
-### Plex library and playlists (server 0.1.36)
+### Plex library and playlists (server 0.1.37)
 
 Directory navigation uses a background request on the PSP. While loading,
 the status shows elapsed seconds; **Circle** requests cancellation. Failed or
@@ -21,22 +21,39 @@ provide the same integration. No Plex password or token belongs in the PSP CFG.
 2. Select a discovered server connection and press **Use connection**. Prefer a
    reachable HTTPS connection; an HTTP LAN connection also works, but does not
    encrypt the token on that LAN. TLS verification is never disabled.
-3. Add a **path mapping** from Plex's media directory to the same mounted files
-   inside PSP Streamer. For example, Plex `/volume1/video` → PSP Streamer
-   `/media/video`. The destination must be inside `MEDIA_ROOTS`. Home Assistant
-   paths refer to the app's `/media` mount, **not** your desktop's mount paths.
-   Multiple mappings and Windows-style Plex paths are supported.
-4. Enable **Plex library**, optionally disable **Filesystem library** and/or
+3. Enable **Plex library**, optionally disable **Filesystem library** and/or
    **Internet radio**, then **Save sources**. Refresh the PSP library with Square.
    Enter **Plex** to browse films, series/seasons, music/artists/albums or playlists.
 
-This first integration uses Plex's **catalogue API plus mounted originals**. It
-does not download originals from Plex HTTP URLs and does not ask Plex to
-transcode. Existing H.264/MP3 encoding, LCD/TV profiles, subtitle overlays and
-offline conversion therefore use the same tested code as filesystem media.
-Missing mounts produce an explicit mapping error. Multipart originals are
-reported as unsupported rather than playing only the first part. For multiple
-versions, the first Plex media version is used.
+**No path mapping or SMB mount is required.** PSP Streamer reads the original
+file directly from the selected Plex HTTP(S) endpoint. Plex and PSP Streamer
+can be on different networks, provided that endpoint is reachable and the Plex
+account is allowed to read the original. Use a reachable public/remote HTTPS
+connection from the server list when the LAN address is not accessible.
+For a Plex/radio-only installation, `MEDIA_ROOTS` may be empty. Unavailable
+filesystem roots produce an empty file library, not a server startup failure.
+
+Plex does not transcode: FFmpeg on PSP Streamer keeps the established H.264/MP3
+encoding and LCD/TV profiles. A private loopback bridge forwards byte-range
+requests, so FFprobe and FFmpeg can seek without downloading the entire file
+first. The Plex token remains in upstream HTTP headers in the server process;
+it is not sent to the PSP/browser or placed in FFmpeg's command line. Neither
+the extra ephemeral port nor a new Docker port mapping needs to be exposed.
+TLS certificate verification and redirect blocking also apply to original files.
+
+Audio/video inspection, embedded text subtitle extraction, PGS extraction and
+offline conversion all support this direct path. Remote PGS uses lossless
+FFmpeg stream-copy instead of mkvextract; local files keep their existing path.
+Subtitle extraction may need to read much of the original, so a slow internet
+link can still increase startup time. The Plex uplink must carry the **original
+bitrate**, not merely the smaller PSP output bitrate.
+
+If the same media is already mounted, **Optional: use existing local media
+mounts** permits a path mapping to avoid the HTTP transfer. For example,
+Plex `/volume1/video` → container `/media/video` (inside `MEDIA_ROOTS`). Missing
+mapped files automatically fall back to Plex HTTP(S). Multipart originals are
+reported as unsupported rather than silently playing only the first part; for
+multiple versions, the first Plex media version is used.
 Track selection currently covers tracks embedded in that original; external
 subtitle sidecars managed only by Plex are not imported yet.
 

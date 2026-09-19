@@ -32,6 +32,7 @@ from .pgs import PgsCue, parse_pgs
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
+from .plex_media import RemoteSource
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
@@ -107,10 +108,10 @@ def parse_srt_cues(value: str, fps: float = PSP_SUBTITLE_FPS) -> list[list[objec
 
 def load_roots(value: str | None) -> list[Path]:
     """Load and validate the colon-separated paths from MEDIA_ROOTS."""
-    paths = [Path(part).expanduser().resolve() for part in (value or "/media").split(":") if part]
+    paths = [Path(part).expanduser().resolve() for part in ("/media" if value is None else value).split(":") if part]
     existing = [path for path in paths if path.is_dir()]
-    if not existing:
-        raise ValueError("No readable media root found. Set MEDIA_ROOTS to an existing directory.")
+    # Plex/radio-only servers need no filesystem mount. A missing root never
+    # broadens filesystem access; it simply contributes no files.
     return existing
 
 
@@ -129,11 +130,13 @@ class Library:
         raw = json.dumps({"r": item.root, "p": item.relative}, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
-    def decode(self, token: str) -> tuple[MediaItem, Path]:
+    def decode(self, token: str) -> tuple[MediaItem, Path | RemoteSource]:
         if token.startswith('plex.') and self.plex:
             source = self.plex.source(token)
             if source.suffix.lower() not in MEDIA_EXTENSIONS:
                 raise ValueError('Unsupported Plex original format')
+            if isinstance(source, RemoteSource):
+                return MediaItem(-1, source.name), source
             for index, root in enumerate(self.roots):
                 if root in source.parents:
                     return MediaItem(index, source.relative_to(root).as_posix()), source
@@ -201,6 +204,8 @@ class Library:
                 "kind": "audio" if is_audio else "video"}
 
     def browse(self, root_index: int, relative: str = "") -> dict:
+        if not self.roots and root_index == 0 and not relative:
+            return {'root': 0, 'path': '', 'parent': None, 'folders': [], 'videos': []}
         if root_index < 0 or root_index >= len(self.roots):
             raise ValueError("Unknown media root")
         root = self.roots[root_index]
@@ -225,7 +230,7 @@ class Library:
         return {"root": root_index, "path": relative, "parent": parent, "folders": folders, "videos": videos}
 
 
-def ffmpeg_command(source: Path, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
+def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
                    subtitle_track: int = -1, audio_bitrate: str = "160k", subtitle_source: Path | None = None,
                    start_seconds: float = 0, bitmap_subtitle: bool = False,
                    tv_output: bool = False, video_fps: str = "20") -> list[str]:
@@ -799,19 +804,35 @@ class AppHandler(BaseHTTPRequestHandler):
         if cached is not None:
             return cached
         _, source = self.server.library.decode(token)
-        tracks = json.loads(subprocess.run(["mkvmerge", "-J", str(source)], capture_output=True, text=True, timeout=30, check=True).stdout)["tracks"]
-        subtitle_tracks = [entry for entry in tracks if entry.get("type") == "subtitles"]
-        if track >= len(subtitle_tracks) or subtitle_tracks[track].get("codec") != "HDMV PGS":
-            return []
+        remote = isinstance(source, RemoteSource)
+        if remote:
+            probe = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', f's:{track}',
+                '-show_entries', 'stream=codec_name', '-of', 'default=nw=1:nk=1', str(source)],
+                capture_output=True, text=True, timeout=30, check=False)
+            if probe.returncode:
+                raise ValueError('Could not inspect Plex subtitle track')
+            if probe.stdout.strip() != 'hdmv_pgs_subtitle':
+                return []
+        else:
+            tracks = json.loads(subprocess.run(["mkvmerge", "-J", str(source)], capture_output=True, text=True, timeout=30, check=True).stdout)["tracks"]
+            subtitle_tracks = [entry for entry in tracks if entry.get("type") == "subtitles"]
+            if track >= len(subtitle_tracks) or subtitle_tracks[track].get("codec") != "HDMV PGS":
+                return []
         cache_dir = Path(tempfile.gettempdir()) / "psp-streamer-pgs"
         cache_dir.mkdir(mode=0o700, exist_ok=True)
-        suffix = hashlib.sha256(f"{source}:{track}:{source.stat().st_mtime_ns}".encode()).hexdigest()
+        identity = source.cache_key if remote else f'{source}:{source.stat().st_mtime_ns}'
+        suffix = hashlib.sha256(f"{identity}:{track}".encode()).hexdigest()
         sup = cache_dir / f"{suffix}.sup"
         if not sup.exists():
-            extracted = subprocess.run(["mkvextract", "tracks", str(source), f"{subtitle_tracks[track]['id']}:{sup}"],
-                                       capture_output=True, text=True, timeout=600, check=False)
-            if extracted.returncode:
-                raise ValueError("Could not extract PGS subtitle track")
+            with tempfile.TemporaryDirectory(dir=cache_dir) as work:
+                target = Path(work) / 'track.sup'
+                command = (['ffmpeg', '-v', 'error', '-i', str(source), '-map', f'0:s:{track}',
+                            '-c:s', 'copy', '-f', 'sup', str(target)] if remote else
+                           ["mkvextract", "tracks", str(source), f"{subtitle_tracks[track]['id']}:{target}"])
+                extracted = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+                if extracted.returncode:
+                    raise ValueError("Could not extract PGS subtitle track")
+                target.replace(sup)
         parsed = parse_pgs(sup.read_bytes())
         with self.server.pgs_cache_lock:
             self.server.pgs_cache[cache_key] = parsed
@@ -874,11 +895,12 @@ class AppHandler(BaseHTTPRequestHandler):
             if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
                 probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)], capture_output=True, text=True, check=False)
                 bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
-                alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
-                alias_dir.mkdir(mode=0o700, exist_ok=True)
-                subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
-                if not subtitle_source.exists():
-                    os.symlink(source, subtitle_source)
+                if not isinstance(source, RemoteSource):
+                    alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
+                    alias_dir.mkdir(mode=0o700, exist_ok=True)
+                    subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
+                    if not subtitle_source.exists():
+                        os.symlink(source, subtitle_source)
             command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)
             if live:
                 radio_lease = self.server.radio.begin(token)
@@ -998,10 +1020,10 @@ class AppServer(ThreadingHTTPServer):
             self.offline.start()
 
     def server_close(self):
-        if hasattr(self, 'plex'):
-            self.plex.close()
         if hasattr(self, 'offline'):
             self.offline.close()
+        if hasattr(self, 'plex'):
+            self.plex.close()
         super().server_close()
 
     def get_request(self):

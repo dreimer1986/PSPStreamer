@@ -193,6 +193,7 @@ class OfflineQueue:
         return output
 
     def _subtitles(self, job, source, probe, folder):
+        from .plex_media import RemoteSource
         """OVL1: uint32 JSON length, compact cue JSON, then indexed PGS sprites."""
         track = job['subtitle']
         payload, sprites, burn = {'t': 'text', 'c': []}, [], -1
@@ -206,12 +207,16 @@ class OfflineQueue:
                 data = self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map',
                                       f'0:s:{track}', '-f', 'srt', 'pipe:1'], job)
                 payload['c'] = self.parse_cues(data.decode('utf-8'), 1000)
-            elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and source.suffix.lower() == '.mkv':
+            elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
                 from .pgs import parse_pgs
-                tracks = json.loads(self._capture(['mkvmerge', '-J', str(source)], job))['tracks']
-                selected = [t for t in tracks if t.get('type') == 'subtitles'][track]
                 sup = folder / 'extract.sup'
-                self._capture(['mkvextract', 'tracks', str(source), f"{selected['id']}:{sup}"], job, 600)
+                if isinstance(source, RemoteSource):
+                    self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map', f'0:s:{track}',
+                                   '-c:s', 'copy', '-f', 'sup', str(sup)], job, 600)
+                else:
+                    tracks = json.loads(self._capture(['mkvmerge', '-J', str(source)], job))['tracks']
+                    selected = [t for t in tracks if t.get('type') == 'subtitles'][track]
+                    self._capture(['mkvextract', 'tracks', str(source), f"{selected['id']}:{sup}"], job, 600)
                 cues = parse_pgs(sup.read_bytes())
                 sup.unlink()
                 if len(cues) > 960 or any(len(c.palette) + len(c.pixels) > 512 * 1024 for c in cues):

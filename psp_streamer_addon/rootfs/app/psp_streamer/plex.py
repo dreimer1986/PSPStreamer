@@ -1,7 +1,7 @@
 """Plex catalogue adapter. Credentials never leave the server.
 
-Media is read from explicitly mapped mounts, not Plex's transcoder. This keeps
-the same subtitle extraction and offline conversion paths as filesystem media.
+Originals are read over authenticated HTTP(S), with optional mounted-path
+shortcuts. Plex's transcoder is never involved.
 """
 import json
 import hashlib
@@ -38,6 +38,7 @@ class Plex:
         self.resources = []
         self.cache = {}
         self.parents = {}
+        self.media_bridge = None
         self.pending = {}
         self.last_report = {}
         self.report_condition = threading.Condition()
@@ -227,7 +228,18 @@ class Plex:
             target = (base / str(relative)).resolve()
             if base in target.parents and target.is_file() and any(r in target.parents for r in self.roots):
                 return target
-        raise ValueError('Plex original is not accessible; configure its path mapping in Media sources')
+        from .plex_media import PlexMediaBridge
+        part = media[0]['Part'][0]
+        name = PurePosixPath(source).name
+        if not PurePosixPath(name).suffix:
+            extension = part.get('container') or media[0].get('container', '')
+            if not re.fullmatch(r'[A-Za-z0-9]{1,8}', extension):
+                raise ValueError('Plex did not identify the original container')
+            name = display_text(row.get('title') or 'Plex media') + '.' + extension
+        with self.lock:
+            if self.media_bridge is None:
+                self.media_bridge = PlexMediaBridge(self)
+            return self.media_bridge.source(part, name, row.get('updatedAt', 0))
 
     def listing(self, kind, key, offset=0):
         endpoint = {'s': f'/library/sections/{key}/all', 'm': f'/library/metadata/{key}/children',
@@ -377,3 +389,5 @@ class Plex:
             self.report_condition.notify_all()
         if self.report_thread:
             self.report_thread.join(timeout=9)
+        if self.media_bridge:
+            self.media_bridge.close()

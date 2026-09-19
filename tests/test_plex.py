@@ -41,13 +41,18 @@ class PlexTests(unittest.TestCase):
         self.assertEqual(restored.config['client'], self.plex.config['client'])
         self.assertEqual(restored.config['token'], 'secret-server')
 
-    def test_escape_and_missing_mapping_rejected(self):
+    def test_unsafe_local_paths_never_open_outside_roots(self):
+        from psp_streamer.plex_media import RemoteSource
         (self.root / 'outside.mkv').touch()
         (self.media / 'link.mkv').symlink_to(self.root / 'outside.mkv')
-        for source in ('/plex/tv/../outside.mkv', '/plex/tv/link.mkv', '/other/file.mkv', '/plex/tv-other/episode.mkv'):
+        self.row['Media'][0]['Part'][0]['key'] = '/library/parts/42/file.mkv'
+        self.row['Media'][0]['Part'][0]['file'] = '/plex/tv/../outside.mkv'
+        with patch.object(self.plex, 'metadata', return_value=self.row), self.assertRaises(ValueError):
+            self.plex.source(self.plex.token('42'))
+        for source in ('/plex/tv/link.mkv', '/other/file.mkv', '/plex/tv-other/episode.mkv'):
             self.row['Media'][0]['Part'][0]['file'] = source
-            with patch.object(self.plex, 'metadata', return_value=self.row), self.assertRaises(ValueError):
-                self.plex.source(self.plex.token('42'))
+            with patch.object(self.plex, 'metadata', return_value=self.row):
+                self.assertIsInstance(self.plex.source(self.plex.token('42')), RemoteSource)
 
     def test_multipart_rejected_explicitly(self):
         self.row['Media'][0]['Part'].append({'file': '/plex/tv/second.mkv'})

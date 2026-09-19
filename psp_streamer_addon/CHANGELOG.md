@@ -1,3 +1,12 @@
+# 0.1.37
+
+- Plex originals stream directly over the selected HTTP(S) connection: no path mappings or shared network required.
+- Private range-capable loopback bridge keeps Plex tokens out of FFmpeg arguments and client responses.
+- Direct originals support audio/subtitle inspection, text and PGS subtitles, seeking and offline conversion.
+- Local path mappings remain an optional optimization, with HTTP fallback for unavailable mounts.
+- Display web metadata failures instead of apparently missing tracks; matching PSP build does not open empty options on metadata errors.
+- Home Assistant and plain Docker contain identical server/web changes.
+
 # 0.1.36
 
 - Optional Plex account linking, discovered server selection and source switches.
