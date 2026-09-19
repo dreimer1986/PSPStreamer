@@ -7,6 +7,7 @@
 #include <math.h>
 #include <errno.h>
 #include <stdint.h>
+#include "preset_trig.h"
 enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT,
        FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL,
        TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP,
@@ -206,6 +207,7 @@ static PmRuntime fallback_runtime;
 static int frame_fuel=-1;
 void pm_begin_frame(void) {frame_fuel=262144;}
 void pm_reset_globals(void) {
+    pm_trig_reset();
     memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
     memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
 }
@@ -352,8 +354,8 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             case ADD: result=a+b; break; case SUB: result=a-b; break;
             case MUL: result=a*b; break;
             case DIV: if (b==0) return 0; result=a/b; break;
-            case NEG: result=-a; break; case SIN: result=sinf(a); break;
-            case COS: result=cosf(a); break; case ABS: result=fabsf(a); break;
+            case NEG: result=-a; break; case SIN: result=pm_trig(a,0); break;
+            case COS: result=pm_trig(a,1); break; case ABS: result=fabsf(a); break;
             case MIN: result=fminf(a,b); break; case MAX: result=fmaxf(a,b); break;
             case SQRT: if (a<0) return 0; result=sqrtf(a); break;
             case FLOOR: result=floorf(a); break; case CEIL: result=ceilf(a); break;

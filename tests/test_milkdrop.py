@@ -1,4 +1,5 @@
 import re
+import os
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_exact_trig_cache_and_preset_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'trig'
+            sources=['milkdrop_preset.c','milkdrop_signal.c','milkdrop_wave.c',
+                     'milkdrop_wave_extra.c','milkdrop_decor.c','milkdrop_warp.c']
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=undefined',
+                            '-I',str(ROOT/'psp-client'),str(ROOT/'tests/preset_trig_harness.c'),
+                            *[str(ROOT/'psp-client'/name) for name in sources],'-lm','-o',str(binary)],check=True)
+            presets=[ROOT/'psp-client/presets/dense-wave-demo.milk']
+            if os.environ.get('GEISS_PRESET_DIR'):
+                presets.append(Path(os.environ['GEISS_PRESET_DIR'])/'Fed + Geiss - Cauldron painterly 5 strippy rmx 1 auraltshift.milk')
+            subprocess.run([str(binary),*[str(p) for p in presets]],check=True,timeout=30)
+
     def test_optional_phase_profiler(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'profile'

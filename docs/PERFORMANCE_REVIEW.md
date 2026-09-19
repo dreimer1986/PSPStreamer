@@ -64,6 +64,33 @@ Additional tests cover sparse/dense repeated assignments, rollback after
 division failure and fuel exhaustion, and compact vertex contents after all
 three draws have been queued (including split lines and full-length waves).
 
+## Follow-up: exact trigonometric memoization
+
+The PSP phase report for `Fed + Geiss - Cauldron painterly 5 strippy rmx 1
+auraltshift.milk` attributed 33.203 ms of 48.781 ms measured average frame work
+to custom-wave evaluation (688 LCD-fullscreen frames). Pixel formulas were
+negligible. Its wave program repeatedly evaluates rotation sine/cosine at
+identical angles across points.
+
+The VM now memoizes `sin` and `cos` in a bounded, two-way, 32-set cache.
+Entries use the exact 32-bit float argument, including the sign of zero;
+cache misses still call the same `sinf`/`cosf` functions. No angle rounding,
+interpolation, instruction reordering or formula-budget changes are involved.
+Sin and cosine share an argument entry but are computed only when requested.
+Pure results may be reused across programs/frames; global VM reset clears the
+cache. Exceptional results are not retained. Storage is 1,056 bytes, with no
+heap allocations. Like the VM, this cache belongs to the renderer thread.
+
+Tests compare cached and uncached state/wave output byte-for-byte, exercise
+20,000 generated float bit patterns, signed zero and cache eviction, and count
+actual VM library calls. Presets with entirely changing arguments may gain
+nothing and still pay lookup overhead; compare their PSP timings as well.
+In the deterministic 24-frame host comparison, Cauldron's VM calls fell from
+160,393 to 47,752 with identical outputs; dense-wave-demo remained at 24,576.
+These are call counts with synthetic inputs, not PSP timing measurements.
+The existing render scheduler and all profiler measurements remain unchanged
+so this optimization can be evaluated independently of duty-cycle changes.
+
 ## Validation before claiming a gain
 
 Compare identical preset/audio inputs and fixed timestamps on host tests,
