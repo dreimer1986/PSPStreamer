@@ -531,7 +531,8 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error) {
     MdWaveState next[MD_CUSTOM_WAVES];
-    MdWaveGeometry geometry[MD_CUSTOM_WAVES]={0};
+    MdWaveGeometry geometry[MD_CUSTOM_WAVES];
+    for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) geometry[slot].count=0;
     int line=0;
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
         const MdCustomWave *w=&p->waves[slot];
@@ -614,7 +615,13 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(ws->point_user,v+PM_USER_BASE,sizeof(ws->point_user));
         geometry[slot].count=count;
     }
-    memcpy(output,geometry,sizeof(geometry));
+    /* Consumers use count; unused vertices need neither clearing nor copying.
+     * Commit only after every wave succeeds, preserving failure atomicity. */
+    for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
+        output[slot].count=geometry[slot].count;
+        memcpy(output[slot].vertices,geometry[slot].vertices,
+               geometry[slot].count*sizeof(MdVertex));
+    }
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++)
         if(p->waves[slot].enabled) state->waves[slot]=next[slot];
     return MD_FILE_OK;
@@ -643,25 +650,40 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
     }
     int grid=work>(unsigned)pm_frame_remaining()?8:MD_GRID;
     int stride=MD_GRID/grid;
-    for(int y=0;y<=grid;y++) for(int x=0;x<=grid;x++) {
-        float v[PM_VALUES]={frame->zoom,frame->rotation,frame->warp,frame->warp_speed,
+    /* Single renderer thread; immutable coordinates shared by both densities. */
+    static float coordinates[MD_GRID_POINTS][4];
+    static int coordinates_ready;
+    if(!coordinates_ready) {
+        for(int y=0;y<=MD_GRID;y++) for(int x=0;x<=MD_GRID;x++) {
+            float px=2.0f*x/MD_GRID-1,py=1-2.0f*y/MD_GRID;
+            float *c=coordinates[y*(MD_GRID+1)+x];
+            c[0]=(float)x/MD_GRID;c[1]=(float)y/MD_GRID;
+            c[2]=sqrtf(px*px+py*py);
+            c[3]=(px==0 && py==0)?0:atan2f(py,px);
+        }
+        coordinates_ready=1;
+    }
+    float base[PM_VALUES]={frame->zoom,frame->rotation,frame->warp,frame->warp_speed,
             frame->warp_scale,frame->decay,0,0,0,seconds};
+    {
+        float *v=base;
         v[23]=frame->dx; v[24]=frame->dy; v[25]=frame->cx; v[26]=frame->cy;
         v[27]=frame->sx; v[28]=frame->sy; v[29]=frame->zoomexp;
         if(signal) memcpy(v+10,signal->values,MD_SIGNAL_COUNT*sizeof(float));
         md_inputs(v);
         v[PM_INPUT_BASE]=grid;v[PM_INPUT_BASE+1]=grid;
-        memcpy(v+PM_Q_BASE,q,sizeof(q));memcpy(v+PM_USER_BASE,users,sizeof(users));
         v[PM_META_BASE]=state->frames?(float)(state->frames-1):0;
         v[PM_META_BASE+1]=state->fps;
         v[PM_DYNAMIC_BASE]=(float)state->wave_mode;
         memcpy(v+PM_DYNAMIC_BASE+1,state->motion,sizeof(state->motion));
         memcpy(v+PM_EFFECT_BASE,state->effects,sizeof(state->effects));
         v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
-        float px=2.0f*x/grid-1, py=1-2.0f*y/grid;
-        v[PM_COORD_BASE]=(float)x/grid; v[PM_COORD_BASE+1]=(float)y/grid;
-        v[PM_COORD_BASE+2]=sqrtf(px*px+py*py);
-        v[PM_COORD_BASE+3]=(px==0 && py==0)?0:atan2f(py,px);
+    }
+    for(int y=0;y<=grid;y++) for(int x=0;x<=grid;x++) {
+        float v[PM_VALUES];
+        memcpy(v,base,sizeof(v));
+        memcpy(v+PM_Q_BASE,q,sizeof(q));memcpy(v+PM_USER_BASE,users,sizeof(users));
+        memcpy(v+PM_COORD_BASE,coordinates[y*stride*(MD_GRID+1)+x*stride],4*sizeof(float));
         int line=0;
         if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");

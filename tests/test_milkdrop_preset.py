@@ -1309,11 +1309,18 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
         fn=self.library.md_eval_custom_waves
         fn.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(PresetState),ctypes.POINTER(Geometry),ctypes.POINTER(Error)]
         state=PresetState(); out=(Geometry*4)(); error=Error()
+        # Unused geometry is not touched, but stale disabled-wave counts must
+        # be cleared. Active vertices still initialize every GU attribute.
+        ctypes.memset(out,0x42,ctypes.sizeof(out))
+        unused=bytes(out[0].vertices[64])
         left=(ctypes.c_short*576)(*([16384]*576)); right=(ctypes.c_short*576)()
         for frame in range(3):
             self.assertEqual(self.evaluate_state(preset,state,frame)[0],0)
             self.assertEqual(fn(ctypes.byref(preset),frame,None,right,left,None,None,ctypes.byref(state),out,ctypes.byref(error)),0)
             self.assertEqual(out[0].count,64)
+            self.assertEqual(bytes(out[0].vertices[64]),unused)
+            self.assertEqual([out[i].count for i in range(1,4)],[0,0,0])
+            self.assertEqual((out[0].vertices[0].u,out[0].vertices[0].v,out[0].vertices[0].z),(0,0,0))
             self.assertAlmostEqual(out[0].vertices[0].y,.25*256,places=4)
             self.assertEqual(out[0].vertices[63].x,256)
             self.assertEqual(state.waves[0].frame.user[0],frame+1)
@@ -1592,6 +1599,54 @@ per_frame_1=wave_r=progress;
         before=bytes(points)
         self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,ctypes.byref(state),points,ctypes.byref(error)),2)
         self.assertEqual(bytes(points),before)
+
+    def test_warp_cached_rotation_and_radius_match_uniform_path(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        fn=self.library.md_warp_mesh_varying
+        fn.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(Warp),ctypes.POINTER(Warp),ctypes.c_float]
+        base=Warp(1.1,.03,0,1,1,.98,.01,-.02,.5,.5,1,1,1.5)
+        points=(Warp*GRID_POINTS)()
+        for i in range(GRID_POINTS):
+            points[i]=Warp.from_buffer_copy(base)
+            points[i].rotation=(i//3%5-2)*.02
+            points[i].warp=0 if i%2 else .5
+        actual=(Vertex*(GRID*GRID*6))(); expected=type(actual)()
+        for seconds in (0,1.25,17):
+            fn(actual,ctypes.byref(base),points,seconds)
+            for cell in (0,1,3,GRID,GRID*GRID//2,GRID*GRID-1):
+                y,x=divmod(cell,GRID)
+                a=y*(GRID+1)+x
+                for offset,node in enumerate((a,a+1,a+GRID+1,a+1,a+GRID+2,a+GRID+1)):
+                    fn(expected,ctypes.byref(points[node]),None,seconds)
+                    index=cell*6+offset
+                    self.assertEqual(bytes(actual[index]),bytes(expected[index]))
+
+    def test_cached_grid_coordinates_both_densities(self):
+        fn=self.library.md_eval_pixel_grid
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,
+                     ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
+        data=b'[preset00]\nper_pixel_1=dx=rad*.1; dy=x*y; rot=ang*.01; cx=meshx/32;'
+        # Reserve expensive wave work so the scheduler chooses the 8x8 grid.
+        heavy=b'\nwavecode_0_enabled=1\nwavecode_0_samples=1024\nwave_0_per_point1=loop(100,x=sample);'
+        for suffix,grid in ((b'',GRID),(heavy,8),(b'',GRID)):
+            code,preset,error=self.parse(data+suffix)
+            self.assertEqual(code,0,(error.line,error.key))
+            state=PresetState(); result,frame,_=self.evaluate_state(preset,state,0)
+            self.assertEqual(result,0)
+            points=(Warp*GRID_POINTS)()
+            self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,
+                ctypes.byref(state),points,ctypes.byref(error)),0)
+            self.assertEqual(points[0].cx,grid/32)
+            stride=GRID//grid
+            for y in range(grid+1):
+                for x in range(grid+1):
+                    p=points[y*stride*(GRID+1)+x*stride]
+                    px,py=2*x/grid-1,1-2*y/grid
+                    self.assertAlmostEqual(p.dx,math.hypot(px,py)*.1,places=6)
+                    self.assertAlmostEqual(p.dy,x*y/(grid*grid),places=6)
+                    self.assertAlmostEqual(p.rotation,(math.atan2(py,px) if px or py else 0)*.01,places=6)
 
     def test_pixel_restrictions_and_demo(self):
         for formula in ("time=0;",):
