@@ -596,6 +596,8 @@ describe context-local writable EEL inputs and the `native-inputs-demo.milk`
 test preset. Older milestone reports retain their historical scope.
 For shapes crossing the image boundary, see [offscreen shape clipping](docs/MILKDROP_OFFSCREEN_SHAPES.md)
 and test `offscreen-shapes-demo.milk`.
+The completed [wave/transform range package](docs/MILKDROP_GEOMETRY_RANGES.md)
+has one combined hardware test: `geometry-range-demo.milk`.
 The next batch adds up to eight instances per shape, 512-point custom waves,
 read-only `instance`/`instances`/`progress` inputs, optional ordered/random/rated
 preset cycling, playlists and snapshot-to-live crossfades. Try

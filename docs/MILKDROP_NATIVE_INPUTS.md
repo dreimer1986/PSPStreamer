@@ -61,10 +61,9 @@ change the appearance of existing presets; that is intentional.
 
 ## Ordered remaining work (current, not historical milestones)
 
-1. Continue numerical-range compatibility: [offscreen shapes](MILKDROP_OFFSCREEN_SHAPES.md)
-   now have correct clipping and expanded coordinates/radii. Custom waves still
-   need their own clipping path. Zoom/exponent
-   combinations also need finite geometry guarantees before widening ranges.
+1. Completed current geometry/range package: [offscreen shapes](MILKDROP_OFFSCREEN_SHAPES.md),
+   [wave clipping and safe expanded transforms](MILKDROP_GEOMETRY_RANGES.md).
+   Remaining deliberate approximation limits are documented, not unbounded.
 2. Classify collection failures by actual import/runtime cause. Host formula
    acceptance is not proof of visual equivalence or PSP performance.
 3. Larger program/local/memory budgets require a memory-layout/stack review;

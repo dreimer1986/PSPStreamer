@@ -86,6 +86,7 @@ class MilkDropTests(unittest.TestCase):
                               ("spiro","pulse-spiro","complex","line","dual-line","fft-spectrum","motion-clock","wave-switch","shape-orbits","custom-wave","custom-wave-fft","custom-spectrum","smooth-wave","image-effects","shape-instances","large-wave","eel-memory-orbit","eel-grid-logic","eel-wave-loop","external-texture","dense-wave","fine-mesh","extended-formula","extended-memory","extended-point-program","shape-batches")],
                             str(ROOT/'psp-client/presets/native-inputs-demo.milk'),
                             str(ROOT/'psp-client/presets/offscreen-shapes-demo.milk'),
+                            str(ROOT/'psp-client/presets/geometry-range-demo.milk'),
                             *([str(Path(os.environ['GEISS_PRESET_DIR'])/'Geiss - Explosion nz+.milk')] if os.environ.get('GEISS_PRESET_DIR') else [])],
                            check=True, timeout=120)
 

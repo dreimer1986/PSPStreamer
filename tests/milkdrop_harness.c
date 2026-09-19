@@ -35,6 +35,8 @@ static unsigned long long render_cost;
 static uint32_t expected_ring_color;
 static int expected_left, expected_top, expected_width, expected_height, covered_width;
 static int expected_passes=1;
+static int capture_clipped_wave,captured_count;
+static MdVertex captured_wave[8];
 static const MdVertex *shape_fan;
 static int outline_pass, thick_outline_draws;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
@@ -149,7 +151,7 @@ static void *sceGuGetMemory(int bytes) {
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     assert(!restore_target);
     const MdVertex *v=data;
-    MdVertex unpacked[2*MD_CUSTOM_POINTS];
+    MdVertex unpacked[4*MD_CUSTOM_POINTS];
     assert((format==15 || format==14) && !indices);
     if(format==15) {
         assert((const unsigned char *)data>=list_base);
@@ -158,12 +160,16 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     if(format==14) {
         struct Plain {unsigned int color;float x,y,z;};
         const struct Plain *p=data;
-        assert(type==GU_LINE_STRIP || type==GU_POINTS);
-        assert(count>0 && count<=2*MD_CUSTOM_POINTS);
+        assert(type==GU_LINE_STRIP || type==GU_POINTS || type==GU_LINES);
+        assert(count>0 && count<=4*MD_CUSTOM_POINTS);
         assert((const unsigned char *)data>=list_base &&
                (const unsigned char *)(p+count)<=list_base+list_used);
         for(int i=0;i<count;i++) unpacked[i]=(MdVertex){.color=p[i].color,.x=p[i].x,.y=p[i].y,.z=p[i].z};
         v=unpacked;
+        if(capture_clipped_wave) {
+            assert(count<=8);captured_count=count;
+            memcpy(captured_wave,v,count*sizeof(*v));
+        }
     }
     if(type==GU_TRIANGLES && count==6 && target_changes==2) {
         assert(target_changes==2 && target_offset==raw_source && texture_offset==raw_target);
@@ -190,6 +196,10 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     else if(type==GU_TRIANGLE_FAN) {
         assert(count>=5 && count<=MD_SHAPE_SIDES+2);
         shape_fan=v; outline_pass=0;
+    }
+    else if(format==14 && (type==GU_LINES || type==GU_POINTS)) {
+        assert(type==GU_POINTS || count%2==0);ring_calls++;
+        for(int i=0;i<count;i++)assert(v[i].x>=0 && v[i].x<=512 && v[i].y>=0 && v[i].y<=256);
     }
     else if(type==GU_LINES) { assert(count<=MD_MOTION_MAX_VERTICES && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
@@ -264,7 +274,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==36 || argc==37);
+    assert(argc==37 || argc==38);
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -491,7 +501,8 @@ int main(int argc,char **argv) {
         assert(md_start());int before=starts;
         test_time+=100000;
         assert(md_frame(tv,full,bands,75,test_time,3)==1);
-        assert(starts-before==MD_SHAPES*MD_SHAPE_MAX_INSTANCES/MD_SHAPE_BATCH);
+        int shape_lists=MD_SHAPES*MD_SHAPE_MAX_INSTANCES/MD_SHAPE_BATCH;
+        assert(starts-before>=shape_lists && starts-before<=shape_lists+MD_CUSTOM_WAVES+1);
         assert(covered_width==expected_width);
         md_stop();assert(!md_shape_frame);
     }
@@ -514,7 +525,7 @@ int main(int argc,char **argv) {
     expected_passes=4; expected_ring_color=0;
     for(int fixture=1;fixture<argc;fixture++) {
     expected_passes=fixture<=23?4:(fixture==28 || fixture==29)?2:1;
-    if(fixture==36)expected_passes=2;
+    if(fixture==37)expected_passes=2;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
@@ -522,14 +533,14 @@ int main(int argc,char **argv) {
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
         assert(!md_preset_state.ready);
-        for(int frame=0;frame<(fixture==36?30:600);frame++) {
+        for(int frame=0;frame<(fixture==37?30:600);frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
             if(fixture==33)assert(md_shape_frame->count[0]==128);
-            if(fixture==36)assert(md_shape_frame->count[1]==311);
+            if(fixture==37)assert(md_shape_frame->count[1]==311);
             if(fixture==27) {
                 assert(md_images_ready && md_images[0].pixels && external_binds>0);
                 if(frame==20) {md_begin_preset(500);assert(!md_images[0].pixels);}
@@ -627,6 +638,25 @@ int main(int argc,char **argv) {
     assert(strstr(profile,"geometry_submit avg_us=") && strstr(profile,"gpu_wait avg_us="));
     printf("Visualization maximum vertex storage: %zu / %d bytes\n",list_peak,MD_LIST_BYTES);
     assert(thick_outline_draws>0);
+    for(int failure=0;failure<2;failure++) {
+        assert(md_start());assert(sceGuStart(GU_DIRECT,md_list)>=0);
+        md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+        MdVertex *wave=sceGuGetMemory(4*sizeof(*wave));
+        wave[0]=(MdVertex){.color=0xffffffff,.x=-20,.y=10};
+        wave[1]=(MdVertex){.color=0xffffffff,.x=100,.y=10};
+        wave[2]=(MdVertex){.color=0xffffffff,.x=400,.y=20};
+        wave[3]=(MdVertex){.color=0xffffffff,.x=540,.y=20};
+        capture_clipped_wave=1;fail_restart=failure;
+        assert(md_draw_wave(GU_LINE_STRIP,wave,4,2,1)==!failure);
+        if(!failure) {
+            assert(captured_count==4); /* no artificial bridge across split */
+            assert(captured_wave[0].x==0 && captured_wave[1].x==100);
+            assert(captured_wave[2].x==400 && captured_wave[3].x==512);
+            assert(captured_wave[0].y==11 && captured_wave[3].y==21);
+            sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+        }
+        capture_clipped_wave=fail_restart=0;md_stop();assert(!md_list);
+    }
     munmap(vram,edram_size);
     return 0;
 }

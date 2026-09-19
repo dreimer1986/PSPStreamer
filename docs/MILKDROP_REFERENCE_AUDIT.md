@@ -73,13 +73,13 @@ No per-frame warnings/popups are emitted.
 | --- | --- | --- |
 | Shapes | Four slots, at most 512 instances each with execution-budget fallback, 3–100 sides | Batched; sides follow Desktop draw cap; not unlimited Desktop density |
 | Custom waves | Four slots, 2–1024 points; separation 0–128; above 512 points PCM/FFT inputs are interpolated | Expanded; Desktop itself clamps computed points to 512 |
-| Custom wave gain/smoothing | 0–4 / 0–1; normalized colors and positions 0–1 | Conservative existing renderer limits, not hardware maxima |
+| Custom wave gain/smoothing | −100..100 / 0–1; normalized colors, positions −4..4 | Offscreen segment/dot clipping; global rendered audio gain also bounded to ±100 |
 | Shape position/radius | −4..4; angles −100..100; texture zoom .1–10 | Offscreen triangle/border clipping implemented; still bounded, not unrestricted Desktop geometry |
 | Shape colors | Finite floats; convert to byte using truncation and wrapping | Desktop semantics; safe extension for values overflowing Desktop integer conversion |
-| Static zoom / frame zoom | .8–1.2 / legacy frame .1–64, otherwise .8–1.2 | Historical renderer limits; not Desktop limits or proven hardware limits |
-| Rotation / warp | ±100 radians / ±4 | Rotation widened consistently across import/frame/pixel; warp retains historical limit |
-| Warp speed/scale, decay | 0–4 / .1–8 / .8–1 | Historical limits; not hardware maxima |
-| Translation, centers, stretch | ±1, 0–1, .25–4 | Conservative geometry limits |
+| Static/frame/pixel zoom | .01–100 | Unified bounds; effective zoom and final UV saturation prevent extreme power overflow |
+| Rotation / warp | ±100 radians / ±100 | Expanded numerical policy, not measured hardware maxima |
+| Warp speed/scale, decay | ±100 / .01–100 / 0–1 | Negative speed supports reversed animation |
+| Translation, centers, stretch | ±4, ±4, .01–100 | Expanded with bounded final texture coordinates; negative/zero stretch still approximated |
 | Zoom exponent | .01–100 | Current safe-input budget, derived from Desktop editor range |
 | Echo zoom/alpha/orientation, gamma | .01–100 / 0–1 / 0–3, gamma 1–4 | Pass/geometry budget; gamma affects GU-list usage |
 | Built-in wave mode | 0–8; out-of-range values select nearest mode | Supported mode set |
@@ -87,6 +87,9 @@ No per-frame warnings/popups are emitted.
 | Feedback and mesh | 512×256 feedback, 16×16-cell mesh; budget-aware 8×8 formula fallback | Mesh expanded; larger feedback buffers: **Umbau nötig** |
 | External textures | Four, at most 256×256 RGBA each; JPEG source up to 1024×1024 | Loader/memory budget; not GE's absolute texture limit |
 | GU list | 1.5 MiB; 1206368-byte vertex peak in layer stress test; shapes submitted in batches of 32 | Shape batching implemented; other layers retain bounded allocations |
+
+The [combined geometry/range package](MILKDROP_GEOMETRY_RANGES.md) documents
+wave clipping, gain/UV safety fallbacks and the remaining intentional limits.
 
 Dynamic booleans use the EEL truth threshold (absolute value at least .00001);
 integer file switches use nonzero as true. Formula-selected modes/orientations

@@ -1,0 +1,30 @@
+[preset00]
+// Combined test: offscreen lines/dots, strong zoom, reverse warp and shapes.
+fDecay=0.94
+fWaveAlpha=0.35
+nWaveMode=7
+bWaveThick=1
+per_frame_1=zoom=1+.4*sin(time*.3); warp=12*sin(time*.2); cx=.5+.7*sin(time*.1); cy=.5; sx=1.1; sy=.8;
+wavecode_0_enabled=1
+wavecode_0_samples=256
+wavecode_0_bDrawThick=1
+wavecode_0_r=0.2
+wavecode_0_g=0.9
+wavecode_0_b=1
+wavecode_0_a=0.8
+wave_0_per_point1=x=sample*2-.5; y=.5+.8*sin(sample*15+time)+value1*.2;
+wavecode_1_enabled=1
+wavecode_1_samples=128
+wavecode_1_bUseDots=1
+wavecode_1_bDrawThick=1
+wavecode_1_r=1
+wavecode_1_g=0.5
+wavecode_1_b=0.1
+wavecode_1_a=1
+wave_1_per_point1=x=.5+.8*cos(sample*6.283185+time*.4); y=.5+.8*sin(sample*6.283185+time*.4);
+shapecode_0_enabled=1
+shapecode_0_sides=5
+shapecode_0_rad=0.6
+shapecode_0_a=0.3
+shapecode_0_a2=0.1
+shape_0_per_frame1=x=.5+.8*sin(time*.3); y=.5; ang=time*.2;

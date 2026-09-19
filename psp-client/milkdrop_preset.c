@@ -35,8 +35,8 @@ static void md_engine_inputs(float *v,float seconds,const MdSignal *signal,float
     v[PM_META_BASE]=frame;v[PM_META_BASE+1]=fps;
     v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
 }
-static const float low[] = {.8f, -100, -4, 0, .1f, .8f, 0, 0, 0};
-static const float high[] = {1.2f, 100, 4, 4, 8, 1, 1, 1, 1};
+static const float low[] = {.01f, -100, -100, -100, .01f, 0, 0, 0, 0};
+static const float high[] = {100, 100, 100, 100, 100, 1, 1, 1, 1};
 /* Resource/geometry limits are rendering fallbacks, not malformed presets.
  * Always reject non-finite input before using this helper. */
 static float md_limit(float value,float lo,float hi) {
@@ -92,16 +92,16 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         {"mv_x",-FLT_MAX,FLT_MAX,&next.motion[4]}, {"mv_y",-FLT_MAX,FLT_MAX,&next.motion[5]},
         {"mv_dx",-1,1,&next.motion[6]}, {"mv_dy",-1,1,&next.motion[7]},
         {"mv_l",0,10,&next.motion[8]},
-        {"dx",-1,1,&next.warp.dx}, {"dy",-1,1,&next.warp.dy},
+        {"dx",-4,4,&next.warp.dx}, {"dy",-4,4,&next.warp.dy},
         {"nWaveMode",0,8,&wave_mode}, {"bTexWrap",0,1,&wrap},
         /* MilkDrop state.cpp imports these as floats, not normalized colors.
          * Alpha is saturated only after mode/volume modulation at draw time. */
         {"fGammaAdj",1,4,&next.gamma}, {"fWaveScale",-FLT_MAX,FLT_MAX,&next.wave_scale},
         {"fWaveSmoothing",0,1,&next.wave_smoothing}, {"fWaveAlpha",-FLT_MAX,FLT_MAX,&next.wave_alpha},
         {"fRating",0,5,NULL}, {"fZoomExponent",.01f,100,&next.warp.zoomexp},
-        {"cx",0,1,&next.warp.cx}, {"cy",0,1,&next.warp.cy},
-        {"sx",.25f,4,&next.warp.sx}, {"sy",.25f,4,&next.warp.sy},
-        {"wave_x",0,1,&next.decor.wave_x}, {"wave_y",0,1,&next.decor.wave_y},
+        {"cx",-4,4,&next.warp.cx}, {"cy",-4,4,&next.warp.cy},
+        {"sx",.01f,100,&next.warp.sx}, {"sy",.01f,100,&next.warp.sy},
+        {"wave_x",-4,4,&next.decor.wave_x}, {"wave_y",-4,4,&next.decor.wave_y},
         {"fWaveParam",-1,1,&next.decor.wave_param},
         {"fVideoEchoZoom",.01f,100,&next.decor.echo_zoom},
         {"fVideoEchoAlpha",0,1,&next.decor.echo_alpha},
@@ -242,7 +242,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             int k; for(k=0;k<13 && strcmp(key+11,names[k]);k++) {}
             if(k==13) {result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done;}
             errno=0; parsed=strtof(value,&end);
-            float lo=k==1?2:0, hi=k==1?MD_CUSTOM_POINTS:k==2?128:k==7?4:1;
+            float lo=k==1?2:k==7?-100:0, hi=k==1?MD_CUSTOM_POINTS:k==2?128:k==7?100:1;
             if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed) || (wave_seen[slot]&(1U<<k))) {result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;}
             if(k<7 && parsed!=floorf(parsed)) {result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;}
             if(k==0 || (k>=3 && k<=6))parsed=parsed!=0;
@@ -433,7 +433,6 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
     for (int i = 0; i < 9; i++) {
         if (p->legacy && isfinite(v[i])) {
             if (i>=6) v[i]=fminf(1,fmaxf(0,v[i]));
-            if (i==0) {v[i]=md_limit(v[i],.1f,64);continue;}
         }
         if (!isfinite(v[i])) {
             /* Last assignment to this output identifies the responsible line. */
@@ -444,15 +443,16 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
     }
     if (!isfinite(v[23]) || !isfinite(v[24]))
         return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,23),"translation");
-    v[23]=md_limit(v[23],-1,1);v[24]=md_limit(v[24],-1,1);
+    v[23]=md_limit(v[23],-4,4);v[24]=md_limit(v[24],-4,4);
     for(int i=25;i<30;i++) {
-        float lo=i<27?0:i<29?.25f:.01f, hi=i<27?1:i<29?4:100;
+        float lo=i<27?-4:.01f, hi=i<27?4:100;
         if(!isfinite(v[i]))
             return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->program,i),"transform");
         v[i]=md_limit(v[i],lo,hi);
     }
     for(int i=0;i<MD_DECOR_VALUES;i++) {
         float lo=i==2?-1:0, hi=(i==8 || i==9 || i==23)?4:i==10?100:i==12?3:(i==13 || i==18)?.5f:1;
+        if(i<2) {lo=-4;hi=4;}
         if(i==10)lo=.01f;
         if(i==23)lo=1;
         if(i==24){lo=-FLT_MAX;hi=FLT_MAX;} /* wave_a: preserve gain until rendering */
@@ -632,12 +632,13 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
             offset=sep/2;
         }
         float a[MD_CUSTOM_POINTS],b[MD_CUSTOM_POINTS];
-        float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*p->wave_scale/32768.0f;
+        float wave_scale=md_limit(p->wave_scale,-100,100);
+        float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*wave_scale/32768.0f;
         for(int i=0;i<count;i++) {
             if(w->spectrum) {
                 float pos=(float)i*(512-sep)/count;
                 int bin=(int)pos;
-                float sg=w->scaling*p->wave_scale;
+                float sg=w->scaling*wave_scale;
                 float frac=count>512?pos-bin:0;
                 int end=bin<511?bin+1:bin;
                 a[i]=(spectrum_left[bin]+frac*(spectrum_left[end]-spectrum_left[bin]))*sg;
@@ -665,7 +666,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
             float x=v[PM_SHAPE_BASE+4],y=v[PM_SHAPE_BASE+5];
             if(!isfinite(x) || !isfinite(y))
                 return md_file_error(error,MD_FILE_INVALID,line,"wave position");
-            x=md_limit(x,0,1);y=md_limit(y,0,1);
+            x=md_limit(x,-4,4);y=md_limit(y,-4,4);
             geometry[slot].vertices[i]=(MdVertex){.x=x*256,.y=y*256,
                 .color=md_rgba(v[PM_SHAPE_BASE+10],v[PM_SHAPE_BASE+11],v[PM_SHAPE_BASE+12],v[PM_SHAPE_BASE+13])};
         }
@@ -745,8 +746,8 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"pixel formula");
         const int ids[]={0,1,2,23,24,25,26,27,28,29};
-        const float lo[]={.1f,-100,-4,-1,-1,0,0,.25f,.25f,.01f};
-        const float hi[]={64,100,4,1,1,1,1,4,4,100};
+        const float lo[]={.01f,-100,-100,-4,-4,-4,-4,.01f,.01f,.01f};
+        const float hi[]={100,100,100,4,4,4,4,100,100,100};
         for(int i=0;i<10;i++) {
             if(!isfinite(v[ids[i]]))return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&p->pixel_program,ids[i]),"pixel range");
             v[ids[i]]=md_limit(v[ids[i]],lo[i],hi[i]);

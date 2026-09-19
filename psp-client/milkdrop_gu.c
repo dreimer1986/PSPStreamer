@@ -124,6 +124,45 @@ static void md_target(int offset, int stride, int width, int height) {
     sceGuScissor(0, 0, width, height);
 }
 #include "milkdrop_decor_gu.h"
+/* Copy before list reuse; renderer-owned scratch avoids stack growth. */
+static MdVertex md_clip_wave_source[2*MD_CUSTOM_POINTS-1];
+static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int thick) {
+    if(count<=0)return 1;
+    if(count>2*MD_CUSTOM_POINTS-1)return 0;
+    int clipped=0;
+    for(int i=0;i<count;i++)
+        if(v[i].x<0 || v[i].x>MD_WIDTH-(thick?1:0) ||
+           v[i].y<0 || v[i].y>MD_HEIGHT-(thick?1:0))clipped=1;
+    if(!clipped) {
+        sceGuDrawArray(primitive,MD_FORMAT,split?split:count,NULL,v);
+        if(split)sceGuDrawArray(primitive,MD_FORMAT,count-split,NULL,v+split);
+        if(thick)md_thick_wave(primitive,v,count,split);
+        return 1;
+    }
+    memcpy(md_clip_wave_source,v,count*sizeof(*v));
+    sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+    if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
+    md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+    static const float dx[]={0,1,1,0},dy[]={0,0,1,1};
+    for(int pass=0;pass<(thick?4:1);pass++) {
+        MdPlainVertex *out=sceGuGetMemory(2*count*sizeof(*out));int used=0;
+        for(int i=0;i<count;i++) {
+            MdVertex a=md_clip_wave_source[i];a.x+=dx[pass];a.y+=dy[pass];
+            if(primitive==GU_POINTS) {
+                if(a.x>=0 && a.x<=MD_WIDTH && a.y>=0 && a.y<=MD_HEIGHT)
+                    out[used++]=(MdPlainVertex){a.color,a.x,a.y,0};
+            } else if(i+1<count && i+1!=split) {
+                MdVertex b=md_clip_wave_source[i+1];b.x+=dx[pass];b.y+=dy[pass];
+                MdVertex line[2]={a,b},cut[2];
+                int n=md_clip_segment(cut,line,MD_WIDTH,MD_HEIGHT);
+                for(int j=0;j<n;j++)out[used++]=(MdPlainVertex){cut[j].color,cut[j].x,cut[j].y,0};
+            }
+        }
+        if(used)sceGuDrawArray(primitive==GU_POINTS?GU_POINTS:GU_LINES,
+            GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D,used,NULL,out);
+    }
+    return 1;
+}
 int md_start(void) {
     if (md_list) return 1;
     if (sceGeEdramGetSize() < 2*1024*1024) return 0;
@@ -302,31 +341,29 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         else count=md_wave_smooth(vertices,md_custom_geometry[slot].vertices,count);
         md_expand(vertices,count,0); md_blend(w->additive!=0);
         sceGuDisable(GU_TEXTURE_2D);
-        sceGuDrawArray(w->dots?GU_POINTS:GU_LINE_STRIP,MD_FORMAT,count,NULL,vertices);
-        if(w->thick) md_thick_wave(w->dots?GU_POINTS:GU_LINE_STRIP,vertices,count,0);
+        if(!md_draw_wave(w->dots?GU_POINTS:GU_LINE_STRIP,vertices,count,0,w->thick!=0)) {md_stop();return 0;}
         sceGuDisable(GU_BLEND);
     }
     if(waveform) {
         const MdDecor *d=&frame_decor;
+        float wave_scale=fminf(100,fmaxf(-100,md_custom_preset.wave_scale));
         ring=sceGuGetMemory(MD_WAVE_MAX_VERTICES*sizeof(*ring));
         float alpha=md_wave_opacity(d,mode,md_signal_state.signal.values[7],
             md_signal_state.signal.values[8],md_signal_state.signal.values[9]);
         float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
         int wave_count=MD_WAVE_VERTICES,split=0;
-        if(script) wave_count=md_wave_script(ring,md_right,md_left,md_custom_preset.wave_scale,
+        if(script) wave_count=md_wave_script(ring,md_right,md_left,wave_scale,
                                             md_custom_preset.wave_smoothing,md_rgba(r,g,b,alpha),d);
-        else if(spiral) wave_count=md_wave_spiral(ring,md_right,md_left,md_custom_preset.wave_scale,
+        else if(spiral) wave_count=md_wave_spiral(ring,md_right,md_left,wave_scale,
                          md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
-        else if(mode) wave_count=md_wave_extra(ring,mode,md_right,md_left,md_spectrum,md_custom_preset.wave_scale,
+        else if(mode) wave_count=md_wave_extra(ring,mode,md_right,md_left,md_spectrum,wave_scale,
                           md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d,&split);
-        else md_wave_circle_style(ring,md_right,md_custom_preset.wave_scale,md_custom_preset.wave_smoothing,
+        else md_wave_circle_style(ring,md_right,wave_scale,md_custom_preset.wave_smoothing,
                        seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         md_expand(ring, wave_count, 0);
-        /* Arbitrary finite preset gains can still overflow intermediate
-         * geometry. Never submit NaN/infinity or wrapping GU coordinates. */
-        for(int i=0;i<wave_count;i++) if(!isfinite(ring[i].x)||!isfinite(ring[i].y)||
-                fabsf(ring[i].x)>16383 || fabsf(ring[i].y)>16383) {
+        /* Finite offscreen coordinates are clipped before GU conversion. */
+        for(int i=0;i<wave_count;i++) if(!isfinite(ring[i].x)||!isfinite(ring[i].y)) {
             md_runtime_error.code=MD_FILE_INVALID;md_runtime_error.line=0;
             snprintf(md_runtime_error.key,sizeof(md_runtime_error.key),"wave geometry");
             sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
@@ -334,9 +371,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         }
         md_blend(d->wave_additive!=0);
         int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
-        sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,ring);
-        if(split) sceGuDrawArray(primitive,MD_FORMAT,wave_count-split,NULL,ring+split);
-        if(d->wave_thick) md_thick_wave(primitive,ring,wave_count,split);
+        if(!md_draw_wave(primitive,ring,wave_count,split,d->wave_thick!=0)) {md_stop();return 0;}
         sceGuDisable(GU_BLEND);
     } else if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));

@@ -683,9 +683,9 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(self.parse(data)[0], 2)
 
     def test_bounds_for_every_supported_field(self):
-        for key, low, high in (("zoom", .8, 1.2), ("rot", -100, 100), ("warp", -4, 4),
-                               ("fWarpAnimSpeed", 0, 4), ("fWarpScale", .1, 8),
-                               ("fDecay", .8, 1), ("wave_r", 0, 1),
+        for key, low, high in (("zoom", .01, 100), ("rot", -100, 100), ("warp", -100, 100),
+                               ("fWarpAnimSpeed", -100, 100), ("fWarpScale", .01, 100),
+                               ("fDecay", 0, 1), ("wave_r", 0, 1),
                                ("wave_g", 0, 1), ("wave_b", 0, 1)):
             for value in (low, high):
                 self.assertEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0], 0)
@@ -767,7 +767,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
             code,warp,error=self.evaluate_state(preset,state,frame)
             self.assertEqual(code,0,(error.line,error.key))
             self.assertEqual(state.user[0],frame+1)
-            self.assertAlmostEqual(warp.zoom,.1)
+            self.assertAlmostEqual(warp.zoom,.01)
             self.assertAlmostEqual(warp.rotation,99)
             self.assertEqual(self.last_decor.gamma,4)
             self.assertEqual(self.last_decor.wave_alpha,20)
@@ -781,9 +781,9 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
                          ctypes.POINTER(Signal),ctypes.POINTER(PresetState),ctypes.POINTER(Warp),ctypes.POINTER(Error)]
             self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(warp),frame,None,
                                 ctypes.byref(state),points,ctypes.byref(error)),0)
-            self.assertAlmostEqual(points[0].zoom,.1)
-            self.assertAlmostEqual(points[0].sx,.25)
-            self.assertAlmostEqual(points[0].cx,1)
+            self.assertAlmostEqual(points[0].zoom,.01)
+            self.assertAlmostEqual(points[0].sx,.01)
+            self.assertAlmostEqual(points[0].cx,4)
 
     def test_coordinates_are_ordinary_global_locals(self):
         code,preset,error=self.parse(b'[preset00]\nper_frame_init_1=rad=2; x=3; y=4;\n'
@@ -900,6 +900,36 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
         for bad in (float("nan"), float("inf"), -1, 1.1):
             signal.values[0] = bad
             self.assertEqual(self.evaluate(preset, 0, signal)[0], 2)
+
+    def test_extended_warp_ranges_stay_finite(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        fn=self.library.md_warp_mesh
+        fn.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(Warp),ctypes.c_float]
+        mesh=(Vertex*(GRID*GRID*6))()
+        for zoom in (.01,.1,1,10,100):
+            for exponent in (.01,1,100):
+                for stretch in (.01,1,100):
+                    code,preset,error=self.parse(f'''[preset00]
+zoom={zoom}
+fZoomExponent={exponent}
+warp=100
+fWarpAnimSpeed=-100
+fWarpScale=.01
+sx={stretch}
+sy={stretch}
+cx=-4
+cy=4
+dx=-4
+dy=4
+'''.encode())
+                    self.assertEqual(code,0,(error.line,error.key))
+                    self.assertAlmostEqual(preset.warp.zoom,zoom,places=5)
+                    fn(mesh,ctypes.byref(preset.warp),123.5)
+                    for v in mesh:
+                        self.assertTrue(math.isfinite(v.u) and -4096<=v.u<=4096)
+                        self.assertTrue(math.isfinite(v.v) and -4096<=v.v<=4096)
 
     def test_offscreen_triangle_and_border_clipping(self):
         class Vertex(ctypes.Structure):
@@ -1729,10 +1759,10 @@ per_frame_1=wave_r=progress;
             self.assertEqual(state.user[0],frame+1)
             self.assertEqual(state.q[0],2)
         self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,1)
-        # A bounded output still advances ordinary persistent variables.
+        # Persistent variables continue beyond the former warp cap of four.
         code,warp,_=self.evaluate_state(preset,state,5)
         self.assertEqual(code,0)
-        self.assertEqual(warp.warp,4)
+        self.assertEqual(warp.warp,5)
         self.assertEqual(state.user[0],5)
         code,preset,_=self.parse(b"[preset00]\nper_frame_1=warp=unset_value;\n")
         self.assertEqual(code,0)

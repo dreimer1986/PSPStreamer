@@ -64,5 +64,6 @@ along the viewport and no wrapping fragments. Test LCD/TV, window/fullscreen,
 then an existing preset (including Explosion), music switch and video start.
 Audio remains the priority: report new crackling or unresponsive controls.
 
-Custom-wave clipping and zoom/exponent finite-coordinate handling remain separate
-next steps. Feedback resolution, scheduler, audio and A/V timing are unchanged.
+Custom-wave clipping and zoom/exponent finite-coordinate handling are now covered
+by the [combined range package](MILKDROP_GEOMETRY_RANGES.md). Feedback resolution,
+scheduler, audio and A/V timing are unchanged.

@@ -80,6 +80,10 @@ void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset 
             float radius=radii[y*(MD_GRID+1)+x];
             zoom=powf(p->zoom,powf(p->zoomexp,radius*2-1));
         }
+        /* Bound effective magnification before division, including power
+         * under/overflow from otherwise finite preset values. */
+        if(zoom<1.0f/65536)zoom=1.0f/65536;
+        if(zoom>65536)zoom=65536;
         float u = px*.5f/zoom + .5f, v = -py*.5f/zoom + .5f;
         u=(u-p->cx)/p->sx+p->cx; v=(v-p->cy)/p->sy+p->cy;
         float a, b;
@@ -93,6 +97,8 @@ void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset 
         a = u-p->cx; b = v-p->cy;
         out->u = (a*c-b*s+p->cx-p->dx)*MD_TEXTURE + .5f;
         out->v = (a*s+b*c+p->cy-p->dy)*MD_TEXTURE + .5f;
+        if(out->u>4096)out->u=4096;else if(out->u< -4096)out->u=-4096;
+        if(out->v>4096)out->v=4096;else if(out->v< -4096)out->v=-4096;
         out->x = (float)x*MD_TEXTURE/MD_GRID;
         out->y = (float)y*MD_TEXTURE/MD_GRID; out->z = 0;
         out->color = 0xff000000U | decay | (decay<<8) | (decay<<16);
