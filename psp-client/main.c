@@ -629,6 +629,7 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
 }
 
 #include "remote_http.h"
+#include "media_request.h"
 
 static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
     struct sockaddr_in server;
@@ -678,14 +679,22 @@ static int prepare_client_subtitles(const char *media_id, int tv_profile) {
     if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
     if (selected_subtitle_track < 0 && !offline_active) return 0;
     snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
-    result = offline_active ? offline_subtitle_json() : http_get(path, response, sizeof(response));
-    if (result < 0) return result;
-    /* Bitmap tracks keep the existing server-overlay fallback until the
-     * sprite transport is available.  Never silently lose a requested PGS. */
+    result = offline_active ? offline_subtitle_json() : media_request_get(path, response, sizeof(response), 210000, 1);
+    /* Offline overlays are optional (no subs, or already burned into video).
+     * Preserve that behaviour; only a failed online request blocks startup. */
+    if (result < 0) return offline_active ? 0 : result;
+    /* Bitmap tracks use PSP sprites on LCD and server burn-in on TV. */
     if (strstr(response, "\"t\":\"bitmap\"") || (offline_active && strstr(response, "\"t\":\"pgs\""))) {
         char path[ID_SIZE + 64], *cursor;
+        /* TV playback burns bitmap subtitles into the stream. Do not first
+         * download/extract the complete track only to discard its cues. */
+        if(tv_profile && !offline_active)return 0;
         snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
-        if ((!offline_active && http_get_wait(path, response, sizeof(response), 180000) < 0) || !strstr(response, "\"t\":\"pgs\"")) return 0;
+        if(!offline_active) {
+            result=media_request_get(path,response,sizeof(response),630000,1);
+            if(result<0)return result;
+        }
+        if(!strstr(response, "\"t\":\"pgs\""))return 0;
         if (bitmap_cues) free(bitmap_cues);
         bitmap_cues = memalign(64, 960 * sizeof(*bitmap_cues));
         if (!bitmap_cues) return 0;
@@ -2034,9 +2043,8 @@ static int play_h264(const char *media_id) {
     playback_paused = 0;
     playback_position_ms = stream_start_seconds * 1000;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
-    /* Text subtitle extraction is independent of the H.264 transcode and
-     * normally completes in a fraction of a second.  If it is unavailable,
-     * retain the established server burn-in path rather than losing subtitles. */
+    /* Keep the established firmware module order. Subtitle preparation is
+     * independent of the transcode and may be slow for a cold remote source. */
     result = load_video_modules();
     if (result < 0) return result;
     if (hardware_runtime_result != 0) { video_step = "Media-Engine Bridge"; return hardware_runtime_result; }
@@ -2045,15 +2053,23 @@ static int play_h264(const char *media_id) {
     hardware_decoder_frames = 0;
     video_staging = NULL;
     sync_trace_reset();
+    /* Preparation is still a menu operation, not a video framebuffer. Keep
+     * native LCD/TV UI visible and cancellable until its HTTP worker exits. */
+    int subtitle_tv_profile=tvout_load_manager()>=0 && pspDveMgrCheckVideoOut()==2;
+    result=prepare_client_subtitles(media_id,subtitle_tv_profile);
+    if(result<0) {
+        subtitle_release();video_step="Subtitles";
+        return result==MEDIA_REQUEST_CANCELLED?0:result;
+    }
     tvout_video_active = tvout_begin_video() == 0;
     if(offline_active && offline_profile_tv!=tvout_video_active) {
         video_step=tr(TXT_DOWNLOAD_PROFILE);
+        subtitle_release();
         if(tvout_video_active)tvout_end_video();
         tvout_video_active=0;
         return -1401;
     }
     if (tvout_video_active) memset((void *)0x44000000, 0, TVOUT_STRIDE * 480 * 4);
-    prepare_client_subtitles(media_id, tvout_video_active);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
      * clock in native TV mode.  Let FFmpeg composite them before the stream
@@ -2458,11 +2474,12 @@ static int load_media_metadata(const char *media_id) {
     current_duration_seconds = 0.0f;
     current_media_name[0]=0;
     current_media_title[0]=current_media_artist[0]=current_media_album[0]=0;
-    result = http_get(path, response, sizeof(response));
+    result = media_request_get(path, response, sizeof(response), 60000, 0);
     audio_track_count = subtitle_track_count = 0;
     if (result < 0) {
         video_step="Metadata";
-        snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),result);
+        if(result==MEDIA_REQUEST_CANCELLED)snprintf(status,sizeof(status),"%s",tr(TXT_LIBRARY_CANCELLED));
+        else snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),result);
         return result;
     }
     json_value(response,"name",current_media_name,sizeof(current_media_name));
@@ -2561,6 +2578,18 @@ static int remote_control_thread(SceSize args, void *argp) {
 }
 
 static void gui_library_shell(const char *section);
+
+static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
+    const char *label=tr(cancelling?TXT_NETWORK_STOPPING:
+        subtitles?TXT_PREPARING_SUBTITLES:TXT_LOADING_TRACKS);
+    snprintf(status,sizeof(status),tr(TXT_PREPARATION_WAIT),seconds);
+    if(tv_ui_active) {tv_draw_view(TV_VIEW_LOADING,0,0,0,label,0);return;}
+    gui_library_shell(tr(TXT_PREPARING_MEDIA));
+    gui_text(38,47,0x0000D8FF,"%s",tr(TXT_PREPARING_MEDIA));
+    gui_text(38,76,0x00FFFFFF,"%s",label);
+    gui_text(38,116,0x008A9BAA,"%s",status);
+    gui_text(369,47,0x00FFB000,"%s",tr(TXT_PLEASE_WAIT));
+}
 
 static void show_metadata_loading(void) {
     if (tv_ui_active) { tv_draw_view(TV_VIEW_LOADING, 0, 0, 0, NULL, 0); return; }

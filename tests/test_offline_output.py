@@ -87,12 +87,13 @@ int main(void) {
         harness = '''
 #include <assert.h>
 #include <stdint.h>
-static int offline_active, offline_profile_tv, tvout_video_active, cable, restored;
+static int offline_active, offline_profile_tv, tvout_video_active, cable, restored, released;
 static const char *video_step;
 #define TXT_DOWNLOAD_PROFILE 1
 static const char *tr(int id) {(void)id;return "profile mismatch";}
 static int tvout_begin_video(void) {return cable?0:-1;}
 static void tvout_end_video(void) {restored++;}
+static void subtitle_release(void) {released++;}
 static int check(void) {
 ''' + guard + '''
 return 0;
@@ -100,12 +101,13 @@ return 0;
 int main(void) {
     offline_active=1;
     for(cable=0;cable<=1;cable++)for(offline_profile_tv=0;offline_profile_tv<=1;offline_profile_tv++) {
-        restored=0;video_step=0;
+        restored=0;released=0;video_step=0;
         int result=check();
-        if(cable==offline_profile_tv) assert(!result && !restored);
+        if(cable==offline_profile_tv) assert(!result && !restored && !released);
         else {
             assert((uint32_t)result==0xFFFFFA87u && video_step);
             assert(!tvout_video_active && restored==cable);
+            assert(released==1);
         }
     }
     offline_active=0;

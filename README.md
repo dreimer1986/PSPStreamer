@@ -7,10 +7,19 @@ PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-
 Directory navigation uses a background request on the PSP. While loading,
 the status shows elapsed seconds; **Circle** requests cancellation. Failed or
 cancelled loads keep the previous directory. Network transfers have a separate
-30-second directory budget; media and subtitle timeouts are unchanged. Pending
+30-second directory budget, independent of playback. Pending
 remote-control requests are cancelled cooperatively without an unbounded UI
 thread join. A worker that has not yet relinquished its resources is not killed
 or replaced: the UI displays the stopping state until safe cleanup is possible.
+
+Before playback, metadata and subtitle preparation also run in a worker with
+an elapsed-time display and **Circle** to cancel. The menu stays on its current
+LCD/TV output until preparation finishes; no decoder or playback clock is
+started during that wait. Cold Plex subtitle extraction may scan the original
+over the network and take considerably longer than a cached request. Preparation
+has separate total budgets (metadata 60 s, text/type query 210 s, bitmap extraction
+630 s), allowing the server's extraction deadlines without changing live stream
+timeouts. TV bitmap burn-in skips the unused PSP sprite extraction entirely.
 
 Update **both the server and PSP application**. Docker and the Home Assistant app
 provide the same integration. No Plex password or token belongs in the PSP CFG.

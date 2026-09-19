@@ -10,6 +10,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteHttpTests(unittest.TestCase):
+    def test_media_preparation_stays_responsive_and_can_cancel_then_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'media-request'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
+                            '-I', str(ROOT / 'psp-client'), str(ROOT / 'tests/media_request_harness.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=4)
+
+    def test_subtitles_finish_before_video_framebuffer_switch(self):
+        source = (ROOT / 'psp-client/main.c').read_text()
+        start = source.index('result=prepare_client_subtitles(media_id,subtitle_tv_profile);')
+        switch = source.index('tvout_video_active = tvout_begin_video() == 0;', start)
+        self.assertIn('return result==MEDIA_REQUEST_CANCELLED?0:result;', source[start:switch])
+        bitmap = source.index('if(tv_profile && !offline_active)return 0;')
+        self.assertLess(bitmap, source.index('"/api/bitmap-subtitles/', bitmap))
+        self.assertIn('if (result < 0) return offline_active ? 0 : result;', source)
+
     def test_idle_browser_poll_is_asynchronous_and_cancellable(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / "browser-remote"

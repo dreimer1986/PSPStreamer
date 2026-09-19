@@ -187,9 +187,10 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         tv_help(tr(TXT_LIBRARY_CONTROLS));
     } else if (view == TV_VIEW_LOADING) {
         tv_text(34, 67, 38, 2, TV_AMBER, "%s", tr(TXT_READING_MEDIA));
-        tv_text(34, 121, 38, 3, TV_WHITE, "%s", tr(TXT_LOADING_TRACKS));
+        tv_text(34, 121, 38, 3, TV_WHITE, "%s", title ? title : tr(TXT_LOADING_TRACKS));
         tv_text(34, 197, 38, 3, TV_MUTED, "%s", tr(TXT_SOURCE_WAKING));
         tv_text(562, 67, 10, 3, TV_AMBER, "%s", tr(TXT_PLEASE_WAIT));
+        if(title)tv_help(status);
     } else if (view == TV_VIEW_INFO) {
         tv_text(34, 66, 38, 3, TV_WHITE, "%s", items[selected].title);
         tv_text(34, 132, 38, 1, TV_CYAN, "%s", items[selected].is_audio ? tr(TXT_MUSIC_STREAM) : tr(TXT_VIDEO_STREAM));
