@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class RemoteSubtitleTests(unittest.TestCase):
     def test_browser_hides_music_tracks_and_restores_video_tracks(self):
         html=(ROOT / "static/index.html").read_text()
+        # Author label/display rules otherwise override the browser's hidden
+        # attribute, even though the JavaScript correctly sets hidden=true.
+        self.assertIn('[hidden]{display:none!important}', html)
         choose=next(line for line in html.splitlines() if line.startswith("async function choose("))
         addon=(ROOT / "psp_streamer_addon/rootfs/app/static/index.html").read_text()
         self.assertIn(choose,addon)
@@ -24,9 +27,11 @@ function option(){}
  await choose({id:'music',name:'Music',kind:'audio'},button);
  assert.strictEqual($('#audio').parentElement.style.display,'none');
  assert.strictEqual($('#subtitle').parentElement.style.display,'none');
+ assert.strictEqual($('#video_fps').parentElement.hidden,true);
  await choose({id:'video',name:'Video',kind:'video'},button);
  assert.strictEqual($('#audio').parentElement.style.display,'');
  assert.strictEqual($('#subtitle').parentElement.style.display,'');
+ assert.strictEqual($('#video_fps').parentElement.hidden,false);
 })().catch(e=>{console.error(e);process.exit(1)});
 """
         subprocess.run(["node","-e",script],check=True,timeout=5)

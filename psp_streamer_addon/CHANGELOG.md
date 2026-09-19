@@ -1,3 +1,9 @@
+# 0.1.35
+
+- Fix CSS overriding hidden controls: music no longer shows frame rate or LCD/TV download output.
+- Label music conversion explicitly as "Prepare MP3 download"; completed jobs offer Memory Stick ZIP export or PSP Wi-Fi download.
+- Identical web interface fixes for Home Assistant and ordinary Docker.
+
 # 0.1.34
 
 - Music conversion/download jobs: stereo 44.1-kHz MP3 with CBR/VBR quality.

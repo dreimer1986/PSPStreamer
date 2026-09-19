@@ -42,6 +42,7 @@ choose=async(v,b)=>{
   await preferencesReady;
   queueButton.hidden=String(v.id).startsWith('radio.');
   target.hidden=v.kind==='audio';
+  queueButton.textContent=v.kind==='audio'?'Prepare MP3 download':'Convert for download';
   queueButton.disabled=true;
   await streamingChoose(v,b);
   if(selected!==v)return;

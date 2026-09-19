@@ -82,7 +82,7 @@ There is no local-music seek control in this batch. End-of-track advance stays
 within music entries; Shuffle visits each ready local song at most once per
 browser playback run. Videos are not mixed into that music sequence.
 
-The web **Convert for download** button accepts music too, without video-output
+The web **Prepare MP3 download** button converts music, without video-output
 or subtitle options. For an album, queue songs on the web and use **R** in the
 PSP server queue to transfer pending/ready entries. Starting a single download
 directly from the music options plays that song; use the Local storage browser
