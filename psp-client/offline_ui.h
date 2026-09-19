@@ -409,6 +409,10 @@ static void offline_browser(void) {
             settings_help(tr(server?TXT_DOWNLOAD_QUEUE_HELP:TXT_DOWNLOAD_LOCAL_HELP));dirty=0;
         }
         if(pressed&PSP_CTRL_CIRCLE)return;
+        if(pressed&PSP_CTRL_SELECT) {
+            help_open(HELP_DOWNLOADS);dirty=1;
+            sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+        }
         if(pressed&PSP_CTRL_SQUARE){server=!server;selected=0;if(server)offline_catalog();else offline_scan();dirty=1;}
         if(offline_count && (pad.Buttons&(PSP_CTRL_UP|PSP_CTRL_DOWN))) {
             unsigned long long now=sceKernelGetSystemTimeWide();

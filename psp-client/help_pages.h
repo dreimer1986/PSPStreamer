@@ -1,0 +1,63 @@
+/* Menu-only help. Text is kept in separate, UTF-8 translation files. */
+typedef enum {
+    HELP_BROWSE, HELP_OPTIONS, HELP_VIDEO, HELP_MUSIC, HELP_VISUALS,
+    HELP_DOWNLOADS, HELP_SETTINGS, HELP_TV, HELP_NETWORK, HELP_TOPICS
+} HelpTopic;
+typedef enum {
+    HELP_PAGE_BROWSE, HELP_PAGE_NAVIGATION, HELP_PAGE_OPTIONS, HELP_PAGE_QUALITY,
+    HELP_PAGE_VIDEO, HELP_PAGE_VIDEO_MORE, HELP_PAGE_MUSIC, HELP_PAGE_MUSIC_MORE,
+    HELP_PAGE_VISUALS, HELP_PAGE_PRESETS, HELP_PAGE_DOWNLOAD, HELP_PAGE_QUEUE,
+    HELP_PAGE_LOCAL, HELP_PAGE_SETTINGS, HELP_PAGE_KEYBOARD, HELP_PAGE_TV,
+    HELP_PAGE_NETWORK, HELP_PAGE_COUNT
+} HelpPageId;
+typedef struct {
+    const char *title;
+    const char *step1_title, *step1_text;
+    const char *step2_title, *step2_text;
+    const char *step3_title, *step3_text;
+} HelpText;
+typedef struct {int topic;unsigned int buttons;} HelpPage;
+#define HELP_DPAD (PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_LEFT|PSP_CTRL_RIGHT)
+static const HelpPage help_pages[HELP_PAGE_COUNT]={
+    [HELP_PAGE_BROWSE]={HELP_BROWSE,PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_CROSS|PSP_CTRL_SELECT},
+    [HELP_PAGE_NAVIGATION]={HELP_BROWSE,PSP_CTRL_LEFT|PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_TRIANGLE},
+    [HELP_PAGE_OPTIONS]={HELP_OPTIONS,HELP_DPAD|PSP_CTRL_CROSS|PSP_CTRL_CIRCLE|PSP_CTRL_SQUARE},
+    [HELP_PAGE_QUALITY]={HELP_OPTIONS,HELP_DPAD},
+    [HELP_PAGE_VIDEO]={HELP_VIDEO,PSP_CTRL_SELECT|PSP_CTRL_LEFT|PSP_CTRL_RIGHT|PSP_CTRL_CROSS|PSP_CTRL_CIRCLE|PSP_CTRL_START},
+    [HELP_PAGE_VIDEO_MORE]={HELP_VIDEO,PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_SELECT|PSP_CTRL_TRIANGLE|PSP_CTRL_CIRCLE},
+    [HELP_PAGE_MUSIC]={HELP_MUSIC,PSP_CTRL_SELECT|PSP_CTRL_START|PSP_CTRL_UP|PSP_CTRL_DOWN},
+    [HELP_PAGE_MUSIC_MORE]={HELP_MUSIC,HELP_DPAD},
+    [HELP_PAGE_VISUALS]={HELP_VISUALS,PSP_CTRL_SQUARE|PSP_CTRL_CIRCLE|PSP_CTRL_CROSS|PSP_CTRL_TRIANGLE},
+    [HELP_PAGE_PRESETS]={HELP_VISUALS,PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_CROSS|PSP_CTRL_CIRCLE|PSP_CTRL_SQUARE|PSP_CTRL_TRIANGLE},
+    [HELP_PAGE_DOWNLOAD]={HELP_DOWNLOADS,HELP_DPAD|PSP_CTRL_CROSS|PSP_CTRL_CIRCLE},
+    [HELP_PAGE_QUEUE]={HELP_DOWNLOADS,PSP_CTRL_CIRCLE|PSP_CTRL_SQUARE|PSP_CTRL_CROSS|PSP_CTRL_RTRIGGER},
+    [HELP_PAGE_LOCAL]={HELP_DOWNLOADS,PSP_CTRL_CROSS|PSP_CTRL_TRIANGLE|PSP_CTRL_CIRCLE},
+    [HELP_PAGE_SETTINGS]={HELP_SETTINGS,HELP_DPAD|PSP_CTRL_CROSS|PSP_CTRL_START|PSP_CTRL_CIRCLE},
+    [HELP_PAGE_KEYBOARD]={HELP_SETTINGS,HELP_DPAD|PSP_CTRL_CROSS|PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER|PSP_CTRL_START|PSP_CTRL_CIRCLE},
+    [HELP_PAGE_TV]={HELP_TV,PSP_CTRL_LTRIGGER},
+    [HELP_PAGE_NETWORK]={HELP_NETWORK,PSP_CTRL_SQUARE|PSP_CTRL_LTRIGGER|PSP_CTRL_CIRCLE}
+};
+#include "help_en.h"
+#include "help_de.h"
+static const HelpText *help_translation(void) {
+    static const struct {const char *code;const HelpText *pages;} languages[]={
+        {"en",help_en},
+        {"de",help_de}
+    };
+    for(unsigned int i=0;i<sizeof(languages)/sizeof(languages[0]);i++)
+        if(!strcmp(language_code(),languages[i].code))return languages[i].pages;
+    return help_en;
+}
+
+/* Pure navigation helpers are also exercised by the host test harness. */
+static int help_first_page(int topic) {
+    for(int i=0;i<HELP_PAGE_COUNT;i++)if(help_pages[i].topic==topic)return i;
+    return 0;
+}
+static int help_move(int page,int topics,int direction) {
+    int topic=help_pages[page].topic;
+    if(topics)return help_first_page((topic+direction+HELP_TOPICS)%HELP_TOPICS);
+    int first=help_first_page(topic),end=first;
+    while(end<HELP_PAGE_COUNT && help_pages[end].topic==topic)end++;
+    return first+(page-first+direction+end-first)%(end-first);
+}

@@ -34,6 +34,9 @@ static int preset_name_valid(const char *s) {return *s&&!strchr(s,'/');}
 static void sceCtrlReadBufferPositive(SceCtrlData *pad,int n) {assert(n==1&&position<total);pad->Buttons=keys[position++];}
 static unsigned long long sceKernelGetSystemTimeWide(void) {return tick;}
 static void sceKernelDelayThread(int us) {tick+=us;}
+#define HELP_BROWSE 0
+static int help_visits;
+static void help_open(int topic) {assert(topic==HELP_BROWSE);help_visits++;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
@@ -43,12 +46,14 @@ int main(void) {
     state.value[SET_DEBUG]=0;settings_apply(&state);assert(debug_enabled==0);
     memset(music_preset_file,'x',250);music_preset_file[250]=0;
     settings_capture(&state);assert(strlen(state.preset)==250);settings_apply(&state);
-    const unsigned int cancel[]={0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_CIRCLE};
-    sequence(cancel,4);assert(app_settings()==0&&server_port==8091&&saved==0);
-    const unsigned int apply[]={0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_START};
-    sequence(apply,4);assert(app_settings()==1&&server_port==8092&&saved==1);
+    const unsigned int help[]={0,PSP_CTRL_CROSS,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(help,5);assert(app_settings()==0&&help_visits==1&&saved==0);
+    const unsigned int cancel[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_CIRCLE};
+    sequence(cancel,6);assert(app_settings()==0&&server_port==8091&&saved==0);
+    const unsigned int apply[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_START};
+    sequence(apply,6);assert(app_settings()==1&&server_port==8092&&saved==1);
     assert(!have_cached_server_address&&!resume_pending&&!remote_session[0]&&!current_path[0]);
-    save_failed=1;sequence(apply,4);assert(app_settings()==-1&&server_port==8092);
+    save_failed=1;sequence(apply,6);assert(app_settings()==-1&&server_port==8092);
     char text[256]="aä";
     const unsigned int backspace[]={0,PSP_CTRL_LTRIGGER,PSP_CTRL_START};
     sequence(backspace,3);assert(settings_text(text,sizeof(text),1,"text")==1&&!strcmp(text,"a"));

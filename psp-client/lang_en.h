@@ -1,5 +1,13 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Illustrated help; page text lives in help_en.h. */
+    [TXT_HELP] = "HELP",
+    [TXT_HELP_OPEN] = "Help - buttons and quick guides",
+    [TXT_HELP_POSITION] = "Topic %d/%d   Page %d/%d",
+    [TXT_HELP_KEYS] = "GOLD: USED HERE",
+    [TXT_HELP_NAV] = "L / R TOPIC    UP / DOWN PAGE",
+    [TXT_HELP_BACK] = "O BACK - NO SETTINGS ARE CHANGED",
+
     /* Offline library and transfer status. */
     [TXT_LOCAL_STORAGE] = "LOCAL STORAGE",
     [TXT_DOWNLOADS] = "SERVER QUEUE",
@@ -14,8 +22,8 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_DOWNLOAD_SPACE] = "Not enough free Memory Stick space",
     [TXT_DOWNLOAD_DELETE] = "Delete this local download?",
     [TXT_DOWNLOAD_CONFIRM] = "X DELETE   O KEEP",
-    [TXT_DOWNLOAD_QUEUE_HELP] = "X DOWNLOAD  R ALL  [] LOCAL  O BACK",
-    [TXT_DOWNLOAD_LOCAL_HELP] = "X PLAY/RESUME  TRI DELETE  [] QUEUE  O BACK",
+    [TXT_DOWNLOAD_QUEUE_HELP] = "X DOWNLOAD  [] LOCAL  SELECT HELP  O BACK",
+    [TXT_DOWNLOAD_LOCAL_HELP] = "X PLAY  [] QUEUE  SELECT HELP  O BACK",
     [TXT_PLAY_MODE] = "Playback",
     [TXT_STREAM_MODE] = "Streaming",
     [TXT_DOWNLOAD_MODE] = "Download, then play",
@@ -27,7 +35,7 @@ static const char *const lang_en[TXT_COUNT] = {
 
     /* General settings and on-device text entry. */
     [TXT_SETTINGS] = "SETTINGS",
-    [TXT_SETTINGS_HELP] = "UP/DN SELECT  LEFT/RIGHT EDIT  X TEXT",
+    [TXT_SETTINGS_HELP] = "UP/DOWN CHOOSE   LEFT/RIGHT CHANGE",
     [TXT_SETTINGS_SAVED] = "Settings saved",
     [TXT_SETTINGS_FAILED] = "Save failed; changes cancelled",
     [TXT_SETTINGS_HINT] = "SELECT: SETTINGS",
@@ -139,10 +147,10 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_NOW_PLAYING] = "NOW PLAYING",
     [TXT_VOLUME_LINE] = "MP3  %d%% VOLUME  SELECT PAUSE",
     [TXT_FULLSCREEN_MUSIC] = "MUSIC // %.48s",
-    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  UP/DN VOL  O PRESETS  X+TRI FULL  START EXIT",
-    [TXT_MUSIC_SETUP_CONTROLS] = "UP/DN ROW  L/R CHANGE  X START  O BACK",
-    [TXT_VIDEO_SETUP_CONTROLS] = "UP/DN ROW  L/R CHANGE  X START  O BACK",
-    [TXT_LIBRARY_CONTROLS] = "UP/DN NAV  X OPEN  TRI INFO  L/R PAGE  [] RLD",
+    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  START STOP  O PRESETS",
+    [TXT_MUSIC_SETUP_CONTROLS] = "X START   O BACK   [] HELP",
+    [TXT_VIDEO_SETUP_CONTROLS] = "X START   O BACK   [] HELP",
+    [TXT_LIBRARY_CONTROLS] = "X OPEN   O LOCAL   SELECT SETTINGS/HELP",
     [TXT_INFO_CONTROLS] = "O / TRIANGLE BACK     X RETURNS TO LIBRARY",
     [TXT_CONNECTING_WIFI] = "Wi-Fi: connecting (O: cancel)",
     [TXT_WIFI_NOT_READY] = "Wi-Fi offline - SQUARE: retry",

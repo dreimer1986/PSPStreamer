@@ -588,6 +588,33 @@ and mode ownership, but physical PSP/OSSC transition tests are still required.
 
 Create `psp-client/lang_xx.h` by copying `lang_en.h`. Each visible text has its own named `TXT_*` entry and related entries are grouped by interface screen, so translations can be edited without relying on array order. Preserve printf placeholders such as `%d`, `%s`, and `%.48s`. Include the new file in `psp-client/language.c`, then register its code and table in the `languages[]` array there, for example `{"fr", lang_fr}`. Rebuild the EBOOT and set `language=fr` in `PSPStreamer.cfg`.
 
+For the illustrated manual, also copy `help_en.h` to `help_xx.h`, translate the
+named title/step fields, and include/register the table in `help_pages.h`'s
+`help_translation()` list. Unregistered help languages fall back to English.
+Keep each step to one short title and one explanation line. The help layout
+test measures all English/German pages with the bundled LCD and TV glyphs;
+add new languages to the same test when translating.
+
+### Illustrated help on the PSP
+
+In the library, press **Select → Help → X**. Help is the first settings entry,
+not a configuration value. **Square** in playback options opens the relevant
+music/options topic; **Select** in Local storage or the server queue opens the
+download topic. Help works offline, does not save or discard pending settings,
+and needs no extra image files on the Memory Stick.
+
+**L/R** selects a topic, **Up/Down** selects its subpage, and **Circle** returns
+to the screen you came from. The 17 pages cover browsing, playback options,
+video controls, music, visualizations/presets, downloads, settings/text entry,
+TV output and connection recovery. Each page shows a PSP diagram with the
+relevant buttons in gold and three short instructions. Both LCD and native TV
+render text and the diagram directly; help does not switch video-output modes.
+Routine footer hints now show only the essential actions and help entry point.
+
+Fullscreen is simpler: **Triangle alone** toggles it during music or LCD video.
+The old **Cross+Triangle** gesture still works; holding Triangle does not repeat
+the toggle. In the preset chooser, Triangle still changes the preset interval.
+
 Browser controls: Cross opens a folder or playback options; Triangle opens the media information page for a file; Circle exits the options screen; Left goes to the parent folder; held L/R pages through the list; Square reloads; Start exits the app.
 
 Playback controls: In fullscreen video (including TV), Select opens/closes the
@@ -601,10 +628,10 @@ fullscreen, Select retains direct pause/resume. Music controls are unchanged.
 L/R still seek ±10 seconds and Start returns to the browser. Track titles such
 as `Forced` or `Full` appear beside language labels when available.
 
-Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and stores volume (hold either direction for a slow repeat), and Cross+Triangle toggles fullscreen. Fullscreen works for video and for the audio spectrum display.
+Receiver controls: Circle shows/hides the receiver strip, Up/Down adjusts and stores volume (hold either direction for a slow repeat), and Triangle toggles fullscreen (Cross+Triangle also works). Fullscreen works for video and for the audio spectrum display.
 
 With the normal spectrum selected (Square cycles back from MilkDrop),
-Cross+Triangle now fills the LCD or native TV canvas with spectrum bars, without
+Triangle fills the LCD or native TV canvas with spectrum bars, without
 the receiver strip. The existing 20-Hz visual update limit and changed-area-only
 writes remain in place. Pause lets the bars decay; volume and Stop still work.
 Fullscreen preference remains active across music tracks.
@@ -733,7 +760,7 @@ Up to 64 [named persistent variables](docs/MILKDROP_COMPATIBILITY.md) per contex
 state between frames; `memory-pulse-demo.milk` holds and releases bass impulses.
 Bounded [per-grid-point formulas](docs/MILKDROP_GRID.md) add local transforms;
 try `grid-twist-demo.milk`. This is an interpolated 8×8 mesh, not pixel shaders.
-**Cross + Triangle** toggles receiver view and true visualization fullscreen
+**Triangle** (or **Cross + Triangle**) toggles receiver view and true visualization fullscreen
 (480×272 LCD / 720×480 TV). Fullscreen hides the receiver controls, but
 pause, volume and remote commands still work. Without an active visualization,
 the existing enlarged spectrum/receiver layout is unchanged.

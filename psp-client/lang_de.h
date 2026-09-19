@@ -1,6 +1,14 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Bebilderte Hilfe; Seitentexte stehen in help_de.h. */
+    [TXT_HELP] = "HILFE",
+    [TXT_HELP_OPEN] = "Hilfe - Tasten und Kurzanleitungen",
+    [TXT_HELP_POSITION] = "Thema %d/%d   Seite %d/%d",
+    [TXT_HELP_KEYS] = "GOLD: HIER GENUTZT",
+    [TXT_HELP_NAV] = "L / R THEMA    HOCH / RUNTER SEITE",
+    [TXT_HELP_BACK] = "O ZURÜCK - ÄNDERT KEINE EINSTELLUNGEN",
+
     /* Lokale Bibliothek und Übertragungsstatus. */
     [TXT_LOCAL_STORAGE] = "LOKALER SPEICHER",
     [TXT_DOWNLOADS] = "SERVER-AUFTRÄGE",
@@ -15,8 +23,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_DOWNLOAD_SPACE] = "Zu wenig freier Memory-Stick-Speicher",
     [TXT_DOWNLOAD_DELETE] = "Diesen lokalen Download löschen?",
     [TXT_DOWNLOAD_CONFIRM] = "X LÖSCHEN   O BEHALTEN",
-    [TXT_DOWNLOAD_QUEUE_HELP] = "X LADEN  R ALLE  [] LOKAL  O ZURÜCK",
-    [TXT_DOWNLOAD_LOCAL_HELP] = "X START/WEITER  TRI LÖSCHEN  [] SERVER  O ZURÜCK",
+    [TXT_DOWNLOAD_QUEUE_HELP] = "X LADEN  [] LOKAL  SELECT HILFE  O ZURÜCK",
+    [TXT_DOWNLOAD_LOCAL_HELP] = "X SPIELEN  [] LISTE  SELECT HILFE  O ZURÜCK",
     [TXT_PLAY_MODE] = "Wiedergabe",
     [TXT_STREAM_MODE] = "Streaming",
     [TXT_DOWNLOAD_MODE] = "Erst laden, dann abspielen",
@@ -28,7 +36,7 @@ static const char *const lang_de[TXT_COUNT] = {
 
     /* Allgemeine Einstellungen und Texteingabe. */
     [TXT_SETTINGS] = "EINSTELLUNGEN",
-    [TXT_SETTINGS_HELP] = "HOCH/RUNTER WAHL  LINKS/RECHTS ÄNDERN  X TEXT",
+    [TXT_SETTINGS_HELP] = "HOCH/RUNTER WAHL   LINKS/RECHTS ÄNDERN",
     [TXT_SETTINGS_SAVED] = "Einstellungen gespeichert",
     [TXT_SETTINGS_FAILED] = "Speichern fehlgeschlagen; verworfen",
     [TXT_SETTINGS_HINT] = "SELECT: EINSTELLUNGEN",
@@ -144,10 +152,10 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_NOW_PLAYING] = "WIRD ABGESPIELT",
     [TXT_VOLUME_LINE] = "MP3  %d%% LAUTSTÄRKE  SELECT PAUSE",
     [TXT_FULLSCREEN_MUSIC] = "MUSIK // %.48s",
-    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  HOCH/RUNTER VOL  O PRESETS  X+TRI VOLL  START ZURÜCK",
-    [TXT_MUSIC_SETUP_CONTROLS] = "HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK",
-    [TXT_VIDEO_SETUP_CONTROLS] = "HOCH/RUNTER ZEILE  L/R ÄNDERN  X START  O ZURÜCK",
-    [TXT_LIBRARY_CONTROLS] = "HOCH/RUNTER NAV  X ÖFFNEN  TRI INFO  L/R SEITE  [] LADEN",
+    [TXT_MUSIC_CONTROLS] = "SELECT PAUSE  START STOPP  O PRESETS",
+    [TXT_MUSIC_SETUP_CONTROLS] = "X START   O ZURÜCK   [] HILFE",
+    [TXT_VIDEO_SETUP_CONTROLS] = "X START   O ZURÜCK   [] HILFE",
+    [TXT_LIBRARY_CONTROLS] = "X ÖFFNEN   O LOKAL   SELECT EINSTELLUNGEN/HILFE",
     [TXT_INFO_CONTROLS] = "O / TRIANGLE ZURÜCK     X ZUR BIBLIOTHEK",
 
     /* Status messages */

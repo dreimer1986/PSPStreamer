@@ -1,0 +1,155 @@
+static const HelpText help_en[HELP_PAGE_COUNT]={
+    [HELP_PAGE_BROWSE]={
+        .title="Choose something to play",
+        .step1_title="1. UP / DOWN: choose a file",
+        .step1_text="Hold the button to keep scrolling.",
+        .step2_title="2. X: open folder or options",
+        .step2_text="In options, X starts playback.",
+        .step3_title="3. SELECT: settings and help",
+        .step3_text="START in the library exits the app."
+    },
+    [HELP_PAGE_NAVIGATION]={
+        .title="Find your way around",
+        .step1_title="LEFT: parent folder",
+        .step1_text="O opens Local storage instead.",
+        .step2_title="L / R: jump a page",
+        .step2_text="Hold to keep turning pages.",
+        .step3_title="TRIANGLE on a file: details",
+        .step3_text="X or O closes the information page."
+    },
+    [HELP_PAGE_OPTIONS]={
+        .title="Before starting a file",
+        .step1_title="UP / DOWN: select a setting",
+        .step1_text="LEFT / RIGHT: change its value.",
+        .step2_title="Audio and subtitles: pick a track",
+        .step2_text="Off means no subtitles. []: help.",
+        .step3_title="X: start   O: return to files",
+        .step3_text="Your choices are saved for later."
+    },
+    [HELP_PAGE_QUALITY]={
+        .title="Quality and playback mode",
+        .step1_title="Audio quality: CBR or VBR",
+        .step1_text="V6 is smaller; V3 is higher quality.",
+        .step2_title="Video: 20 or 23.976 fps",
+        .step2_text="23.976 is smoother, but more work.",
+        .step3_title="Playback: stream or download",
+        .step3_text="Download first for offline use."
+    },
+    [HELP_PAGE_VIDEO]={
+        .title="Video: pause, seek and stop",
+        .step1_title="Fullscreen / TV: SELECT",
+        .step1_text="Opens controls; does not pause yet.",
+        .step2_title="LEFT / RIGHT, then X",
+        .step2_text="Pause, seek, or previous/next file.",
+        .step3_title="O: close controls   START: stop",
+        .step3_text="Stop returns to the file browser."
+    },
+    [HELP_PAGE_VIDEO_MORE]={
+        .title="Video: useful shortcuts",
+        .step1_title="L / R: back / forward 10 seconds",
+        .step1_text="While playing, not while paused.",
+        .step2_title="UP / DOWN: volume (hold repeats)",
+        .step2_text="TRIANGLE: toggle LCD fullscreen.",
+        .step3_title="LCD window: SELECT pauses",
+        .step3_text="O toggles receiver controls."
+    },
+    [HELP_PAGE_MUSIC]={
+        .title="Music: the essentials",
+        .step1_title="SELECT: pause / continue",
+        .step1_text="Radio reconnects to the live point.",
+        .step2_title="UP / DOWN: louder / quieter",
+        .step2_text="Hold for gradual volume changes.",
+        .step3_title="START: stop and return to files",
+        .step3_text="Choose another song there with X."
+    },
+    [HELP_PAGE_MUSIC_MORE]={
+        .title="Music: order and offline use",
+        .step1_title="Before play: choose Play order",
+        .step1_text="Sequential or Shuffle in the folder.",
+        .step2_title="At song end: next song starts",
+        .step2_text="Manual Stop ends that sequence.",
+        .step3_title="Playback: Download, then play",
+        .step3_text="Music becomes MP3; radio is live."
+    },
+    [HELP_PAGE_VISUALS]={
+        .title="Music: visualizations",
+        .step1_title="SQUARE: Spectrum / MilkDrop",
+        .step1_text="Both react to the playing music.",
+        .step2_title="TRIANGLE: fullscreen on / off",
+        .step2_text="The old X + TRIANGLE works too.",
+        .step3_title="O: open MilkDrop preset list",
+        .step3_text="Music keeps playing while you pick."
+    },
+    [HELP_PAGE_PRESETS]={
+        .title="Inside the preset list",
+        .step1_title="UP / DOWN: choose   L / R: page",
+        .step1_text="X applies the preset; O returns.",
+        .step2_title="SQUARE: automatic preset mode",
+        .step2_text="Off, sequential, random or rated.",
+        .step3_title="TRIANGLE: change the interval",
+        .step3_text="30, 60 or 120 seconds."
+    },
+    [HELP_PAGE_DOWNLOAD]={
+        .title="Download straight from the PSP",
+        .step1_title="1. Choose a music or video file",
+        .step1_text="X opens its playback options.",
+        .step2_title="2. Playback: Download, then play",
+        .step2_text="Set quality/tracks, then press X.",
+        .step3_title="3. Wait for conversion and transfer",
+        .step3_text="O cancels; choose again to resume."
+    },
+    [HELP_PAGE_QUEUE]={
+        .title="Download jobs from the website",
+        .step1_title="Browser: O opens Local storage",
+        .step1_text="SQUARE switches to Server queue.",
+        .step2_title="X: download selected job",
+        .step2_text="R: all listed queued/ready jobs.",
+        .step3_title="SQUARE: switch back to local files",
+        .step3_text="Switch twice to refresh the queue."
+    },
+    [HELP_PAGE_LOCAL]={
+        .title="Use your downloaded files",
+        .step1_title="Local storage: X plays the file",
+        .step1_text="No server or Wi-Fi is needed.",
+        .step2_title="TRIANGLE: delete local download",
+        .step2_text="Confirm with X; O keeps the file.",
+        .step3_title="PC: extract the Memory Stick ZIP",
+        .step3_text="Copy its whole PSP folder to card."
+    },
+    [HELP_PAGE_SETTINGS]={
+        .title="Settings without a computer",
+        .step1_title="UP / DOWN: row; LEFT / RIGHT: value",
+        .step1_text="X opens the keyboard for the value.",
+        .step2_title="START: save all changes",
+        .step2_text="O leaves without saving changes.",
+        .step3_title="Help is the first entry",
+        .step3_text="Reading help keeps your draft."
+    },
+    [HELP_PAGE_KEYBOARD]={
+        .title="Typing on the PSP",
+        .step1_title="Direction buttons: choose a symbol",
+        .step1_text="X adds it. Umlauts are included.",
+        .step2_title="L: delete last   R: clear text",
+        .step2_text="START accepts; O cancels typing.",
+        .step3_title="Back in settings: START saves",
+        .step3_text="Accepting text alone does not save."
+    },
+    [HELP_PAGE_TV]={
+        .title="Using a television",
+        .step1_title="Connect component cable before play",
+        .step1_text="Video switches to the TV itself.",
+        .step2_title="Settings: TV menu at startup",
+        .step2_text="Enable, save and restart the app.",
+        .step3_title="Hold L at startup: keep LCD menu",
+        .step3_text="Offline video needs its LCD/TV mode."
+    },
+    [HELP_PAGE_NETWORK]={
+        .title="When something takes a while",
+        .step1_title="Library: SQUARE retries / reloads",
+        .step1_text="L + SQUARE forces a Wi-Fi rejoin.",
+        .step2_title="Preparing subtitles: watch seconds",
+        .step2_text="The first extraction can be slow.",
+        .step3_title="O cancels loading or downloading",
+        .step3_text="Wait for cleanup before retrying."
+    }
+};

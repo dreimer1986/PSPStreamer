@@ -33,6 +33,8 @@
 #include "language.h"
 #include "display_output.h"
 #include "tv_canvas.h"
+#include "help_pages.h"
+static void help_open(int topic);
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -1912,8 +1914,8 @@ static int play_audio_once(const char *media_id, const char *title) {
                 next_volume_repeat_tick = now + 180000;
             }
         } else next_volume_repeat_tick = 0;
-        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
-            (old & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) {
+        /* Triangle alone is enough; holding X as before remains harmless. */
+        if ((pad.Buttons & PSP_CTRL_TRIANGLE) && !(old & PSP_CTRL_TRIANGLE)) {
             fullscreen = !fullscreen;
             music_saved_fullscreen = fullscreen;
             lcd_music_reset(); tv_music_reset();
@@ -2212,8 +2214,7 @@ static int play_h264(const char *media_id) {
                                   PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
         }
-        if ((pad.Buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) == (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE) &&
-            (previous_buttons & (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) != (PSP_CTRL_CROSS | PSP_CTRL_TRIANGLE)) {
+        if ((pad.Buttons & PSP_CTRL_TRIANGLE) && !(previous_buttons & PSP_CTRL_TRIANGLE)) {
             video_fullscreen = !video_fullscreen;
             receiver_flash_button = PSP_CTRL_TRIANGLE;
         }
@@ -2801,7 +2802,6 @@ static void show(int selected) {
     if (selected < 0 || selected >= item_count) selected = 0;
     if (tv_ui_active) {
         tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
-        tv_text(34,286,48,1,TV_CYAN,"%s",tr(TXT_SETTINGS_HINT));
         if(tls_notice())tv_text(34,302,48,1,TV_AMBER,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
         else if(!network_ready)tv_text(34,302,48,1,TV_AMBER,"%s",status);
         tv_present();return;
@@ -2834,7 +2834,6 @@ static void show(int selected) {
     /* The tiny receiver sidebar intentionally clips ordinary status copy.
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
-    gui_text(38,156,0x00FFFFFF,"%s",tr(TXT_SETTINGS_HINT));
     if(tls_notice())gui_text(38,166,0x0000D8FF,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
     else if(!network_ready)gui_text(38,166,0x0000D8FF,"%.48s",status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
@@ -2947,6 +2946,10 @@ static int playback_options(int audio_only) {
         sceCtrlReadBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
+        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
+            help_open(audio_only?HELP_MUSIC:HELP_OPTIONS);
+            sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+        }
         if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % (audio_only==2?1:3);
         if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % (audio_only==2?1:3);
         if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 4) % 5;
@@ -2974,6 +2977,7 @@ static int playback_options(int audio_only) {
     }
 }
 
+#include "help_ui.h"
 #include "app_settings.h"
 #include "offline_ui.h"
 
