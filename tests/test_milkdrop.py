@@ -8,6 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_compact_thick_wave_preserves_delayed_geometry(self):
+        adapter=(ROOT/'psp-client/milkdrop_gu.c').read_text()
+        helper=adapter[adapter.index('typedef struct { unsigned int color;'):adapter.index('static unsigned int *md_list;')]
+        harness=(ROOT/'tests/milkdrop_thick_harness.c').read_text().replace('/* THICK_HELPER */',helper)
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'thick.c';binary=Path(directory)/'thick'
+            source.write_text(harness)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=undefined',
+                            '-I',str(ROOT/'psp-client'),str(source),'-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True)
+
     def test_square_only_toggles_spectrum_and_file_preset(self):
         source=(ROOT / "psp-client/main.c").read_text()
         music=source[source.index("static int play_audio_once("):source.index("static int play_audio(")]

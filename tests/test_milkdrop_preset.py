@@ -514,6 +514,32 @@ class PresetTests(unittest.TestCase):
             self.execute_eel(source,first,False)
             self.assertEqual(bytes(first),before)
 
+    def test_sparse_variable_journal_first_write_and_failure(self):
+        compile_fn=self.library.pm_compile_symbols
+        compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols)]
+        fn=self.library.pm_execute_runtime
+        fn.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
+        prefix=''.join(f'q{i}=q{i}+1;' for i in range(1,33))
+        prefix+=''.join(f'user{i}={i};' for i in range(64))
+        prefix+='loop(10,q1=q1+1);reg00=42;megabuf(0)=77;rand(2);'
+        for ending in ('','q2=1/0;','loop(4096,q1=q1+1);'):
+            program,symbols=Program(),Symbols()
+            self.assertEqual(compile_fn(ctypes.byref(program),(prefix+ending).encode(),9,ctypes.byref(symbols)),0)
+            values=(ctypes.c_float*218)(*([1.25]*218));before=bytes(values)
+            runtime=Runtime();runtime.random=123;runtime.memory[0]=3
+            old_runtime=bytes(runtime);error=ctypes.c_int()
+            self.library.pm_reset_globals();self.library.pm_begin_frame()
+            self.assertEqual(fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),int(not ending))
+            if ending:
+                self.assertEqual(bytes(values),before)
+                self.assertEqual(bytes(runtime),old_runtime)
+                self.assertEqual(self.execute_eel('result=reg00;')[0]['result'],0)
+            else:
+                self.assertEqual(values[55],12.25)
+                self.assertEqual(values[86],2.25)
+                self.assertEqual(values[87+63],63)
+                self.assertEqual(bytes(values)[151*4:],before[151*4:])
+
     def test_eel_random_engine_inputs_and_monitor_persistence(self):
         runtime=Runtime()
         values=[]

@@ -1,6 +1,6 @@
 # Performance review after offline music support
 
-Reviewed and implemented September 19, 2026. The four CPU-side changes below
+Reviewed and implemented September 19, 2026. The changes below
 are now included. PSP speedups still require hardware measurement. Audio
 priority, transactional formula evaluation and visual limits are unchanged.
 
@@ -9,7 +9,7 @@ priority, transactional formula evaluation and visual limits are unchanged.
 1. **Cache immutable mesh coordinates.** `md_eval_pixel_grid` in
    `psp-client/milkdrop_preset.c` calculates radius and angle for every lattice
    node every frame. The 16x16 and fallback 8x8 lattices have fixed coordinates;
-   Their normalized positions, radius and angle are cached. This removes repeated
+   their normalized positions, radius and angle are cached. This removes repeated
    square roots and atan2 calls without reducing mesh density.
 2. **Copy only active custom-wave geometry.** `md_eval_custom_waves` clears
    all four maximum-sized geometry arrays and copies all of them on success,
@@ -22,7 +22,7 @@ priority, transactional formula evaluation and visual limits are unchanged.
    setup for each node. A frame template now prepares these once. A template
    copy still resets every node; q/user state propagates in the same order.
    Display aspect divisions, signal/effect setup and progress clamping are no
-   longer repeated per node. The VM's transactional value copy is unchanged.
+   longer repeated per node. The later VM optimization below preserves rollback.
 4. **Specialize neutral warp operations.** `md_warp_mesh_varying` in
    `psp-client/milkdrop_warp.c` evaluates four trigonometric warp terms even
    when a node's warp is zero. These terms are now skipped for zero warp.
@@ -40,14 +40,29 @@ Regression coverage includes both mesh densities, repeated coordinate edits,
 changing per-node rotations/warp, disabled-wave counts, untouched unused wave
 vertices, initialized active GU attributes and late formula failure rollback.
 
-## Larger changes, not first steps
+## Follow-up: sparse VM rollback and compact thick waves
 
-- The formula VM copies its value array to preserve failure atomicity.
-  Reducing this via dirty-slot tracking requires explicit rollback tests and
-  profiling; simply removing the copy would change error behavior.
-- Thick-wave drawing duplicates geometry. Reducing these copies or batching
-  draws may help but must preserve blend order, line appearance and GU buffer
-  lifetime. This is less isolated than the CPU-only changes above.
+- The VM now reads/writes its input array directly and records each assigned
+  slot's original value on first write. Success needs no whole-array copy;
+  failure restores only touched slots. A small bitmap replaces two complete
+  value-array copies per nonempty execution. Memory/register journaling,
+  random-state rollback and instruction fuel remain unchanged. No bytecode or
+  preset format changes are involved. Repeated stores and dense programs still
+  incur tracking overhead; speedup depends on the preset.
+- Thick custom and standard waves now share one helper. The three extra passes
+  are prepared in one traversal using 16-byte color/position vertices instead
+  of 24-byte textured vertices. Positions retain float precision, offsets,
+  colors, split-line order and blending are unchanged. No temporary mutation
+  of previously queued geometry is allowed: each pass retains its own storage
+  until GU completion. Draw-call count is intentionally unchanged. This saves
+  one third of extra-pass vertex storage and reads each source vertex once.
+- In the same host GU stress harness, peak vertex storage decreased from
+  1,414,496 to 1,206,368 bytes (208,128 bytes saved). This is a storage
+  measurement, not an FPS prediction. The list allocation remains 1.5 MiB.
+
+Additional tests cover sparse/dense repeated assignments, rollback after
+division failure and fuel exhaustion, and compact vertex contents after all
+three draws have been queued (including split lines and full-length waves).
 
 ## Validation before claiming a gain
 

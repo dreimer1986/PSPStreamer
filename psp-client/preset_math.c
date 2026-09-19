@@ -236,11 +236,19 @@ static int address_index(float x) {
     if(!isfinite(x) || x<0 || x>=PM_MEMORY) return -1;
     int i=(int)(x+.00001f);return i<PM_MEMORY?i:-1;
 }
-static int execute(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime,Journal *journal) {
-    float local[PM_VALUES], stack[PM_STACK];
+/* Variable writes are sparse in point programs. Save the original value only
+ * on first assignment; successful execution needs no whole-array copies. */
+typedef struct {
+    unsigned int dirty[(PM_VALUES+31)/32];
+    float old[PM_VALUES];
+    unsigned short ids[PM_VALUES];
+    int count;
+} ValueJournal;
+static int execute(const PmProgram *program,float local[PM_VALUES],int *error_line,PmRuntime *runtime,Journal *journal,ValueJournal *variables) {
+    float stack[PM_STACK];
     struct {int start,end,left,stack;} loops[PM_DEPTH];
     int used = 0,depth=0,fuel=PM_FUEL;
-    memcpy(local,values,sizeof(local)); *error_line = 0;
+    *error_line = 0;
     if (program->count < 0 || program->count > PM_MAX_OPS) return 0;
     for (int i = 0; i < program->count; i++) {
         const PmOp *op = &program->code[i];
@@ -259,6 +267,12 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
             if (!used || (op->op==STORE && used!=1) || op->arg < 0 || op->arg>=PM_VALUES || (op->arg>=PM_ENGINE_BASE+2 && op->arg!=PM_MONITOR && op->arg!=PM_WRAP) ||
                 (op->arg >= 9 && op->arg < 23) ||
                 (op->arg>=PM_META_BASE && op->arg<PM_DYNAMIC_BASE)) return 0;
+            unsigned int bit=1U<<(op->arg&31);
+            if(!(variables->dirty[op->arg/32]&bit)) {
+                variables->dirty[op->arg/32]|=bit;
+                variables->old[op->arg]=local[op->arg];
+                variables->ids[variables->count++]=(unsigned short)op->arg;
+            }
             local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
         }
 
@@ -393,13 +407,18 @@ static int execute(const PmProgram *program,float values[PM_VALUES],int *error_l
         stack[used++] = result;
     }
     if (used || depth) return 0;
-    memcpy(values,local,sizeof(local)); *error_line=0; return 1;
+    *error_line=0; return 1;
 }
 int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime) {
     if(!program->count) {*error_line=0;return 1;}
     Journal journal; journal.count=0;journal.runtime=runtime;
+    ValueJournal variables;
+    variables.count=0;memset(variables.dirty,0,sizeof(variables.dirty));
     unsigned int random=runtime->random;
-    if(execute(program,values,error_line,runtime,&journal)) return 1;
+    if(execute(program,values,error_line,runtime,&journal,&variables)) return 1;
+    while(variables.count) {
+        int id=variables.ids[--variables.count];values[id]=variables.old[id];
+    }
     while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
     runtime->random=random;return 0;
 }

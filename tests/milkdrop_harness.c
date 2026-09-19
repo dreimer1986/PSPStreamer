@@ -138,7 +138,18 @@ static void *sceGuGetMemory(int bytes) {
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     const MdVertex *v=data;
-    assert(format==15 && !indices);
+    MdVertex unpacked[2*MD_CUSTOM_POINTS];
+    assert((format==15 || format==14) && !indices);
+    if(format==14) {
+        struct Plain {unsigned int color;float x,y,z;};
+        const struct Plain *p=data;
+        assert(type==GU_LINE_STRIP || type==GU_POINTS);
+        assert(count>0 && count<=2*MD_CUSTOM_POINTS);
+        assert((const unsigned char *)data>=list_base &&
+               (const unsigned char *)(p+count)<=list_base+list_used);
+        for(int i=0;i<count;i++) unpacked[i]=(MdVertex){.color=p[i].color,.x=p[i].x,.y=p[i].y,.z=p[i].z};
+        v=unpacked;
+    }
     if(type==GU_TRIANGLES && count==6) {
         assert(target_changes==2 && target_offset==raw_source && texture_offset==raw_target);
         assert(v[0].x==0 && v[0].y==0 && v[4].x==512 && v[4].y==256);

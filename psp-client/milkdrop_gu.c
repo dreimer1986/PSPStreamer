@@ -22,6 +22,25 @@ static int md_texture_base, md_texture_bytes, md_pixel_format;
 /* Main RAM, not EDRAM: four 1024-point thick waves plus a 16x16 mesh. */
 #define MD_LIST_BYTES 1572864
 #define MD_FORMAT (GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | GU_TRANSFORM_2D)
+typedef struct { unsigned int color; float x,y,z; } MdPlainVertex;
+_Static_assert(sizeof(MdPlainVertex)==16,"untextured GU vertex layout");
+/* Keep immutable storage until GU completion. No texture coordinates are
+ * consumed by these untextured passes; prepare all three in one traversal. */
+static void md_thick_wave(int primitive,const MdVertex *vertices,int count,int split) {
+    MdPlainVertex *copies=sceGuGetMemory(3*count*sizeof(*copies));
+    for(int i=0;i<count;i++) {
+        const MdVertex *v=&vertices[i];
+        copies[i]=(MdPlainVertex){v->color,v->x+1,v->y,v->z};
+        copies[count+i]=(MdPlainVertex){v->color,v->x+1,v->y+1,v->z};
+        copies[2*count+i]=(MdPlainVertex){v->color,v->x,v->y+1,v->z};
+    }
+    int format=GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D;
+    for(int pass=0;pass<3;pass++) {
+        MdPlainVertex *v=copies+pass*count;
+        sceGuDrawArray(primitive,format,split?split:count,NULL,v);
+        if(split)sceGuDrawArray(primitive,format,count-split,NULL,v+split);
+    }
+}
 static unsigned int *md_list;
 static int md_front;
 static int md_last_tv, md_last_fullscreen;
@@ -269,11 +288,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         md_expand(vertices,count,0); md_blend(w->additive!=0);
         sceGuDisable(GU_TEXTURE_2D);
         sceGuDrawArray(w->dots?GU_POINTS:GU_LINE_STRIP,MD_FORMAT,count,NULL,vertices);
-        if(w->thick) for(int pass=0;pass<3;pass++) {
-            MdVertex *copy=sceGuGetMemory(count*sizeof(*copy));
-            for(int i=0;i<count;i++) {copy[i]=vertices[i];copy[i].x+=pass<2?1:0;copy[i].y+=pass>0?1:0;}
-            sceGuDrawArray(w->dots?GU_POINTS:GU_LINE_STRIP,MD_FORMAT,count,NULL,copy);
-        }
+        if(w->thick) md_thick_wave(w->dots?GU_POINTS:GU_LINE_STRIP,vertices,count,0);
         sceGuDisable(GU_BLEND);
     }
     if(waveform) {
@@ -306,15 +321,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         int primitive=d->wave_dots?GU_POINTS:GU_LINE_STRIP;
         sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,ring);
         if(split) sceGuDrawArray(primitive,MD_FORMAT,wave_count-split,NULL,ring+split);
-        if(d->wave_thick) for(int pass=0;pass<3;pass++) {
-            MdVertex *copy=sceGuGetMemory(wave_count*sizeof(*copy));
-            for(int i=0;i<wave_count;i++) {
-                copy[i]=ring[i];
-                copy[i].x+=pass<2?1:0; copy[i].y+=pass>0?1:0;
-            }
-            sceGuDrawArray(primitive,MD_FORMAT,split?split:wave_count,NULL,copy);
-            if(split) sceGuDrawArray(primitive,MD_FORMAT,wave_count-split,NULL,copy+split);
-        }
+        if(d->wave_thick) md_thick_wave(primitive,ring,wave_count,split);
         sceGuDisable(GU_BLEND);
     } else if (level > 0) {
         ring = sceGuGetMemory(97*sizeof(*ring));
