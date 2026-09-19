@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <math.h>
+#include "milkdrop_profile.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -184,7 +185,11 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
      * shape loop. Failed assets use the existing preset-error UI. */
     if(preset==3 && !md_images_prepare()) return -1;
     if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
-        top == md_last_top) return 1;
+        top == md_last_top) {
+        if(md_profile_current>=0)md_profiles[md_profile_current].skipped++;
+        return 1;
+    }
+    md_profile_begin();
     if (tv != md_last_tv) {
         md_fade_clear();
         md_texture_base = tv ? 768*480*4 : 512*272*4;
@@ -200,6 +205,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
      * stack twice before entering the frame/point evaluators. */
     static MdPresetState next_state;
     md_output_width=width;md_output_height=height;
+    md_profile_mark(0);
     if (preset == 3) {
         if (!md_signal_active) {
             md_signal_reset(&md_signal_state);
@@ -211,10 +217,12 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         if (md_eval_preset_state(&md_custom_preset, seconds, &md_signal_state.signal,
                                   &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
+        md_profile_mark(1);
         if(md_custom_preset.pixel_program.count &&
            md_eval_pixel_grid(&md_custom_preset,&evaluated,seconds,&md_signal_state.signal,
                              &next_state,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
-    } else md_signal_active = 0;
+    } else {md_signal_active = 0;md_profile_mark(1);}
+    md_profile_mark(2);
     int waveform=preset==3 && next_state.wave_mode>=0;
     int mode=waveform?next_state.wave_mode:0;
     int script=waveform && mode==4;
@@ -242,9 +250,11 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         } else { memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum));
             memset(md_bins_left,0,sizeof(md_bins_left)); memset(md_bins_right,0,sizeof(md_bins_right)); }
     }
+    md_profile_mark(3);
     if(custom_waves && md_eval_custom_waves(&md_custom_preset,seconds,&md_signal_state.signal,
             md_right,md_left,md_bins_left,md_bins_right,&next_state,md_custom_geometry,&md_runtime_error)!=MD_FILE_OK) return -1;
     if(preset==3) md_preset_state=next_state;
+    md_profile_mark(4);
     if (fullscreen) left = top = 0;
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
@@ -383,7 +393,10 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
      * texture-cache locality. It never copies the full scanout on the CPU. */
     md_present(left,top,width,height,1,1,0,0,NULL);
     sceGuFinish();
+    md_profile_mark(5);
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    md_profile_mark(6);
+    md_profile_commit();
     md_front = target;
     md_last_tv = tv; md_last_fullscreen = fullscreen;
     md_last_top = top;

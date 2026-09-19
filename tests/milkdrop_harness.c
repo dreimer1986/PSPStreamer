@@ -240,6 +240,8 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
     assert(argc==31);
+    md_profile_reset(1);
+    md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
     MdPreset identity={1,0,0,1,1,1,0,0,.5f,.5f,1,1,1};
     unsigned char bands[12];
@@ -549,6 +551,11 @@ int main(int argc,char **argv) {
     md_stop();
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
     for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
+    assert(md_profiles[0].frames>0);
+    assert(md_profiles[0].skipped>0);
+    char profile[1024];
+    assert(md_profile_report(0,profile,sizeof(profile)));
+    assert(strstr(profile,"geometry_submit avg_us=") && strstr(profile,"gpu_wait avg_us="));
     printf("Visualization maximum vertex storage: %zu / %d bytes\n",list_peak,MD_LIST_BYTES);
     assert(thick_outline_draws>0);
     munmap(vram,edram_size);

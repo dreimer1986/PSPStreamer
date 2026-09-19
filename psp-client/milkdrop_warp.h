@@ -24,6 +24,9 @@ int md_start(void);
 void md_begin_preset(unsigned int fade_ms);
 void md_stop(void);
 void md_set_tv_title_bottom(int bottom);
+void md_profile_reset(int enabled);
+void md_profile_select(const char *name,int tv,int fullscreen,int preset);
+int md_profile_report(int index,char *text,int size);
 /* 1: rendered/throttled, 0: GU failure, -1: invalid custom formula (see md_runtime_error). */
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset);

@@ -233,6 +233,30 @@ Rows contain elapsed wall time, video PTS, submitted audio-block PTS, remaining 
 
 The audio PTS describes the submitted block, not an exact sample at the speaker. The video handoff is measured on the PSP, not at the TV panel. The trace can expose internal stalls and timestamp discontinuities; it cannot directly measure a television's processing delay. The staging frame uses approximately 544 KiB on LCD or 1.41 MiB on TV, plus 192 KiB for the trace. The measured copy duration helps assess its cost on real hardware.
 
+### Optional MilkDrop phase timings (`debug=1`)
+
+Enable **Debug diagnostics** in settings (or `debug=1` in the configuration).
+Play music, select a preset such as Cauldron painterly 3, and leave it running
+for 30–60 seconds. Stop playback with START, then copy
+`ms0:/PSP/SYSTEM/PSPStreamer-watch-music.txt` before starting another song.
+No server update is required. This report contains the preset filename.
+
+The `MilkDrop profile` sections separate LCD/TV, window/fullscreen and preset.
+They report completed frames, throttled calls and average/maximum microseconds
+for setup, frame/shape formulas, pixel formulas, audio snapshot/FFT, custom-wave
+evaluation, geometry/command submission and final GPU wait. Custom-wave
+evaluation includes its CPU geometry generation. Up to 16 distinct contexts
+are retained per music playback; `untracked_calls` reports capacity overflow.
+Failed frames and initial texture loading are not included. Disable automatic
+preset switching for a clean comparison.
+
+These are wall-clock measurements: thread preemption is included and CPU/GPU
+work overlaps. `gpu_wait` measures only the remaining wait after submission,
+not the GPU's total execution time. Throttled calls are not failed frames;
+the existing scheduler deliberately leaves time for audio and controls.
+Counters stay in RAM during playback and are appended only at music teardown.
+With `debug=0`, profiling takes no timestamps and produces no report.
+
 ### Optional playback-stall diagnostics (`debug=1`)
 
 An FLV reader failure (including `FFFFFAD8` / `-1320`) also creates

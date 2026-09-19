@@ -1645,6 +1645,7 @@ static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
 static int play_audio_once(const char *media_id, const char *title) {
+    md_profile_reset(debug_enabled);
     offline_music_eof=0;
     music_remote_action=MUSIC_REMOTE_NONE;
     int live=radio_is_live(media_id), last_radio_blocks=0;
@@ -1804,6 +1805,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
             for (band = 0; band < SPECTRUM_BANDS; band++)
                 bands[band] = audio_start ? spectrum_levels[band] : 0;
+            if(debug_enabled)md_profile_select(music_preset_file,tv_ui_active,fullscreen,visual_preset-1);
             int rendered = md_frame(tv_ui_active, fullscreen, bands, level,
                           sceKernelGetSystemTimeWide(), visual_preset-1);
             if (rendered <= 0) {
@@ -1918,6 +1920,11 @@ static int play_audio_once(const char *media_id, const char *title) {
     md_stop();
     music_visual_active = 0;
     free(sequence);
+    if(debug_enabled) {
+        char profile_text[1024];
+        for(int i=0;md_profile_report(i,profile_text,sizeof(profile_text));i++)
+            video_watch_write(profile_text,0);
+    }
     /* The MP3 worker deliberately treats HTTP EOF as a neutral shutdown so
      * transient WLAN failures do not masquerade as decoder faults.  Compare
      * the DAC clock to ffprobe's duration here to classify a genuine song

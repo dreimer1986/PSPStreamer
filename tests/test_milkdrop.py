@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_optional_phase_profiler(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'profile'
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=undefined',
+                            '-I',str(ROOT/'psp-client'),str(ROOT/'tests/milkdrop_profile_harness.c'),
+                            '-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True)
+
     def test_compact_thick_wave_preserves_delayed_geometry(self):
         adapter=(ROOT/'psp-client/milkdrop_gu.c').read_text()
         helper=adapter[adapter.index('typedef struct { unsigned int color;'):adapter.index('static unsigned int *md_list;')]
