@@ -594,6 +594,8 @@ for test presets, memory changes and the remaining compatibility gaps.
 The [native-input audit and current work list](docs/MILKDROP_NATIVE_INPUTS.md)
 describe context-local writable EEL inputs and the `native-inputs-demo.milk`
 test preset. Older milestone reports retain their historical scope.
+For shapes crossing the image boundary, see [offscreen shape clipping](docs/MILKDROP_OFFSCREEN_SHAPES.md)
+and test `offscreen-shapes-demo.milk`.
 The next batch adds up to eight instances per shape, 512-point custom waves,
 read-only `instance`/`instances`/`progress` inputs, optional ordered/random/rated
 preset cycling, playlists and snapshot-to-live crossfades. Try

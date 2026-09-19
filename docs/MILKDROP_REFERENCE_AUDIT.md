@@ -74,7 +74,7 @@ No per-frame warnings/popups are emitted.
 | Shapes | Four slots, at most 512 instances each with execution-budget fallback, 3–100 sides | Batched; sides follow Desktop draw cap; not unlimited Desktop density |
 | Custom waves | Four slots, 2–1024 points; separation 0–128; above 512 points PCM/FFT inputs are interpolated | Expanded; Desktop itself clamps computed points to 512 |
 | Custom wave gain/smoothing | 0–4 / 0–1; normalized colors and positions 0–1 | Conservative existing renderer limits, not hardware maxima |
-| Shape position/radius | 0–1; angles −100..100; texture zoom .1–10 | Conservative existing renderer limits; offscreen fidelity remains future work |
+| Shape position/radius | −4..4; angles −100..100; texture zoom .1–10 | Offscreen triangle/border clipping implemented; still bounded, not unrestricted Desktop geometry |
 | Shape colors | Finite floats; convert to byte using truncation and wrapping | Desktop semantics; safe extension for values overflowing Desktop integer conversion |
 | Static zoom / frame zoom | .8–1.2 / legacy frame .1–64, otherwise .8–1.2 | Historical renderer limits; not Desktop limits or proven hardware limits |
 | Rotation / warp | ±100 radians / ±4 | Rotation widened consistently across import/frame/pixel; warp retains historical limit |

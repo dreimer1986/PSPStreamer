@@ -30,6 +30,10 @@ unchanged; there is no new whole-frame replay/rollback claim.
 
 ## GPU ownership and framebuffer safety
 
+Subsequent update: [offscreen shape clipping](MILKDROP_OFFSCREEN_SHAPES.md)
+uses weighted packet slots for expanded clipped geometry. The ordinary
+32-shape packet remains unchanged for fully interior shapes.
+
 At most **32 actually drawable shapes** are expanded into vertices per packet.
 Before reusing the fixed list/vertex buffer, the renderer finishes and waits
 for the previous GU list. It starts a new DIRECT list and explicitly restores

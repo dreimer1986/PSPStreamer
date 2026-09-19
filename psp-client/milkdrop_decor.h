@@ -29,6 +29,10 @@ void md_shader_colors(float colors[4][3],float seconds,float amount,const float 
 float md_wave_opacity(const MdDecor *decor,int mode,float bass,float mid,float treble);
 int md_shape_vertices(MdVertex *out,const MdShape *shape,float aspect);
 int md_shape_sides(float value);
+/* Triangle/segment clipping in expanded feedback coordinates. Output bounds:
+ * 15 vertices per input triangle; two per surviving original border segment. */
+int md_clip_triangle(MdVertex out[15],const MdVertex in[3],float width,float height);
+int md_clip_segment(MdVertex out[2],const MdVertex in[2],float width,float height);
 void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v);
 int md_motion_vertices(MdVertex *out,const MdVertex *expanded_mesh,const float settings[9]);
 #endif

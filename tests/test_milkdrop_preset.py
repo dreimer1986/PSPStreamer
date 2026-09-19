@@ -773,7 +773,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
             self.assertEqual(self.last_decor.wave_alpha,20)
             for i in (0,4,5,6,7,8,9,10):
                 shape=self.last_decor.shapes[i]
-                self.assertEqual((shape.x,shape.rad,shape.a),(1,1,99))
+                self.assertEqual((shape.x,shape.rad,shape.a),(4,4,99))
                 self.assertAlmostEqual(shape.tex_zoom,.1)
             points=(Warp*GRID_POINTS)()
             fn=self.library.md_eval_pixel_grid
@@ -900,6 +900,52 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
         for bad in (float("nan"), float("inf"), -1, 1.1):
             signal.values[0] = bad
             self.assertEqual(self.evaluate(preset, 0, signal)[0], 2)
+
+    def test_offscreen_triangle_and_border_clipping(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        triangle=self.library.md_clip_triangle;segment=self.library.md_clip_segment
+        for fn in (triangle,segment):
+            fn.argtypes=[ctypes.POINTER(Vertex),ctypes.POINTER(Vertex),ctypes.c_float,ctypes.c_float]
+        def vertex(x,y):return Vertex(x*.25+5,y*.5+7,0xffabcdef,x,y,0)
+        def area(out,n):
+            return sum(abs((out[i+1].x-out[i].x)*(out[i+2].y-out[i].y)-
+                           (out[i+2].x-out[i].x)*(out[i+1].y-out[i].y))*.5 for i in range(0,n,3))
+        out=(Vertex*15)()
+        src=(Vertex*3)(vertex(-10,0),vertex(10,0),vertex(0,20))
+        n=triangle(out,src,512,256);self.assertAlmostEqual(area(out,n),100)
+        src[0].color=0xff0000ff;src[1].color=0xffff0000;src[2].color=0xff00ff00
+        n=triangle(out,src,512,256)
+        crossings=[v for v in out[:n] if v.x==0 and v.y==0]
+        self.assertTrue(crossings)
+        self.assertTrue(all(v.color==0xff800080 for v in crossings))
+        src=(Vertex*3)(vertex(-100,-100),vertex(200,-100),vertex(-100,200))
+        n=triangle(out,src,10,10);self.assertAlmostEqual(area(out,n),100)
+        # Fully inside geometry must remain byte-identical.
+        src=(Vertex*3)(vertex(10,10),vertex(30,10),vertex(10,30))
+        self.assertEqual(triangle(out,src,512,256),3)
+        self.assertEqual(bytes(out)[:ctypes.sizeof(src)],bytes(src))
+        rng=random.Random(7301)
+        for _ in range(1000):
+            src=(Vertex*3)(*(vertex(rng.uniform(-2048,2048),rng.uniform(-2048,2048)) for i in range(3)))
+            n=triangle(out,src,512,256)
+            self.assertTrue(0<=n<=15 and n%3==0)
+            self.assertLessEqual(area(out,n),512*256+.1)
+            for v in out[:n]:
+                self.assertTrue(0<=v.x<=512 and 0<=v.y<=256)
+                self.assertAlmostEqual(v.u,v.x*.25+5,delta=.001)
+                self.assertAlmostEqual(v.v,v.y*.5+7,delta=.001)
+                self.assertEqual(v.color,0xffabcdef)
+        line=(Vertex*2)(vertex(-10,128),vertex(522,128))
+        self.assertEqual(segment(out,line,512,256),2)
+        self.assertEqual((out[0].x,out[1].x),(0,512))
+        line=(Vertex*2)(vertex(-10,-10),vertex(-1,256))
+        self.assertEqual(segment(out,line,512,256),0)
+        code,preset,error=self.parse(b'[preset00]\nshapecode_0_enabled=1\nshapecode_0_x=-.5\nshapecode_0_rad=2\nshape_0_per_frame1=y=1.5;')
+        self.assertEqual(code,0,(error.line,error.key))
+        self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+        s=self.last_decor.shapes[0];self.assertEqual((s.x,s.y,s.rad),(-.5,1.5,2))
 
     def test_mutable_engine_inputs_are_context_local_and_reseeded(self):
         for name in ('time','fps','frame','progress','bass','mid','treb','bass_att',

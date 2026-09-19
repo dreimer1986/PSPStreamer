@@ -80,6 +80,53 @@ void md_echo_uv(float x,float y,float zoom,int orientation,float *u,float *v) {
     *u=((orientation&1)?1-a:a)*256;
     *v=((orientation&2)?1-b:b)*256;
 }
+static MdVertex md_clip_mix(const MdVertex *a,const MdVertex *b,float t) {
+    MdVertex v={a->u+(b->u-a->u)*t,a->v+(b->v-a->v)*t,0,
+        a->x+(b->x-a->x)*t,a->y+(b->y-a->y)*t,0};
+    for(int k=0;k<32;k+=8) {
+        float ca=(a->color>>k)&255,cb=(b->color>>k)&255;
+        unsigned int c=(unsigned int)fminf(255,fmaxf(0,ca+(cb-ca)*t+.5f));
+        v.color|=c<<k;
+    }
+    return v;
+}
+static float md_clip_distance(const MdVertex *v,int plane,float w,float h) {
+    return plane==0?v->x:plane==1?w-v->x:plane==2?v->y:h-v->y;
+}
+static MdVertex md_clip_cross(const MdVertex *a,const MdVertex *b,float da,float db,int plane,float w,float h) {
+    MdVertex v=md_clip_mix(a,b,da/(da-db));
+    /* Set the intersected coordinate exactly: no negative rounding residue
+     * may enter the GE's finite 2D coordinate conversion. */
+    if(plane<2)v.x=plane==0?0:w;else v.y=plane==2?0:h;
+    return v;
+}
+int md_clip_triangle(MdVertex out[15],const MdVertex in[3],float w,float h) {
+    MdVertex a[8],b[8];int n=3;
+    for(int i=0;i<3;i++)a[i]=in[i];
+    for(int plane=0;plane<4 && n;plane++) {
+        int m=0;MdVertex prev=a[n-1];float dp=md_clip_distance(&prev,plane,w,h);
+        for(int i=0;i<n;i++) {
+            MdVertex cur=a[i];float dc=md_clip_distance(&cur,plane,w,h);
+            if((dp<0)!=(dc<0))b[m++]=md_clip_cross(&prev,&cur,dp,dc,plane,w,h);
+            if(dc>=0)b[m++]=cur;
+            prev=cur;dp=dc;
+        }
+        n=m;for(int i=0;i<n;i++)a[i]=b[i];
+    }
+    int count=0;
+    for(int i=1;i+1<n;i++) {out[count++]=a[0];out[count++]=a[i];out[count++]=a[i+1];}
+    return count;
+}
+int md_clip_segment(MdVertex out[2],const MdVertex in[2],float w,float h) {
+    MdVertex a=in[0],b=in[1];
+    for(int plane=0;plane<4;plane++) {
+        float da=md_clip_distance(&a,plane,w,h),db=md_clip_distance(&b,plane,w,h);
+        if(da<0 && db<0)return 0;
+        if(da<0)a=md_clip_cross(&a,&b,da,db,plane,w,h);
+        else if(db<0)b=md_clip_cross(&a,&b,da,db,plane,w,h);
+    }
+    out[0]=a;out[1]=b;return 2;
+}
 /* Reverse sample the same two triangles used by the warp, including its
  * per-grid equations. Positions and UVs here are physical feedback texels. */
 int md_motion_vertices(MdVertex *out,const MdVertex *mesh,const float p[9]) {

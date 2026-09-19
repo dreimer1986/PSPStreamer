@@ -61,8 +61,9 @@ change the appearance of existing presets; that is intentional.
 
 ## Ordered remaining work (current, not historical milestones)
 
-1. Continue numerical-range compatibility: offscreen shapes/waves need correct
-   clipping, not simply a larger accepted coordinate range. Zoom/exponent
+1. Continue numerical-range compatibility: [offscreen shapes](MILKDROP_OFFSCREEN_SHAPES.md)
+   now have correct clipping and expanded coordinates/radii. Custom waves still
+   need their own clipping path. Zoom/exponent
    combinations also need finite geometry guarantees before widening ranges.
 2. Classify collection failures by actual import/runtime cause. Host formula
    acceptance is not proof of visual equivalence or PSP performance.

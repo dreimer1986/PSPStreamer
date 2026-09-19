@@ -15,7 +15,26 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
         if(!p->enabled) continue;
         int sides=md_shape_sides(p->sides);
         if(!sides)continue;
-        if(submitted==MD_SHAPE_BATCH) {
+        MdVertex source[MD_SHAPE_SIDES+2];
+        int count=md_shape_vertices(source,p,aspect);
+        if(!count)continue;
+        md_expand(source,count,0);
+        int clipped=0;
+        float minx=source[0].x,maxx=minx,miny=source[0].y,maxy=miny;
+        for(int j=0;j<count;j++) {
+            if(source[j].x<minx)minx=source[j].x;
+            if(source[j].x>maxx)maxx=source[j].x;
+            if(source[j].y<miny)miny=source[j].y;
+            if(source[j].y>maxy)maxy=source[j].y;
+            if(source[j].x<1 || source[j].x>MD_WIDTH-1 ||
+               source[j].y<1 || source[j].y>MD_HEIGHT-1)clipped=1;
+        }
+        if(maxx<-1 || minx>MD_WIDTH+1 || maxy<-1 || miny>MD_HEIGHT+1)continue;
+        /* A clipped triangle can become five triangles; separate original
+         * border segments may double border storage. Reserve six ordinary
+         * shape slots, keeping the existing fixed GU-list bound. */
+        int weight=clipped?6:1;
+        if(submitted+weight>MD_SHAPE_BATCH) {
             /* Never reuse vertex/list storage while GE is reading it.
              * A new DIRECT list can restore the SDK's screen framebuffer;
              * explicitly reselect our feedback target before any drawing. */
@@ -24,11 +43,8 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
             md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
             submitted=0;
         }
-        submitted++;
-        MdVertex *v=sceGuGetMemory((sides+2)*sizeof(*v));
-        int count=md_shape_vertices(v,p,aspect);
-        if(!count) continue;
-        md_expand(v,count,0);
+        submitted+=weight;
+        MdVertex *v=source;
         md_blend(p->additive!=0);
         if(p->textured) {
             sceGuEnable(GU_TEXTURE_2D);
@@ -50,7 +66,18 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
             }
             sceGuTexFlush();
         } else sceGuDisable(GU_TEXTURE_2D);
-        sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,v);
+        if(clipped) {
+            MdVertex *fill=sceGuGetMemory(sides*15*sizeof(*fill));int used=0;
+            for(int j=1;j+1<count;j++) {
+                MdVertex tri[3]={v[0],v[j],v[j+1]};
+                used+=md_clip_triangle(fill+used,tri,MD_WIDTH,MD_HEIGHT);
+            }
+            if(used)sceGuDrawArray(GU_TRIANGLES,MD_FORMAT,used,NULL,fill);
+        } else {
+            MdVertex *fill=sceGuGetMemory(count*sizeof(*fill));
+            memcpy(fill,v,count*sizeof(*fill));
+            sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,fill);
+        }
         unsigned int border_color=md_shape_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
         if(border_color>>24) {
             int passes=p->thick_outline!=0?4:1;
@@ -60,11 +87,23 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
              * the GE consumes this list asynchronously after submission.
              * One allocation avoids per-pass padding at maximum sides. */
             static const float dx[4]={0,1,1,0},dy[4]={0,0,-1,-1};
-            MdVertex *edges=sceGuGetMemory(passes*(count-1)*sizeof(*edges));
+            MdVertex *edges=sceGuGetMemory(passes*(clipped?sides*2:count-1)*sizeof(*edges));
             unsigned int color=border_color;
             sceGuDisable(GU_TEXTURE_2D);
             for(int pass=0;pass<passes;pass++) {
-                MdVertex *edge=edges+pass*(count-1);
+                MdVertex *edge=edges+pass*(clipped?sides*2:count-1);
+                if(clipped) {
+                    int used=0;
+                    for(int j=1;j+1<count;j++) {
+                        MdVertex line[2]={v[j],v[j+1]};
+                        for(int k=0;k<2;k++) {
+                            line[k].color=color;line[k].x+=dx[pass];line[k].y+=dy[pass];
+                        }
+                        used+=md_clip_segment(edge+used,line,MD_WIDTH,MD_HEIGHT);
+                    }
+                    if(used)sceGuDrawArray(GU_LINES,MD_FORMAT,used,NULL,edge);
+                    continue;
+                }
                 for(int j=1;j<count;j++) {
                     edge[j-1]=v[j]; edge[j-1].color=color;
                     edge[j-1].x+=dx[pass]; edge[j-1].y+=dy[pass];

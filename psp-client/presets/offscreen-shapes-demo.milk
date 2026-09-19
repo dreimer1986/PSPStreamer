@@ -1,0 +1,32 @@
+[preset00]
+fDecay=0.92
+zoom=1.005
+fWaveAlpha=0
+shapecode_0_enabled=1
+shapecode_0_num_inst=4
+shapecode_0_sides=7
+shapecode_0_rad=0.8
+shapecode_0_r=1
+shapecode_0_g=0.3
+shapecode_0_b=0.1
+shapecode_0_a=0.65
+shapecode_0_r2=0.1
+shapecode_0_g2=0.5
+shapecode_0_b2=1
+shapecode_0_a2=0.2
+shapecode_0_border_r=1
+shapecode_0_border_g=1
+shapecode_0_border_b=1
+shapecode_0_border_a=0.8
+shapecode_0_thickOutline=1
+shape_0_per_frame1=phase=time*.45+instance*1.570796; x=.5+.9*cos(phase); y=.5+.9*sin(phase); ang=phase;
+shapecode_1_enabled=1
+shapecode_1_sides=4
+shapecode_1_textured=1
+shapecode_1_tex_zoom=1.2
+shapecode_1_r=1
+shapecode_1_g=1
+shapecode_1_b=1
+shapecode_1_a=0.35
+shapecode_1_a2=0.1
+shape_1_per_frame1=x=-.15; y=.5; rad=1.5+.3*sin(time); ang=time*.15; tex_ang=-time*.2;

@@ -288,6 +288,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             errno=0; parsed=strtof(value,&end);
             float lo=0,hi=1;
             if(k==1) {lo=-FLT_MAX;hi=FLT_MAX;} /* draw-time clamp */
+            if(k>=4 && k<=6) {lo=-4;hi=4;} /* clipped before GU submission */
             if(k==7 || k==8) {lo=-100;hi=100;}
             if(k==9) {lo=.1f;hi=10;}
             if(k>=10 && k<=21) {lo=-FLT_MAX;hi=FLT_MAX;} /* Desktop byte wrapping */
@@ -549,6 +550,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
         for(int k=0;k<23;k++) {
             float value=sv[PM_SHAPE_BASE+k],lo=0,hi=1;
             if(k==1) {lo=-FLT_MAX;hi=FLT_MAX;} /* draw-time clamp */
+            if(k>=4 && k<=6) {lo=-4;hi=4;} /* clipped before GU submission */
             if(k==7 || k==8) {lo=-100;hi=100;}
             if(k==9) {lo=.1f;hi=10;}
             if(k>=10 && k<=21) {lo=-FLT_MAX;hi=FLT_MAX;}
