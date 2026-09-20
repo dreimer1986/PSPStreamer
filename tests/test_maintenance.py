@@ -9,6 +9,38 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_ratio_steps_timeout_and_unexpected_readback(self):
+        source = r'''
+#include <assert.h>
+static unsigned CTL,writes[8];static int count,waits,settles,fail_at,bad_readback;
+#define SYNC() ((void)0)
+static void oc_ratio_write(unsigned value){assert(count<8);writes[count++]=value;CTL=value;}
+static int ready(void){waits++;if(waits==fail_at)return -1;CTL&=~0x80U;if(bad_readback)CTL=(CTL&~15U)|2;return 0;}
+static void settle(void){settles++;}
+#include "ratio_transition.h"
+int main(void){
+    CTL=0xab03;assert(oc_ratio_to_five()==0);
+    assert(count==3&&waits==3&&settles==3&&CTL==0xab05);
+    assert(writes[0]==0xab83&&writes[1]==0xab84&&writes[2]==0xab85);
+    count=waits=settles=0;CTL=4;assert(oc_ratio_to_five()==0&&count==2);
+    count=waits=settles=0;CTL=5;assert(oc_ratio_to_five()==0&&!count&&!waits&&!settles);
+    for(unsigned i=0;i<16;i++)if(i<3||i>5){CTL=i;assert(oc_ratio_to_five()==-4&&!count);}
+    for(fail_at=1;fail_at<=3;fail_at++){
+        CTL=3;count=waits=settles=0;
+        assert(oc_ratio_to_five()==-1&&count==fail_at&&settles==fail_at-1);
+    }
+    fail_at=0;CTL=3;count=waits=settles=0;bad_readback=1;
+    assert(oc_ratio_to_five()==-3&&count==1&&!settles);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'ratio'
+            subprocess.run(['cc', '-x', 'c', '-', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT / 'psp-overclock'),
+                            '-o', str(binary)], input=source, text=True, check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_oc_unlimited_enforcement_only_bypasses_conflict_count(self):
         import re
         code = (ROOT / 'psp-overclock/main.c').read_text()
@@ -260,6 +292,8 @@ static void settle(void) {}
 static int ready(void) {CTL&=~0x80;return fail_ready?-1:0;}
 static int sceKernelCpuSuspendIntr(void) {return 1;}
 static void sceKernelCpuResumeIntr(int n) {assert(n==1);}
+static int sceKernelSuspendDispatchThread(void){return 1;}
+static void sceKernelResumeDispatchThread(int n){assert(n==1);}
 static int scePowerSetClockFrequency(int p,int c,int b) {
     assert(p==333&&c>=66&&c<=333&&b==c/2);sony_calls++;
     if(sony_failure)return -17;
@@ -270,6 +304,9 @@ static int scePowerSetClockFrequency(int p,int c,int b) {
 static int scePowerGetCpuClockFrequencyInt(void){return sony_cpu;}
 static int scePowerGetBusClockFrequencyInt(void){return sony_bus;}
 static void multiplier(unsigned int n) {MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
+static unsigned ratio_writes[8];static int ratio_count;
+static void oc_ratio_write(unsigned int n){assert(ratio_count<8);ratio_writes[ratio_count++]=n;CTL=n;}
+#include "ratio_transition.h"
 static void sceKernelDelayThreadCB(int n) {assert(n==10000);yields++;if(interfere)CPU=0x00800100;}
 ''' + code + '''
 int main(void) {
@@ -289,8 +326,9 @@ int main(void) {
     interfere=0;suspended=1;assert(apply()==-2);
     suspended=0;fail_ready=1;assert(apply()==-1);
     fail_ready=0;changed=sony_owned=0;sony_noop=1;target=433;yields=0;
-    CTL=5;MUL=0x01240901;CPU=BUS=0x01ff01ff;sony_cpu=333;sony_bus=333;
+    CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;sony_cpu=222;sony_bus=222;
     assert(apply()==0&&matches()&&yields==54); /* Recorded ARK startup registers. */
+    assert(ratio_count==3&&ratio_writes[0]==0x83&&ratio_writes[1]==0x84&&ratio_writes[2]==0x85);
     assert(restore()==0);changed=0;
     target=133;assert(apply()==-3); /* Patched Sony no-op must not claim success. */
     sony_noop=0;sony_owned=changed=0;target=133;assert(apply()==0);

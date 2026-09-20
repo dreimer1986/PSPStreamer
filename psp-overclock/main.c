@@ -136,6 +136,8 @@ static int ready(void) {
     return -1;
 }
 static void multiplier(unsigned int n) {MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;SYNC();}
+static void oc_ratio_write(unsigned int value){CTL=value;}
+#include "ratio_transition.h"
 static void config(void) {
     char path[256],buffer[1024];
     snprintf(path,sizeof(path),"%sStreamerOC.ini",directory);
@@ -225,10 +227,16 @@ static int apply(void) {
     if(scePowerSetClockFrequency(333,333,166)<0)return -1;
     snapshot("clock_sony_baseline_done");
     changed=1;
+    int dispatch=sceKernelSuspendDispatchThread();
     int intr=sceKernelCpuSuspendIntr();
-    multiplier(OC_NORMAL_NUM);settle();
-    if((CTL&15)!=5){CTL=(CTL&0xffffff00)|0x85;SYNC();}
     int result=ready();
+    /* A CFW-patched Sony setter can return success with ratio 3 still active.
+     * Do not assume a 333 MHz baseline or jump directly from ratio 3 to 5. */
+    if(!result && ((CTL&15)<3 || (CTL&15)>5))result=-4;
+    if(!result) {
+        multiplier(OC_NORMAL_NUM);settle();
+        result=oc_ratio_to_five();
+    }
     if(!result) {
         unsigned int cn=(CPU>>16)&511,cd=CPU&511,bn=(BUS>>16)&511,bd=BUS&511;
         /* Reference: add 18 to each divider component until all reach 511. */
@@ -239,6 +247,7 @@ static int apply(void) {
         }
     }
     sceKernelCpuResumeIntr(intr);
+    sceKernelResumeDispatchThread(dispatch);
     if(result)return result;
     snapshot("clock_domains_ready");
     /* 333 retains the same complete reference initialization as higher

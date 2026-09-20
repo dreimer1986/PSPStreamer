@@ -42,3 +42,30 @@ This is a diagnostic candidate, **not a hardware-confirmed fix of the reported
 433 MHz shutdown**. No feature, profile, default, ARK setting or personal INI
 has been removed or changed to mask the problem. Further confirmation requires
 the next hardware report; do not repeatedly reproduce a hard power-off.
+
+## Follow-up: synchronized hardware trace
+
+Session `2935776` from the next test reaches `clock_sony_baseline_done` at
+6294 ms. During the startup delay, the state changes from ratio 5 / 333 MHz
+to ratio 3 / Sony 222 MHz. Both before and after the successful Sony baseline
+call, the ratio remains **3**, multiplier `01240901`, domains `01FF01FF`.
+No `clock_domains_ready` follows. This localizes the observed failure window
+to the baseline PLL/domain normalization, not the later 433 MHz ramp or an
+application-requested underclock. It does not identify the exact failing
+hardware instruction.
+
+The normalizer incorrectly jumped directly to ratio 5 when Sony had not
+actually established its requested baseline. It now follows the adjacent
+index sequence in ARK-5's
+[adjustPLLRatio](https://github.com/PSP-Arkfive/ARK-5/blob/main/Compat/PSP/src/overclock.c):
+re-latch 3, then 4, then 5, settling and verifying each completed transition.
+Interrupts and thread dispatch remain blocked during the bounded normalization;
+logging stays outside that section. Supported initial ratios are 3, 4 and 5;
+unexpected ratios fail closed without a guessed transition.
+
+The regression test now starts with the **post-delay** recorded registers and
+simulates a Sony success/no-op. It verifies the exact `83,84,85` control writes,
+then the existing 54 numerator steps to requested 433 MHz (432.9 MHz estimate).
+Separate tests cover unchanged ratio 5, ratio 4, failed completion at each step,
+unexpected readback and unsupported initial ratios. Builds remain `-O2 -G0`.
+The correction still needs PSP confirmation; host mocks do not model PLL physics.

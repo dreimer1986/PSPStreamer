@@ -30,6 +30,12 @@ small rectangle into validated VRAM without installing display hooks.
 If an application changes the PLL/domain setup during a yielded ramp, the
 ramp aborts and enforcement is disabled rather than continuing blindly.
 
+A successful Sony baseline call is not assumed to have changed the hardware:
+CFW can replace it with a no-op. For the observed 222 MHz / ratio-3 state,
+normalization uses ARK-5's adjacent ratio sequence (3, 4, 5), checking each
+completed step instead of jumping to 5. Unknown initial ratios fail closed.
+See [startup investigation and regression checks](../docs/OC_STARTUP_REGRESSION.md).
+
 This is a bounded adaptation, not a verbatim copy of the two-minute stress
 test. The ramp uses numerator steps with 10 ms yields. It does NOT validate
 silicon stability; a previously tested target can still fail in a different
