@@ -119,7 +119,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
     [HELP_PAGE_SETTINGS]={
         .title="Settings without a computer",
         .step1_title="UP / DOWN: row; LEFT / RIGHT: value",
-        .step1_text="X opens the keyboard for the value.",
+        .step1_text="X opens input or a submenu.",
         .step2_title="START: save all changes",
         .step2_text="O leaves without saving changes.",
         .step3_title="Help is the first entry",
@@ -133,6 +133,24 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_text="START accepts; O cancels typing.",
         .step3_title="Back in settings: START saves",
         .step3_text="Accepting text alone does not save."
+    },
+    [HELP_PAGE_PLUGIN]={
+        .title="StreamerOC plugin settings",
+        .step1_title="Settings: StreamerOC plugin, then X",
+        .step1_text="UP/DOWN: row; LEFT/RIGHT: value.",
+        .step2_title="START saves the plugin INI; O cancels",
+        .step2_text="Changes apply at the next app start.",
+        .step3_title="Use only clocks tested on this PSP",
+        .step3_text="Old INI is kept as .ini.bak."
+    },
+    [HELP_PAGE_PRESET_SETTINGS]={
+        .title="Preset folders in settings",
+        .step1_title="Choose MilkDrop preset, then X",
+        .step1_text="X enters a folder; .. goes up.",
+        .step2_title="X picks a file; O cancels selection",
+        .step2_text="Back in settings: START saves it.",
+        .step3_title="Automatic mode uses that folder",
+        .step3_text="It also uses its local playlist.txt."
     },
     [HELP_PAGE_POWER]={
         .title="CPU profiles (optional plugin)",

@@ -119,7 +119,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
     [HELP_PAGE_SETTINGS]={
         .title="Einstellungen ohne Computer",
         .step1_title="HOCH/RUNTER: Zeile; LINKS/RECHTS: Wert",
-        .step1_text="X öffnet die Tastatur für den Wert.",
+        .step1_text="X öffnet Eingabe oder Untermenü.",
         .step2_title="START: alle Änderungen speichern",
         .step2_text="O verlässt das Menü ohne Speichern.",
         .step3_title="Hilfe steht an erster Stelle",
@@ -133,6 +133,24 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_text="START übernimmt; O bricht Eingabe ab.",
         .step3_title="Zurück im Menü: START speichert",
         .step3_text="Text übernehmen allein reicht nicht."
+    },
+    [HELP_PAGE_PLUGIN]={
+        .title="StreamerOC-Plugin einstellen",
+        .step1_title="Einstellungen: StreamerOC-Plugin, X",
+        .step1_text="HOCH/RUNTER: Zeile; LINKS/RECHTS: Wert",
+        .step2_title="START speichert Plugin-INI; O zurück",
+        .step2_text="Gilt erst beim nächsten App-Start.",
+        .step3_title="Nur auf dieser PSP getestete Takte!",
+        .step3_text="Alte INI bleibt als .ini.bak erhalten."
+    },
+    [HELP_PAGE_PRESET_SETTINGS]={
+        .title="Preset-Ordner in Einstellungen",
+        .step1_title="MilkDrop-Preset wählen, dann X",
+        .step1_text="X öffnet Ordner; .. geht nach oben.",
+        .step2_title="X wählt Datei; O bricht Auswahl ab",
+        .step2_text="Zurück in Einstellungen: START sichert.",
+        .step3_title="Automatik nutzt den gewählten Ordner",
+        .step3_text="Auch dessen eigene playlist.txt gilt."
     },
     [HELP_PAGE_POWER]={
         .title="CPU-Profile (optionales Plugin)",

@@ -14,6 +14,14 @@ from psp_streamer.server import AppServer, Library
 
 
 class SettingsTests(unittest.TestCase):
+    def test_oc_settings_validated_save_backup_and_failure(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / "oc_settings"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-fsanitize=undefined",
+                "-I", str(root / "psp-client"), str(root / "tests/oc_settings_harness.c"), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], cwd=temp, check=True, timeout=5)
+
     def test_psp_settings_cancel_save_failure_long_names_and_utf8_editing(self):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as temp:

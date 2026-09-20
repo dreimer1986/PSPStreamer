@@ -17,5 +17,9 @@ int main(int argc,char **argv) {
     assert(preset_sequence_next(s,"Alpha.milk",1)==0);
     s->catalog.count=0;assert(preset_sequence_next(s,"Alpha.milk",1)==-1);
     assert(preset_sequence_next(s,"Alpha.milk",0)==-1);
+    assert(preset_sequence_load_selected(s,argv[1],"Geiss/A.milk",123)==2);
+    assert(!strcmp(s->catalog.names[0],"Geiss/B.milk") && s->rating[0]==5);
+    assert(!strcmp(s->catalog.names[1],"Geiss/A.milk") && s->rating[1]==3);
+    assert(preset_sequence_next(s,"Geiss/A.milk",1)==0);
     free(s);return 0;
 }

@@ -435,7 +435,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
-            else if (!strncmp(line, "music_preset=", 13) && preset_name_valid(line+13)) strcpy(music_preset_file,line+13);
+            else if (!strncmp(line, "music_preset=", 13) && preset_path_valid(line+13)) strcpy(music_preset_file,line+13);
             else if (!strncmp(line,"preset_auto=",12)) music_preset_auto=atoi(line+12);
             else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
             else if (!strncmp(line,"preset_fade_ms=",15)) music_preset_fade_ms=atoi(line+15);
@@ -1727,7 +1727,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
     PresetSequence *sequence=music_preset_auto?malloc(sizeof(*sequence)):NULL;
-    if(sequence) preset_sequence_load(sequence,"presets",(unsigned int)sceKernelGetSystemTimeWide());
+    if(sequence) preset_sequence_load_selected(sequence,"presets",music_preset_file,(unsigned int)sceKernelGetSystemTimeWide());
     unsigned long long next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
     md_preset_duration=(float)music_preset_seconds;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
@@ -1893,15 +1893,16 @@ static int play_audio_once(const char *media_id, const char *title) {
         sceCtrlPeekBufferPositive(&pad, 1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
             md_stop(); music_visual_active=0;
-            if(music_choose_preset()) {
+            int preset_changed=music_choose_preset();
+            if(preset_changed) {
                 preset_result=music_load_selected(&preset_error);
                 visual_preset=4; music_saved_visual_preset=4;
                 save_playback_settings();
             }
             md_preset_duration=(float)music_preset_seconds;
-            if(music_preset_auto && !sequence) {
-                sequence=malloc(sizeof(*sequence));
-                if(sequence) {video_watch_ping("preset playlist load");preset_sequence_load(sequence,"presets",(unsigned int)sceKernelGetSystemTimeWide());}
+            if(music_preset_auto && (!sequence || preset_changed)) {
+                if(!sequence)sequence=malloc(sizeof(*sequence));
+                if(sequence) {video_watch_ping("preset playlist load");preset_sequence_load_selected(sequence,"presets",music_preset_file,(unsigned int)sceKernelGetSystemTimeWide());}
             }
             next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
             save_playback_settings();

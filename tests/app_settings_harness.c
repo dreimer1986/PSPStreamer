@@ -35,7 +35,10 @@ static void gui_text(int x,int y,int c,const char *f,...) {(void)x;(void)y;(void
 static void tv_help(const char *s) {(void)s;}
 static void tv_present(void) {}
 static void keep_awake(void) {}
-static int preset_name_valid(const char *s) {return *s&&!strchr(s,'/');}
+static int preset_visits;
+static int preset_choose(char selection[256],int music) {
+    assert(!music);preset_visits++;strcpy(selection,"Geiss/Hyperdrive.milk");return 1;
+}
 static void sceCtrlReadBufferPositive(SceCtrlData *pad,int n) {assert(n==1&&position<total);pad->Buttons=keys[position++];}
 static unsigned long long sceKernelGetSystemTimeWide(void) {return tick;}
 static void sceKernelDelayThread(int us) {tick+=us;}
@@ -104,5 +107,19 @@ int main(void) {
     held[n++]=PSP_CTRL_CROSS;held[n++]=PSP_CTRL_START;
     text[0]=0;sequence(held,n);
     assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
+    /* Both submenus are reachable without audio running. OC cancel has no
+     * filesystem side effects. A preset remains a draft until outer START. */
+    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(oc_cancel,7);assert(app_settings()==0);
+    for(int accept=0;accept<2;accept++) {
+        n=0;held[n++]=0;
+        for(int i=0;i<SET_PRESET+2;i++){held[n++]=PSP_CTRL_DOWN;held[n++]=0;}
+        held[n++]=PSP_CTRL_CROSS;held[n++]=0;
+        held[n++]=accept?PSP_CTRL_START:PSP_CTRL_CIRCLE;
+        strcpy(music_preset_file,"active.milk");sequence(held,n);
+        assert(app_settings()==accept);
+        assert(!strcmp(music_preset_file,accept?"Geiss/Hyperdrive.milk":"active.milk"));
+    }
+    assert(preset_visits==2);
     return 0;
 }

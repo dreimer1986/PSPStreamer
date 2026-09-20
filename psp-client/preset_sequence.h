@@ -5,7 +5,7 @@
 typedef struct { PresetCatalog catalog; float rating[PRESET_CATALOG_LIMIT]; unsigned int random; } PresetSequence;
 static float preset_rating(const char *directory,const char *name) {
     char path[512],line[256]; float result=3;
-    snprintf(path,sizeof(path),"%s/%s",directory,name);
+    if(snprintf(path,sizeof(path),"%s/%s",directory,name)>=(int)sizeof(path))return -1;
     FILE *f=fopen(path,"rb");if(!f) return -1;
     int bytes=0;
     while(fgets(line,sizeof(line),f) && (bytes+=(int)strlen(line))<=16384) {
@@ -20,7 +20,8 @@ static float preset_rating(const char *directory,const char *name) {
 static int preset_sequence_load(PresetSequence *s,const char *directory,unsigned int seed) {
     s->random=seed?seed:1;
     if(!preset_catalog_load(&s->catalog,directory)) return 0;
-    char path[512],line[512];snprintf(path,sizeof(path),"%s/playlist.txt",directory);
+    char path[512],line[512];
+    if(snprintf(path,sizeof(path),"%s/playlist.txt",directory)>=(int)sizeof(path)){s->catalog.count=0;return 0;}
     FILE *f=fopen(path,"rb");
     if(f) {
         PresetCatalog *selected=calloc(1,sizeof(*selected));
@@ -41,6 +42,19 @@ static int preset_sequence_load(PresetSequence *s,const char *directory,unsigned
     return s->catalog.count;
 }
 /* mode 1 ordered; 2 uniform random; 3 fRating-weighted random. No immediate repeats. */
+static inline int preset_sequence_load_selected(PresetSequence *s,const char *root,const char *current,unsigned int seed) {
+    char directory[512],prefix[256]="";
+    const char *slash=strrchr(current,'/');
+    if(slash && preset_path_valid(current)){size_t n=slash-current+1;memcpy(prefix,current,n);prefix[n]=0;}
+    if(snprintf(directory,sizeof(directory),"%s/%s",root,prefix)>=(int)sizeof(directory)){s->catalog.count=0;return 0;}
+    int count=preset_sequence_load(s,directory,seed);
+    for(int i=0;i<count;i++) {
+        char relative[512];snprintf(relative,sizeof(relative),"%s%s",prefix,s->catalog.names[i]);
+        if(!preset_path_valid(relative)){s->rating[i]=-1;continue;}
+        strcpy(s->catalog.names[i],relative);
+    }
+    return count;
+}
 static int preset_sequence_next(PresetSequence *s,const char *current,int mode) {
     int current_index=-1;
     for(int i=0;i<s->catalog.count;i++) if(!strcmp(current,s->catalog.names[i])) {current_index=i;break;}

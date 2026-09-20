@@ -9,13 +9,13 @@ static int music_preset_auto,music_preset_seconds=60;
 enum { MUSIC_REMOTE_NONE,MUSIC_REMOTE_PAUSE,MUSIC_REMOTE_RESUME,MUSIC_REMOTE_STOP };
 static int audio_running=1,audio_start=1,music_remote_action,tv_ui_active;
 static char music_preset_file[256]="Alpha.milk";
-static unsigned int input[8],cursor;
+static unsigned int input[32],cursor;
 static unsigned long long tick;
 static int expected_stop;
 static void keep_awake(void) {}
 static void video_watch_ping(const char *s) { (void)s; }
 static void sceCtrlPeekBufferPositive(SceCtrlData *p,int n) {
-    assert(n==1 && cursor<8); p->Buttons=input[cursor++];
+    assert(n==1 && cursor<32); p->Buttons=input[cursor++];
     if(expected_stop && cursor==1) music_remote_action=MUSIC_REMOTE_STOP;
 }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return tick; }
@@ -45,5 +45,24 @@ int main(void) {
     }
     cursor=0; expected_stop=1; input[0]=0;
     assert(music_choose_preset()==0); assert(cursor==1);
+    /* Settings ignores stale music state and debounces the opening X. */
+    assert(!mkdir("presets/Geiss",0700));
+    FILE *f=fopen("presets/Geiss/Test.milk","wb");assert(f);fclose(f);
+    char choice[256]="Alpha.milk";
+    expected_stop=0;audio_running=0;music_remote_action=MUSIC_REMOTE_STOP;
+    unsigned int enter[]={PSP_CTRL_CROSS,0,PSP_CTRL_DOWN,0,PSP_CTRL_CROSS,0,PSP_CTRL_DOWN,0,PSP_CTRL_CROSS};
+    memcpy(input,enter,sizeof(enter));cursor=0;
+    assert(preset_choose(choice,0)==1 && !strcmp(choice,"Geiss/Test.milk"));
+    assert(cursor==9 && music_remote_action==MUSIC_REMOTE_STOP);
+    unsigned int parent[]={0,PSP_CTRL_UP,0,PSP_CTRL_CROSS,0,PSP_CTRL_CROSS};
+    memcpy(input,parent,sizeof(parent));cursor=0;
+    assert(preset_choose(choice,0)==1 && !strcmp(choice,"Alpha.milk"));
+    PresetCatalog catalog;
+    assert(!preset_catalog_browse(&catalog,"presets/absent",1));
+    assert(catalog.count==1 && !strcmp(catalog.names[0],".."));
+    assert(preset_path_valid("Geiss/Test.milk"));
+    assert(!preset_path_valid("../Test.milk") && !preset_path_valid("Geiss/../Test.milk"));
+    assert(!preset_path_valid("/Test.milk") && !preset_path_valid("ms0:/Test.milk"));
+    assert(!preset_path_valid("Geiss//Test.milk"));
     return 0;
 }

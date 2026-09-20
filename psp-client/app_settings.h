@@ -1,7 +1,7 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_COUNT};
+      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_OC,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
@@ -79,6 +79,7 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
 }
+#include "oc_settings_ui.h"
 static int app_settings(void) {
     AppSettings original,draft;settings_capture(&original);draft=original;
     /* Help and immediate display action are not persisted CFG settings. */
@@ -99,6 +100,7 @@ static int app_settings(void) {
                 if(i==SET_HOST)snprintf(value,sizeof(value),"%s",draft.host);
                 else if(i==SET_PASSWORD)strcpy(value,draft.password[0]?"********":"-");
                 else if(i==SET_PRESET)snprintf(value,sizeof(value),"%.48s",draft.preset);
+                else if(i==SET_OC)strcpy(value,"[X]");
                 else if(i==SET_LANGUAGE)strcpy(value,draft.value[i]?"Deutsch":"English");
                 else if(i==SET_SCREEN)snprintf(value,sizeof(value),"%s",tr((TextId)(TXT_SCREEN_AWAKE+draft.value[i])));
                 else if(i>=SET_CPU_MUSIC&&i<=SET_CPU_IDLE) {
@@ -137,6 +139,12 @@ static int app_settings(void) {
             result=result<0?-1:1;break;
         }
         if(pressed&PSP_CTRL_CROSS) {
+            if(selected==SET_OC) {
+                oc_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+            }
+            if(selected==SET_PRESET) {
+                preset_choose(draft.preset,0);dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+            }
             if(selected==-2) {
                 help_open(HELP_BROWSE);dirty=1;
                 sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
@@ -151,15 +159,14 @@ static int app_settings(void) {
                 dirty=1;old=pad.Buttons;continue;
             }
             char input[256];int valid=1;
-            const char *initial=selected==SET_HOST?draft.host:selected==SET_PASSWORD?draft.password:selected==SET_PRESET?draft.preset:NULL;
+            const char *initial=selected==SET_HOST?draft.host:selected==SET_PASSWORD?draft.password:NULL;
             if(initial)snprintf(input,sizeof(input),"%s",initial);else snprintf(input,sizeof(input),"%d",draft.value[selected]);
-            if(settings_text(input,selected==SET_HOST?64:selected==SET_PRESET?256:129,selected==SET_PASSWORD,tr((TextId)(TXT_SETTINGS_HOST+selected)))) {
+            if(settings_text(input,selected==SET_HOST?64:129,selected==SET_PASSWORD,tr((TextId)(TXT_SETTINGS_HOST+selected)))) {
                 if(selected==SET_HOST) {
                     valid=input[0]!=0;
                     for(const char *p=input;*p;p++)if(!((*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9')||*p=='.'||*p=='-'||*p=='_'))valid=0;
                     if(valid)strcpy(draft.host,input);
                 } else if(selected==SET_PASSWORD)strcpy(draft.password,input);
-                else if(selected==SET_PRESET) {valid=preset_name_valid(input);if(valid)strcpy(draft.preset,input);}
                 else {char *end;long value=strtol(input,&end,10);valid=input[0]&&!*end&&value>=minimum[selected]&&value<=maximum[selected];
                     if(valid&&selected>=SET_CPU_MUSIC&&selected<=SET_CPU_IDLE)valid=playback_clock_valid((int)value);
                     if(valid)draft.value[selected]=value;}

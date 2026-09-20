@@ -299,3 +299,11 @@ it does not provide an independently calibrated CPU cycle measurement. A
 synthetic timed-loop benchmark is therefore deliberately not labelled “MHz”.
 No register readout proves performance or stability; both need real hardware
 tests. Host tests cover formula/model bounds, not physical PLL behavior.
+
+## Editing from PSPStreamer
+
+In PSPStreamer, open **Select → StreamerOC plugin → X**. The submenu edits all
+seven INI options without a PC. **Start** saves the plugin INI (with a `.bak`
+copy); **Circle** cancels. Changes apply at the **next application start** and
+do not touch the running clock-control path. This is separate from saving the
+player's CPU profiles. Only use target clocks already tested on your PSP.

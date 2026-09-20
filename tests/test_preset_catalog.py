@@ -12,6 +12,10 @@ class PresetCatalogTests(unittest.TestCase):
             for name,rating in [('Alpha.milk',4),('Zulu.milk',0),('Middle.milk',1)]:
                 (root/name).write_text(f'[preset00]\nfRating={rating}\nzoom=1\n')
             (root/'playlist.txt').write_text('# ordered subset\nZulu.milk\n../bad.milk\nAlpha.milk\nMissing.milk\nMiddle.milk\n')
+            (root/'Geiss').mkdir()
+            (root/'Geiss'/'A.milk').write_text('[preset00]\nfRating=3\n')
+            (root/'Geiss'/'B.milk').write_text('[preset00]\nfRating=5\n')
+            (root/'Geiss'/'playlist.txt').write_text('B.milk\nA.milk\n')
             binary=root/'sequence'
             subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=undefined','-I',str(ROOT/'psp-client'),str(ROOT/'tests/preset_sequence_harness.c'),'-o',str(binary)],check=True)
             subprocess.run([str(binary),directory],check=True,timeout=5)

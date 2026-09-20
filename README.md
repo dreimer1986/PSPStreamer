@@ -551,6 +551,19 @@ Start underclock testing at 222 MHz, not 66 MHz: low clocks can slow the
 browser, decoding and storage/network I/O. Requested MHz are not guaranteed
 exact physical frequencies. Enable plugin `overlay=1` to see changes.
 
+**Select → StreamerOC plugin → X** opens the optional plugin's own settings.
+Up/Down selects a row; Left/Right changes it. The submenu exposes `enabled`,
+`target_mhz`, `enforce`, `enforce_unlimited`, `app_control`, `report` and `overlay`.
+**Start saves this INI independently of the outer app settings; Circle cancels.**
+Changes take effect at the **next application start**, not in the running plugin.
+The file is `ms0:/SEPLUGINS/StreamerOC/StreamerOC.ini` (an existing `ef0:` file
+is used if the Memory Stick file is absent). A missing INI starts disabled;
+install the plugin/directory first. Invalid INIs are not overwritten. Saving
+validates all values, writes a temporary file and keeps the previous INI as
+`StreamerOC.ini.bak`. Comments are replaced with the standard seven-key layout.
+The editor does not install/enable ARK's plugin entry or test clock stability.
+The existing overlay remains Off/On; no new display hook is enabled.
+
 `screen_idle=0` keeps the display awake as before; `1` allows normal LCD
 power saving during music; `2` allows it throughout the app. Dimming/off
 timing comes from the PSP's power-saving settings. Buttons wake the screen
@@ -733,10 +746,16 @@ supported alongside PNG via `psp_texture_0=example.jpg` in the preset and a
 `textures/example.jpg` file beside it. JPEG images are resized once on loading;
 see the texture limits in `docs/MILKDROP_COMPATIBILITY.md`.
 During music, **Circle** opens the in-app preset browser: Up/Down selects,
-L/R pages, Cross applies, Circle cancels. The chosen filename is saved as
-`music_preset=filename.milk` in the PSP config; manual `active.milk` replacement
-is no longer required. The browser lists up to 128 `.milk` files and warns when
-that limit is exceeded. All built-in waveform modes 0–8, a real FFT waveform,
+L/R pages, Cross opens folders or applies a file, Circle cancels. The `..` entry
+goes up one folder. The same folder browser is available without playback at
+**Select → MilkDrop preset → X**; **Start** in the outer settings saves that
+selection. Paths are relative to `PSPStreamer/presets/`, e.g.
+`music_preset=Geiss/Hyperdrive.milk`. Absolute paths and `..` components are
+rejected. Automatic changes use the selected preset's folder and its optional
+`playlist.txt`, not the entire folder tree. Textures remain relative to each
+preset's own directory. Manual `active.milk` replacement is no longer required.
+The browser lists up to 128 entries per directory (including `..`) and warns
+when that limit is exceeded. All built-in waveform modes 0–8, a real FFT waveform,
 bounded motion vectors and `frame`/`fps` inputs are now available. See the
 [waveform pack, controls and test presets](docs/MILKDROP_WAVE_PACK.md).
 Frame formulas can also animate `wave_mode` and all nine `mv_*` fields.
