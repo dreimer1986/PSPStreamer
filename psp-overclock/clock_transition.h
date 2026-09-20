@@ -4,6 +4,24 @@
  * domain targets are a bounded adaptation, not a reference stress test.
  */
 static unsigned int owned_ctl,owned_mul,owned_cpu,owned_bus;
+static void oc_remember(void);
+/* Persist checkpoints only at settled boundaries, outside CP0/dispatch
+ * locks. Recheck all registers after I/O: it can run other clock owners.
+ * Always return with the caller's guard held, including failure paths. */
+static int oc_clock_checkpoint(const char *event,OcClockGuard *guard) {
+    unsigned int ctl=CTL,mul=MUL,cpu=CPU,bus=BUS;
+    oc_clock_unlock(*guard);
+    snapshot(event);
+    *guard=oc_clock_lock();
+    if(!running || suspended)return -2;
+    return CTL==ctl && MUL==mul && CPU==cpu && BUS==bus?0:-3;
+}
+static int oc_ratio_checkpoint(unsigned int index,void *context) {
+    oc_remember();
+    const char *event=index==3?"clock_raw_ratio_3_ready":
+        index==4?"clock_raw_ratio_4_ready":"clock_raw_ratio_5_ready";
+    return oc_clock_checkpoint(event,(OcClockGuard *)context);
+}
 static void oc_remember(void) {
     owned_ctl=CTL;owned_mul=MUL;owned_cpu=CPU;owned_bus=BUS;changed=1;
 }
@@ -78,17 +96,20 @@ static int apply(void) {
          (index==5 || num==OC_NORMAL_NUM));
     if(!result && (index<3 || index>5 || !cn || !bn || cn>cd || bn>bd ||
                    !known_multiplier))result=-4;
+    if(!result)result=oc_clock_checkpoint("clock_raw_guard_ready",&g);
     if(!result) {
         /* Reduce an existing recognized overclock before opening dividers. */
         if(den==OC_DEN)while(num>OC_NORMAL_NUM){multiplier(--num);settle();}
         multiplier(OC_NORMAL_NUM);settle();
-        result=oc_ratio_to_five();
+        oc_remember();
+        result=oc_clock_checkpoint("clock_raw_multiplier_ready",&g);
+        if(!result)result=oc_ratio_to_five(oc_ratio_checkpoint,&g);
         if(!result) {
             oc_domains(0x01ff01ff,0x01ff01ff);
             if((CPU&0x01ff01ff)!=0x01ff01ff || (BUS&0x01ff01ff)!=0x01ff01ff ||
                (MUL&0xffff)!=((OC_NORMAL_NUM<<8)|OC_DEN))result=-3;
         }
-        oc_remember();
+        if(!result)oc_remember();
     }
     oc_clock_unlock(g);
     if(result)return result;

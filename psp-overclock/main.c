@@ -267,7 +267,14 @@ static int thread_main(SceSize args,void *argp) {
         int r=apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
     snapshot("startup_result");
-    control_ready=1;
+    /* The stable plugin initialized clocks before exposing any app API.
+     * Publish the new driver only after that phase has finished. This also
+     * prevents register-query callbacks from overlapping initial clock work. */
+    if(running) {
+        control_registered=sceIoAddDrv(&control_driver)>=0;
+        control_ready=control_registered;
+        snapshot("control_driver_ready");
+    }
     if(enabled){snapshot("startup_overlay_begin");overlay_notify();}
     unsigned int previous=0,conflicts=0;
     unsigned int last_ctl=0,last_mul=0,last_cpu=0,last_bus=0;
@@ -359,17 +366,18 @@ int module_start(SceSize args,void *argp) {
         if(slash){slash[1]=0;snprintf(directory,sizeof(directory),"%s",path);}
     }
     running=1;
-    control_registered=sceIoAddDrv(&control_driver)>=0;
     worker=sceKernelCreateThread("StreamerOC",thread_main,0x30,0x4000,0,NULL);
-    if(worker<0){running=0;if(control_registered)sceIoDelDrv("streameroc");return worker;}
+    if(worker<0){running=0;return worker;}
     int r=sceKernelStartThread(worker,0,NULL);
-    if(r<0){running=0;sceKernelDeleteThread(worker);worker=-1;if(control_registered)sceIoDelDrv("streameroc");}
+    if(r<0){running=0;sceKernelDeleteThread(worker);worker=-1;}
     return r;
 }
 int module_stop(SceSize args,void *argp) {
     (void)args;(void)argp;running=0;
     control_ready=0;
-    if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}
     if(worker>=0){sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);worker=-1;}
+    /* Joining first closes the race with late driver registration. New
+     * commands already fail because running was cleared before the join. */
+    if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}
     return 0;
 }

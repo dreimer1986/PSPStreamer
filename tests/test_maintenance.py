@@ -9,6 +9,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_driver_published_after_clock_startup_and_joined_before_removal(self):
+        code = (ROOT / 'psp-overclock/main.c').read_text()
+        worker = code[code.index('static int thread_main('):code.index('int module_start(')]
+        start = code[code.index('int module_start('):code.index('int module_stop(')]
+        stop = code[code.index('int module_stop('):]
+        self.assertNotIn('sceIoAddDrv', start)
+        self.assertLess(worker.index('snapshot("startup_result")'), worker.index('sceIoAddDrv'))
+        self.assertLess(worker.index('sceIoAddDrv'), worker.index('control_ready=control_registered'))
+        self.assertLess(stop.index('running=0'), stop.index('sceKernelWaitThreadEnd'))
+        self.assertLess(stop.index('sceKernelWaitThreadEnd'), stop.index('sceIoDelDrv'))
+
     def test_oc_ratio_steps_timeout_and_unexpected_readback(self):
         source = r'''
 #include <assert.h>
@@ -19,18 +30,18 @@ static int ready(void){waits++;if(waits==fail_at)return -1;CTL&=~0x80U;if(bad_re
 static void settle(void){settles++;}
 #include "ratio_transition.h"
 int main(void){
-    CTL=0xab03;assert(oc_ratio_to_five()==0);
+    CTL=0xab03;assert(oc_ratio_to_five(0,0)==0);
     assert(count==3&&waits==3&&settles==3&&CTL==0xab05);
     assert(writes[0]==0xab83&&writes[1]==0xab84&&writes[2]==0xab85);
-    count=waits=settles=0;CTL=4;assert(oc_ratio_to_five()==0&&count==2);
-    count=waits=settles=0;CTL=5;assert(oc_ratio_to_five()==0&&!count&&!waits&&!settles);
-    for(unsigned i=0;i<16;i++)if(i<3||i>5){CTL=i;assert(oc_ratio_to_five()==-4&&!count);}
+    count=waits=settles=0;CTL=4;assert(oc_ratio_to_five(0,0)==0&&count==2);
+    count=waits=settles=0;CTL=5;assert(oc_ratio_to_five(0,0)==0&&!count&&!waits&&!settles);
+    for(unsigned i=0;i<16;i++)if(i<3||i>5){CTL=i;assert(oc_ratio_to_five(0,0)==-4&&!count);}
     for(fail_at=1;fail_at<=3;fail_at++){
         CTL=3;count=waits=settles=0;
-        assert(oc_ratio_to_five()==-1&&count==fail_at&&settles==fail_at-1);
+        assert(oc_ratio_to_five(0,0)==-1&&count==fail_at&&settles==fail_at-1);
     }
     fail_at=0;CTL=3;count=waits=settles=0;bad_readback=1;
-    assert(oc_ratio_to_five()==-3&&count==1&&!settles);
+    assert(oc_ratio_to_five(0,0)==-3&&count==1&&!settles);
     return 0;
 }
 '''
@@ -288,6 +299,8 @@ int main(void) {
 #include <stdlib.h>
 #include "clock_math.h"
 static unsigned int CTL=5,MUL=0x01240901,CPU=0x01ff01ff,BUS=0x01ff01ff;
+#include <string.h>
+static const char *mutate_at;
 static int running=1,suspended,changed,target=443,fail_ready,interfere,yields;
 static int report=1,snapshots,locked;
 typedef int OcClockGuard;
@@ -296,6 +309,7 @@ static void oc_clock_unlock(OcClockGuard g){assert(g==1&&locked);locked=0;}
 static void snapshot(const char *event){
     assert(event&&!locked);snapshots++;
     if(interfere==4)CPU=0x00800100;
+    if(mutate_at&&!strcmp(event,mutate_at))CPU=0x00800100;
 }
 #define SYNC() ((void)0)
 static void settle(void){assert(locked);}
@@ -360,6 +374,16 @@ int main(void) {
     MUL=0x01240901;CPU=0;assert(apply()==-4);
     CPU=BUS=0x01ff01ff;target=65;assert(apply()==-4);
     target=472;assert(apply()==-4);
+    const char *boundaries[]={"clock_raw_guard_ready","clock_raw_multiplier_ready",
+        "clock_raw_ratio_3_ready","clock_raw_ratio_4_ready","clock_raw_ratio_5_ready"};
+    for(unsigned i=0;i<5;i++) {
+        CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
+        target=433;changed=0;ratio_count=0;mutate_at=boundaries[i];
+        assert(apply()==-3&&!locked);
+        assert(ratio_count==(i<2?0:(int)i-1));
+        assert(restore()==-3); /* Never acquire foreign state after logging. */
+    }
+    mutate_at=0;
     assert(snapshots>0&&!locked);
     return 0;
 }

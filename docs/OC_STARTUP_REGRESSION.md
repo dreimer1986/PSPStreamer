@@ -103,3 +103,54 @@ Explicit enforcement may adopt a recognized external clock again; restoration
 never silently overwrites another owner's changed tuple. The build is still
 `-O2 -G0`. Hardware stability and underclock operation remain unverified until
 the user tests this build. No player EBOOT or personal INI was changed.
+
+## Direct-path hardware failure and narrower diagnostic boundaries
+
+Session `2933581` again hangs. The mounted PRX SHA-256 matches build
+`4697053` (`6c1abf4193393781501b0bfa4e70cf3b46fc7fefccea9f3310c95ef252b55b6c`).
+The last persisted event is `clock_raw_baseline_begin` at 6238 ms, with
+CTL `3`, MUL `01240901`, and CPU/BUS `01FF01FF`. Removing Sony setters and
+using the reference CP0 guard did **not** resolve the observed failure.
+
+No further clock formula or target change is introduced in this diagnostic
+build. The existing settled normalization boundaries are now separated by
+synced checkpoints: a guard-only round trip before the first register write,
+multiplier conversion, and completed ratio 3, 4 and 5 transitions. The next
+missing checkpoint narrows the failing region; absence alone still cannot
+identify one instruction. File I/O is always outside CP0/dispatch protection.
+After reacquiring the guard, changes to any clock register, suspend or stop
+abort the transition. Ownership is recorded before yielding, never adopted
+from a foreign change during logging. Host tests inject external writes at
+each new checkpoint and verify that no further ratio steps occur.
+
+This changes timing by adding diagnostic I/O between settled stages. It is
+explicitly a **diagnostic build, not a claimed shutdown fix**. A single next
+hardware run is needed to locate the remaining failure. The INI and ARK
+configuration remain untouched; repeated hard-power-off testing is not advised.
+
+### Stable-to-first-regression comparison
+
+Compared plugin sources at `93a354f` (before the feature addition) and
+`b6d0a6b` (first feature build). The initial >333 MHz register sequence,
+six-second delay, worker priority `0x30`, stack `0x4000`, power callback,
+settle loop, register arithmetic and `-O2 -G0` flags were unchanged. The
+new <=333 branch was not selected for a cold start at 433 MHz. Nothing was
+removed from that high-clock path in the first regression commit.
+
+Added behavior comprised the optional I/O driver and its command handler,
+application clock requests/low profiles, automatic overlay notification,
+observed-clock notifications, unlimited enforcement and larger report fields.
+The latter runtime features start after initial clock application; unlimited
+enforcement is disabled in the user's INI. Driver registration, however, was
+new work in `module_start`, before the old OC worker even began. Queries of
+clock registers were available immediately, although SETs were gated.
+
+This build defers registration until after `startup_result`, preserving the
+application-control feature and allowing existing client discovery retries.
+Worker shutdown is joined before removing the driver to close a registration/
+unload race. Thus the newly introduced device/callback interface is absent
+throughout initial clock work. The next trace will establish whether failure
+still occurs without it. This isolates an actual first-regression difference;
+it does **not** establish driver registration as the cause. Diagnostic
+checkpoints remain to narrow the failing stage if it still occurs. Personal
+INI/ARK settings, app profiles and the player EBOOT are not modified.

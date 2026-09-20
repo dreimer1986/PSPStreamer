@@ -110,6 +110,11 @@ only happens at startup/state changes or on demand, not every polling tick.
 
 ### Optional application control
 
+The optional device driver is published only after initial clock setup,
+not from `module_start`. Client discovery retries until it is available.
+The `control_driver_ready` event records registration afterwards; early
+startup checkpoints intentionally show `control_driver=0`.
+
 Add `app_control=1` to the plugin INI to allow temporary application clock
 profiles. `enabled=1` and successful startup/power callback registration are
 also required. The default is `app_control=1`; old INI files remain valid.
@@ -151,6 +156,11 @@ records separate runs. Logged events include:
   `clock_raw_baseline_begin`, completed domain initialization and bounded
   ramp checkpoints. These distinguish early driver/startup failures from an
   actual clock transition; no file writes happen with interrupts disabled.
+  Additional diagnostic checkpoints mark the completed interrupt-guard round
+  trip (`clock_raw_guard_ready`), multiplier conversion, and each settled PLL
+  ratio (3/4/5). Reporting temporarily releases the guard at those boundaries;
+  all four clock registers are checked again before continuing. A foreign
+  change aborts rather than resuming from stale assumptions.
 - Detected target mismatch **before** correction, reapplication result and
   enforcement/conflict-limit shutdown.
 - Suspend/resume, recorded after resume with the observed suspend tick/flags.

@@ -2,7 +2,7 @@
  * Call with interrupts disabled, after ready(), on validated 03/04/05 ratios.
  * Follow ARK-5's adjacent-index transition, but bound and verify every step.
  * The writer is separate so the host test observes the exact hardware writes. */
-static int oc_ratio_to_five(void) {
+static int oc_ratio_to_five(int (*checkpoint)(unsigned int,void *),void *context) {
     unsigned int index=CTL&15;
     if(index<3 || index>5)return -4;
     if(index==5)return 0;
@@ -14,6 +14,10 @@ static int oc_ratio_to_five(void) {
         if(ready()<0)return -1;
         if((CTL&0x8f)!=next)return -3;
         settle();
+        if(checkpoint) {
+            int result=checkpoint(next,context);
+            if(result)return result;
+        }
     }
     return 0;
 }
