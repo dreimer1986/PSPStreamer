@@ -65,7 +65,8 @@ int main(void){
                             '-o', str(binary)], input=source, text=True, check=True)
             subprocess.run([str(binary)], check=True)
         self.assertLess(code.index('if(!enforce){'), code.index('if(!enforce_unlimited'))
-        self.assertIn('if(!running || suspended)return -2;', code)
+        self.assertIn('if(!running || suspended)return -2;',
+                      (ROOT / 'psp-overclock/clock_transition.h').read_text())
         self.assertIn('if(r)enabled=0;', code)
 
     def test_optional_app_clock_profiles_and_lcd_idle(self):
@@ -277,67 +278,89 @@ int main(void) {
             subprocess.run([str(binary)], check=True)
 
     def test_oc_actual_ramp_abort_and_restore_with_mock_registers(self):
-        code = (ROOT / 'psp-overclock/main.c').read_text()
-        code = code[code.index('static int matches(void);'):code.index('static int power_callback(')]
+        source = (ROOT / 'psp-overclock/main.c').read_text()
+        transitions = (ROOT / 'psp-overclock/clock_transition.h').read_text()
+        self.assertNotIn('scePowerSetClockFrequency', source + transitions)
+        self.assertIn('mfc0 %0,$12', source)
+        self.assertIn('mtc0 %1,$12', source)
         harness = '''
 #include <assert.h>
 #include <stdlib.h>
 #include "clock_math.h"
-static unsigned int CTL=5,MUL=0,CPU=0x01ff01ff,BUS=0x01ff01ff;
-static int running=1,suspended,changed,target=443,fail_ready,interfere,yields,sony_owned,sony_cpu=333,sony_bus=166;
-static int report=1,sony_noop,sony_failure,sony_calls,snapshots;
-static void snapshot(const char *event){assert(event);snapshots++;}
-#define SYNC() ((void)0)
-static void settle(void) {}
-static int ready(void) {CTL&=~0x80;return fail_ready?-1:0;}
-static int sceKernelCpuSuspendIntr(void) {return 1;}
-static void sceKernelCpuResumeIntr(int n) {assert(n==1);}
-static int sceKernelSuspendDispatchThread(void){return 1;}
-static void sceKernelResumeDispatchThread(int n){assert(n==1);}
-static int scePowerSetClockFrequency(int p,int c,int b) {
-    assert(p==333&&c>=66&&c<=333&&b==c/2);sony_calls++;
-    if(sony_failure)return -17;
-    if(sony_noop)return 0;
-    sony_cpu=c;sony_bus=b;
-    CTL=5;MUL=(180<<8)|20;CPU=(c<<16)|333;BUS=(b<<16)|333;return 0;
+static unsigned int CTL=5,MUL=0x01240901,CPU=0x01ff01ff,BUS=0x01ff01ff;
+static int running=1,suspended,changed,target=443,fail_ready,interfere,yields;
+static int report=1,snapshots,locked;
+typedef int OcClockGuard;
+static OcClockGuard oc_clock_lock(void){assert(!locked);locked=1;return 1;}
+static void oc_clock_unlock(OcClockGuard g){assert(g==1&&locked);locked=0;}
+static void snapshot(const char *event){
+    assert(event&&!locked);snapshots++;
+    if(interfere==4)CPU=0x00800100;
 }
-static int scePowerGetCpuClockFrequencyInt(void){return sony_cpu;}
-static int scePowerGetBusClockFrequencyInt(void){return sony_bus;}
-static void multiplier(unsigned int n) {MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
+#define SYNC() ((void)0)
+static void settle(void){assert(locked);}
+static int ready(void){assert(locked);CTL&=~0x80;return fail_ready?-1:0;}
+static void multiplier(unsigned int n){assert(locked);MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
 static unsigned ratio_writes[8];static int ratio_count;
-static void oc_ratio_write(unsigned int n){assert(ratio_count<8);ratio_writes[ratio_count++]=n;CTL=n;}
+static void oc_ratio_write(unsigned int n){assert(locked&&ratio_count<8);ratio_writes[ratio_count++]=n;CTL=n;}
 #include "ratio_transition.h"
-static void sceKernelDelayThreadCB(int n) {assert(n==10000);yields++;if(interfere)CPU=0x00800100;}
-''' + code + '''
+static void sceKernelDelayThreadCB(int n) {
+    assert(n==10000&&!locked);yields++;
+    if(interfere==1)CPU=0x00800100;
+    if(interfere==2)suspended=1;
+    if(interfere==3)running=0;
+}
+#include "clock_transition.h"
 int main(void) {
     assert(oc_supported_model(2));
-    CPU=0x00800100; BUS=0x00800100;
-    assert(apply()==0 && changed && matches() && yields==59);
+    CPU=BUS=0x00800100;
+    assert(apply()==0&&changed&&matches()&&yields==59);
     assert(oc_khz(CTL,MUL,CPU)==442150);
-    target=333;assert(!matches());target=443; /* Sony getter still says 333. */
-    restore(); assert(((MUL>>8)&255)==180);
+    assert(restore()==0&&((MUL>>8)&255)==180);
     target=333;assert(apply()==0&&matches());
-    assert(CPU==0x01ff01ff&&BUS==0x01ff01ff&&!sony_owned);
-    target=66;assert(apply()==0&&matches()&&sony_cpu==66&&sony_bus==33);
-    MUL=(239<<8)|20;assert(!matches());MUL=(180<<8)|20;
-    restore();assert(sony_cpu==333&&sony_bus==166);
+    assert(CPU==0x01ff01ff&&BUS==0x01ff01ff);
+
+    /* Every supported low profile uses real registers, never Sony's cache. */
+    for(target=66;target<=333;target++) {
+        assert(apply()==0&&matches());
+        assert(abs((int)oc_khz(CTL,MUL,CPU)-target*1000)<1000);
+        if(target<333)assert(abs((int)oc_khz(CTL,MUL,BUS)-target*500)<1000);
+    }
+    target=433;assert(apply()==0&&matches());
+    target=133;assert(apply()==0&&matches());
+    target=433;assert(apply()==0&&matches());
+    interfere=4;assert(apply()==-3); /* Foreign write during report I/O. */
+    interfere=0;changed=0;assert(apply()==0&&matches());
+    unsigned int saved=CPU;
+    CPU=0x00800100;
+    assert(restore()==-3&&apply()==-3); /* No foreign state overwritten. */
+    CPU=saved;assert(restore()==0);
     target=443;interfere=1;yields=0;
-    assert(apply()==-3 && yields==1); /* abort before a second write */
-    interfere=0;suspended=1;assert(apply()==-2);
-    suspended=0;fail_ready=1;assert(apply()==-1);
-    fail_ready=0;changed=sony_owned=0;sony_noop=1;target=433;yields=0;
-    CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;sony_cpu=222;sony_bus=222;
-    assert(apply()==0&&matches()&&yields==54); /* Recorded ARK startup registers. */
+    assert(apply()==-3&&yields==1&&!locked);
+    assert(restore()==-3);
+    interfere=0;changed=0;suspended=1;assert(apply()==-2);
+    suspended=0;fail_ready=1;assert(apply()==-1&&!locked);
+
+    /* Exact startup register tuple from the hard-power-off session. */
+    fail_ready=0;changed=0;target=433;yields=0;
+    CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
+    assert(apply()==0&&matches()&&yields==54);
     assert(ratio_count==3&&ratio_writes[0]==0x83&&ratio_writes[1]==0x84&&ratio_writes[2]==0x85);
-    assert(restore()==0);changed=0;
-    target=133;assert(apply()==-3); /* Patched Sony no-op must not claim success. */
-    sony_noop=0;sony_owned=changed=0;target=133;assert(apply()==0);
-    sony_failure=1;target=433;
-    assert(apply()==-17&&sony_owned==133); /* Never continue after failed restore. */
-    sony_failure=0;
-    MUL=(239<<8)|20;int calls=sony_calls;
-    assert(apply()==-3&&sony_calls==calls); /* External PLL change: don't fight it. */
-    assert(snapshots>0);
+    assert(restore()==0);
+
+    interfere=2;suspended=0;
+    assert(apply()==-2&&suspended&&!locked);
+    unsigned int prior=MUL;assert(restore()==-2&&MUL==prior);
+    suspended=0;interfere=3;running=1;
+    assert(apply()==-2&&!running&&!locked);
+    assert(restore()==0); /* Worker shutdown still restores its own clock. */
+    interfere=0;running=1;changed=0;
+    CTL=2;prior=MUL;assert(apply()==-4&&MUL==prior);
+    CTL=5;MUL=0x01240801;prior=MUL;assert(apply()==-4&&MUL==prior);
+    MUL=0x01240901;CPU=0;assert(apply()==-4);
+    CPU=BUS=0x01ff01ff;target=65;assert(apply()==-4);
+    target=472;assert(apply()==-4);
+    assert(snapshots>0&&!locked);
     return 0;
 }
 '''

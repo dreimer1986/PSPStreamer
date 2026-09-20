@@ -44,7 +44,7 @@ static int journal_result;
 static volatile int pending_suspend_flags;
 static volatile unsigned long long suspend_tick;
 static int overlay_enabled=1;
-static int app_control=1, configured_target, sony_owned, control_registered;
+static int app_control=1, configured_target, control_registered;
 static volatile int control_ready, control_pending=-1, control_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
@@ -138,6 +138,24 @@ static int ready(void) {
 static void multiplier(unsigned int n) {MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;SYNC();}
 static void oc_ratio_write(unsigned int value){CTL=value;}
 #include "ratio_transition.h"
+/* The reference masks CP0 Status.IE in addition to stopping dispatch.
+ * No kernel calls or file I/O are allowed inside this critical section. */
+typedef struct { int dispatch; unsigned int status; } OcClockGuard;
+static OcClockGuard oc_clock_lock(void) {
+    OcClockGuard g; unsigned int masked;
+    g.dispatch=sceKernelSuspendDispatchThread();
+    __asm__ volatile(".set push\n.set noreorder\n"
+        "mfc0 %0,$12\nsync\nli %1,-2\nand %1,%0,%1\n"
+        "mtc0 %1,$12\nsync\nnop\nnop\nnop\n.set pop\n"
+        : "=&r"(g.status), "=&r"(masked) :: "memory");
+    return g;
+}
+static void oc_clock_unlock(OcClockGuard g) {
+    __asm__ volatile(".set push\n.set noreorder\n"
+        "mtc0 %0,$12\nsync\nnop\nnop\nnop\n.set pop\n"
+        :: "r"(g.status) : "memory");
+    sceKernelResumeDispatchThread(g.dispatch);
+}
 static void config(void) {
     char path[256],buffer[1024];
     snprintf(path,sizeof(path),"%sStreamerOC.ini",directory);
@@ -212,106 +230,7 @@ static void snapshot(const char *event) {
 }
 static int matches(void);
 static int restore(void);
-static int apply(void) {
-    if(!running || suspended)return -2;
-    /* Never hand an active custom PLL to Sony's cached clock state. Finish
-     * the reference downward transition first, and propagate refusal/errors. */
-    if(changed) {
-        int restored=restore();
-        if(restored<0)return restored;
-        changed=0;
-    }
-    /* The tester starts from Sony's 333/333/166 setup, then adjusts PLL and
-     * domain ratios. Its busy loops and unbounded upward scan are not copied. */
-    snapshot("clock_sony_baseline_begin");
-    if(scePowerSetClockFrequency(333,333,166)<0)return -1;
-    snapshot("clock_sony_baseline_done");
-    changed=1;
-    int dispatch=sceKernelSuspendDispatchThread();
-    int intr=sceKernelCpuSuspendIntr();
-    int result=ready();
-    /* A CFW-patched Sony setter can return success with ratio 3 still active.
-     * Do not assume a 333 MHz baseline or jump directly from ratio 3 to 5. */
-    if(!result && ((CTL&15)<3 || (CTL&15)>5))result=-4;
-    if(!result) {
-        multiplier(OC_NORMAL_NUM);settle();
-        result=oc_ratio_to_five();
-    }
-    if(!result) {
-        unsigned int cn=(CPU>>16)&511,cd=CPU&511,bn=(BUS>>16)&511,bd=BUS&511;
-        /* Reference: add 18 to each divider component until all reach 511. */
-        while(cn!=511 || cd!=511 || bn!=511 || bd!=511) {
-            cn=cn+18>511?511:cn+18;cd=cd+18>511?511:cd+18;
-            bn=bn+18>511?511:bn+18;bd=bd+18>511?511:bd+18;
-            CPU=(cn<<16)|cd;BUS=(bn<<16)|bd;SYNC();settle();
-        }
-    }
-    sceKernelCpuResumeIntr(intr);
-    sceKernelResumeDispatchThread(dispatch);
-    if(result)return result;
-    snapshot("clock_domains_ready");
-    /* 333 retains the same complete reference initialization as higher
-     * targets. Sony underclocking starts only from this normalized state. */
-    if(target<333) {
-        if(!running || suspended)return -2;
-        if(scePowerSetClockFrequency(333,target,target/2)<0)return -1;
-        sony_owned=target;
-        return matches()?0:-3;
-    }
-    unsigned int wanted=oc_numerator(target);
-    for(unsigned int num=OC_NORMAL_NUM+1;num<=wanted;num++) {
-        if(!running || suspended)return -2;
-        intr=sceKernelCpuSuspendIntr();
-        /* Another thread may have changed clocks during the previous yield.
-         * Never continue a ramp against an unknown PLL/domain configuration. */
-        if((CTL&0x8f)!=5 || (MUL&0xffff)!=(((num-1)<<8)|OC_DEN) ||
-           (CPU&0x01ff01ff)!=0x01ff01ff || (BUS&0x01ff01ff)!=0x01ff01ff) {
-            sceKernelCpuResumeIntr(intr);return -3;
-        }
-        multiplier(num);settle();sceKernelCpuResumeIntr(intr);
-        sceKernelDelayThreadCB(10000);
-        if(report && ((num-OC_NORMAL_NUM)%16==0 || num==wanted))snapshot("clock_ramp_progress");
-    }
-    return matches()?0:-3;
-}
-static int matches(void) {
-    if(target<333) {
-        /* Sony still reports 333 after a direct PLL overclock. Never treat
-         * that cached value as proof that switching back already happened. */
-        if(sony_owned!=target)return 0;
-        unsigned int cpu=oc_khz(CTL,MUL,CPU),bus=oc_khz(CTL,MUL,BUS);
-        return abs(scePowerGetCpuClockFrequencyInt()-target)<=1 &&
-            abs(scePowerGetBusClockFrequencyInt()-target/2)<=1 &&
-            (!cpu || abs((int)cpu-target*1000)<=2000) &&
-            (!bus || abs((int)bus-(target/2)*1000)<=2000);
-    }
-    return (CTL&0x8f)==5 && (MUL&0xffff)==((oc_numerator(target)<<8)|OC_DEN) &&
-        (CPU&0x01ff01ff)==0x01ff01ff && (BUS&0x01ff01ff)==0x01ff01ff;
-}
-static int restore(void) {
-    if(sony_owned) {
-        unsigned int cpu=oc_khz(CTL,MUL,CPU),bus=oc_khz(CTL,MUL,BUS);
-        if(abs(scePowerGetCpuClockFrequencyInt()-sony_owned)>1 ||
-           abs(scePowerGetBusClockFrequencyInt()-sony_owned/2)>1 ||
-           (cpu && abs((int)cpu-sony_owned*1000)>2000) ||
-           (bus && abs((int)bus-(sony_owned/2)*1000)>2000))return -3;
-        int r=scePowerSetClockFrequency(333,333,166);
-        if(r<0)return r;
-        sony_owned=0;return 0;
-    }
-    /* Only undo our known register recipe, not a different plugin's PLL.
-     * Start at the actual numerator, not the configured maximum (tester bug). */
-    if((CTL&0x8f)!=5 || (MUL&255)!=OC_DEN)return -3;
-    unsigned int num=(MUL>>8)&255;
-    while(num>OC_NORMAL_NUM) {
-        int intr=sceKernelCpuSuspendIntr();
-        if((CTL&0x8f)!=5 || (MUL&0xffff)!=((num<<8)|OC_DEN)) {
-            sceKernelCpuResumeIntr(intr);return -3;
-        }
-        multiplier(--num);settle();sceKernelCpuResumeIntr(intr);
-    }
-    return scePowerSetClockFrequency(333,333,166);
-}
+#include "clock_transition.h"
 static int power_callback(int count,int flags,void *arg) {
     (void)count;(void)arg;
     if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY)) {
@@ -415,6 +334,9 @@ static int thread_main(SceSize args,void *argp) {
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(now-window>=60000000ULL){conflicts=0;window=now;}
         if(!enforce_unlimited && ++conflicts>3){enabled=0;status="clock conflict: enforcement disabled";snapshot("conflict_limit");continue;}
+        /* Explicit enforcement authorizes adopting a changed clock again.
+         * Do not pretend that foreign state is ours to restore first. */
+        changed=0;
         int r=apply();status=r?"reapply failed: disabled":"target reapplied";if(r)enabled=0;
         snapshot("reapply_result");
     }

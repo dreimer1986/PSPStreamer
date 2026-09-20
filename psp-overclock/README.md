@@ -30,8 +30,11 @@ small rectangle into validated VRAM without installing display hooks.
 If an application changes the PLL/domain setup during a yielded ramp, the
 ramp aborts and enforcement is disabled rather than continuing blindly.
 
-A successful Sony baseline call is not assumed to have changed the hardware:
-CFW can replace it with a no-op. For the observed 222 MHz / ratio-3 state,
+Clock changes no longer call Sony setters at all: CFW can replace those with
+successful no-ops, while their cached getters do not describe a direct PLL
+overclock. Register writes use the reference's CP0 Status.IE masking and
+dispatch suspension; neither file I/O nor kernel calls occur inside that
+critical section. For the observed 222 MHz / ratio-3 state,
 normalization uses ARK-5's adjacent ratio sequence (3, 4, 5), checking each
 completed step instead of jumping to 5. Unknown initial ratios fail closed.
 See [startup investigation and regression checks](../docs/OC_STARTUP_REGRESSION.md).
@@ -74,9 +77,13 @@ Do not add both lines for the same plugin.
 2. First test `enabled=1`, `target_mhz=333`, `enforce=0`, restart the homebrew,
    and check status, playback, Stop and exit. Only then try a frequency known
    to be stable on this particular PSP. Accepted requested range: 66–471 MHz.
-   Targets below 333 MHz use Sony's clock API only after the reference PLL
-   and domain initialization (PLL 333, bus half CPU). 333 MHz itself keeps
-   the established reference initialization; higher targets use its PLL ramp.
+   Targets below 333 MHz keep the PLL at 333 MHz and use direct CPU/bus
+   dividers (bus approximately half CPU). These low-frequency targets are
+   our adaptation, not a hardware-validated feature of the reference tester.
+   The 9-bit divider quantizes requests by less than 1 MHz; the overlay shows
+   register-derived estimates rather than pretending the request is exact.
+   333 MHz itself keeps the established reference full-domain initialization;
+   higher targets use its PLL ramp, without calling a Sony setter beforehand.
    Before switching profiles, a custom PLL is ramped down and restoration
    errors stop the transition. Sony getters alone cannot confirm a restored
    clock; register estimates are checked too. Low frequencies can starve
@@ -140,8 +147,8 @@ not calendar dates; they can restart after reboot. File order and session-start
 records separate runs. Logged events include:
 
 - Session start and startup result (including bypass/initialization failure).
-- With reporting enabled, startup wait completion, clock request start, before
-  and after the Sony baseline call, completed domain initialization and bounded
+- With reporting enabled, startup wait completion, clock request start,
+  `clock_raw_baseline_begin`, completed domain initialization and bounded
   ramp checkpoints. These distinguish early driver/startup failures from an
   actual clock transition; no file writes happen with interrupts disabled.
 - Detected target mismatch **before** correction, reapplication result and

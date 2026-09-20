@@ -69,3 +69,37 @@ then the existing 54 numerator steps to requested 433 MHz (432.9 MHz estimate).
 Separate tests cover unchanged ratio 5, ratio 4, failed completion at each step,
 unexpected readback and unsupported initial ratios. Builds remain `-O2 -G0`.
 The correction still needs PSP confirmation; host mocks do not model PLL physics.
+
+## Follow-up: direct-register path and reference interrupt protection
+
+The next hardware test still powers off. Session `2933780` ends at
+`clock_sony_baseline_done` (6289 ms), again with ratio 3, multiplier
+`01240901`, full CPU/bus domains and Sony reporting 222 MHz. Adjacent ratio
+steps alone did **not** fix the failure. The failing instruction is still
+unknown; neither the later 433 MHz ramp nor the 133 MHz app profile is reached.
+
+The implementation now removes **all Sony clock setters**, including the
+restore and underclock branches. Initial normalization accepts only known
+stock/custom multiplier recipes and ratio indices 3–5. Below 333 MHz the PLL
+remains at 333 MHz; CPU/bus numerators are stepped toward bounded 9-bit
+divider targets. Above 333 MHz the established numerator/20 PLL ramp remains.
+333 MHz preserves the reference full-domain recipe. No configuration setting,
+profile, driver API, overlay or reporting feature is removed.
+
+The OC tester's
+[CP0 Status interrupt guard](https://github.com/mcidclan/psp-beyond-444mhz/blob/ce746451b724599332ba1b315952f003a20ada75/experimental/tester/main.h)
+is now used for register writes, alongside dispatch suspension. Previously
+the plugin used `sceKernelCpuSuspendIntr` instead. The generated Allegrex code
+was inspected for save/mask/restore of CP0 register 12, including the reference
+sync/nop sequence. This is a concrete reference-alignment change, **not proof
+that the interrupt mechanism caused the shutdown**. All SDK calls, waits that
+yield threads and report writes stay outside the raw critical section.
+
+Host tests exercise the actual `clock_transition.h`, with mocked hardware:
+every 66–333 MHz divider target, 433→133→433, the recorded ratio-3 startup,
+stop/suspend during the ramp, changed-owner rejection, invalid input and ready
+timeout. Ownership is rechecked after report I/O as well as ramp yields.
+Explicit enforcement may adopt a recognized external clock again; restoration
+never silently overwrites another owner's changed tuple. The build is still
+`-O2 -G0`. Hardware stability and underclock operation remain unverified until
+the user tests this build. No player EBOOT or personal INI was changed.
