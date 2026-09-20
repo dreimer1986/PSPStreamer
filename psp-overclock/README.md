@@ -265,6 +265,44 @@ reload or automatic overclock activation has been added.
 
 ### Optional diagnostic overlay (experimental)
 
+### Clock diagnostic build (`build=oc-diag-1`)
+
+With `report=1`, every existing event now also includes a record sequence,
+event-string address/length/FNV-1a hash and numeric clock diagnostics. Empty
+event strings are reported as `EMPTY_EVENT`. The clock algorithm, Sony call,
+limits, waits and enforcement policy are unchanged. Instrumentation adds some
+CPU work and longer reports, so timing-sensitive symptoms can still change.
+There are no additional file writes inside clock locks or per multiplier step.
+
+`diag_failed=1` selects the **first** failure of the current operation.
+`diag_phase`, `diag_line`, `diag_result` and `diag_argument` identify the stage,
+source line in this build, exact signed return code and current ramp numerator.
+`diag_actual` is captured at that decision, before releasing an active clock
+guard. `diag_owned` is the register tuple the plugin last recorded as its own;
+`diag_changed` indicates whether that ownership is active. Both tuples use
+`PLL control / multiplier / CPU domain / bus domain` ordering.
+`diag_checkpoint_expected` contains the last pre-I/O checkpoint tuple.
+`diag_last_*` shows the most recent stage even if the first failure was retained.
+The guard markers should remain `4F434442/4244434F`. Snapshot text uses static
+worker-only storage rather than increasing the worker's stack requirement.
+
+Phase IDs: 1 startup, 2 Sony input guard, 3 Sony call, 4 Sony return;
+10 apply, 11 PLL-ready wait, 12 input validation, 13 post-report checkpoint
+(argument identifies its parent phase), 14 ratio normalization, 15 multiplier
+normalization, 16 domain normalization, 17 low-clock profile, 18 OC ramp step,
+19 ramp yield, 20 final comparison; 30 restore, 31 restore multiplier,
+32 restore domains. Common returns: -1 ready timeout, -2 cancellation/suspend,
+-3 changed/unexpected registers or ownership mismatch, -4 unsupported input;
+Sony API errors retain their original value. Stage and raw tuples distinguish
+these cases without assuming that every -3 was caused by another app.
+
+Only the affected clock/diagnostic mock-register harness and initialization
+ordering check were run for this build. They do not establish hardware safety.
+The next comparison is Soul Calibur after a full restart versus after another
+game; preserve the logs after a failure rather than repeating hard shutdowns.
+
+### Overlay controls
+
 Add `overlay=1` to `StreamerOC.ini` and restart the application. Hold
 **L+R+Triangle** briefly to show CPU/bus register estimates, requested target,
 Sony's clock report, effective enabled state, enforcement setting and callback

@@ -52,6 +52,7 @@ static volatile int exit_requested,worker_exit_done,exit_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
+#include "clock_diagnostic.h"
 #include "overlay_vblank.h"
 #include "overlay_hook.h"
 
@@ -210,10 +211,20 @@ static void snapshot(const char *event) {
         ctl=CTL;mul=MUL;cpu=CPU;bus=BUS;
         sceKernelCpuResumeIntr(intr);
     }
-    char path[256],text[2048];
+    /* Worker only. Keep the expanded report off the 16 KiB worker stack. */
+    static char text[4096];
+    static unsigned int sequence;
+    char path[256],event_copy[64];
+    unsigned int event_hash=2166136261U;int event_length=0;
+    if(event)while(event_length<63 && event[event_length]) {
+        unsigned char c=(unsigned char)event[event_length];
+        event_copy[event_length++]=c;event_hash=(event_hash^c)*16777619U;
+    }
+    event_copy[event_length]=0;
     unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
         "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
+        "build=oc-diag-1\nrecord_sequence=%u\nevent_address=%08X\nevent_length=%d\nevent_hash=%08X\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\nenforce_unlimited=%d\ntarget_mhz=%d\n"
         "app_control=%d\napp_control_active=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
@@ -228,8 +239,9 @@ static void snapshot(const char *event) {
         "overlay_hook_draws=%u\noverlay_hook_fallback_draws=%u\noverlay_hook_rejected=%u\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
-        event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
+        event_length?event_copy:"EMPTY_EVENT",(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
         (unsigned int)((now-session_tick)/1000ULL),application,
+        ++sequence,(unsigned int)(uintptr_t)event,event_length,event_hash,
         status,sceKernelGetModel(),enabled,enforce,enforce_unlimited,target,
         app_control,control_active,configured_target,control_registered,control_result,
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
@@ -243,6 +255,8 @@ static void snapshot(const char *event) {
         oc_hook_installed,oc_hook_calls,oc_hook_draws,oc_hook_fallback_draws,oc_hook_rejected);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
+    int diagnostic_bytes=oc_diag_format(text+n,sizeof(text)-n);
+    if(diagnostic_bytes>0)n+=diagnostic_bytes<(int)sizeof(text)-n?diagnostic_bytes:(int)sizeof(text)-n-1;
     snprintf(path,sizeof(path),"%sStreamerOC-events.log",directory);
     journal_result=oc_report_write(path,text,n,1);
     snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
@@ -331,6 +345,7 @@ static int thread_main(SceSize args,void *argp) {
             /* Keep pending set while applying so clients can wait for ack. */
             int request=control_pending;
             target=request?request:configured_target;
+            oc_diag_begin(OC_D_APPLY,__LINE__);
             snapshot("app_clock_begin");
             int r=matches()?0:apply();
             control_result=r;
@@ -377,6 +392,7 @@ static int thread_main(SceSize args,void *argp) {
         /* Explicit enforcement authorizes adopting a changed clock again.
          * Do not pretend that foreign state is ours to restore first. */
         changed=0;
+        oc_diag_begin(OC_D_APPLY,__LINE__);
         int r=apply();status=r?"reapply failed: disabled":"target reapplied";if(r)enabled=0;
         snapshot("reapply_result");
     }
@@ -384,6 +400,7 @@ static int thread_main(SceSize args,void *argp) {
     control_ready=0;
     overlay_until=0;overlay_update(0);
     oc_hook_remove();
+    if(changed)oc_diag_begin(OC_D_RESTORE,__LINE__);
     if(changed && !suspended)exit_result=restore();
     else if(changed)exit_result=-2;
     enabled=0;status=exit_result?"worker stopped: clock restore refused":"worker stopped: baseline restored or unchanged";

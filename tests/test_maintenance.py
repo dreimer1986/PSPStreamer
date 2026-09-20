@@ -484,6 +484,23 @@ int main(void) {
     assert(startup_apply()==-4 && sony_calls==before);
     MUL=0x01240901;suspended=1;assert(startup_apply()==-2 && sony_calls==before);
     suspended=0;running=0;assert(startup_apply()==-2 && sony_calls==before);
+    /* Capture the first rejected ramp step before releasing the guard.
+     * This is the interval implicated by Soul Calibur's 333-MHz session. */
+    running=1;suspended=0;changed=0;target=418;ratio_count=0;
+    CTL=5;MUL=0x0124B414;CPU=BUS=0x01ff01ff;
+    mutate_at="clock_domains_ready";oc_diag_begin(OC_D_APPLY,__LINE__);
+    assert(apply()==-3 && !locked && oc_diagnostic.failed);
+    assert(oc_diagnostic.failure.phase==OC_D_RAMP && oc_diagnostic.failure.argument==181);
+    assert(oc_diagnostic.failure.cpu==0x00800100 && oc_diagnostic.failure.owned_cpu==0x01ff01ff);
+    assert(oc_diagnostic.failure.result==-3 && oc_diagnostic.failure.active);
+    int failure_line=oc_diagnostic.failure.line;
+    assert(restore()==-3 && oc_diagnostic.failure.line==failure_line);
+    char diagnosis[2048];int count=oc_diag_format(diagnosis,sizeof(diagnosis));
+    assert(count>0 && count<(int)sizeof(diagnosis));
+    assert(strstr(diagnosis,"diag_guard=4F434442/4244434F"));
+    assert(strstr(diagnosis,"diag_failed=1") && strstr(diagnosis,"diag_result=-3"));
+    mutate_at=0;changed=0;sony_mode=0;ratio_count=0;
+    assert(startup_apply()==0 && !oc_diagnostic.failed && matches());
     return 0;
 }
 '''
