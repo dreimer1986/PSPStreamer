@@ -8,6 +8,9 @@ enum { MD_WAVE_MAX_VERTICES=480, MD_SPECTRUM_SAMPLES=1024 };
 /* 0: disabled, 1: right only, 2: coherent stereo, 3: 1024 left FFT samples,
  * 4: stereo PCM plus left FFT source, 5: PCM plus both FFT channels. */
 extern volatile int md_wave_capture;
+/* UI thread only; NULL outside debug profiling. Phases: begin, prepared,
+ * transformed, magnitudes ready. No audio-thread or playback-time I/O. */
+extern void (*md_fft_profile_hook)(int phase,int cold);
 /* One decoder producer, one lower-priority UI consumer; neither waits. */
 void visualization_pcm_publish(const short *stereo, int frames);
 int md_wave_snapshot(short right[MD_WAVE_SAMPLES]);

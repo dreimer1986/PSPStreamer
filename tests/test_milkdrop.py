@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_fft_profiling_preserves_spectrum(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'fft-profile'
+            subprocess.run(['cc','-std=c11','-O3','-Wall','-Wextra','-Werror',
+                '-fsanitize=undefined','-I',str(ROOT/'psp-client'),
+                str(ROOT/'tests/fft_profile_harness.c'),
+                str(ROOT/'psp-client/milkdrop_wave_extra.c'),'-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_owned_formula_storage_failure_and_replacement(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);binary=root/'storage';other=root/'other.milk'

@@ -356,6 +356,13 @@ the existing scheduler deliberately leaves time for audio and controls.
 Counters stay in RAM during playback and are appended only at music teardown.
 With `debug=0`, profiling takes no timestamps and produces no report.
 
+Direct FFT counters also cover built-in spectrum wave mode 8, whose work is
+otherwise inside `geometry_submit`. `fft_prepare`, `fft_transform` and
+`fft_magnitude` report time per warm FFT call; `cold_calls`/`cold_total_us`
+separate initial window setup. These are nested costs, not additional frame
+time; completed FFTs count even when a later frame stage fails. See the
+[VFPU assessment and measurement instructions](docs/VFPU_REVIEW.md).
+
 ### Optional playback-stall diagnostics (`debug=1`)
 
 An FLV reader failure (including `FFFFFAD8` / `-1320`) also creates

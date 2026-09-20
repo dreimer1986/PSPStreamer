@@ -8,6 +8,7 @@
 /* UI-thread-only scratch, never shared with the PCM producer. */
 static float real_part[1024],imag_part[1024],window[1024];
 static int fft_ready;
+void (*md_fft_profile_hook)(int phase,int cold);
 /* MilkDrop SmoothWave coefficients. Preserve endpoints and input colors;
  * clamp interpolation overshoot to the valid feedback rectangle. */
 int md_wave_smooth(MdVertex *out,const MdVertex *in,int count) {
@@ -22,6 +23,9 @@ int md_wave_smooth(MdVertex *out,const MdVertex *in,int count) {
     out[2*count-2]=in[count-1]; return 2*count-1;
 }
 void md_wave_spectrum(const short *samples,float bins[512]) {
+    void (*profile)(int,int)=md_fft_profile_hook;
+    int cold=!fft_ready;
+    if(profile)profile(0,cold);
     if(!fft_ready) {
         for(int i=0;i<1024;i++) window[i]=.5f-.5f*cosf(6.283185307f*i/1023);
         fft_ready=1;
@@ -33,6 +37,7 @@ void md_wave_spectrum(const short *samples,float bins[512]) {
         j^=bit;
         if(i<j) { float t=real_part[i]; real_part[i]=real_part[j]; real_part[j]=t; }
     }
+    if(profile)profile(1,cold);
     for(int length=2;length<=1024;length*=2) {
         float angle=-6.283185307f/length,wr=cosf(angle),wi=sinf(angle);
         for(int base=0;base<1024;base+=length) {
@@ -46,7 +51,9 @@ void md_wave_spectrum(const short *samples,float bins[512]) {
             }
         }
     }
+    if(profile)profile(2,cold);
     for(int i=0;i<512;i++) bins[i]=sqrtf(real_part[i]*real_part[i]+imag_part[i]*imag_part[i])/256;
+    if(profile)profile(3,cold);
 }
 static void endpoints(float x,float angle,float ex[2],float ey[2]) {
     float dx=cosf(angle),dy=sinf(angle);
