@@ -14,6 +14,7 @@ static atomic_int requests, release_reply, entered, finished, ignore_cancel;
 static int fail_create, fail_start, deleted, joined, fail_http;
 static unsigned long long fake_now;
 static void pause_ms(void) { struct timespec t={0,1000000}; nanosleep(&t,NULL); }
+static void sceKernelDelayThread(int us) {(void)us;pause_ms();}
 static unsigned long long sceKernelGetSystemTimeWide(void) { return fake_now; }
 static void *run(void *unused) { (void)unused; entry(0,NULL); finished=1; return NULL; }
 static int sceKernelCreateThread(const char *name,int (*fn)(SceSize,void *),int priority,
@@ -42,9 +43,11 @@ static int remote_http_get(const char *path,char *reply,int capacity,volatile in
 #include "browser_remote.h"
 #define ID_SIZE 512
 static atomic_int library_entered, library_release;
+static int library_failures,library_calls,library_error=-1005;
 static int library_fetch(const char *path,volatile int *running) {
-    assert(!strcmp(path,"/api/library?path=:plex:s4"));library_entered=1;
+    assert(!strcmp(path,"/api/library?path=:plex:s4"));library_entered=1;library_calls++;
     while(*running && !library_release)pause_ms();
+    if(library_failures){library_failures--;return library_error;}
     return *running?123:-1005;
 }
 #include "library_request.h"
@@ -98,5 +101,14 @@ int main(void) {
     for(int i=0;i<1000 && !completed;i++){completed=library_request_poll();pause_ms();}
     assert(completed==1 && library_result==123 && library_thread==-1);
     assert(library_request_poll()==-1);
+    for(int failures=1;failures<=3;failures++) {
+        library_failures=failures;library_calls=0;library_pending=1;library_cancelled=0;completed=0;
+        for(int i=0;i<1000 && !completed;i++){completed=library_request_poll();pause_ms();}
+        assert(completed==1&&library_calls==(failures<3?failures+1:3));
+        assert(library_result==(failures<3?123:-1005));
+    }
+    library_failures=3;library_error=-1003;library_calls=0;library_pending=1;completed=0;
+    for(int i=0;i<1000 && !completed;i++){completed=library_request_poll();pause_ms();}
+    assert(completed==1&&library_calls==1&&library_result==-1003);
     return 0;
 }

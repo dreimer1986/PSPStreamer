@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteHttpTests(unittest.TestCase):
+    def test_directory_budget_includes_dns_and_classifies_permanent_errors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'library-fetch'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-I', str(ROOT / 'psp-client'), str(ROOT / 'tests/library_fetch_harness.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_media_preparation_stays_responsive_and_can_cancel_then_retry(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / 'media-request'
@@ -49,7 +57,7 @@ class RemoteHttpTests(unittest.TestCase):
             subprocess.run(["cc", "-D_POSIX_C_SOURCE=200809L", "-std=c11", "-Wall", "-Wextra",
                             "-Werror", "-I", str(ROOT / "psp-client"),
                             str(ROOT / "tests/remote_http_harness.c"), "-o", str(binary)], check=True)
-            for mode in ("ok", "lowercase", "short", "oversize", "timeout", "cancel"):
+            for mode in ("ok", "lowercase", "short", "oversize", "timeout", "cancel", "unauthorized"):
                 with self.subTest(mode=mode), socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     listener.listen()
@@ -67,6 +75,8 @@ class RemoteHttpTests(unittest.TestCase):
                             packet += b"9000\r\n\r\n{}" if mode == "oversize" else b"2\r\n\r\n{}"
                             if mode == "lowercase":
                                 packet=packet.replace(b"Content-Length:",b"content-length:")
+                            if mode == "unauthorized":
+                                packet=packet.replace(b"200 OK",b"401 Unauthorized")
                             if mode == "short":
                                 packet = packet[:-1]
                             try:

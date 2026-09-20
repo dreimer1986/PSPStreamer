@@ -2,13 +2,23 @@
  * Cancellation never kills a thread that might own TLS/allocator locks. */
 static int library_thread=-1, library_pending, library_result, library_cancelled;
 static volatile int library_running, library_done;
+#define LIBRARY_MAX_ATTEMPTS 3
+static volatile int library_attempt;
 static unsigned long long library_started;
 static char library_request_path[ID_SIZE*3+32];
 static char library_loaded_path[ID_SIZE];
 
 static int library_worker(SceSize args,void *argp) {
     (void)args;(void)argp;
-    library_result=library_fetch(library_request_path,&library_running);
+    for(library_attempt=1;library_attempt<=LIBRARY_MAX_ATTEMPTS;library_attempt++) {
+        if(!library_running)break;
+        library_result=library_fetch(library_request_path,&library_running);
+        if(!library_running || (library_result!=-1004 && library_result!=-1005) ||
+           library_attempt==LIBRARY_MAX_ATTEMPTS)break;
+        /* The previous fetch has closed its socket/TLS state. Only then
+         * retry; no thread killing and no overlapping server requests. */
+        for(int wait=0;wait<10 && library_running;wait++)sceKernelDelayThread(100000);
+    }
     __sync_synchronize();library_done=1;
     return 0;
 }

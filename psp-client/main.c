@@ -4,6 +4,7 @@
 #include <pspnet.h>
 #include <pspnet_apctl.h>
 #include <pspnet_inet.h>
+#include <pspnet_resolver.h>
 #include <pspdisplay.h>
 #include <pspaudio.h>
 #include <pspaudiocodec.h>
@@ -2709,11 +2710,7 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     return 1;
 }
 
-static int library_fetch(const char *path,volatile int *running) {
-    if(!have_cached_server_address && resolve_server_address(&cached_server_address)<0)return -1004;
-    if(!*running)return -1005;
-    return remote_http_get_budget(path,response,sizeof(response),running,30000);
-}
+#include "library_fetch.h"
 #include "library_request.h"
 
 static void refresh_library(void) {
@@ -2726,7 +2723,7 @@ static void refresh_library(void) {
     strcpy(status, tr(TXT_LOADING_LIBRARY));
     url_encode(current_path, encoded_path, sizeof(encoded_path));
     snprintf(library_request_path, sizeof(library_request_path), "/api/library?path=%s", encoded_path);
-    library_pending=1;library_cancelled=0;library_result=-1005;
+    library_pending=1;library_cancelled=0;library_result=-1005;library_attempt=0;
     library_started=sceKernelGetSystemTimeWide();
 }
 
@@ -3036,7 +3033,10 @@ int main(void) {
                 if(selected>=item_count)selected=item_count?item_count-1:0;
                 show(selected);
             } else if(now>=next_tv_redraw_tick) {
-                snprintf(status,sizeof(status),"%s %us [O]",tr(library_cancelled?TXT_NETWORK_STOPPING:TXT_LOADING_LIBRARY),
+                if(library_cancelled || library_thread<0)
+                    snprintf(status,sizeof(status),"%s %us [O]",tr(TXT_NETWORK_STOPPING),
+                        (unsigned int)((now-library_started)/1000000ULL));
+                else snprintf(status,sizeof(status),tr(TXT_LIBRARY_ATTEMPT),library_attempt,LIBRARY_MAX_ATTEMPTS,
                     (unsigned int)((now-library_started)/1000000ULL));
                 show(selected);next_tv_redraw_tick=now+150000ULL;
             }

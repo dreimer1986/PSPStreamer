@@ -3,12 +3,14 @@
 #include <strings.h>
 static volatile unsigned int remote_http_attempts, remote_http_completed;
 static volatile int remote_http_last_result;
+static volatile int remote_http_last_status;
 static const char * volatile remote_http_stage="idle";
 static int remote_http_get_budget(const char *path,char *buffer,int capacity,volatile int *running,int budget_ms) {
     struct sockaddr_in server;
     char request[2048];
     int fd=-1,result=-1005,nonblock=1,received=0,sent=0,header=-1,length=-1,tls_ready=0;
     unsigned long long deadline=sceKernelGetSystemTimeWide()+(budget_ms?budget_ms*1000ULL:(server_https?15000000ULL:2000000ULL));
+    remote_http_last_status=0;
     if(capacity<2 || !have_cached_server_address) return -1004;
     remote_http_attempts++;
     remote_http_stage="connect";
@@ -60,6 +62,7 @@ static int remote_http_get_budget(const char *path,char *buffer,int capacity,vol
         if(header<0) {
             char *body=strstr(buffer,"\r\n\r\n");
             if(body) {
+                if(!strncmp(buffer,"HTTP/1.",7))remote_http_last_status=atoi(buffer+9);
                 char *cl=strstr(buffer,"\r\n");
                 while(cl && cl<body && strncasecmp(cl+2,"Content-Length:",15))cl=strstr(cl+2,"\r\n");
                 if(strncmp(buffer,"HTTP/1.",7) || strncmp(buffer+9,"200 ",4) || !cl || cl>=body) goto done;

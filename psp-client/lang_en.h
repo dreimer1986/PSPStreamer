@@ -160,6 +160,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_CONNECTING_WIFI] = "Wi-Fi: connecting (O: cancel)",
     [TXT_WIFI_NOT_READY] = "Wi-Fi offline - SQUARE: retry",
     [TXT_LOADING_LIBRARY] = "Loading library ...",
+    [TXT_LIBRARY_ATTEMPT] = "Library: attempt %d/%d, %us [O]",
     [TXT_LIBRARY_CANCELLED] = "Loading cancelled. Square: retry",
     [TXT_NETWORK_STOPPING] = "Stopping network request",
     [TXT_SERVER_ERROR] = "Server error: %08X",

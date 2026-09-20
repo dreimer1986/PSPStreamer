@@ -167,6 +167,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_CONNECTING_WIFI] = "WLAN verbindet (O: Abbruch)",
     [TXT_WIFI_NOT_READY] = "WLAN aus - Quadrat: verbinden",
     [TXT_LOADING_LIBRARY] = "Bibliothek wird geladen ...",
+    [TXT_LIBRARY_ATTEMPT] = "Bibliothek: Versuch %d/%d, %us [O]",
     [TXT_LIBRARY_CANCELLED] = "Laden abgebrochen. Quadrat: neu laden",
     [TXT_NETWORK_STOPPING] = "Netzwerkanfrage wird beendet",
     [TXT_SERVER_ERROR] = "Serverfehler: %08X",

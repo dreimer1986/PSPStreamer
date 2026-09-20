@@ -880,6 +880,14 @@ continue to use HTTP Basic with fixed username **psp** and the same password.
 
 ### Web navigation (server/HA app 0.1.38)
 
+The PSP retries transient directory-loading failures up to three attempts,
+with a 15-second budget per attempt including bounded DNS lookup and a one-second
+pause between attempts. The UI shows the attempt and total elapsed time;
+Circle cancels and failed loads retain the previous folder listing. Permanent
+HTTP client errors (such as 401/404) are not retried. This directory-only policy
+does not shorten metadata, subtitle-preparation or playback timeouts. Firmware
+cleanup must finish before another request starts; threads are never forcibly killed.
+
 **Library** groups mounted media roots under **Files**, alongside **Plex** and
 **Internet Radio**. Sources can be disabled in **Settings**. The Sources button
 always returns to that overview; returning from a filesystem folder no longer
