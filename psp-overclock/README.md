@@ -97,9 +97,16 @@ Do not add both lines for the same plugin.
    an app changes the clocks. This is eventual correction, not a syscall hook
    or an absolute lock. More than three reapplications within one minute
    disables enforcement to avoid an endless fight with the app/another plugin.
+   After an application sends a valid clock SET through the plugin API,
+   ordinary enforcement is suppressed for the remainder of that app session.
+   Explicit application requests still work; clock observation and reporting
+   remain active. Merely querying the clock or an invalid request does not
+   activate this exemption.
    Optional `enforce_unlimited=1` removes this conflict-count limit **only when
    `enforce=1`**. It keeps trying at the bounded 500 ms checks rather than
-   giving up after three corrections. The default is off. Suspend, leaving
+   giving up after three corrections. It also overrides the cooperating-app
+   exemption and enforces the latest requested target (not a forced return to
+   the INI target). The default is off. Suspend, leaving
    GAME, failed clock writes, unsupported models and startup bypass still stop
    it. This opt-in can fight another clock plugin and grow the event log;
    disable competing overrides rather than using it to hide hardware errors.
@@ -126,7 +133,9 @@ An explicit `app_control=0` still disables requests. Defaults apply only to
 missing keys; existing explicit values are never silently overwritten.
 Requests above 333 MHz cannot exceed your configured `target_mhz`, so an app
 cannot silently raise your tested overclock ceiling. A zero request returns
-to the INI target. Requests never rewrite the INI.
+to the INI target without ending the session's enforcement exemption. Requests
+never rewrite the INI. Reports include `app_control_active=1` after the first
+accepted SET. The latch resets when the application/plugin starts again.
 
 The optional `streameroc:` device exposes the buffer-free `sceIoDevctl`
 commands in `control_api.h`: STATUS (ready/pending/error), CPU_KHZ (register

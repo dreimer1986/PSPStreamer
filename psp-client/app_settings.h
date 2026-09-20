@@ -73,7 +73,8 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(movement && ((pressed&movement)||now>=repeat)) {
             int delta=movement&PSP_CTRL_UP?-12:movement&PSP_CTRL_DOWN?12:movement&PSP_CTRL_LEFT?-1:1;
-            key=(key+delta+102)%102;repeat=now+150000;dirty=1;
+            key=(key+delta+102)%102;
+            repeat=now+((pressed&movement)?400000ULL:150000ULL);dirty=1;
         }
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
@@ -179,7 +180,9 @@ static int app_settings(void) {
                 if(value>maximum[selected])value=minimum[selected];
                 draft.value[selected]=value;
             }
-            repeat=now+150000;dirty=1;
+            /* A normal tap must not also trigger a repeat at 150 ms.
+             * Keep the initial delay distinct from held-key repeat speed. */
+            repeat=now+((pressed&movement)?400000ULL:150000ULL);dirty=1;
         }
         old=pad.Buttons;sceKernelDelayThread(20000);
     }

@@ -5,7 +5,7 @@ enabled=0
 target_mhz=333
 # Reapply if an app changes clocks; stops after 3 conflicts per minute.
 enforce=0
-# With enforce=1, bypass the 3-per-minute conflict limit (opt-in).
+# With enforce=1, bypass the 3-per-minute limit AND the app-control exemption.
 # Suspend and hardware-error safety shutdowns still apply.
 enforce_unlimited=0
 # Permit explicit session-only requests from cooperating homebrew (optional).

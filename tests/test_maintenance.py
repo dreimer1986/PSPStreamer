@@ -73,13 +73,23 @@ int main(void){
         import re
         code = (ROOT / 'psp-overclock/main.c').read_text()
         expression = re.search(r'if\(([^\n]+)\)\{enabled=0;status="clock conflict:', code).group(1)
+        app_guard = re.search(r'if\((control_active[^\n]+)\)continue;', code).group(1)
         source = '''#include <assert.h>
 static int limit(int enforce_unlimited, unsigned *count) {
     unsigned conflicts=*count;
     int stop=(''' + expression + ''');
     *count=conflicts;return stop;
 }
+static int enforce_allowed(int control_active,int enforce_unlimited,int enforce) {
+    if (''' + app_guard + ''') return 0;
+    return enforce;
+}
 int main(void){
+    assert(enforce_allowed(0,0,1));
+    assert(!enforce_allowed(1,0,1));
+    assert(enforce_allowed(1,1,1));
+    assert(!enforce_allowed(1,1,0));
+    assert(!enforce_allowed(0,1,0));
     unsigned count=0;
     for(int i=0;i<3;i++)assert(!limit(0,&count));
     assert(limit(0,&count));
@@ -93,6 +103,7 @@ int main(void){
                             '-o', str(binary)], input=source, text=True, check=True)
             subprocess.run([str(binary)], check=True)
         self.assertLess(code.index('if(!enforce){'), code.index('if(!enforce_unlimited'))
+        self.assertLess(code.index('if(control_active && !enforce_unlimited)'), code.index('snapshot("clock_mismatch")'))
         self.assertIn('if(!running || suspended)return -2;',
                       (ROOT / 'psp-overclock/clock_transition.h').read_text())
         self.assertIn('if(r)enabled=0;', code)
@@ -120,7 +131,7 @@ int main(void){
 #include "control_api.h"
 typedef int PspIoDrvFileArg;
 static int target=333,configured_target=443,control_ready,app_control,enabled,suspended,running=1;
-static int control_pending=-1,control_result;
+static int control_pending=-1,control_result,control_active;
 static int exit_requested,worker_exit_done,exit_result;
 static unsigned CTL,MUL,CPU;
 static int sceKernelGetModel(void){return 2;}
@@ -136,15 +147,15 @@ int main(void){
     assert(call(OC_CMD_TARGET)==333);
     assert(call(OC_CMD_SET|222)<0 && control_pending==-1);
     control_ready=app_control=enabled=1;
-    assert(call(OC_CMD_STATUS)==0);
+    assert(call(OC_CMD_STATUS)==0&&!control_active);
     assert(call(OC_CMD_SET|65)<0);
     assert(call(OC_CMD_SET|472)<0);
-    assert(call(OC_CMD_SET|444)<0);
-    assert(call(OC_CMD_SET|66)==0 && control_pending==66);
+    assert(call(OC_CMD_SET|444)<0&&!control_active);
+    assert(call(OC_CMD_SET|66)==0 && control_pending==66&&control_active);
     assert(call(OC_CMD_STATUS)==1);
     control_pending=-1;
     assert(call(OC_CMD_SET|443)==0 && control_pending==443);
-    assert(call(OC_CMD_SET)==0 && control_pending==0);
+    assert(call(OC_CMD_SET)==0 && control_pending==0&&control_active);
     suspended=1;assert(call(OC_CMD_SET|222)<0);
     suspended=0;enabled=0;assert(call(OC_CMD_SET|222)<0);
     enabled=1;app_control=0;assert(call(OC_CMD_SET|222)<0);

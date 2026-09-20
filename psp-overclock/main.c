@@ -46,6 +46,7 @@ static volatile unsigned long long suspend_tick;
 static int overlay_enabled=1;
 static int app_control=1, configured_target, control_registered;
 static volatile int control_ready, control_pending=-1, control_result;
+static volatile int control_active;
 static volatile int exit_requested,worker_exit_done,exit_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
@@ -80,7 +81,7 @@ static int control_devctl(PspIoDrvFileArg *arg,const char *name,unsigned int cmd
     /* App permission does not authorize a higher, untested overclock. */
     if(requested>333 && requested>configured_target)return -1;
     int intr=sceKernelCpuSuspendIntr();
-    control_pending=requested;control_result=0;
+    control_pending=requested;control_result=0;control_active=1;
     sceKernelCpuResumeIntr(intr);
     return 0;
 }
@@ -203,7 +204,7 @@ static void snapshot(const char *event) {
     int n=snprintf(text,sizeof(text),
         "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\nenforce_unlimited=%d\ntarget_mhz=%d\n"
-        "app_control=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
+        "app_control=%d\napp_control_active=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
         "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
         "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
@@ -216,7 +217,7 @@ static void snapshot(const char *event) {
         event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
         (unsigned int)((now-session_tick)/1000ULL),application,
         status,sceKernelGetModel(),enabled,enforce,enforce_unlimited,target,
-        app_control,configured_target,control_registered,control_result,
+        app_control,control_active,configured_target,control_registered,control_result,
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
@@ -343,6 +344,10 @@ static int thread_main(SceSize args,void *argp) {
             last_ctl=ctl;last_mul=mul;last_cpu=cpu;last_bus=bus;last_sony=sony;
         }
         if(!enabled || matches())continue;
+        /* Once a valid SET identifies a cooperating app, leave unsolicited
+         * changes alone without disabling its API. Explicit SET still works.
+         * A zero SET returns to the INI clock but does not end this session. */
+        if(control_active && !enforce_unlimited)continue;
         snapshot("clock_mismatch");
         if(!enforce){enabled=0;status="application changed clocks: not reapplied";snapshot("enforcement_disabled");continue;}
         unsigned long long now=sceKernelGetSystemTimeWide();

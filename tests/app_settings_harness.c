@@ -75,5 +75,34 @@ int main(void) {
     sequence(backspace,3);assert(settings_text(text,sizeof(text),1,"text")==1&&!strcmp(text,"a"));
     const unsigned int discard[]={0,PSP_CTRL_RTRIGGER,PSP_CTRL_CIRCLE};
     sequence(discard,3);assert(settings_text(text,sizeof(text),0,"text")==0&&!strcmp(text,"a"));
+    /* 240-ms taps used to repeat after 150 ms. Cover both axes and directions,
+     * then verify that a genuine hold still repeats after the initial delay. */
+    save_failed=0;
+    for(int tv=0;tv<2;tv++) for(int dir=0;dir<2;dir++) {
+        unsigned int tap[64];int n=0;
+        tv_ui_active=tv;server_port=8091;
+        tap[n++]=0;
+        for(int i=0;i<12;i++)tap[n++]=PSP_CTRL_DOWN; /* output row */
+        tap[n++]=0;tap[n++]=PSP_CTRL_DOWN; /* host */
+        tap[n++]=0;tap[n++]=PSP_CTRL_DOWN; /* port */
+        tap[n++]=0;tap[n++]=PSP_CTRL_DOWN; /* password */
+        tap[n++]=0;
+        for(int i=0;i<12;i++)tap[n++]=PSP_CTRL_UP; /* port */
+        tap[n++]=0;
+        for(int i=0;i<12;i++)tap[n++]=dir?PSP_CTRL_RIGHT:PSP_CTRL_LEFT;
+        tap[n++]=PSP_CTRL_START;
+        sequence(tap,n);assert(app_settings()==1&&server_port==(dir?8092:8090));
+    }
+    unsigned int held[64];int n=0;server_port=8091;
+    held[n++]=0;held[n++]=PSP_CTRL_DOWN;held[n++]=0;
+    held[n++]=PSP_CTRL_DOWN;held[n++]=0;held[n++]=PSP_CTRL_DOWN;held[n++]=0;
+    for(int i=0;i<30;i++)held[n++]=PSP_CTRL_RIGHT; /* 0, 400 and 560 ms */
+    held[n++]=PSP_CTRL_START;
+    sequence(held,n);assert(app_settings()==1&&server_port==8094);
+    n=0;held[n++]=0;
+    for(int i=0;i<12;i++)held[n++]=PSP_CTRL_RIGHT;
+    held[n++]=PSP_CTRL_CROSS;held[n++]=PSP_CTRL_START;
+    text[0]=0;sequence(held,n);
+    assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
     return 0;
 }
