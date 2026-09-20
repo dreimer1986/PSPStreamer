@@ -36,6 +36,8 @@ static unsigned long long sceKernelGetSystemTimeWide(void) {return tick;}
 static void sceKernelDelayThread(int us) {tick+=us;}
 #define HELP_BROWSE 0
 static int help_visits;
+static int output_failed,output_changes;
+static int tv_menu_select(int tv) {output_changes++;if(output_failed)return -1;tv_ui_active=tv;return 0;}
 static void help_open(int topic) {assert(topic==HELP_BROWSE);help_visits++;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
@@ -48,12 +50,16 @@ int main(void) {
     settings_capture(&state);assert(strlen(state.preset)==250);settings_apply(&state);
     const unsigned int help[]={0,PSP_CTRL_CROSS,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
     sequence(help,5);assert(app_settings()==0&&help_visits==1&&saved==0);
-    const unsigned int cancel[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_CIRCLE};
-    sequence(cancel,6);assert(app_settings()==0&&server_port==8091&&saved==0);
-    const unsigned int apply[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_START};
-    sequence(apply,6);assert(app_settings()==1&&server_port==8092&&saved==1);
+    const unsigned int output[]={0,PSP_CTRL_DOWN,PSP_CTRL_CROSS,PSP_CTRL_CROSS,PSP_CTRL_CIRCLE};
+    sequence(output,5);assert(app_settings()==0&&tv_ui_active==1&&output_changes==1&&saved==0&&tv_ui_auto==0);
+    sequence(output,5);assert(app_settings()==0&&tv_ui_active==0&&output_changes==2&&saved==0);
+    output_failed=1;sequence(output,5);assert(app_settings()==0&&tv_ui_active==0&&output_changes==3);output_failed=0;
+    const unsigned int cancel[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_CIRCLE};
+    sequence(cancel,8);assert(app_settings()==0&&server_port==8091&&saved==0);
+    const unsigned int apply[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,PSP_CTRL_RIGHT,PSP_CTRL_START};
+    sequence(apply,8);assert(app_settings()==1&&server_port==8092&&saved==1);
     assert(!have_cached_server_address&&!resume_pending&&!remote_session[0]&&!current_path[0]);
-    save_failed=1;sequence(apply,6);assert(app_settings()==-1&&server_port==8092);
+    save_failed=1;sequence(apply,8);assert(app_settings()==-1&&server_port==8092);
     char text[256]="aä";
     const unsigned int backspace[]={0,PSP_CTRL_LTRIGGER,PSP_CTRL_START};
     sequence(backspace,3);assert(settings_text(text,sizeof(text),1,"text")==1&&!strcmp(text,"a"));

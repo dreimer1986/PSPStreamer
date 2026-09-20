@@ -136,12 +136,21 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
     },
     [HELP_PAGE_TV]={
         .title="Using a television",
-        .step1_title="Connect component cable before play",
-        .step1_text="Video switches to the TV itself.",
-        .step2_title="Settings: TV menu at startup",
-        .step2_text="Enable, save and restart the app.",
-        .step3_title="Hold L at startup: keep LCD menu",
-        .step3_text="Offline video needs its LCD/TV mode."
+        .step1_title="Stop playback; connect TV cable",
+        .step1_text="Library: SELECT opens settings.",
+        .step2_title="DOWN once: switch menu to TV / LCD",
+        .step2_text="X switches now. O returns to files.",
+        .step3_title="Startup TV choice stays unchanged",
+        .step3_text="Video still follows the cable."
+    },
+    [HELP_PAGE_TV_MORE]={
+        .title="TV: keep your startup choice",
+        .step1_title="TV UI at start: saved preference",
+        .step1_text="Off: LCD menu, video follows cable.",
+        .step2_title="Hold L at startup: keep LCD menu",
+        .step2_text="Switch later without restarting.",
+        .step3_title="Offline video: matching LCD/TV file",
+        .step3_text="Stop first; no mid-video switching."
     },
     [HELP_PAGE_NETWORK]={
         .title="When something takes a while",

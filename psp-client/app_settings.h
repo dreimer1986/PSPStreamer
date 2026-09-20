@@ -77,8 +77,8 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
 }
 static int app_settings(void) {
     AppSettings original,draft;settings_capture(&original);draft=original;
-    /* Virtual first row: not a setting and never written into the CFG. */
-    int selected=-1,dirty=1,result=0;
+    /* Help and immediate display action are not persisted CFG settings. */
+    int selected=-2,dirty=1,result=0;
     unsigned int old=PSP_CTRL_SELECT;unsigned long long repeat=0;
     static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0};
     static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1};
@@ -87,10 +87,10 @@ static int app_settings(void) {
         unsigned int pressed=pad.Buttons&~old;
         if(dirty) {
             settings_shell(tr(TXT_SETTINGS));
-            int first=(selected+1)/8*8;
-            for(int entry=first;entry<SET_COUNT+1 && entry<first+8;entry++) {
-                int i=entry-1;
-                if(i<0) {settings_line(entry-first,selected<0,tr(TXT_HELP_OPEN));continue;}
+            int first=(selected+2)/8*8;
+            for(int entry=first;entry<SET_COUNT+2 && entry<first+8;entry++) {
+                int i=entry-2;
+                if(i<0) {settings_line(entry-first,selected==i,tr(i==-2?TXT_HELP_OPEN:tv_ui_active?TXT_OUTPUT_LCD:TXT_OUTPUT_TV));continue;}
                 char value[64],line[128];
                 if(i==SET_HOST)snprintf(value,sizeof(value),"%s",draft.host);
                 else if(i==SET_PASSWORD)strcpy(value,draft.password[0]?"********":"-");
@@ -121,9 +121,18 @@ static int app_settings(void) {
             result=result<0?-1:1;break;
         }
         if(pressed&PSP_CTRL_CROSS) {
-            if(selected<0) {
+            if(selected==-2) {
                 help_open(HELP_BROWSE);dirty=1;
                 sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+            }
+            if(selected==-1) {
+                int changed=tv_menu_select(!tv_ui_active);
+                if(changed<0) {
+                    snprintf(status,sizeof(status),tr(TXT_OUTPUT_FAILED),changed);
+                    settings_shell(tr(TXT_SETTINGS));settings_help(status);
+                    sceKernelDelayThread(1000000);
+                } else snprintf(status,sizeof(status),"%s",tr(tv_ui_active?TXT_OUTPUT_ON_TV:TXT_OUTPUT_ON_LCD));
+                dirty=1;old=pad.Buttons;continue;
             }
             char input[256];int valid=1;
             const char *initial=selected==SET_HOST?draft.host:selected==SET_PASSWORD?draft.password:selected==SET_PRESET?draft.preset:NULL;
@@ -143,8 +152,8 @@ static int app_settings(void) {
         unsigned int movement=pad.Buttons&(PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_LEFT|PSP_CTRL_RIGHT);
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(movement && ((pressed&movement)||now>=repeat)) {
-            if(movement&PSP_CTRL_UP)selected=(selected+SET_COUNT+1)%(SET_COUNT+1)-1;
-            else if(movement&PSP_CTRL_DOWN)selected=(selected+2)%(SET_COUNT+1)-1;
+            if(movement&PSP_CTRL_UP)selected=(selected+SET_COUNT+3)%(SET_COUNT+2)-2;
+            else if(movement&PSP_CTRL_DOWN)selected=(selected+3)%(SET_COUNT+2)-2;
             else if(selected>=0 && maximum[selected]) {
                 int step=selected==SET_FADE?100:1;
                 int value=draft.value[selected]+((movement&PSP_CTRL_LEFT)?-step:step);

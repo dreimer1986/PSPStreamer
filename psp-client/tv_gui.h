@@ -9,14 +9,31 @@ enum { TV_VIEW_LIBRARY, TV_VIEW_LOADING, TV_VIEW_INFO, TV_VIEW_OPTIONS, TV_VIEW_
 #define TV_CYAN  0x00EAD080
 #define TV_AMBER 0x003CC9FF
 
+/* Menu only: playback/remote workers have joined before settings open.
+ * Never change the decoder stride or clocks here. Keep the old canvas intact
+ * until the mode/framebuffer transaction succeeds, including its rollback. */
+static int tv_menu_select(int tv) {
+    int result;
+    tv=!!tv;
+    if(tv) {
+        result=tvout_load_manager();
+        if(result<0)return result;
+        if(pspDveMgrCheckVideoOut()!=2)return -1;
+        if(!tv_canvas.pixels)tv_canvas.pixels=memalign(64,TV_GUI_BYTES);
+        if(!tv_canvas.pixels)return -2;
+    }
+    result=display_output_select(&display_output,tv);
+    if(result<0)return result;
+    tv_ui_active=tv;
+    if(tv) {
+        memset(tv_canvas.pixels,0,TV_GUI_BYTES);
+        memset((void *)0x44000000,0,TV_GUI_BYTES);
+    } else pspDebugScreenInit();
+    return 0;
+}
+
 static void tv_ui_start(void) {
-    if (!tv_ui_auto || tvout_load_manager() < 0 || pspDveMgrCheckVideoOut() != 2) return;
-    if (!tv_canvas.pixels) tv_canvas.pixels = memalign(64, TV_GUI_BYTES);
-    if (!tv_canvas.pixels) return; /* Existing LCD/video-only mode is the fallback. */
-    memset(tv_canvas.pixels, 0, TV_GUI_BYTES);
-    memset((void *)0x44000000, 0, TV_GUI_BYTES);
-    if (display_output_select(&display_output, 1) < 0) return;
-    tv_ui_active = 1;
+    if(tv_ui_auto)tv_menu_select(1);
 }
 
 static void ui_restore_after_playback(void) {

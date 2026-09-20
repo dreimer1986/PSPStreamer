@@ -214,6 +214,23 @@ int main(int argc, char **argv) {
         assert(tv_music.full_frames == 2); /* explicit layout change repaints once */
         free(incremental);
     }
+    /* Runtime menu changes preserve startup preference, reuse allocation,
+     * and return to LCD even after the cable has been physically removed. */
+    void *retained=tv_canvas.pixels;
+    int startup_preference=tv_ui_auto;
+    cable=0;assert(tv_menu_select(0)==0&&!tv_ui_active&&!display_output.tv);
+    assert(tv_menu_select(1)==-1&&!tv_ui_active&&!display_output.tv);
+    cable=2;buffer_failure=1;
+    assert(tv_menu_select(1)==-11&&!tv_ui_active&&!display_output.tv&&!hardware_tv);
+    assert(tv_menu_select(1)==0&&tv_ui_active&&display_output.tv);
+    tv_canvas.pixels[0]=0x12345678;
+    mode_failure=1;assert(tv_menu_select(0)==-10&&tv_ui_active&&display_output.tv);
+    assert(tv_canvas.pixels[0]==0x12345678);
+    for(int cycle=0;cycle<4;cycle++) {
+        assert(tv_menu_select(0)==0&&!tv_ui_active);
+        assert(tv_menu_select(1)==0&&tv_ui_active);
+    }
+    assert(tv_canvas.pixels==retained&&tv_ui_auto==startup_preference);
     free(tv_canvas.pixels); munmap((void *)0x44000000, TV_GUI_BYTES);
     return 0;
 }

@@ -583,6 +583,14 @@ cable, or if TV initialization fails, menus remain on the LCD. Hold **L while
 starting the app** to bypass automatic TV menus for that session without
 changing the saved setting. Restart the app after changing `tv_ui`.
 
+You can also switch the menu and music display **after startup**: stop playback,
+open **SELECT → Switch menu to TV/LCD** (one Down press, then **X**).
+**Circle** returns to the library. Connect the component cable before switching
+to TV; returning to LCD works even after unplugging it. This action takes effect
+immediately, requires no Save or restart, and leaves `tv_ui` and any unsaved
+settings unchanged. Video still follows the cable at its next start, including
+the existing LCD-menu/TV-video mode. Switching during playback is not supported.
+
 The TV artwork is a separate embedded asset, not an enlarged LCD screenshot.
 Its volume dial is prepared for a 16:9 display; use the corresponding TV/OSSC
 aspect setting. The startup check detects a cable, not whether the TV is
@@ -795,12 +803,13 @@ cp EBOOT.PBP release/PSPStreamer/EBOOT.PBP
 
 Keep the firmware bridge and TV-out PRX files from the working installation alongside the new EBOOT. The Makefile preserves the MPEG import-library order and embeds the receiver artwork.
 
-The default optimization remains `-O2 -G0`. An optional comparison build uses
-`make clean && make OPT_LEVEL=-O3`; clean first because make does not track
-compiler-flag changes. No fast-math options are enabled. Restore the baseline
-with `make clean && make`. Copy the matching EBOOT/PRX pair, keep your config,
+The default optimization is `-O3 -G0`, following the successful PSP comparison.
+A conservative comparison build uses `make clean && make OPT_LEVEL=-O2`;
+clean first because make does not track compiler-flag changes. No fast-math
+options are enabled. Return to O3 with `make clean && make`.
+Copy the matching EBOOT/PRX pair, keep your config,
 presets and firmware modules, and compare the same presets on LCD and TV.
-`-O3` is a hardware test candidate, not a guarantee of greater speed or stability.
+The reported improvement is subjective, not a measured speedup for every preset.
 See [the O2/O3 comparison and test checklist](docs/OPTIMIZATION_COMPARISON.md).
 
 ## Tests

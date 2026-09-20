@@ -136,12 +136,21 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
     },
     [HELP_PAGE_TV]={
         .title="Am Fernseher abspielen",
-        .step1_title="Komponentenkabel vor Start verbinden",
-        .step1_text="Video schaltet selbst auf TV um.",
-        .step2_title="Einstellung: TV-Menü beim Start",
-        .step2_text="Einschalten, speichern, App neu auf.",
-        .step3_title="L beim Start halten: LCD-Menü",
-        .step3_text="Lokales Video braucht LCD/TV passend."
+        .step1_title="Wiedergabe stoppen; Kabel verbinden",
+        .step1_text="Bibliothek: SELECT für Einstellungen.",
+        .step2_title="Einmal RUNTER: Menü auf TV / LCD",
+        .step2_text="X schaltet sofort um. O geht zurück.",
+        .step3_title="TV-Startvorgabe bleibt unverändert",
+        .step3_text="Video richtet sich weiter nach Kabel."
+    },
+    [HELP_PAGE_TV_MORE]={
+        .title="TV: Startvorgabe behalten",
+        .step1_title="TV-Menü beim Start bleibt gespeichert",
+        .step1_text="Aus: LCD-Menü, Video folgt Kabel.",
+        .step2_title="L beim Start halten: LCD-Menü",
+        .step2_text="Später ohne App-Neustart wechseln.",
+        .step3_title="Lokales Video: LCD/TV muss passen",
+        .step3_text="Erst stoppen, dann Ausgang wechseln."
     },
     [HELP_PAGE_NETWORK]={
         .title="Wenn es einmal länger dauert",

@@ -1,5 +1,10 @@
 # PSP optimization comparison — 2026-09-20
 
+Update: the user tested O3 successfully and reported subjectively smoother
+operation. O3 is now the default; `OPT_LEVEL=-O2` remains available for comparison.
+The figures/hashes below describe the original comparison builds, **not** the
+subsequent build with runtime LCD/TV menu switching.
+
 The client source is unchanged from `fbb51c4` (illustrated help). Only the
 Makefile now allows `OPT_LEVEL=-O3`; its default remains `-O2`. Both variants
 were rebuilt in separate clean directories with PSP GCC 15.2.0. Firmware,
