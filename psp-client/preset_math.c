@@ -248,6 +248,19 @@ static float assigned_value(float value) {
 }
 /* x87's C0 comparison flag is also set for unordered (NaN) operands. */
 static int eel_below(float a,float b) {return !(a>=b);}
+/* Desktop x87 FISTP (round toward zero) returns integer-indefinite for
+ * NaN/Inf/out-of-range inputs. Reproduce the bit pattern without undefined
+ * C float-to-integer conversions or changing the PSP's FPU control state. */
+static int64_t eel_bit_integer(float value) {
+    if(!isfinite(value) || (double)value < -9223372036854775808.0 ||
+       (double)value >= 9223372036854775808.0)return INT64_MIN;
+    return (int64_t)value;
+}
+static uint32_t eel_mod_integer(float value) {
+    value=fabsf(value);
+    if(!isfinite(value) || (double)value>=2147483648.0)return 0x80000000U;
+    return (uint32_t)value;
+}
 /* Variable writes are sparse in point programs. Save the original value only
  * on first assignment; successful execution needs no whole-array copies. */
 typedef struct {
@@ -388,14 +401,12 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             case NEQ: result=fabsf(a-b)>=.00001f;break;
             case LE: result=a<=b;break;case GE:result=a>=b;break;
             case MOD: {
-                double aa=floor(fabs((double)a)),bb=floor(fabs((double)b));
-                if(!isfinite(aa) || !isfinite(bb) || aa>4294967295.0 || bb>4294967295.0) return 0;
-                result=bb==0?0:(float)((uint32_t)aa%(uint32_t)bb);break;
+                uint32_t aa=eel_mod_integer(a),bb=eel_mod_integer(b);
+                result=bb==0?0:(float)(aa%bb);break;
             }
             case BITAND: case BITOR:
-                if(!isfinite(a) || !isfinite(b) || (double)a < -9223372036854775808.0 || (double)a >= 9223372036854775808.0 ||
-                   (double)b < -9223372036854775808.0 || (double)b >= 9223372036854775808.0) return 0;
-                result=(float)(op->op==BITAND?((int64_t)a & (int64_t)b):((int64_t)a | (int64_t)b));break;
+                result=(float)(op->op==BITAND?(eel_bit_integer(a)&eel_bit_integer(b)):
+                    (eel_bit_integer(a)|eel_bit_integer(b)));break;
             case BOOL: result=fabsf(a)>=.00001f;break;
             case RAND: {
                 unsigned int r=runtime->random?runtime->random:0x9e3779b9U;

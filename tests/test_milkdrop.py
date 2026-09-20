@@ -9,6 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_integer_conversion_matches_reference_x87(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'integers'
+            subprocess.run(['cc','-std=c11','-O3','-Wall','-Wextra','-Werror',
+                            '-fsanitize=undefined,float-cast-overflow','-I',str(ROOT/'psp-client'),
+                            str(ROOT/'tests/preset_integer_harness.c'),'-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True)
+
     def test_exact_trig_cache_and_preset_output(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'trig'

@@ -83,6 +83,8 @@ def main():
                         break
                 record.update(frame_eval=code, frame=frame, stage=stage, eval_line=error.line,
                               eval_key=error.key.decode(errors='replace'))
+                if code:
+                    record['frame_fuel_remaining']=test.library.pm_frame_remaining()
                 if expanded:record['shape_instances']=list(shape_frame.count)
             records.append(record)
         print(json.dumps({'total': len(records), 'parse_ok': sum(r['parse']==0 for r in records),

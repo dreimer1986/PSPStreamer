@@ -515,9 +515,21 @@ class PresetTests(unittest.TestCase):
         self.assertEqual((values['a'],values['b'],values['c']),(0,1,0))
         self.assertTrue(math.isinf(runtime.memory[1]))
         for expression in ('megabuf(1/0)','gmegabuf(0/0)','loop(0/0,1)',
-                           'loop(1/0,1)','memcpy(0,0,0/0)','memset(0,1,1/0)',
-                           '(0/0)&1','1|(1/0)','(0/0)%2'):
+                           'loop(1/0,1)','memcpy(0,0,0/0)','memset(0,1,1/0)'):
             self.execute_eel('a=7;result='+expression+';',success=False)
+
+    def test_eel_x87_integer_indefinite(self):
+        cases={
+            '(0/0)&1':0,'(1/0)&7':0,'(-1/0)&7':0,'(1e30)&2':0,
+            '(1/0)|0':-2**63,'(-1/0)|0':-2**63,'(0/0)|0':-2**63,
+            '(2^63)|0':-2**63,'(-2^63)|0':-2**63,
+            '(0/0)%2':0,'(1/0)%3':2,'(2^31)%3':2,'(2^32)%3':2,
+            '7%(0/0)':7,'7%(1/0)':7,'7%0':0,
+            '-7.9%3.2':1,'(-7.9)&3.2':1,
+        }
+        for expression,expected in cases.items():
+            values,_=self.execute_eel('result='+expression+';')
+            self.assertEqual(values['result'],expected,expression)
 
     def test_eel_loops_and_runtime_budget(self):
         values,_=self.execute_eel('a=0;loop(5,a+=1);result=a;')
@@ -548,7 +560,7 @@ class PresetTests(unittest.TestCase):
         values,_=self.execute_eel('memset(4,2,5);megabuf(4)+=3;freembuf(0);result=4[0]+megabuf(8);',first)
         self.assertEqual(values['result'],7)
         for source in (f'a=megabuf({MEMORY});','megabuf(-1)=2;','gmegabuf(1e30)=0;',
-                       f'memcpy({MEMORY-1},0,2);',f'memset(0,1,{MEMORY+1});','a=1e30&2;'):
+                       f'memcpy({MEMORY-1},0,2);',f'memset(0,1,{MEMORY+1});'):
             before=bytes(first)
             self.execute_eel(source,first,False)
             self.assertEqual(bytes(first),before)

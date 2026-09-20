@@ -39,7 +39,7 @@ the inspected x87 unordered comparison behavior, rather than assuming NaN
 compares like an ordinary number.
 
 Safety boundaries remain explicit: non-finite addresses, loop counts, memory
-lengths, bitwise and remainder integer operands are rejected before conversion.
+lengths are rejected before conversion.
 Work budgets and rollback stay intact; renderer inputs still undergo finite
 checks and bounds. A compound assignment that leaves a render field infinite
 can therefore still fail safely. Syntax and unsupported-field errors are not
@@ -54,6 +54,21 @@ Rollback tests now use genuinely invalid addresses instead of treating `1/0`
 itself as a VM failure. The diagnostic preset also checks a sanitized division
 and a bounded infinite intermediate.
 
+## Bitwise/remainder conversion
+
+The reference uses x87 `FISTP` with `_RC_CHOP`. For `&`/`|`, an invalid or
+out-of-range conversion yields the 64-bit integer-indefinite pattern
+`0x8000000000000000`; for `%`, it first takes absolute values and converts to
+signed 32-bit, whose indefinite pattern is `0x80000000`, then performs unsigned
+remainder. A zero divisor yields zero. The PSP helpers reproduce those patterns
+with explicit range checks; no undefined C casts and no FPU-mode changes.
+
+The host regression compares both helpers against actual x87 instructions on
+100,000 float bit patterns plus boundary cases, under sanitizers and `-O3`.
+Non-x86 hosts retain the portable assertions but skip the inline x87 oracle.
+This corrects three `shell robot` presets and `Hexcollie - hairy colors.milk`
+without raising formula, memory or rendering budgets.
+
 Other observed remaining causes include initialization loops over 50,000
 memory cells (beyond the PSP memory/work budget), malformed static values,
 extension fields absent from this Desktop reference, and runtime arithmetic
@@ -63,10 +78,15 @@ their root causes.
 ## Collection result (2026-09-20)
 
 Same supplied collection and deterministic 120-frame audit, including frame,
-pixel and custom-wave formulas: 1,715 files, 1,651 imports, **1,414 full passes**
+pixel and custom-wave formulas: 1,715 files, 1,651 imports, **1,418 full passes**
 versus 1,217 before this batch. The isolated sqrt fix yielded 1,221; exceptional
-intermediate/assignment handling accounts for the rest. No previously passing
+intermediate/assignment handling yielded 1,414, and integer conversion adds
+another four. No previously passing
 case regressed. Import acceptance is unchanged. Remaining: 64 import failures
-and 237 runtime failures (193 wave point, 36 init, four frame, three pixel,
-one shape-frame). A stage is not a root-cause diagnosis. These are host formula
-tests, not 1,414 verified PSP visual/performance matches.
+and 233 runtime failures (192 wave point, 36 init, four frame, one shape-frame).
+All failures occur within the first seven frames of this deterministic input.
+A diagnostic rerun reproduces their frames/lines and identifies zero remaining
+frame fuel for all 192 wave-point failures: **execution-budget redesign needed**,
+not an outstanding divide-by-zero error or simply a formula-storage limit.
+The other failure stages alone do not identify their root causes.
+These are host formula tests, not 1,418 verified PSP visual/performance matches.
