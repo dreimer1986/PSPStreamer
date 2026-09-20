@@ -12,3 +12,4 @@ main.o: clock_math.h power_callback_slot.h config_parse.h report_io.h overlay_pi
 main.o: overlay_hook.h
 main.o: sony_startup.h
 main.o: clock_diagnostic.h
+main.o: clock_settle.h

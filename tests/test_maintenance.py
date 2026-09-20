@@ -1,4 +1,6 @@
 import subprocess
+import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +11,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_settle_is_inline_in_psp_machine_code(self):
+        compiler = shutil.which('psp-gcc')
+        objdump = shutil.which('psp-objdump')
+        if not compiler or not objdump:
+            self.skipTest('PSP toolchain required for machine-code check')
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'settle.c'
+            binary = source.with_suffix('.o')
+            source.write_text('''
+#include "clock_settle.h"
+unsigned int probe(unsigned int value) {
+    *(volatile unsigned int *)0xbc1000fc = value;
+    settle();
+    return *(volatile unsigned int *)0xbc1000fc;
+}
+''')
+            for optimization in ('-O0', '-O2', '-O3'):
+                with self.subTest(optimization=optimization):
+                    subprocess.run([compiler, optimization, '-G0', '-Wall', '-Wextra',
+                                    '-Werror', '-I', str(ROOT / 'psp-overclock'),
+                                    '-c', str(source), '-o', str(binary)], check=True)
+                    assembly = subprocess.check_output([objdump, '-dz', str(binary)], text=True)
+                    self.assertNotIn('<settle>', assembly)
+                    instructions = re.findall(r'^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(.+)$',
+                                              assembly, re.MULTILINE)
+                    sync = next(i for i, instruction in enumerate(instructions)
+                                if instruction == 'sync')
+                    self.assertTrue(instructions[sync - 1].startswith('sw\t'))
+                    loop = instructions[sync:sync + 13]
+                    self.assertEqual([line.split()[0] for line in loop],
+                                     ['sync', 'lui', 'ori'] + ['nop'] * 7 +
+                                     ['addiu', 'bnez', 'nop'])
+                    self.assertIn('0x2', loop[1])
+                    self.assertIn('0xffff', loop[2])
+                    self.assertFalse(any(re.match(r'jalr?\b', line) for line in instructions))
+
     def test_bounded_exit_handshake_and_dependency_teardown(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / 'exit-policy'
@@ -104,7 +142,7 @@ int main(void){
             subprocess.run([str(binary)], check=True)
         self.assertLess(code.index('if(!enforce){'), code.index('if(!enforce_unlimited'))
         self.assertLess(code.index('if(control_active && !enforce_unlimited)'), code.index('snapshot("clock_mismatch")'))
-        self.assertIn('if(!running || suspended)return -2;',
+        self.assertIn('if(!running || suspended)return OC_RESULT(-2);',
                       (ROOT / 'psp-overclock/clock_transition.h').read_text())
         self.assertIn('if(r)enabled=0;', code)
 
@@ -226,11 +264,12 @@ int main(int argc,char **argv) {
     assert(parse("enforce_unlimited=1\napp_control=0\noverlay=0",&c,&keys,&line)==0);
     assert(c.enforce_unlimited==1&&!c.enforce&&!c.app_control&&!c.overlay);
     assert(parse("overlay=1",&c,&keys,&line)==0 && c.overlay==1 && !c.enabled);
+    assert(parse("overlay=2",&c,&keys,&line)==0 && c.overlay==2 && !c.enabled);
     assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
     assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
     const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
         "enabled=1\nreport=0\ntarget_mhz=65", "target_mhz=9999999999999999999999",
-        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=2", "enforce_unlimited=2"};
+        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=3", "enforce_unlimited=2"};
     for(unsigned int i=0;i<sizeof(bad)/sizeof(bad[0]);i++) {
         OcConfig before=c;
         assert(parse(bad[i],&c,&keys,&line)<0);

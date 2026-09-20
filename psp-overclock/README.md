@@ -265,7 +265,23 @@ reload or automatic overclock activation has been added.
 
 ### Optional diagnostic overlay (experimental)
 
-### Clock diagnostic build (`build=oc-diag-1`)
+### Clock diagnostic build (`build=oc-inline-settle-2`)
+
+The latest reported Soul Calibur shutdown ended after `clock_raw_guard_ready`
+at ratio 5, multiplier 9/1 and full CPU/bus domains. The Sony call had returned;
+the OC ramp and overlay installation had not begun. That brackets an interval,
+not the exact failing instruction. The earlier empty-event report likewise
+does not prove memory corruption or a competing clock writer.
+
+Machine-code inspection found a concrete difference from the pinned tester:
+its settling delay is inline assembly at the write site, whereas our ordinary
+static C helper became an out-of-line function under `-O2`. The PLL store was
+followed by `sync; jal settle`. The delay is now forced inline, including the
+reference's leading `sync`. No call/return is needed during that settling
+interval. The loop count, register recipe, target, Sony preparation and all
+ownership/abort guards remain unchanged. This does not lock the instruction
+cache and **is not proof that the shutdown is fixed**; hardware confirmation
+is required. No cache manipulation, voltage change or memory unlocking was added.
 
 With `report=1`, every existing event now also includes a record sequence,
 event-string address/length/FNV-1a hash and numeric clock diagnostics. Empty
@@ -296,8 +312,13 @@ normalization, 16 domain normalization, 17 low-clock profile, 18 OC ramp step,
 Sony API errors retain their original value. Stage and raw tuples distinguish
 these cases without assuming that every -3 was caused by another app.
 
-Only the affected clock/diagnostic mock-register harness and initialization
-ordering check were run for this build. They do not establish hardware safety.
+The eleven OC maintenance checks cover clock/diagnostic mock registers,
+initialization order, configuration, enforcement, callback registration,
+control permissions, logging and overlay pixel bounds. They do not establish
+hardware safety. Two stale test expectations were updated: overlay mode 2 is
+valid, and cancellation now records its return through `OC_RESULT`.
+The machine-code regression check additionally compiles the real delay helper
+with the PSP compiler at O0/O2/O3 and verifies the in-place instruction sequence.
 The next comparison is Soul Calibur after a full restart versus after another
 game; preserve the logs after a failure rather than repeating hard shutdowns.
 
