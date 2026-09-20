@@ -28,7 +28,7 @@ static float pm_trig(float argument,int cosine) {
     PmTrigEntry *entry=&entries[slot];
     if(!(entry->valid&bit)) {
         float result=cosine?cosf(argument):sinf(argument);
-        /* Do not retain exceptional results. Normal VM input is finite. */
+        /* Exceptional VM intermediates are legal, but not worth caching. */
         if(!isfinite(result))return result;
         if(cosine)entry->cosine=result;else entry->sine=result;
         entry->valid|=bit;

@@ -1,0 +1,18 @@
+// Original diagnostic preset: Desktop sqrt(x) means sqrt(abs(x)).
+// Cyan moving wave; exercises negative sqrt in frame, pixel and wave code.
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=0
+fDecay=0.94
+zoom=1.006
+per_frame_1=warp=sqrt(-.25)*min(2,bass);rot=.01*sin(time);safe=1/0;bounded=min(1/0,1);q1=bounded+safe;
+per_pixel_1=dx=.002*sqrt(-rad*rad)*sin(time);
+wavecode_0_enabled=1
+wavecode_0_samples=192
+wavecode_0_bDrawThick=1
+wavecode_0_r=0.25
+wavecode_0_g=0.8
+wavecode_0_b=1
+wavecode_0_a=0.9
+wave_0_per_point1=x=sample;y=.35+.3*sqrt(-abs(sin(sample*$pi*2+time)))+.05*value1;

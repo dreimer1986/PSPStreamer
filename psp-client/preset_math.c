@@ -238,6 +238,16 @@ static int address_index(float x) {
     if(!isfinite(x) || x<0 || x>=PM_MEMORY) return -1;
     int i=(int)(x+.00001f);return i<PM_MEMORY?i:-1;
 }
+/* NSEEL's default double assignment clears exceptional/denormal values.
+ * Use the corresponding float exponent here (the PSP VM remains float).
+ * The expression still returns its RHS; compound stores bypass this filter. */
+static float assigned_value(float value) {
+    uint32_t bits;memcpy(&bits,&value,sizeof(bits));
+    bits&=0x7f800000U;
+    return !bits || bits==0x7f800000U?0:value;
+}
+/* x87's C0 comparison flag is also set for unordered (NaN) operands. */
+static int eel_below(float a,float b) {return !(a>=b);}
 /* Variable writes are sparse in point programs. Save the original value only
  * on first assignment; successful execution needs no whole-array copies. */
 typedef struct {
@@ -262,7 +272,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             if (used >= PM_STACK) return 0;
             if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
             result = op->op == PUSH ? op->value : local[op->arg];
-            if (!isfinite(result)) return 0;
+            if (op->op==PUSH && !isfinite(result)) return 0;
             stack[used++] = result; continue;
         }
         if (op->op == STORE || op->op==KEEP) {
@@ -274,7 +284,9 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
                 variables->old[op->arg]=local[op->arg];
                 variables->ids[variables->count++]=(unsigned short)op->arg;
             }
-            local[op->arg] = stack[used-1];if(op->op==STORE) used--;continue;
+            local[op->arg] = op->value?stack[used-1]:assigned_value(stack[used-1]);
+            if(op->op==STORE) used--;
+            continue;
         }
 
         if(op->op==LOOP || op->op==WHILE) {
@@ -283,7 +295,8 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             int count=PM_FUEL;
             if(op->op==LOOP) {
                 if(!used) return 0;
-                a=stack[--used];count=a<1?0:a>PM_FUEL?PM_FUEL:(int)a;
+                a=stack[--used];if(!isfinite(a))return 0;
+                count=a<1?0:a>PM_FUEL?PM_FUEL:(int)a;
                 if(!count) {stack[used++]=0;i=op->arg-1;continue;}
             }
             loops[depth].start=i;loops[depth].end=op->arg-1;
@@ -301,7 +314,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         if(op->op==REGL || op->op==REGS) {
             if(op->arg<0 || op->arg>=100) return 0;
             if(op->op==REGL) {if(used>=PM_STACK) return 0;stack[used++]=registers[op->arg];}
-            else if(!used || !write_value(journal,&registers[op->arg],stack[used-1])) return 0;
+            else if(!used || !write_value(journal,&registers[op->arg],op->value?stack[used-1]:assigned_value(stack[used-1]))) return 0;
             continue;
         }
         if(op->op==MEML || op->op==GMEML || op->op==MEMS || op->op==GMEMS) {
@@ -310,7 +323,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             int index=address_index(stack[used-1-store]);if(index<0) return 0;
             float *memory=(op->op==GMEML || op->op==GMEMS)?global_memory:runtime->memory;
             if(store) {
-                a=stack[--used];if(!write_value(journal,memory+index,a)) return 0;
+                a=stack[--used];if(!write_value(journal,memory+index,op->value?a:assigned_value(a))) return 0;
                 stack[used-1]=a;
             } else stack[used-1]=memory[index];
             continue;
@@ -318,7 +331,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         if(op->op==MEMCPY || op->op==MEMSET) {
             if(used<3) return 0;
             float count=stack[used-1];int dst=address_index(stack[used-3]);
-            if(count<0 || count>PM_MEMORY || dst<0) return 0;
+            if(!isfinite(count) || count<0 || count>PM_MEMORY || dst<0) return 0;
             int n=(int)count,src=op->op==MEMCPY?address_index(stack[used-2]):0;
             if(dst+n>PM_MEMORY || src<0 || (op->op==MEMCPY && src+n>PM_MEMORY)) return 0;
             if(n>fuel) return 0;
@@ -340,7 +353,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             if (op->op==JUMP) { i=op->arg-1; continue; }
             if (!used) return 0;
             a=stack[--used];
-            if (fabsf(a)<.00001f) i=op->arg-1;
+            if (eel_below(fabsf(a),.00001f)) i=op->arg-1;
             continue;
         }
         if (!used) return 0;
@@ -352,28 +365,35 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         switch (op->op) {
             case ADD: result=a+b; break; case SUB: result=a-b; break;
             case MUL: result=a*b; break;
-            case DIV: if (b==0) return 0; result=a/b; break;
+            case DIV:
+                /* Do not issue a hardware divide-by-zero on the PSP. Keep
+                 * IEEE intermediates until assignment, as Desktop does. */
+                result=b!=0?a/b:(a==0 || isnan(a))?NAN:
+                    copysignf(INFINITY,signbit(a)!=signbit(b)?-1.0f:1.0f);break;
             case NEG: result=-a; break; case SIN: result=pm_trig(a,0); break;
             case COS: result=pm_trig(a,1); break; case ABS: result=fabsf(a); break;
-            case MIN: result=fminf(a,b); break; case MAX: result=fmaxf(a,b); break;
-            case SQRT: if (a<0) return 0; result=sqrtf(a); break;
+            case MIN: result=eel_below(a,b)?a:b; break;
+            case MAX: result=eel_below(a,b)?b:a; break;
+            /* Desktop NSEEL uses fabs followed by fsqrt, not C sqrt's
+             * negative-input domain error (MilkDrop2 asm-nseel-x86-*.c). */
+            case SQRT: result=sqrtf(fabsf(a)); break;
             case FLOOR: result=floorf(a); break; case CEIL: result=ceilf(a); break;
             case ATAN: result=atanf(a); break; case EXP: result=expf(a); break;
-            case LOG: if(a<=0) return 0; result=logf(a); break;
-            case LOG10: if(a<=0) return 0; result=log10f(a); break;
-            case SQR: result=a*a; break; case SIGN: result=(a>0)-(a<0); break;
+            case LOG: result=a==0?-INFINITY:a<0?NAN:logf(a); break;
+            case LOG10: result=a==0?-INFINITY:a<0?NAN:log10f(a); break;
+            case SQR: result=a*a; break; case SIGN: result=a==0?a:copysignf(1,a); break;
             case POW: result=powf(a,b); break; case ATAN2: result=atan2f(a,b); break;
-            case ABOVE: result=a>b; break; case BELOW: result=a<b; break;
-            case EQUAL: result=fabsf(a-b)<.00001f; break;
+            case ABOVE: result=eel_below(b,a); break; case BELOW: result=eel_below(a,b); break;
+            case EQUAL: result=eel_below(fabsf(a-b),.00001f); break;
             case NEQ: result=fabsf(a-b)>=.00001f;break;
             case LE: result=a<=b;break;case GE:result=a>=b;break;
             case MOD: {
                 double aa=floor(fabs((double)a)),bb=floor(fabs((double)b));
-                if(aa>4294967295.0 || bb>4294967295.0) return 0;
+                if(!isfinite(aa) || !isfinite(bb) || aa>4294967295.0 || bb>4294967295.0) return 0;
                 result=bb==0?0:(float)((uint32_t)aa%(uint32_t)bb);break;
             }
             case BITAND: case BITOR:
-                if((double)a < -9223372036854775808.0 || (double)a >= 9223372036854775808.0 ||
+                if(!isfinite(a) || !isfinite(b) || (double)a < -9223372036854775808.0 || (double)a >= 9223372036854775808.0 ||
                    (double)b < -9223372036854775808.0 || (double)b >= 9223372036854775808.0) return 0;
                 result=(float)(op->op==BITAND?((int64_t)a & (int64_t)b):((int64_t)a | (int64_t)b));break;
             case BOOL: result=fabsf(a)>=.00001f;break;
@@ -387,9 +407,9 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
              * it must not erase data observable by subsequent expressions. */
             case FREEMBUF: result=a;break;
             case TAN: result=tanf(a); break;
-            case ASIN: if(fabsf(a)>1) return 0; result=asinf(a); break;
-            case ACOS: if(fabsf(a)>1) return 0; result=acosf(a); break;
-            case BNOT: result=fabsf(a)<.00001f; break;
+            case ASIN: result=fabsf(a)>1?NAN:asinf(a); break;
+            case ACOS: result=fabsf(a)>1?NAN:acosf(a); break;
+            case BNOT: result=eel_below(fabsf(a),.00001f); break;
             /* EEL's named band/bor functions evaluate both arguments, and use
              * > epsilon (unlike if/bnot's < epsilon false test). */
             case BAND: result=fabsf(a)>.00001f && fabsf(b)>.00001f; break;
@@ -404,7 +424,6 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             }
             default: return 0;
         }
-        if (!isfinite(result)) return 0;
         stack[used++] = result;
     }
     if (used || depth) return 0;

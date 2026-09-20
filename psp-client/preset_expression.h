@@ -200,7 +200,8 @@ static int assignment_body(Parser *p) {
     p->p+=length;
     if(++p->depth>PM_DEPTH) {p->depth--;return 0;}
     int ok=assignment(p);p->depth--;
-    return ok && (compound<0 || emit(p,compound,0,0)) && emit(p,store,target.arg,0);
+    /* Old NSEEL *_op stores do not apply ordinary assignment's finite filter. */
+    return ok && (compound<0 || emit(p,compound,0,0)) && emit(p,store,target.arg,compound>=0);
 }
 static int assignment(Parser *p) {
     if(++p->depth>PM_DEPTH) {p->depth--;return 0;}

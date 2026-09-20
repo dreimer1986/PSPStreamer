@@ -87,6 +87,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT/'psp-client/presets/native-inputs-demo.milk'),
                             str(ROOT/'psp-client/presets/offscreen-shapes-demo.milk'),
                             str(ROOT/'psp-client/presets/geometry-range-demo.milk'),
+                            str(ROOT/'psp-client/presets/eel-sqrt-demo.milk'),
                             *([str(Path(os.environ['GEISS_PRESET_DIR'])/'Geiss - Explosion nz+.milk')] if os.environ.get('GEISS_PRESET_DIR') else [])],
                            check=True, timeout=120)
 

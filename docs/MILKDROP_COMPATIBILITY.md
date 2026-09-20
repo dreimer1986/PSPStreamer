@@ -44,8 +44,9 @@ the waveform-specific factor, then the unclamped volume modulation factor,
 then saturate the final opacity to 0–1. Mode 3 retains the reference's special
 treble-derived opacity. This follows `state.cpp`'s `GetFastFloat` imports and
 `milkdropfs.cpp`'s `DrawWave` in the MilkDrop 2 reference; the mode-dependent
-constants match our 512-wide feedback surface. NaN/infinity, malformed values
-and arithmetic overflow remain errors. Extremely large resulting built-in
+constants match our 512-wide feedback surface. Non-finite static fields and
+malformed values remain errors. Formula intermediates follow the assignment
+rules below. Extremely large resulting built-in
 wave coordinates outside the guarded PSP GU range report `wave geometry`
 instead of submitting unsafe vertices; this is a hardware safety limitation,
 not a claim of unbounded desktop rendering compatibility. Shader skipping is
@@ -113,9 +114,12 @@ because this implementation reserves a fixed buffer.
 
 Runtime arithmetic/address/budget failures roll back the current invocation's
 values, random state and memory/register writes. An earlier successful
-invocation's global writes are not rolled back by a later failure. Invalid
-math (for example division by zero or `sqrt(-1)`) fails explicitly instead of
-propagating non-finite geometry. Out-of-range addresses are errors, not wrapped.
+invocation's global writes are not rolled back by a later failure.
+`sqrt(x)` uses `sqrt(abs(x))`. Inf/NaN intermediates are allowed; ordinary
+assignment stores zero for exceptional/denormal values, while the inspected
+Desktop compound stores do not. Non-finite renderer inputs are still rejected.
+See [numeric compatibility](MILKDROP_NUMERIC_COMPATIBILITY.md) for the exact
+scope and float/double differences. Out-of-range addresses are errors, not wrapped.
 
 Pixel named variables/memory persist between points and frames independently
 of preset-frame locals. Pixel q values are seeded once from the current frame,

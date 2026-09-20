@@ -115,7 +115,7 @@ class PresetTests(unittest.TestCase):
         cls.root = Path(cls.directory.name)
         library = cls.root / "preset.so"
         subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                        "-shared", "-fPIC", "-fsanitize=undefined",
+                        "-shared", "-fPIC", "-fsanitize=undefined,float-cast-overflow",
                         str(ROOT / "psp-client/milkdrop_preset.c"),
                         str(ROOT / "psp-client/preset_math.c"),
                         str(ROOT / "psp-client/milkdrop_signal.c"),
@@ -229,7 +229,7 @@ class PresetTests(unittest.TestCase):
         code,_,error=self.parse(b'[preset00]\nper_frame_1=q1=(1+\n; unrelated physical line\nper_frame_2=);\n')
         self.assertEqual(code,2)
         self.assertEqual((error.line,error.key),(4,b'per_frame_2'))
-        code,preset,error=self.parse(b'[preset00]\nper_frame_1=rot=1/(\n; unrelated physical line\nper_frame_2=0);\n')
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=rot=megabuf(\n; unrelated physical line\nper_frame_2=-1);\n')
         self.assertEqual(code,0)
         state=PresetState();before=bytes(state)
         code,_,error=self.evaluate_state(preset,state,0)
@@ -487,6 +487,38 @@ class PresetTests(unittest.TestCase):
         values,_=self.execute_eel('a=1; /* inline */ b=a=3;result=a+b;')
         self.assertEqual(values['result'],6)
 
+    def test_eel_exceptional_intermediates_and_assignment(self):
+        cases={
+            '1/0':0,'-1/0':0,'0/0':0,'1/(1/0)':0,
+            'min(1/0,3)':3,'max(-1/0,4)':4,
+            'above(1/0,2)':1,'below(-1/0,0)':1,
+            'if(0/0,9,3)':3,'bnot(0/0)':1,
+            'equal(0/0,2)':1,'below(0/0,2)':1,'above(0/0,2)':1,
+            '(0/0)<=2':0,'(0/0)>=2':0,'(0/0)!=2':0,
+            'min(0/0,3)':0,'min(3,0/0)':3,
+            'max(0/0,3)':3,'max(3,0/0)':0,
+            'above(a=1/0,2)':1,'above(assign(a,1/0),2)':1,
+            '1e-30*1e-10':0,
+        }
+        for expression,expected in cases.items():
+            values,_=self.execute_eel('result='+expression+';')
+            self.assertEqual(values['result'],expected,expression)
+            if 'a' in values:self.assertEqual(values['a'],0)
+        values,_=self.execute_eel('a=1;a/=0;b=above(a,2);c=a;d=0;d/=0;e=if(d,9,3);')
+        self.assertTrue(math.isinf(values['a']))
+        self.assertTrue(math.isnan(values['d']))
+        self.assertEqual((values['b'],values['c'],values['e']),(1,0,3))
+        self.library.pm_reset_globals()
+        values,runtime=self.execute_eel('reg00=1/0;megabuf(0)=0/0;gmegabuf(0)=1/0;'
+            'a=reg00+megabuf(0)+gmegabuf(0);megabuf(1)=1;megabuf(1)/=0;'
+            'b=above(megabuf(1),2);c=megabuf(1);')
+        self.assertEqual((values['a'],values['b'],values['c']),(0,1,0))
+        self.assertTrue(math.isinf(runtime.memory[1]))
+        for expression in ('megabuf(1/0)','gmegabuf(0/0)','loop(0/0,1)',
+                           'loop(1/0,1)','memcpy(0,0,0/0)','memset(0,1,1/0)',
+                           '(0/0)&1','1|(1/0)','(0/0)%2'):
+            self.execute_eel('a=7;result='+expression+';',success=False)
+
     def test_eel_loops_and_runtime_budget(self):
         values,_=self.execute_eel('a=0;loop(5,a+=1);result=a;')
         self.assertEqual(values['result'],5)
@@ -498,7 +530,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(values['result'],0)
         self.execute_eel('a=0;while(a+=1;1);',success=False)
         self.execute_eel('loop(1e30,1);',success=False)
-        self.execute_eel('a=1;loop(2,1/0);',success=False)
+        self.execute_eel('a=1;loop(2,1/0);')
 
     def test_eel_memory_registers_scope_overlap_and_rollback(self):
         self.library.pm_reset_globals()
@@ -509,7 +541,7 @@ class PresetTests(unittest.TestCase):
         values,_=self.execute_eel('result=reg00+reg99+gmegabuf(2)+megabuf(0);',Runtime())
         self.assertEqual(values['result'],19)  # local memory is not shared
         snapshot=bytes(first)
-        self.execute_eel('reg00=99;gmegabuf(2)=99;megabuf(0)=99;rand(2);a=1/0;',first,False)
+        self.execute_eel('reg00=99;gmegabuf(2)=99;megabuf(0)=99;rand(2);a=megabuf(-1);',first,False)
         self.assertEqual(bytes(first),snapshot)
         values,_=self.execute_eel('result=reg00+gmegabuf(2)+megabuf(0);',first)
         self.assertEqual(values['result'],16)
@@ -529,7 +561,7 @@ class PresetTests(unittest.TestCase):
         prefix=''.join(f'q{i}=q{i}+1;' for i in range(1,33))
         prefix+=''.join(f'user{i}={i};' for i in range(64))
         prefix+='loop(10,q1=q1+1);reg00=42;megabuf(0)=77;rand(2);'
-        for ending in ('','q2=1/0;','loop(4096,q1=q1+1);'):
+        for ending in ('','q2=megabuf(-1);','loop(4096,q1=q1+1);'):
             program,symbols=Program(),Symbols()
             self.assertEqual(compile_fn(ctypes.byref(program),(prefix+ending).encode(),9,ctypes.byref(symbols)),0)
             values=(ctypes.c_float*218)(*([1.25]*218));before=bytes(values)
@@ -578,7 +610,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(result['result'],10)
         self.assertEqual(self.execute_eel(f'result=gmegabuf({MEMORY-1});')[0]['result'],11)
         before=bytes(runtime)
-        self.execute_eel(f'megabuf({MEMORY-1})=99;gmegabuf({MEMORY-1})=99;result=1/0;',runtime,False)
+        self.execute_eel(f'megabuf({MEMORY-1})=99;gmegabuf({MEMORY-1})=99;result=megabuf(-1);',runtime,False)
         self.assertEqual(bytes(runtime),before)
         self.assertEqual(self.execute_eel(f'result=gmegabuf({MEMORY-1});')[0]['result'],11)
         result,_=self.execute_eel('memset(1024,2,8);memcpy(1025,1024,7);result=megabuf(1031);',runtime)
@@ -826,7 +858,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
             self.assertAlmostEqual(self.last_decor.shapes[0].x,i*.1)
 
     def test_runtime_errors_are_atomic(self):
-        for source in ("rot=1/(time-1);", "warp=3e38*3e38;"):
+        for source in ("rot=megabuf(1/(time-1));", "warp=1;warp*=3e38*3e38;"):
             result, preset, _ = self.parse(f"[preset00]\nper_frame_1={source}".encode())
             self.assertEqual(result, 0)
             code, _, _, error = self.evaluate(preset, 1)
@@ -1085,9 +1117,16 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         self.assertEqual(self.evaluate(preset, 0)[1].warp, 2)
         for expression in ("min(1)", "max(1,2,3)", "sqrt(1,2)", "min(,1)"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0], 0)
-        code, preset, _ = self.parse(b"[preset00]\nper_frame_1=warp=sqrt(-1);")
-        self.assertEqual(code, 0)
-        self.assertEqual(self.evaluate(preset, 0)[0], 2)
+        # Desktop NSEEL deliberately takes fabs before fsqrt.
+        for expression, expected in (("sqrt(-1)",1), ("sqrt(-9)",3),
+                                     ("sqrt(-0)",0), ("sqrt(0)",0),
+                                     ("sqrt(9)",3), ("sqrt(-.25)",.5),
+                                     ("sqrt(sin(-1))",math.sqrt(abs(math.sin(-1))))):
+            code, preset, _ = self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())
+            self.assertEqual(code, 0)
+            result, warp, _, _ = self.evaluate(preset, 0)
+            self.assertEqual(result, 0, expression)
+            self.assertAlmostEqual(warp.warp, expected, places=5)
         code, preset, _ = self.parse((ROOT / "psp-client/presets/relative-demo.milk").read_bytes())
         self.assertEqual(code, 0)
         for value in (0, .5, 1, 2, 10, 1000):
@@ -1134,7 +1173,9 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         for source in ("log(0)","log10(-1)","pow(-1,.5)","exp(1000)"):
             code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={source};".encode())
             self.assertEqual(code,0)
-            self.assertEqual(self.evaluate(preset,0)[0],2)
+            result,warp,_,_=self.evaluate(preset,0)
+            self.assertEqual(result,0)
+            self.assertEqual(warp.warp,0)
 
     def test_transforms_and_static_layers(self):
         data=b"[preset00]\nzoom=1\nfZoomExponent=1.5\ncx=.4\ncy=.6\nsx=2\nsy=.5\n"
@@ -1297,7 +1338,7 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         for expression in ('mv_x=1/0;','mv_y=1/0;'):
             code,preset,_=self.parse(f'[preset00]\nper_frame_1={expression}'.encode())
             self.assertEqual(code,0)
-            self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+            self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
         code,preset,_=self.parse(b'[preset00]\nper_frame_1=wave_mode=4; mv_a=.5;\nper_pixel_1=rot=.01*wave_mode*mv_a;')
         self.assertEqual(code,0)
         state=PresetState(); result,warp,_=self.evaluate_state(preset,state,1)
@@ -1358,12 +1399,14 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
             result,warp,_,_=self.evaluate(preset,0)
             self.assertEqual(result,0,expression)
             self.assertAlmostEqual(warp.warp,expected,places=5)
-        # Named band/bor are deliberately eager, unlike if().
-        for expression in ("if(1,1/0,2)","if(0,2,log(0))",
-                           "band(0,1/0)","bor(1,1/0)","asin(2)","acos(-2)"):
+        # Exceptional math is allowed until ordinary assignment.
+        for expression,expected in (("if(1,1/0,2)",0),("if(0,2,log(0))",0),
+                           ("band(0,1/0)",0),("bor(1,1/0)",1),("asin(2)",0),("acos(-2)",0)):
             code,preset,_=self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())
             self.assertEqual(code,0)
-            self.assertEqual(self.evaluate(preset,0)[0],2,expression)
+            result,warp,_,_=self.evaluate(preset,0)
+            self.assertEqual(result,0,expression)
+            self.assertEqual(warp.warp,expected,expression)
 
     def test_conditional_syntax_budgets_and_bytecode_safety(self):
         for expression in ("if()","if(1,2)","if(1,2,3,4)","if(,2,3)",
@@ -1495,7 +1538,7 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         for expr in ('sides=1/0;','x=1/0;'):
             code,preset,_=self.parse(('[preset00]\nshapecode_0_enabled=1\nshape_0_per_frame1='+expr).encode())
             self.assertEqual(code,0)
-            self.assertNotEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+            self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
         for expr in ('psp_low=2;',):
             self.assertNotEqual(self.parse(('[preset00]\nshape_0_per_frame1='+expr).encode())[0],0)
 
@@ -1532,7 +1575,7 @@ wave_0_per_point1=x=sample; y=t2+.1*value1; t2=t2+.001;
             self.assertEqual(out[0].vertices[63].x,256)
             self.assertEqual(state.waves[0].frame.user[0],frame+1)
             self.assertAlmostEqual(state.waves[0].frame.t[0],.2)
-        code,bad,_=self.parse(b'[preset00]\nwavecode_0_enabled=1\nwave_0_per_point1=x=sample; y=1/(1-sample);')
+        code,bad,_=self.parse(b'[preset00]\nwavecode_0_enabled=1\nwave_0_per_point1=x=sample; y=megabuf(1/(1-sample));')
         self.assertEqual(code,0)
         before=bytes(state),bytes(out)
         self.assertNotEqual(fn(ctypes.byref(bad),1,None,right,left,None,None,ctypes.byref(state),out,ctypes.byref(error)),0)
@@ -1648,7 +1691,7 @@ wave_0_per_point1=sample=1-sample;value1=0;value2=0;x=sample;y=.5;
             for i in (0,7,8,31,32,310):
                 self.assertAlmostEqual(out.shapes[0][i].x,i/311,places=6)
                 self.assertAlmostEqual(out.shapes[0][i].y,(frame*311+i+1)*.0001,places=6)
-        code,bad,error=self.parse(source+b'\nshape_0_per_frame2=x=1/(310-instance);')
+        code,bad,error=self.parse(source+b'\nshape_0_per_frame2=x=megabuf(1/(310-instance));')
         self.assertEqual(code,0);before=bytes(state),bytes(decor),bytes(warp),color.value
         self.assertNotEqual(fn(ctypes.byref(bad),3,None,ctypes.byref(state),ctypes.byref(warp),ctypes.byref(color),ctypes.byref(decor),ctypes.byref(error),ctypes.byref(out)),0)
         self.assertEqual((bytes(state),bytes(decor),bytes(warp),color.value),before)
@@ -1720,9 +1763,9 @@ per_frame_1=wave_r=progress;
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=1/0;\n")
         self.assertEqual(code,0)
         result,_,error=self.evaluate_state(preset,PresetState(),0)
-        self.assertEqual(result,2); self.assertEqual(error.line,2)
-        self.assertEqual(error.key.decode(),"init formula")
-        code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=2;\nper_frame_1=warp=1/(time-1);\n")
+        self.assertEqual(result,0)
+        # Keep testing rollback on an actual unsafe address, not benign 1/0.
+        code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=2;\nper_frame_1=warp=megabuf(1/(time-1));\n")
         self.assertEqual(code,0)
         state=PresetState()
         self.assertEqual(self.evaluate_state(preset,state,1)[0],2)
@@ -1830,7 +1873,7 @@ per_frame_1=wave_r=progress;
                     self.assertAlmostEqual(points[y*(GRID+1)+x].dy,1-y/GRID,places=6)
                     self.assertEqual(points[y*(GRID+1)+x].rotation,0)
         # A late grid-point failure cannot partially replace a prepared grid.
-        code,preset,_=self.parse(b"[preset00]\nper_pixel_1=dx=.01/(1-x);\n")
+        code,preset,_=self.parse(b"[preset00]\nper_pixel_1=dx=megabuf(.01/(1-x));\n")
         self.assertEqual(code,0)
         before=bytes(points)
         self.assertEqual(fn(ctypes.byref(preset),ctypes.byref(frame),0,None,ctypes.byref(state),points,ctypes.byref(error)),2)
