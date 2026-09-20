@@ -145,19 +145,20 @@ the video/audio playback clocks or chosen video frame rate.
 | Resource | Limit |
 | --- | --- |
 | Preset file / physical line | 64 KiB / 2047 bytes |
-| Compiled init/frame program | 2048 instructions, 512 numbered lines |
-| Compiled pixel/point program | 2048 instructions |
-| Named locals | 64 per context, 31-character names |
+| Compiled init/frame program | 4096 instructions, 1024 numbered lines |
+| Compiled pixel/point program | 4096 instructions |
+| Allocated bytecode per preset | 16384 instructions total; empty contexts allocate nothing |
+| Named locals | 128 per context, 31-character names |
 | Operand stack / parser depth | 48 / 64 |
-| Local memory per context / shared memory | 2048 float slots each |
+| Local memory per context / shared memory | 4096 float slots each |
 | Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
 | Shapes | Up to 4 × 512 instances, budget-aware fallback; 100 sides each; GPU batches of 32 shapes |
 | Custom waves | 4 × 1024 points; requests above 512 use interpolated audio input |
 
-The latest [formula-storage expansion](MILKDROP_MEMORY_EXPANSION.md) documents
-the collection comparison, additional RAM/stack cost and test presets
-`extended-memory-demo.milk` and `extended-point-program-demo.milk`.
+The latest [owned formula storage](MILKDROP_STORAGE.md) documents allocation,
+ownership, the collection comparison and `formula-storage-demo.milk`.
+The earlier [memory expansion](MILKDROP_MEMORY_EXPANSION.md) is historical.
 See [shape batching](MILKDROP_SHAPE_BATCHES.md) for instance planning, memory
 ownership, framebuffer restoration and the `shape-batches-demo.milk` test.
 

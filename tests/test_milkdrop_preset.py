@@ -13,6 +13,10 @@ def source_constant(header, name):
     return int(re.search(r'\b'+name+r'\s*=\s*(\d+)', (ROOT/'psp-client'/header).read_text()).group(1))
 MAX_OPS = source_constant('preset_math.h', 'PM_MAX_OPS')
 MEMORY = source_constant('preset_math.h', 'PM_MEMORY')
+USERS = source_constant('preset_math.h', 'PM_USER_COUNT')
+VALUES = 154+USERS
+RECORDS = source_constant('preset_math.h', 'PM_MAX_RECORDS')
+DYNAMIC_CODE = 'PmOp *code' in (ROOT/'psp-client/preset_math.h').read_text()
 GRID = source_constant('milkdrop_warp.h', 'MD_GRID')
 GRID_POINTS = (GRID+1)**2
 CUSTOM_POINTS = source_constant('milkdrop_preset.h', 'MD_CUSTOM_POINTS')
@@ -53,11 +57,17 @@ class Op(ctypes.Structure):
 
 
 class Program(ctypes.Structure):
-    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int), ("code", Op * MAX_OPS)]
+    _fields_ = [("count", ctypes.c_int), ("lines", ctypes.c_int),
+                *(([("capacity",ctypes.c_int),("code",ctypes.POINTER(Op))])
+                  if DYNAMIC_CODE else [("code",Op*MAX_OPS)])]
+    _release=None
+    def __del__(self):
+        if self._b_base_ is None and type(self)._release is not None:
+            type(self)._release(ctypes.byref(self))
 
 
 class Symbols(ctypes.Structure):
-    _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*64)]
+    _fields_=[("count",ctypes.c_int),("names",(ctypes.c_char*32)*USERS)]
 
 
 class Runtime(ctypes.Structure):
@@ -68,15 +78,19 @@ class ShapeProgram(ctypes.Structure):
     _fields_=[("init",Program),("frame",Program),("symbols",Symbols)]
 
 class ShapeState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*64),("runtime",Runtime)]
+    _fields_=[("ready",ctypes.c_int),("t",ctypes.c_float*8),("user",ctypes.c_float*USERS),("runtime",Runtime)]
 
 class CustomWave(ctypes.Structure):
     _fields_=[(n,ctypes.c_float) for n in ("enabled","samples","sep","spectrum","dots","thick","additive","scaling","smoothing","r","g","b","a")]+[("init",Program),("frame",Program),("point",Program),("symbols",Symbols),("point_symbols",Symbols)]
 
 class WaveState(ctypes.Structure):
-    _fields_=[("frame",ShapeState),("point_user",ctypes.c_float*64),("point_runtime",Runtime)]
+    _fields_=[("frame",ShapeState),("point_user",ctypes.c_float*USERS),("point_runtime",Runtime)]
 
 class Preset(ctypes.Structure):
+    _release=None
+    def __del__(self):
+        if self._b_base_ is None and type(self)._release is not None:
+            type(self)._release(ctypes.byref(self))
     _fields_ = [("warp", Warp), ("red", ctypes.c_float),
                 ("green", ctypes.c_float), ("blue", ctypes.c_float), ("program", Program),
                 ("legacy",ctypes.c_int),("wave_mode",ctypes.c_int),("wrap",ctypes.c_int),
@@ -87,11 +101,11 @@ class Preset(ctypes.Structure):
 
 
 class PresetState(ctypes.Structure):
-    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*64),
+    _fields_=[("ready",ctypes.c_int),("q",ctypes.c_float*32),("user",ctypes.c_float*USERS),
               ("frame_q",ctypes.c_float*32),("frames",ctypes.c_uint),
               ("last_seconds",ctypes.c_float),("fps",ctypes.c_float),
               ("wave_mode",ctypes.c_int),("motion",ctypes.c_float*9),("shape",ShapeState*4),("waves",WaveState*4),("effects",ctypes.c_float*5),
-              ("runtime",Runtime),("pixel_runtime",Runtime),("pixel_user",ctypes.c_float*64),("monitor",ctypes.c_float),("wrap",ctypes.c_int)]
+              ("runtime",Runtime),("pixel_runtime",Runtime),("pixel_user",ctypes.c_float*USERS),("monitor",ctypes.c_float),("wrap",ctypes.c_int)]
 
 
 class Error(ctypes.Structure):
@@ -125,6 +139,10 @@ class PresetTests(unittest.TestCase):
                         str(ROOT / "psp-client/milkdrop_warp.c"), "-lm", "-o", str(library)],
                        check=True)
         cls.library = ctypes.CDLL(str(library))
+        Program._release=getattr(cls.library,'pm_program_free',None)
+        if Program._release:Program._release.argtypes=[ctypes.POINTER(Program)]
+        Preset._release=getattr(cls.library,'md_free_preset',None)
+        if Preset._release:Preset._release.argtypes=[ctypes.POINTER(Preset)]
         cls.load = cls.library.md_load_preset
         cls.load.argtypes = [ctypes.c_char_p, ctypes.POINTER(Preset), ctypes.POINTER(Error)]
         cls.load.restype = ctypes.c_int
@@ -143,7 +161,9 @@ class PresetTests(unittest.TestCase):
         path = self.root / "test.milk"
         path.write_bytes(data)
         preset, error = Preset(), Error()
-        ctypes.memset(ctypes.byref(preset), 0x42, ctypes.sizeof(preset))
+        # Owning program descriptors must start empty; retain scalar sentinels
+        # to verify failed imports leave their destination untouched.
+        preset.red=42;preset.wrap=42
         before = bytes(preset)
         result = self.load(str(path).encode(), ctypes.byref(preset), ctypes.byref(error))
         self.assertEqual(result, error.code)
@@ -239,7 +259,7 @@ class PresetTests(unittest.TestCase):
         for body in ('per_frame_1=q1=(\nper_frame_3=2);',
                      'per_frame_1=q1=(\nper_frame_1=2);',
                      'per_frame_1=/* unclosed\nper_frame_2=comment',
-                     '\n'.join(f'per_frame_{i}=// comment' for i in range(1,514))):
+                     '\n'.join(f'per_frame_{i}=// comment' for i in range(1,RECORDS+2))):
             self.assertNotEqual(self.parse(('[preset00]\nzoom=1\n'+body).encode())[0],0)
         # Explicit boundary whitespace must NOT be erased into the number 12.
         self.assertNotEqual(self.parse(b'[preset00]\r\nper_frame_1=q1=1 \r\nper_frame_2=2;\r\n')[0],0)
@@ -457,14 +477,14 @@ class PresetTests(unittest.TestCase):
         compile_fn=self.library.pm_compile_symbols
         compile_fn.argtypes=[ctypes.POINTER(Program),ctypes.c_char_p,ctypes.c_int,ctypes.POINTER(Symbols)]
         self.assertEqual(compile_fn(ctypes.byref(program),source.encode(),7,ctypes.byref(symbols)),0,source)
-        values=(ctypes.c_float*218)();error=ctypes.c_int()
+        values=(ctypes.c_float*VALUES)();error=ctypes.c_int()
         runtime=runtime if runtime is not None else Runtime()
         fn=self.library.pm_execute_runtime
         fn.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
         self.library.pm_begin_frame()
         result=fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime))
         self.assertEqual(result,int(success),source)
-        if not success: self.assertEqual(bytes(values),bytes((ctypes.c_float*218)()),source)
+        if not success: self.assertEqual(bytes(values),bytes((ctypes.c_float*VALUES)()),source)
         return {bytes(symbols.names[i]).split(b'\0')[0].decode():values[87+i] for i in range(symbols.count)},runtime
 
     def test_eel_operators_constants_and_lazy_sequences(self):
@@ -576,7 +596,7 @@ class PresetTests(unittest.TestCase):
         for ending in ('','q2=megabuf(-1);','loop(4096,q1=q1+1);'):
             program,symbols=Program(),Symbols()
             self.assertEqual(compile_fn(ctypes.byref(program),(prefix+ending).encode(),9,ctypes.byref(symbols)),0)
-            values=(ctypes.c_float*218)(*([1.25]*218));before=bytes(values)
+            values=(ctypes.c_float*VALUES)(*([1.25]*VALUES));before=bytes(values)
             runtime=Runtime();runtime.random=123;runtime.memory[0]=3
             old_runtime=bytes(runtime);error=ctypes.c_int()
             self.library.pm_reset_globals();self.library.pm_begin_frame()
@@ -635,15 +655,38 @@ class PresetTests(unittest.TestCase):
         code=b';'.join([b'x=x+.001']*220)+b';'
         self.assertEqual(compile_fn(ctypes.byref(program),code,1,ctypes.byref(symbols),1),0)
         self.assertGreater(program.count,1024)
-        values=(ctypes.c_float*218)();runtime=Runtime();error=ctypes.c_int()
+        values=(ctypes.c_float*VALUES)();runtime=Runtime();error=ctypes.c_int()
         fn=self.library.pm_execute_runtime
         fn.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
         self.library.pm_begin_frame()
         self.assertEqual(fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),1)
-        before=bytes(program)
-        active_bytes=Program.code.offset+program.count*ctypes.sizeof(Op)
-        self.assertNotEqual(compile_fn(ctypes.byref(program),code,2,ctypes.byref(symbols),1),0)
-        self.assertEqual(bytes(program)[:active_bytes],before[:active_bytes])
+        before=b''.join(bytes(op) for op in program.code[:program.count])
+        self.assertNotEqual(compile_fn(ctypes.byref(program),code*4,2,ctypes.byref(symbols),1),0)
+        self.assertEqual(b''.join(bytes(op) for op in program.code[:program.count]),before)
+
+    def test_formula_storage_is_bounded_and_only_nonempty_blocks_allocate(self):
+        code,preset,_=self.parse(b'[preset00]\nzoom=1\n')
+        self.assertEqual(code,0)
+        self.assertFalse(preset.program.code)
+        self.assertFalse(preset.waves[3].point.code)
+        lines=['[preset00]','zoom=1']
+        # Large single program now fits without raising per-execution fuel.
+        for i in range(1,31):lines.append(f'per_frame_{i}='+('q1=q1+.001;'*20))
+        code,preset,error=self.parse('\n'.join(lines).encode())
+        self.assertEqual(code,0,(error.key,error.line))
+        self.assertGreater(preset.program.count,2048)
+        self.assertEqual(preset.program.capacity,preset.program.count)
+        self.assertEqual(self.evaluate(preset,0)[0],0)
+        # Nine individually legal contexts exceed the preset-wide storage cap.
+        lines=['[preset00]','zoom=1']
+        prefixes=['per_frame_','per_frame_init_','per_pixel_']
+        prefixes += [f'shape_{i}_per_frame' for i in range(4)]
+        prefixes += [f'wave_{i}_per_point' for i in range(2)]
+        for prefix in prefixes:
+            for i in range(1,31):lines.append(prefix+str(i)+'='+('q1=q1+.001;'*20))
+        code,_,error=self.parse('\n'.join(lines).encode())
+        self.assertEqual(code,2)
+        self.assertEqual(error.key,b'total formula storage')
 
     def test_eel_frame_budget_is_shared_and_stays_exhausted(self):
         program,symbols=Program(),Symbols()
@@ -652,7 +695,7 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(compile_fn(ctypes.byref(program),b'memset(0,1,1024);',1,ctypes.byref(symbols)),0)
         execute=self.library.pm_execute_runtime
         execute.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int),ctypes.POINTER(Runtime)]
-        runtime=Runtime();values=(ctypes.c_float*218)();error=ctypes.c_int()
+        runtime=Runtime();values=(ctypes.c_float*VALUES)();error=ctypes.c_int()
         self.library.pm_begin_frame()
         for attempts in range(300):
             if not execute(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)):break
@@ -707,7 +750,17 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(code, 0)
         code, actual, error = self.parse(headers + base + shaders)
         self.assertEqual(code, 0, error.key)
-        self.assertEqual(bytes(actual), bytes(expected))
+        def fingerprint(p):
+            blocks=[p.program,p.init_program,p.pixel_program]
+            for shape in p.shape_program:blocks.extend((shape.init,shape.frame))
+            for wave in p.waves:blocks.extend((wave.init,wave.frame,wave.point))
+            raw=bytearray(bytes(p));compiled=[]
+            for block in blocks:
+                offset=ctypes.addressof(block)-ctypes.addressof(p)+Program.code.offset
+                raw[offset:offset+ctypes.sizeof(ctypes.c_void_p)]=bytes(ctypes.sizeof(ctypes.c_void_p))
+                compiled.append(b''.join(bytes(op) for op in block.code[:block.count]))
+            return raw,compiled
+        self.assertEqual(fingerprint(actual), fingerprint(expected))
         for suffix in (b'unknown=1\n', b'per_frame_2=rot=unknown_function(time);\n',
                        b'psp_texture_0=../bad.png\n', b'zoom=nan\n'):
             self.assertNotEqual(self.parse(headers + base + shaders + suffix)[0], 0)
@@ -787,7 +840,7 @@ class PresetTests(unittest.TestCase):
                        "rot=" + "+".join(["0"]*1100) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
         for lines in ("per_frame_2=rot=0;", "per_frame_1=rot=0;\nper_frame_1=rot=0;",
-                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,514))):
+                      "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,RECORDS+2))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
 
     def test_finite_render_limits_are_silent_and_state_keeps_advancing(self):
@@ -879,7 +932,7 @@ per_pixel_1=zoom=0; rot=-99; sx=0; cx=99;
 
     def test_formula_fuzz_and_total_instruction_limit(self):
         # Short valid lines individually fit; their combined bytecode must not.
-        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,200))
+        lines = "\n".join(f"per_frame_{i}=rot=0+0+0+0+0;" for i in range(1,MAX_OPS//10+2))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
         rng = random.Random(121)
         alphabet = "rot=0123.+-*/(); time_sincosabs\t"
@@ -1427,7 +1480,7 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         expression="0"
         for _ in range(70): expression=f"if(0,0,{expression})"
         self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1=warp={expression};".encode())[0],0)
-        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,150))
+        lines="\n".join(f"per_frame_{i}=warp=if(1,if(0,0,1),if(1,1,0));" for i in range(1,MAX_OPS//10+2))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         # A failed append never changes the previously compiled instructions.
         program=Program()
@@ -1447,10 +1500,12 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         execute.argtypes=[ctypes.POINTER(Program),ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_int)]
         for index in (branch_index,branch_index+2):
             for destination in (-1,index,program.count+1):
-                damaged=Program.from_buffer_copy(program)
+                damaged=Program()
+                self.assertEqual(compile_fn(ctypes.byref(damaged),b"warp=1;",2),0)
+                self.assertEqual(compile_fn(ctypes.byref(damaged),b"warp=if(0,2,3);",3),0)
                 damaged.code[count].value=1  # also exercise unconditional jump
                 damaged.code[index].arg=destination
-                values=(ctypes.c_float*218)(*([.5]*218)); before=bytes(values)
+                values=(ctypes.c_float*VALUES)(*([.5]*VALUES)); before=bytes(values)
                 error=ctypes.c_int()
                 self.assertEqual(execute(ctypes.byref(damaged),values,ctypes.byref(error)),0)
                 self.assertEqual(bytes(values),before)
@@ -1769,8 +1824,8 @@ per_frame_1=wave_r=progress;
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
                       "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
-                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,514)),
-                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,200))):
+                      "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,RECORDS+2)),
+                      "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,MAX_OPS//10+2))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         code,preset,_=self.parse(b"[preset00]\nper_frame_init_1=q1=1/0;\n")
         self.assertEqual(code,0)
@@ -1824,10 +1879,10 @@ per_frame_1=wave_r=progress;
         self.assertEqual(self.evaluate_state(preset,PresetState(),0)[1].warp,0)
 
     def test_named_variable_limits_and_namespace_rollback(self):
-        lines="\n".join(f"per_frame_{i+1}=custom_{i}={i};" for i in range(64))
+        lines="\n".join(f"per_frame_{i+1}=custom_{i}={i};" for i in range(USERS))
         code,preset,_=self.parse(f"[preset00]\n{lines}".encode())
         self.assertEqual(code,0)
-        self.assertEqual(preset.symbols.count,64)
+        self.assertEqual(preset.symbols.count,USERS)
         self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1=extra=1;\n{lines}".encode())[0],2)
         for name in ("psp_low","sin"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={name}=0;".encode())[0],0)
@@ -1942,7 +1997,7 @@ per_frame_1=wave_r=progress;
     def test_pixel_restrictions_and_demo(self):
         for formula in ("psp_low=0;",):
             self.assertEqual(self.parse(f"[preset00]\nper_pixel_1={formula}".encode())[0],3)
-        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,300))
+        lines="\n".join(f"per_pixel_{i}=dx=0+0+0+0+0;" for i in range(1,MAX_OPS//10+2))
         self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)
         self.assertEqual(self.parse(b"[preset00]\nper_pixel_2=dx=0;")[0],2)
         code,preset,_=self.parse((ROOT / "psp-client/presets/grid-twist-demo.milk").read_bytes())

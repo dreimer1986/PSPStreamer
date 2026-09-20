@@ -234,7 +234,7 @@ static int compile_context_mapped(PmProgram *program,const char *source,int line
               .source=source,.locations=locations,.location_count=location_count};
     int records=location_count?location_count:1;
     if(error_line)*error_line=line;
-    if(program->lines+records>PM_MAX_RECORDS || before<0 || before>PM_MAX_OPS) return PM_INVALID;
+    if(program->lines+records>PM_MAX_RECORDS || !program_valid(program)) return PM_INVALID;
     space(&p);
     if(!*p.p){program->lines+=records;return PM_OK;} /* exported blank/comment-only block */
     if(!sequence(&p) || !emit(&p,DROP,0,0)) goto fail;

@@ -803,7 +803,7 @@ Boolean functions and additional math; `branch-beat-demo.milk` demonstrates
 music-reactive changes of wave style, color, zoom and echo intensity.
 The [initialization/q-variable subset](docs/MILKDROP_INIT.md) adds
 `per_frame_init_*` and `q1`–`q32`; try `init-orbit-demo.milk` as the active file.
-Up to 64 [named persistent variables](docs/MILKDROP_COMPATIBILITY.md) per context can retain
+Up to 128 [named persistent variables](docs/MILKDROP_COMPATIBILITY.md) per context can retain
 state between frames; `memory-pulse-demo.milk` holds and releases bass impulses.
 Bounded [per-grid-point formulas](docs/MILKDROP_GRID.md) add local transforms;
 try `grid-twist-demo.milk`. This is an interpolated 8×8 mesh, not pixel shaders.

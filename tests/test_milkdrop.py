@@ -9,6 +9,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_owned_formula_storage_failure_and_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);binary=root/'storage';other=root/'other.milk'
+            lines=['[preset00]','zoom=1']
+            for prefix in ('per_frame_','per_pixel_','wave_0_per_point'):
+                for i in range(1,31):
+                    lines.append(prefix+str(i)+'='+'q1=q1+.001;'*20)
+            other.write_text('\n'.join(lines))
+            sources=['milkdrop_preset.c','preset_math.c','milkdrop_signal.c','milkdrop_wave.c',
+                     'milkdrop_wave_extra.c','milkdrop_decor.c','milkdrop_warp.c']
+            subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+                '-fsanitize=undefined,float-cast-overflow','-I',str(ROOT/'psp-client'),
+                str(ROOT/'tests/preset_storage_harness.c'),
+                *[str(ROOT/'psp-client'/s) for s in sources],
+                '-Wl,--wrap=calloc,--wrap=realloc,--wrap=free','-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary),str(ROOT/'psp-client/presets/eel-sqrt-demo.milk'),str(other)],
+                           check=True,timeout=60)
+
     def test_integer_conversion_matches_reference_x87(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'integers'
@@ -96,6 +114,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT/'psp-client/presets/offscreen-shapes-demo.milk'),
                             str(ROOT/'psp-client/presets/geometry-range-demo.milk'),
                             str(ROOT/'psp-client/presets/eel-sqrt-demo.milk'),
+                            str(ROOT/'psp-client/presets/formula-storage-demo.milk'),
                             *([str(Path(os.environ['GEISS_PRESET_DIR'])/'Geiss - Explosion nz+.milk')] if os.environ.get('GEISS_PRESET_DIR') else [])],
                            check=True, timeout=120)
 

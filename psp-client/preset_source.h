@@ -59,6 +59,7 @@ static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int l
     return MD_FILE_OK;
 }
 static int md_source_compile(MdSourceBlock *blocks,MdFileError *error) {
+    int allocated=0;
     for(int i=0;i<MD_SOURCE_BLOCKS;i++) {
         MdSourceBlock *b=blocks+i;
         if(!b->count)continue;
@@ -68,8 +69,11 @@ static int md_source_compile(MdSourceBlock *blocks,MdFileError *error) {
             int record=0;
             while(record+1<b->count && b->locations[record+1].line<=line)record++;
             char key[48];snprintf(key,sizeof(key),"%s%d",b->prefix,record+1);
-            return md_file_error(error,result==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,line,key);
+            return md_file_error(error,result==PM_NOMEM?MD_FILE_IO:result==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,line,key);
         }
+        pm_program_compact(b->program);
+        allocated+=b->program->capacity;
+        if(allocated>PM_TOTAL_OPS)return md_file_error(error,MD_FILE_INVALID,line,"total formula storage");
     }
     return MD_FILE_OK;
 }

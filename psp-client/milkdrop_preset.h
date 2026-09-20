@@ -66,6 +66,8 @@ int md_eval_preset_state(const MdFilePreset *preset, float seconds, const MdSign
 int md_eval_pixel_grid(const MdFilePreset *preset, const MdPreset *frame, float seconds,
                       const MdSignal *signal, MdPresetState *state,
                       MdPreset points[MD_GRID_POINTS], MdFileError *error);
-/* Transactional: never change output on failure. Strict, bounded subset. */
+/* Owned bytecode: zero-initialize output before its first load. No shallow
+ * copies of owners. Successful replacement frees old code; failure preserves it. */
+void md_free_preset(MdFilePreset *preset);
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error);
 #endif

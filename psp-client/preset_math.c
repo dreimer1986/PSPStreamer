@@ -18,6 +18,19 @@ static int binary(int op) {
     return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL) ||
            op==BAND || op==BOR || op==SIGMOID || (op>=MOD && op<=GE);
 }
+void pm_program_free(PmProgram *program) {
+    free(program->code);memset(program,0,sizeof(*program));
+}
+void pm_program_compact(PmProgram *program) {
+    if(!program->count){int lines=program->lines;pm_program_free(program);program->lines=lines;return;}
+    if(program->capacity==program->count)return;
+    PmOp *code=realloc(program->code,(size_t)program->count*sizeof(*code));
+    if(code){program->code=code;program->capacity=program->count;}
+}
+static int program_valid(const PmProgram *p) {
+    return p->count>=0 && p->count<=p->capacity && p->capacity<=PM_MAX_OPS &&
+        p->capacity>=0 && (!p->capacity || p->code);
+}
 static int function(const char *name) {
     static const struct {const char *name; int op;} list[]={
         {"sin",SIN},{"cos",COS},{"abs",ABS},{"min",MIN},{"max",MAX},{"sqrt",SQRT},
@@ -35,7 +48,7 @@ static int function(const char *name) {
     return -1;
 }
 int pm_program_work_hint(const PmProgram *program) {
-    if(program->count<0 || program->count>PM_MAX_OPS)return PM_FUEL;
+    if(!program_valid(program))return PM_FUEL;
     for(int i=0;i<program->count;i++) {
         int op=program->code[i].op;
         if(op==LOOP || op==WHILE || op==MEMCPY || op==MEMSET)return PM_FUEL;
@@ -43,6 +56,7 @@ int pm_program_work_hint(const PmProgram *program) {
     return program->count;
 }
 int pm_assignment_line(const PmProgram *program, int variable) {
+    if(!program_valid(program))return 0;
     for (int i = program->count-1; i >= 0; i--)
         if ((program->code[i].op == STORE || program->code[i].op == KEEP) && program->code[i].arg == variable)
             return program->code[i].line;
@@ -79,6 +93,13 @@ static void space(Parser *p) {
 }
 static int emit(Parser *p, int op, int arg, float value) {
     if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
+    if(p->code->count==p->code->capacity) {
+        int capacity=p->code->capacity?p->code->capacity*2:64;
+        if(capacity>PM_MAX_OPS)capacity=PM_MAX_OPS;
+        PmOp *code=realloc(p->code->code,(size_t)capacity*sizeof(*code));
+        if(!code){p->error=PM_NOMEM;return 0;}
+        p->code->code=code;p->code->capacity=capacity;
+    }
     p->code->code[p->code->count++] = (PmOp){op,arg,source_line(p,1),value};
     return 1;
 }
@@ -274,7 +295,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
     struct {int start,end,left,stack;} loops[PM_DEPTH];
     int used = 0,depth=0,fuel=PM_FUEL;
     *error_line = 0;
-    if (program->count < 0 || program->count > PM_MAX_OPS) return 0;
+    if (!program_valid(program)) return 0;
     for (int i = 0; i < program->count; i++) {
         const PmOp *op = &program->code[i];
         if(--fuel<0 || frame_fuel==0) return 0;
@@ -442,8 +463,10 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
 }
 int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime) {
     if(!program->count) {*error_line=0;return 1;}
-    Journal journal; journal.count=0;journal.runtime=runtime;
-    ValueJournal variables;
+    /* VM/global registers already belong to the sole visual renderer thread.
+     * Keep enlarged bounded rollback scratch off the PSP's 256-KiB stack. */
+    static Journal journal; journal.count=0;journal.runtime=runtime;
+    static ValueJournal variables;
     variables.count=0;memset(variables.dirty,0,sizeof(variables.dirty));
     unsigned int random=runtime->random;
     if(execute(program,values,error_line,runtime,&journal,&variables)) return 1;

@@ -1,21 +1,25 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef PSPSTREAMER_PRESET_MATH_H
 #define PSPSTREAMER_PRESET_MATH_H
-enum { PM_MAX_OPS = 2048, PM_MAX_RECORDS = 512, PM_STACK = 48, PM_DEPTH = 64,
+enum { PM_MAX_OPS = 4096, PM_TOTAL_OPS = 16384, PM_MAX_RECORDS = 1024, PM_STACK = 48, PM_DEPTH = 64,
        PM_Q_BASE = 55, PM_Q_COUNT = 32, PM_USER_BASE = PM_Q_BASE + PM_Q_COUNT,
-       PM_USER_COUNT = 64, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
+       PM_USER_COUNT = 128, PM_COORD_BASE = PM_USER_BASE + PM_USER_COUNT,
        PM_META_BASE = PM_COORD_BASE + 4, PM_DYNAMIC_BASE = PM_META_BASE + 2,
        PM_SHAPE_BASE = PM_DYNAMIC_BASE + 10, PM_T_BASE = PM_SHAPE_BASE + 23,
        PM_WAVE_BASE = PM_T_BASE + 8, PM_EFFECT_BASE = PM_WAVE_BASE + 4,
        PM_ENGINE_BASE = PM_EFFECT_BASE + 5, PM_INPUT_BASE = PM_ENGINE_BASE + 3,
        PM_MONITOR = PM_INPUT_BASE + 6, PM_WRAP = PM_MONITOR + 1, PM_VALUES = PM_WRAP + 1,
-       PM_PIXEL_OPS = 2048, PM_MEMORY = 2048, PM_FUEL = 4096 };
+       PM_PIXEL_OPS = 4096, PM_MEMORY = 4096, PM_FUEL = 4096 };
 typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
-typedef struct { int count, lines; PmOp code[PM_MAX_OPS]; } PmProgram;
+/* Owns import-time allocation. Zero-initialize; do not shallow-copy owners.
+ * Playback never allocates. Empty contexts reserve no bytecode storage. */
+typedef struct { int count, lines, capacity; PmOp *code; } PmProgram;
+void pm_program_free(PmProgram *program);
+void pm_program_compact(PmProgram *program);
 typedef struct { int offset, line; } PmSourceLocation;
-enum { PM_OK, PM_INVALID, PM_UNSUPPORTED };
+enum { PM_OK, PM_INVALID, PM_UNSUPPORTED, PM_NOMEM };
 /* Compile appends transactionally; source is never retained. */
 int pm_compile(PmProgram *program, const char *source, int line);
 /* Init/frame share one bounded namespace. Roll back names too on failure. */

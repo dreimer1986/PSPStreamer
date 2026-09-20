@@ -65,6 +65,15 @@ static int md_shader_source(const char *key) {
     return !*p;
 }
 #include "preset_source.h"
+void md_free_preset(MdFilePreset *p) {
+    pm_program_free(&p->program);pm_program_free(&p->init_program);pm_program_free(&p->pixel_program);
+    for(int i=0;i<MD_SHAPES;i++) {
+        pm_program_free(&p->shape_program[i].init);pm_program_free(&p->shape_program[i].frame);
+    }
+    for(int i=0;i<MD_CUSTOM_WAVES;i++) {
+        pm_program_free(&p->waves[i].init);pm_program_free(&p->waves[i].frame);pm_program_free(&p->waves[i].point);
+    }
+}
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
     static const char *keys[] = {"zoom", "rot", "warp", "fWarpAnimSpeed", "fWarpScale",
                                  "fDecay", "wave_r", "wave_g", "wave_b"};
@@ -354,7 +363,8 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
 done:
     if (fclose(file) && result == MD_FILE_OK)
         result = md_file_error(error, MD_FILE_IO, number, "");
-    if (result == MD_FILE_OK) *out = next;
+    if (result == MD_FILE_OK) {md_free_preset(out);*out = next;}
+    else md_free_preset(working);
     md_source_free(sources);
     free(working);
 #undef next
@@ -373,7 +383,7 @@ int md_eval_preset_signal(const MdFilePreset *p, float seconds, const MdSignal *
 int md_eval_preset_visual(const MdFilePreset *p, float seconds, const MdSignal *signal,
                           MdPreset *warp, unsigned int *color, MdDecor *decor, MdFileError *error) {
     /* Stateless convenience API; playback uses an explicit activation state. */
-    MdPresetState state={0};
+    static MdPresetState state;memset(&state,0,sizeof(state));
     return md_eval_preset_state(p,seconds,signal,&state,warp,color,decor,error);
 }
 int md_eval_preset_state(const MdFilePreset *p, float seconds, const MdSignal *signal,
@@ -403,7 +413,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
             return md_file_error(error, MD_FILE_INVALID, 0, "music input");
         v[10+i] = value;
     }
-    MdPresetState next=*state;
+    static MdPresetState next;next=*state;
     pm_begin_frame();md_inputs(v);v[PM_MONITOR]=next.monitor;
     v[PM_WRAP]=(float)p->wrap;
     float dt=seconds-next.last_seconds;
@@ -583,7 +593,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
 int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *signal,
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error) {
-    MdWaveState next[MD_CUSTOM_WAVES];
+    static MdWaveState next[MD_CUSTOM_WAVES];
     MdWaveGeometry geometry[MD_CUSTOM_WAVES];
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) geometry[slot].count=0;
     int line=0;
@@ -689,7 +699,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
                       const MdSignal *signal, MdPresetState *state,
                       MdPreset points[MD_GRID_POINTS], MdFileError *error) {
     MdPreset next[MD_GRID_POINTS];
-    PmRuntime runtime=state->pixel_runtime;
+    static PmRuntime runtime;runtime=state->pixel_runtime;
     float users[PM_USER_COUNT],q[PM_Q_COUNT];
     memcpy(users,state->pixel_user,sizeof(users));memcpy(q,state->frame_q,sizeof(q));
     memset(error,0,sizeof(*error));
