@@ -35,6 +35,7 @@
 #include "display_output.h"
 #include "tv_canvas.h"
 #include "help_pages.h"
+#include "power_policy.h"
 static void help_open(int topic);
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
@@ -443,6 +444,11 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
             else if (!strncmp(line, "tv_ui=", 6)) tv_ui_auto = !strcmp(line + 6, "auto");
+            else if (!strncmp(line,"music_cpu_mhz=",14))music_cpu_mhz=atoi(line+14);
+            else if (!strncmp(line,"milkdrop_cpu_mhz=",17))milkdrop_cpu_mhz=atoi(line+17);
+            else if (!strncmp(line,"idle_cpu_mhz=",13))idle_cpu_mhz=atoi(line+13);
+            else if (!strncmp(line,"video_cpu_mhz=",14))video_cpu_mhz=atoi(line+14);
+            else if (!strncmp(line,"screen_idle=",12))screen_idle=atoi(line+12);
         }
     }
     if (selected_audio_track < 0 || selected_audio_track > 7) selected_audio_track = 0;
@@ -453,6 +459,11 @@ static void load_playback_settings(void) {
     if (server_port < 1 || server_port > 65535) server_port = PSP_STREAMER_PORT;
     if (!server_host[0]) strcpy(server_host, PSP_STREAMER_HOST);
     server_auth_update();
+    if(!playback_clock_valid(music_cpu_mhz))music_cpu_mhz=0;
+    if(!playback_clock_valid(milkdrop_cpu_mhz))milkdrop_cpu_mhz=0;
+    if(!playback_clock_valid(idle_cpu_mhz))idle_cpu_mhz=0;
+    if(!playback_clock_valid(video_cpu_mhz))video_cpu_mhz=0;
+    if(screen_idle<0||screen_idle>2)screen_idle=0;
     if(music_preset_auto<0 || music_preset_auto>3) music_preset_auto=0;
     if(music_preset_seconds<30 || music_preset_seconds>600) music_preset_seconds=60;
     if(music_preset_fade_ms<0 || music_preset_fade_ms>5000) music_preset_fade_ms=1500;
@@ -460,7 +471,7 @@ static void load_playback_settings(void) {
 
 static int save_playback_settings(void) {
     SceUID file;
-    char data[1024];
+    char data[2048];
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
@@ -469,6 +480,8 @@ static int save_playback_settings(void) {
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
+    length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);
+    length += snprintf(data+length,sizeof(data)-length,"milkdrop_cpu_mhz=%d\nidle_cpu_mhz=%d\n",milkdrop_cpu_mhz,idle_cpu_mhz);
     if(length<0 || length>=(int)sizeof(data))return -1;
     file = sceIoOpen(SETTINGS_PATH ".tmp", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0600);
     if(file<0)return file;
@@ -533,7 +546,8 @@ static void keep_awake(void) {
     static unsigned long long last_tick;
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (now - last_tick >= 30000000ULL) {
-        scePowerTick(PSP_POWER_TICK_ALL);
+        int allow_display_idle=power_allow_display_idle(display_output.tv);
+        scePowerTick(allow_display_idle?PSP_POWER_TICK_SUSPEND:PSP_POWER_TICK_ALL);
         last_tick = now;
     }
 }
@@ -1770,6 +1784,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     }
     remote_result = offline_music ? 0 : music_remote_start();
     while (audio_running && remote_result >= 0) {
+        playback_clock(music_visual_active?milkdrop_cpu_mhz:music_cpu_mhz);
         if(plex_playing_id[0]) {
             plex_position_ms=stream_start_seconds*1000+(int)((unsigned long long)audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
             plex_paused=paused;
@@ -1988,8 +2003,11 @@ static int play_audio_once(const char *media_id, const char *title) {
  * screen owns no audio socket, PCM queue or GU list. Never autoplay a station. */
 static int play_audio(const char *media_id,const char *title) {
     int result;
+    playback_clock_release();
     do {
+        power_music=1;
         result=play_audio_once(media_id,title);
+        power_music=0;playback_clock_release();scePowerTick(PSP_POWER_TICK_ALL);
         if(!radio_is_live(media_id) || !radio_next_action)return result;
         int paused=radio_next_action==2;
         unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
@@ -2028,6 +2046,7 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    playback_clock_release();
     plex_report_begin(media_id);
     video_controls.visible=video_controls.saved=0;
     video_controls.selected=3;
@@ -2073,6 +2092,7 @@ static int play_h264(const char *media_id) {
         return -1401;
     }
     if (tvout_video_active) memset((void *)0x44000000, 0, TVOUT_STRIDE * 480 * 4);
+    playback_clock(video_cpu_mhz);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
      * clock in native TV mode.  Let FFmpeg composite them before the stream
@@ -2145,6 +2165,7 @@ static int play_h264(const char *media_id) {
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
+        playback_clock(video_cpu_mhz);
         plex_position_ms=playback_position_ms;
         plex_paused=paused;
         plex_started=video_first_presented;
@@ -2425,6 +2446,7 @@ done:
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
     video_watch_stop();
+    playback_clock_release();scePowerTick(PSP_POWER_TICK_ALL);
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;
@@ -3022,6 +3044,7 @@ int main(void) {
     }
     while (1) {
         unsigned long long now;
+        playback_clock(idle_cpu_mhz);
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();
@@ -3285,6 +3308,7 @@ int main(void) {
         sceKernelDelayThread(20000);
     }
     browser_remote_stop();
+    playback_clock_release();
     if (display_output.tv) display_output_select(&display_output, 0);
     free(tv_canvas.pixels);
     sceNetApctlTerm();

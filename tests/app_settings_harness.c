@@ -15,6 +15,11 @@ static int server_port=8091,server_https,tv_ui_auto,selected_audio_track,selecte
 static int selected_audio_quality=2,selected_video_fps,playback_volume=24,audio_shuffle;
 static int music_preset_auto,music_preset_seconds=60,music_preset_fade_ms=1500;
 static int debug_enabled;
+static int music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle;
+static int playback_clock_valid(int mhz){return mhz==0||(mhz>=66&&mhz<=471);}
+static int clock_choice(int mhz,int direction){(void)mhz;return direction>0?66:471;}
+static int clock_error;
+static int clock_control_status(void){return 0;}
 static int have_cached_server_address=1,resume_pending=1,remote_control_sequence=3,item_count=4,tv_ui_active;
 static unsigned int keys[64];static int position,total,save_failed,saved;
 static unsigned long long tick;
@@ -44,6 +49,11 @@ static void sequence(const unsigned int *values,int count) {memcpy(keys,values,c
 int main(void) {
     AppSettings state;settings_capture(&state);assert(!strcmp(state.password,"ä:test"));
     assert(state.value[SET_DEBUG]==0);
+    state.value[SET_CPU_MUSIC]=222;state.value[SET_CPU_MILKDROP]=443;
+    state.value[SET_CPU_VIDEO]=333;state.value[SET_CPU_IDLE]=111;state.value[SET_SCREEN]=1;
+    settings_apply(&state);
+    assert(music_cpu_mhz==222&&milkdrop_cpu_mhz==443&&video_cpu_mhz==333&&idle_cpu_mhz==111&&screen_idle==1);
+    settings_capture(&state);assert(state.value[SET_CPU_IDLE]==111&&state.value[SET_CPU_MILKDROP]==443);
     state.value[SET_DEBUG]=1;settings_apply(&state);assert(debug_enabled==1);
     state.value[SET_DEBUG]=0;settings_apply(&state);assert(debug_enabled==0);
     memset(music_preset_file,'x',250);music_preset_file[250]=0;

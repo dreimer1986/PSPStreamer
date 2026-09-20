@@ -45,7 +45,8 @@ into `ms0:/SEPLUGINS/StreamerOC/`. In ARK's plugin manager enable this PRX for
 **GAME/homebrew only**, not XMB or POPS. The worker additionally refuses
 non-GAME application contexts and stops enforcement if it observes a context
 change. This is not a load-exec hook. Do not overwrite your existing plugin
-list. The sample config has `enabled=0`, `target_mhz=333`, `enforce=0`, `report=1`.
+list. Defaults are `enabled=0`, `target_mhz=333`, `enforce=0`,
+`enforce_unlimited=0`, `app_control=1`, `report=1`, `overlay=1`.
 Simply loading it with that config must not change CPU clocks.
 
 For ARK-5, use one line in your existing plugin list:
@@ -66,11 +67,21 @@ Do not add both lines for the same plugin.
    enabling clock changes. A callback registration failure still blocks them.
 2. First test `enabled=1`, `target_mhz=333`, `enforce=0`, restart the homebrew,
    and check status, playback, Stop and exit. Only then try a frequency known
-   to be stable on this particular PSP. Accepted requested range: 333–471 MHz.
+   to be stable on this particular PSP. Accepted requested range: 66–471 MHz.
+   Frequencies up to 333 MHz use Sony's clock API (PLL 333, bus half CPU);
+   higher targets use the existing PLL ramp. Low frequencies can starve
+   decoding, networking or Memory Stick I/O; 66 MHz is a limit, not a promise
+   that a particular workload runs there. Start underclock tests at 222 MHz.
 3. With `enforce=1`, the worker checks every 500 ms and reapplies the target if
    an app changes the clocks. This is eventual correction, not a syscall hook
    or an absolute lock. More than three reapplications within one minute
    disables enforcement to avoid an endless fight with the app/another plugin.
+   Optional `enforce_unlimited=1` removes this conflict-count limit **only when
+   `enforce=1`**. It keeps trying at the bounded 500 ms checks rather than
+   giving up after three corrections. The default is off. Suspend, leaving
+   GAME, failed clock writes, unsupported models and startup bypass still stop
+   it. This opt-in can fight another clock plugin and grow the event log;
+   disable competing overrides rather than using it to hide hardware errors.
 4. Suspend/resume disables enforcement until app restart. Holding R through
    the initial six-second delay bypasses all overclock writes. Config is read
    at plugin startup, not hot-reloaded. For recovery, disable/remove the plugin
@@ -79,6 +90,31 @@ Do not add both lines for the same plugin.
 `report=0` disables status file writes. It is independent of PSP Streamer's
 `debug` switch because this plugin also runs in other applications. Reporting
 only happens at startup/state changes or on demand, not every polling tick.
+
+### Optional application control
+
+Add `app_control=1` to the plugin INI to allow temporary application clock
+profiles. `enabled=1` and successful startup/power callback registration are
+also required. The default is `app_control=1`; old INI files remain valid.
+An explicit `app_control=0` still disables requests. Defaults apply only to
+missing keys; existing explicit values are never silently overwritten.
+Requests above 333 MHz cannot exceed your configured `target_mhz`, so an app
+cannot silently raise your tested overclock ceiling. A zero request returns
+to the INI target. Requests never rewrite the INI.
+
+The optional `streameroc:` device exposes the buffer-free `sceIoDevctl`
+commands in `control_api.h`: STATUS (ready/pending/error), CPU_KHZ (register
+estimate, Sony fallback), TARGET, and SET ORed with MHz. No mandatory client
+imports or user pointers are required. The plugin worker performs all changes;
+callers must wait for STATUS to finish before assuming a target was applied.
+Suspend, unsupported models, startup bypass and conflict protection still
+disable clock control. The device is removed when the plugin unloads.
+
+With `overlay=1`, startup, application requests and observed clock changes
+also show the existing overlay for five seconds. Changes made by other apps
+are sampled every 500 ms, including monitor mode; very short changes between
+samples may be missed. `clock_observed_change` and `app_clock_result` events
+are appended when `report=1`. Manual overlay and snapshot chords still work.
 
 ### Persistent event history
 
@@ -101,8 +137,8 @@ records separate runs. Logged events include:
 - Leaving GAME context and orderly worker shutdown, before/after restoration.
 
 Unchanged polling iterations do not write. This is not a CPU trace: clock
-changes between polls, or changes after enforcement was disabled, are not
-automatically captured. Each event is written and closed immediately; partial
+changes between polls are not automatically captured. Observed changes are
+also recorded in monitor mode. Each event is written and closed immediately; partial
 writes are handled. `previous_journal_result` reports the preceding append's
 I/O result (zero on success), so a later snapshot can expose a failed write.
 `report=0` disables **both** files. The log does not auto-rotate or delete old
@@ -141,8 +177,8 @@ after editing the INI; the report's modification time is not its config-load tim
 
 `config_path` identifies the startup INI. `config_state=loaded` confirms that
 the complete file was read and validated. `config_bytes` and `config_keys`
-record bytes read and recognized settings; the sample has five settings
-(older four-setting files remain valid and leave the overlay disabled).
+record bytes read and recognized settings; the sample has seven settings
+(older files remain valid; omitted overlay and app control now default to on).
 `config_io_result` gives the hexadecimal I/O result (zero after successful EOF).
 `config_error_line` identifies a parse error, or is zero on success. Failed
 open/read/close operations and invalid files keep the safe defaults and report
@@ -152,7 +188,7 @@ The parser has no shared tokenization state. It accepts LF/CRLF, a UTF-8 BOM,
 spaces around `=`, and `#`/`;` comments. Unknown keys, invalid booleans (anything
 except 0 or 1), out-of-range targets and empty/comment-only files are rejected.
 Settings are committed only after the whole file passes validation. No runtime
-reload, automatic retry or automatic overclock activation has been added.
+reload or automatic overclock activation has been added.
 
 ### Optional diagnostic overlay (experimental)
 
@@ -160,7 +196,7 @@ Add `overlay=1` to `StreamerOC.ini` and restart the application. Hold
 **L+R+Triangle** briefly to show CPU/bus register estimates, requested target,
 Sony's clock report, effective enabled state, enforcement setting and callback
 availability for five seconds. Release and press again to hide it early.
-L+R+SELECT still appends a snapshot to the log. `overlay=0` is the default;
+L+R+SELECT still appends a snapshot to the log. `overlay=1` is the default;
 the overlay is independent of `report`. Key combinations are not consumed,
 so the application can also react to them.
 

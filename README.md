@@ -508,6 +508,11 @@ port=8091
 server_password=
 https=0
 debug=0
+music_cpu_mhz=0
+milkdrop_cpu_mhz=0
+video_cpu_mhz=0
+idle_cpu_mhz=0
+screen_idle=0
 audio=0
 subtitle=-1
 quality=2
@@ -527,6 +532,28 @@ tv_ui=off
 prefix is also allowed in the file. `https=0` selects HTTP, `https=1` TLS;
 when both are present the last setting wins. `port` is explicit in either mode.
 Enter just the hostname/IP in the app's Server host field, not a URL.
+
+Optional CPU profiles in Settings: `music_cpu_mhz` is music with the spectrum
+display, `milkdrop_cpu_mhz` is music with MilkDrop, `video_cpu_mhz` is video,
+and `idle_cpu_mhz` is the media browser. Each accepts `0` (default: plugin's
+INI target) or 66–471 MHz. Left/Right changes by **1 MHz**; Cross opens direct
+number entry. The optional [StreamerOC plugin](psp-overclock/README.md) needs
+`enabled=1` and `app_control=1`. Above 333 MHz, requests are limited to the
+plugin's configured `target_mhz`; set that only to an overclock you have tested.
+Without the plugin no clocks are changed. All profiles default to disabled.
+Playback cleanup releases its override; the browser then applies its own
+profile. Startup/module initialization retains the existing clock behavior.
+Start underclock testing at 222 MHz, not 66 MHz: low clocks can slow the
+browser, decoding and storage/network I/O. Requested MHz are not guaranteed
+exact physical frequencies. Enable plugin `overlay=1` to see changes.
+
+`screen_idle=0` keeps the display awake as before; `1` allows normal LCD
+power saving during music; `2` allows it throughout the app. Dimming/off
+timing comes from the PSP's power-saving settings. Buttons wake the screen
+and retain their usual functions. System standby is always prevented while
+the app runs. TV output always stays awake so video/sync and external audio
+continue. These options also have pages in the built-in Settings help.
+
 DNS is refreshed by library/media setup; remote polling uses that cached address.
 `audio` (0–7) and `subtitle` (-1–31) store preferred video-track indices
 (`subtitle=-1` disables subtitles); `quality` means `0=96k`, `1=128k`, `2=160k`,

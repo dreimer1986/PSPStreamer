@@ -1,12 +1,18 @@
 # Separate kernel plugin; never activated by PSP Streamer itself.
 # Keep every other clock plugin and ARK clock override disabled.
 enabled=0
-# Only a frequency you have tested on THIS PSP. 333..471 MHz.
+# Only a frequency you have tested on THIS PSP. 66..471 MHz.
 target_mhz=333
 # Reapply if an app changes clocks; stops after 3 conflicts per minute.
 enforce=0
+# With enforce=1, bypass the 3-per-minute conflict limit (opt-in).
+# Suspend and hardware-error safety shutdowns still apply.
+enforce_unlimited=0
+# Permit explicit session-only requests from cooperating homebrew (optional).
+app_control=1
 # Register-derived CPU/PLL/bus estimates in StreamerOC-status.txt.
 report=1
-# Optional diagnostic OSD: hold L+R+Triangle; 5 seconds, press again to hide.
-# Disabled by default; no display hooks. May flicker in fast-rendering apps.
-overlay=0
+# Optional OSD: clock changes automatically show 5 seconds.
+# L+R+Triangle shows/hides it manually too.
+# Enabled by default; no display hooks. May flicker in fast-rendering apps.
+overlay=1

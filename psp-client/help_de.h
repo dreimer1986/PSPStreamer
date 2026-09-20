@@ -134,6 +134,24 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step3_title="Zurück im Menü: START speichert",
         .step3_text="Text übernehmen allein reicht nicht."
     },
+    [HELP_PAGE_POWER]={
+        .title="CPU-Profile (optionales Plugin)",
+        .step1_title="Spektrum / MilkDrop / Video / Menü",
+        .step1_text="Getrennte Werte; AUS nutzt Plugin-INI.",
+        .step2_title="LINKS / RECHTS: 1 MHz; X: Eingabe",
+        .step2_text="66-471 MHz. START speichert alles.",
+        .step3_title="StreamerOC: enabled + app_control=1",
+        .step3_text="OC maximal bis zum Zielwert der INI."
+    },
+    [HELP_PAGE_SCREEN]={
+        .title="LCD-Stromsparen",
+        .step1_title="LCD-Ruhemodus: aus / Musik / immer",
+        .step1_text="Nutzt den Abschalt-Timer der PSP.",
+        .step2_title="Eine Taste weckt den Bildschirm",
+        .step2_text="Sie kann auch die Wiedergabe steuern.",
+        .step3_title="Kein Standby; TV bleibt eingeschaltet",
+        .step3_text="Standard: bisheriger Takt und LCD an."
+    },
     [HELP_PAGE_TV]={
         .title="Am Fernseher abspielen",
         .step1_title="Wiedergabe stoppen; Kabel verbinden",

@@ -39,6 +39,7 @@ main.o: offline_preroll.h mp3_preroll.h
 main.o: wifi_connection.h
 main.o: help_pages.h help_ui.h help_en.h help_de.h
 main.o: library_fetch.h
+main.o: power_policy.h ../psp-overclock/control_api.h
 main.o: music_caption.h
 milkdrop_preset.o: preset_source.h
 main.o milkdrop_gu.o milkdrop_wave.o: milkdrop_wave.h milkdrop_warp.h

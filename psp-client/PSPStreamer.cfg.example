@@ -7,6 +7,15 @@ server_password=
 https=0
 # 0 disables diagnostic logs/monitoring (default); 1 enables troubleshooting.
 debug=0
+# Optional StreamerOC profiles: 0 = plugin default; 66-471 MHz, 1 MHz steps.
+# Plugin needs enabled=1 and app_control=1; above 333 requires INI target >= request.
+music_cpu_mhz=0
+milkdrop_cpu_mhz=0
+video_cpu_mhz=0
+idle_cpu_mhz=0
+# LCD: 0 keep awake, 1 allow display idle during music, 2 always allow.
+# Uses the PSP's display-off timer; system suspend stays blocked, TV stays on.
+screen_idle=0
 audio=0
 subtitle=-1
 quality=2

@@ -134,6 +134,24 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step3_title="Back in settings: START saves",
         .step3_text="Accepting text alone does not save."
     },
+    [HELP_PAGE_POWER]={
+        .title="CPU profiles (optional plugin)",
+        .step1_title="Spectrum / MilkDrop / video / menus",
+        .step1_text="Separate values; OFF uses plugin INI.",
+        .step2_title="LEFT / RIGHT: 1 MHz; X: type value",
+        .step2_text="66-471 MHz. START saves settings.",
+        .step3_title="StreamerOC: enabled + app_control=1",
+        .step3_text="Overclock cannot exceed INI target."
+    },
+    [HELP_PAGE_SCREEN]={
+        .title="LCD power saving",
+        .step1_title="LCD idle: awake / music / always",
+        .step1_text="Uses the PSP's display-off timer.",
+        .step2_title="A button wakes the LCD",
+        .step2_text="The button may also control playback.",
+        .step3_title="Standby stays blocked; TV stays on",
+        .step3_text="Defaults keep clocks and LCD as before."
+    },
     [HELP_PAGE_TV]={
         .title="Using a television",
         .step1_title="Stop playback; connect TV cable",

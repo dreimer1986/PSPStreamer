@@ -9,6 +9,91 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_oc_unlimited_enforcement_only_bypasses_conflict_count(self):
+        import re
+        code = (ROOT / 'psp-overclock/main.c').read_text()
+        expression = re.search(r'if\(([^\n]+)\)\{enabled=0;status="clock conflict:', code).group(1)
+        source = '''#include <assert.h>
+static int limit(int enforce_unlimited, unsigned *count) {
+    unsigned conflicts=*count;
+    int stop=(''' + expression + ''');
+    *count=conflicts;return stop;
+}
+int main(void){
+    unsigned count=0;
+    for(int i=0;i<3;i++)assert(!limit(0,&count));
+    assert(limit(0,&count));
+    for(int i=0;i<10000;i++)assert(!limit(1,&count));
+    assert(limit(0,&count));return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'limit'
+            subprocess.run(['cc', '-x', 'c', '-', '-Wall', '-Wextra', '-Werror',
+                            '-o', str(binary)], input=source, text=True, check=True)
+            subprocess.run([str(binary)], check=True)
+        self.assertLess(code.index('if(!enforce){'), code.index('if(!enforce_unlimited'))
+        self.assertIn('if(!running || suspended)return -2;', code)
+        self.assertIn('if(r)enabled=0;', code)
+
+    def test_optional_app_clock_profiles_and_lcd_idle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'power'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-client'),
+                            str(ROOT / 'tests/power_policy_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_oc_optional_control_permission_and_limits(self):
+        code = (ROOT / 'psp-overclock/main.c').read_text()
+        code = code[code.index('static int control_devctl('):code.index('static int control_init(')]
+        source = r'''
+#include <assert.h>
+#include <stddef.h>
+#include "control_api.h"
+typedef int PspIoDrvFileArg;
+static int target=333,configured_target=443,control_ready,app_control,enabled,suspended,running=1;
+static int control_pending=-1,control_result;
+static unsigned CTL,MUL,CPU;
+static int sceKernelGetModel(void){return 2;}
+static int oc_supported_model(int m){return m==2;}
+static unsigned oc_khz(unsigned a,unsigned b,unsigned c){(void)a;(void)b;(void)c;return 442150;}
+static int scePowerGetCpuClockFrequencyInt(void){return 333;}
+static int sceKernelCpuSuspendIntr(void){return 0;}
+static void sceKernelCpuResumeIntr(int i){(void)i;}
+''' + code + r'''
+static int call(unsigned cmd){return control_devctl(NULL,"",cmd,NULL,0,NULL,0);}
+int main(void){
+    assert(call(OC_CMD_CPU_KHZ)==442150);
+    assert(call(OC_CMD_TARGET)==333);
+    assert(call(OC_CMD_SET|222)<0 && control_pending==-1);
+    control_ready=app_control=enabled=1;
+    assert(call(OC_CMD_STATUS)==0);
+    assert(call(OC_CMD_SET|65)<0);
+    assert(call(OC_CMD_SET|472)<0);
+    assert(call(OC_CMD_SET|444)<0);
+    assert(call(OC_CMD_SET|66)==0 && control_pending==66);
+    assert(call(OC_CMD_STATUS)==1);
+    control_pending=-1;
+    assert(call(OC_CMD_SET|443)==0 && control_pending==443);
+    assert(call(OC_CMD_SET)==0 && control_pending==0);
+    suspended=1;assert(call(OC_CMD_SET|222)<0);
+    suspended=0;enabled=0;assert(call(OC_CMD_SET|222)<0);
+    enabled=1;app_control=0;assert(call(OC_CMD_SET|222)<0);
+    app_control=1;
+    assert(control_devctl(NULL,"",OC_CMD_SET|222,&target,4,NULL,0)<0);
+    assert(control_devctl(NULL,"",OC_CMD_STATUS,NULL,0,&target,4)<0);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'control.c'
+            path.write_text(source)
+            binary = path.with_suffix('')
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-overclock'), str(path), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_oc_overlay_pixel_formats_and_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / 'overlay'
@@ -47,15 +132,18 @@ static int parse(const char *input, OcConfig *out, int *keys, int *line) {
     return oc_config_parse(text,(int)n,out,keys,line);
 }
 int main(int argc,char **argv) {
-    OcConfig c={0,333,0,1,0}; int keys,line;
+    OcConfig c={0,333,0,1,1,1,0}; int keys,line;
     assert(parse("# header\nenabled=1\ntarget_mhz=383\nenforce=1\nreport=1\n",&c,&keys,&line)==0);
     assert(c.enabled==1 && c.target==383 && c.enforce==1 && c.report==1 && keys==4 && !line);
+    assert(c.overlay==1 && c.app_control==1 && !c.enforce_unlimited);
+    assert(parse("enforce_unlimited=1\napp_control=0\noverlay=0",&c,&keys,&line)==0);
+    assert(c.enforce_unlimited==1&&!c.enforce&&!c.app_control&&!c.overlay);
     assert(parse("overlay=1",&c,&keys,&line)==0 && c.overlay==1 && !c.enabled);
     assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
     assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
     const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
-        "enabled=1\nreport=0\ntarget_mhz=332", "target_mhz=9999999999999999999999",
-        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=2"};
+        "enabled=1\nreport=0\ntarget_mhz=65", "target_mhz=9999999999999999999999",
+        "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=2", "enforce_unlimited=2"};
     for(unsigned int i=0;i<sizeof(bad)/sizeof(bad[0]);i++) {
         OcConfig before=c;
         assert(parse(bad[i],&c,&keys,&line)<0);
@@ -66,7 +154,7 @@ int main(int argc,char **argv) {
     if(argc==2) {
         char file[1024]; FILE *f=fopen(argv[1],"rb");assert(f);
         int n=(int)fread(file,1,sizeof(file)-1,f);fclose(f);file[n]=0;
-        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==5);
+        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==7);
     }
     return 0;
 }
@@ -161,15 +249,21 @@ int main(void) {
         code = code[code.index('static int matches(void);'):code.index('static int power_callback(')]
         harness = '''
 #include <assert.h>
+#include <stdlib.h>
 #include "clock_math.h"
 static unsigned int CTL=5,MUL=0,CPU=0x01ff01ff,BUS=0x01ff01ff;
-static int running=1,suspended,changed,target=443,fail_ready,interfere,yields;
+static int running=1,suspended,changed,target=443,fail_ready,interfere,yields,sony_owned,sony_cpu=333,sony_bus=166;
 #define SYNC() ((void)0)
 static void settle(void) {}
 static int ready(void) {CTL&=~0x80;return fail_ready?-1:0;}
 static int sceKernelCpuSuspendIntr(void) {return 1;}
 static void sceKernelCpuResumeIntr(int n) {assert(n==1);}
-static int scePowerSetClockFrequency(int p,int c,int b) {assert(p==333&&c==333&&b==166);return 0;}
+static int scePowerSetClockFrequency(int p,int c,int b) {
+    assert(p==333&&c>=66&&c<=333&&b==c/2);sony_cpu=c;sony_bus=b;
+    CTL=5;MUL=(180<<8)|20;CPU=(c<<16)|333;BUS=(b<<16)|333;return 0;
+}
+static int scePowerGetCpuClockFrequencyInt(void){return sony_cpu;}
+static int scePowerGetBusClockFrequencyInt(void){return sony_bus;}
 static void multiplier(unsigned int n) {MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
 static void sceKernelDelayThreadCB(int n) {assert(n==10000);yields++;if(interfere)CPU=0x00800100;}
 ''' + code + '''
@@ -178,8 +272,12 @@ int main(void) {
     CPU=0x00800100; BUS=0x00800100;
     assert(apply()==0 && changed && matches() && yields==59);
     assert(oc_khz(CTL,MUL,CPU)==442150);
+    target=333;assert(!matches());target=443; /* Sony getter still says 333. */
     restore(); assert(((MUL>>8)&255)==180);
     target=333;assert(apply()==0&&matches());
+    target=66;assert(apply()==0&&matches()&&sony_cpu==66&&sony_bus==33);
+    MUL=(239<<8)|20;assert(!matches());MUL=(180<<8)|20;
+    restore();assert(sony_cpu==333&&sony_bus==166);
     target=443;interfere=1;yields=0;
     assert(apply()==-3 && yields==1); /* abort before a second write */
     interfere=0;suspended=1;assert(apply()==-2);

@@ -11,6 +11,7 @@
 #include <pspinit.h>
 #include <pspdisplay.h>
 #include <pspge.h>
+#include <pspiofilemgr_kernel.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -19,6 +20,7 @@
 #include "config_parse.h"
 #include "report_io.h"
 #include "overlay_pixels.h"
+#include "control_api.h"
 
 PSP_MODULE_INFO("StreamerOC", 0x1006, 1, 0);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -29,7 +31,7 @@ PSP_NO_CREATE_MAIN_THREAD();
 #define BUS REG(0xbc200004)
 #define SYNC() __asm__ volatile("sync" ::: "memory")
 static volatile int running, suspended;
-static int worker=-1, enabled, target=333, enforce, report=1, changed;
+static int worker=-1, enabled, target=333, enforce, enforce_unlimited, report=1, changed;
 static int configured_enabled, power_callback_id=-1, power_slot=-1;
 static int power_auto_result=-1, power_register_result=-1;
 static int config_io_result, config_bytes, config_keys, config_error_line;
@@ -41,11 +43,47 @@ static char application[192];
 static int journal_result;
 static volatile int pending_suspend_flags;
 static volatile unsigned long long suspend_tick;
-static int overlay_enabled;
+static int overlay_enabled=1;
+static int app_control=1, configured_target, sony_owned, control_registered;
+static volatile int control_ready, control_pending=-1, control_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
 #include "overlay_vblank.h"
+
+/* The I/O manager dispatches this optional API without mandatory client
+ * imports. All hardware writes stay in our worker, never the caller thread. */
+static int control_devctl(PspIoDrvFileArg *arg,const char *name,unsigned int cmd,
+                         void *in,int inlen,void *out,int outlen) {
+    (void)arg;(void)name;
+    if(in || out || inlen || outlen)return -1;
+    if(cmd==OC_CMD_CPU_KHZ) {
+        unsigned int khz=0;
+        if(oc_supported_model(sceKernelGetModel())) {
+            int intr=sceKernelCpuSuspendIntr();khz=oc_khz(CTL,MUL,CPU);sceKernelCpuResumeIntr(intr);
+        }
+        return khz?(int)khz:scePowerGetCpuClockFrequencyInt()*1000;
+    }
+    if(cmd==OC_CMD_TARGET)return target;
+    if(!control_ready || !app_control || !enabled || suspended || !running)return -1;
+    if(cmd==OC_CMD_STATUS)return control_pending>=0?1:control_result;
+    if((cmd&OC_CMD_SET_MASK)!=OC_CMD_SET)return -1;
+    int requested=(int)(cmd&0xfff);
+    if(requested && !oc_target_valid(requested))return -1;
+    /* App permission does not authorize a higher, untested overclock. */
+    if(requested>333 && requested>configured_target)return -1;
+    int intr=sceKernelCpuSuspendIntr();
+    control_pending=requested;control_result=0;
+    sceKernelCpuResumeIntr(intr);
+    return 0;
+}
+static int control_init(PspIoDrvArg *arg){(void)arg;return 0;}
+static PspIoDrvFuncs control_functions={.IoInit=control_init,.IoExit=control_init,.IoDevctl=control_devctl};
+static PspIoDrv control_driver={"streameroc",0x10,0x800,"StreamerOC control",&control_functions};
+
+static void overlay_notify(void) {
+    if(overlay_enabled&&!suspended) {overlay_until=sceKernelGetSystemTimeWide()+5000000ULL;overlay_next_draw=0;}
+}
 
 static void overlay_update(int toggle) {
     if(!overlay_enabled)return;
@@ -77,6 +115,8 @@ static void overlay_update(int toggle) {
         cpu=oc_khz(ctl,mul,c);bus=oc_khz(ctl,mul,b);
     }
     char lines[3][40]={{0}};
+    if(!cpu)cpu=scePowerGetCpuClockFrequencyInt()*1000;
+    if(!bus)bus=scePowerGetBusClockFrequencyInt()*1000;
     snprintf(lines[0],40,"OC CPU %u.%u BUS %u.%u MHZ EST",cpu/1000,(cpu%1000)/100,bus/1000,(bus%1000)/100);
     snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
@@ -118,6 +158,8 @@ static void config(void) {
         config_state="parse failed";status="invalid config: monitor only";return;
     }
     enabled=parsed.enabled;target=parsed.target;enforce=parsed.enforce;report=parsed.report;
+    app_control=parsed.app_control;
+    enforce_unlimited=parsed.enforce_unlimited;
     overlay_enabled=parsed.overlay;
     config_state="loaded";
 }
@@ -133,7 +175,8 @@ static void snapshot(const char *event) {
     unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
         "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
-        "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\ntarget_mhz=%d\n"
+        "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\nenforce_unlimited=%d\ntarget_mhz=%d\n"
+        "app_control=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
         "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
         "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
@@ -145,7 +188,8 @@ static void snapshot(const char *event) {
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
         event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
         (unsigned int)((now-session_tick)/1000ULL),application,
-        status,sceKernelGetModel(),enabled,enforce,target,
+        status,sceKernelGetModel(),enabled,enforce,enforce_unlimited,target,
+        app_control,configured_target,control_registered,control_result,
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
@@ -161,8 +205,16 @@ static void snapshot(const char *event) {
     oc_report_write(path,text,n,0);
 }
 static int matches(void);
+static void restore(void);
 static int apply(void) {
     if(!running || suspended)return -2;
+    if(target<=333) {
+        if(changed)restore();
+        if(scePowerSetClockFrequency(333,target,target/2)<0)return -1;
+        sony_owned=target;changed=1;
+        return matches()?0:-3;
+    }
+    if(sony_owned)restore();
     /* The tester starts from Sony's 333/333/166 setup, then adjusts PLL and
      * domain ratios. Its busy loops and unbounded upward scan are not copied. */
     if(scePowerSetClockFrequency(333,333,166)<0)return -1;
@@ -198,10 +250,26 @@ static int apply(void) {
     return matches()?0:-3;
 }
 static int matches(void) {
+    if(target<=333) {
+        /* Sony still reports 333 after a direct PLL overclock. Never treat
+         * that cached value as proof that switching back already happened. */
+        if(sony_owned!=target)return 0;
+        unsigned int cpu=oc_khz(CTL,MUL,CPU),bus=oc_khz(CTL,MUL,BUS);
+        return abs(scePowerGetCpuClockFrequencyInt()-target)<=1 &&
+            abs(scePowerGetBusClockFrequencyInt()-target/2)<=1 &&
+            (!cpu || abs((int)cpu-target*1000)<=2000) &&
+            (!bus || abs((int)bus-(target/2)*1000)<=2000);
+    }
     return (CTL&0x8f)==5 && (MUL&0xffff)==((oc_numerator(target)<<8)|OC_DEN) &&
         (CPU&0x01ff01ff)==0x01ff01ff && (BUS&0x01ff01ff)==0x01ff01ff;
 }
 static void restore(void) {
+    if(sony_owned) {
+        if(abs(scePowerGetCpuClockFrequencyInt()-sony_owned)<=1 &&
+           abs(scePowerGetBusClockFrequencyInt()-sony_owned/2)<=1)
+            scePowerSetClockFrequency(333,333,166);
+        sony_owned=0;return;
+    }
     /* Only undo our known register recipe, not a different plugin's PLL.
      * Start at the actual numerator, not the configured maximum (tester bug). */
     if((CTL&0x8f)!=5 || (MUL&255)!=OC_DEN)return;
@@ -231,6 +299,7 @@ static int thread_main(SceSize args,void *argp) {
     const char *filename=sceKernelInitFileName();
     snprintf(application,sizeof(application),"%s",filename?filename:"unknown");
     config();
+    configured_target=target;
     configured_enabled=enabled;
     int model=sceKernelGetModel();
     if(!oc_supported_model(model)) {enabled=0;status="unsupported model: no register writes";}
@@ -248,7 +317,11 @@ static int thread_main(SceSize args,void *argp) {
         int r=apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
     snapshot("startup_result");
+    control_ready=1;
+    if(enabled)overlay_notify();
     unsigned int previous=0,conflicts=0;
+    unsigned int last_ctl=0,last_mul=0,last_cpu=0,last_bus=0;
+    int last_sony=-1;
     unsigned long long window=sceKernelGetSystemTimeWide();
     unsigned long long next_clock_check=0;
     while(running) {
@@ -266,6 +339,21 @@ static int thread_main(SceSize args,void *argp) {
             /* Suspend is a safety boundary: do not silently re-overclock. */
             suspended=0;enabled=0;status="resumed: enforcement disabled; restart to enable";
             snapshot("suspend_resume");pending_suspend_flags=0;
+            control_pending=-1;
+        }
+        if(control_pending>=0 && enabled && !suspended) {
+            /* Keep pending set while applying so clients can wait for ack. */
+            int request=control_pending;
+            target=request?request:configured_target;
+            int r=matches()?0:apply();
+            control_result=r;
+            if(r)enabled=0;
+            status=r?"app clock request failed: disabled":"app clock request applied";
+            int intr=sceKernelCpuSuspendIntr();
+            if(control_pending==request)control_pending=-1;
+            sceKernelCpuResumeIntr(intr);
+            conflicts=0;window=sceKernelGetSystemTimeWide();
+            snapshot("app_clock_result");overlay_notify();
         }
         sceCtrlPeekBufferPositive(&pad,1);
         unsigned int buttons=pad.Buttons;
@@ -279,16 +367,27 @@ static int thread_main(SceSize args,void *argp) {
         unsigned long long clock_tick=sceKernelGetSystemTimeWide();
         if(clock_tick<next_clock_check)continue;
         next_clock_check=clock_tick+500000ULL;
+        if(oc_supported_model(model)) {
+            int intr=sceKernelCpuSuspendIntr();
+            unsigned int ctl=CTL,mul=MUL,cpu=CPU,bus=BUS;
+            sceKernelCpuResumeIntr(intr);
+            int sony=scePowerGetCpuClockFrequencyInt();
+            if(last_sony>=0 && (ctl!=last_ctl || mul!=last_mul || cpu!=last_cpu || bus!=last_bus || sony!=last_sony)) {
+                snapshot("clock_observed_change");overlay_notify();
+            }
+            last_ctl=ctl;last_mul=mul;last_cpu=cpu;last_bus=bus;last_sony=sony;
+        }
         if(!enabled || matches())continue;
         snapshot("clock_mismatch");
         if(!enforce){enabled=0;status="application changed clocks: not reapplied";snapshot("enforcement_disabled");continue;}
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(now-window>=60000000ULL){conflicts=0;window=now;}
-        if(++conflicts>3){enabled=0;status="clock conflict: enforcement disabled";snapshot("conflict_limit");continue;}
+        if(!enforce_unlimited && ++conflicts>3){enabled=0;status="clock conflict: enforcement disabled";snapshot("conflict_limit");continue;}
         int r=apply();status=r?"reapply failed: disabled":"target reapplied";if(r)enabled=0;
         snapshot("reapply_result");
     }
     snapshot("session_stopping");
+    control_ready=0;
     overlay_until=0;overlay_update(0);
     if(changed && !suspended)restore();
     enabled=0;status="worker stopped";
@@ -306,14 +405,17 @@ int module_start(SceSize args,void *argp) {
         if(slash){slash[1]=0;snprintf(directory,sizeof(directory),"%s",path);}
     }
     running=1;
+    control_registered=sceIoAddDrv(&control_driver)>=0;
     worker=sceKernelCreateThread("StreamerOC",thread_main,0x30,0x4000,0,NULL);
-    if(worker<0){running=0;return worker;}
+    if(worker<0){running=0;if(control_registered)sceIoDelDrv("streameroc");return worker;}
     int r=sceKernelStartThread(worker,0,NULL);
-    if(r<0){running=0;sceKernelDeleteThread(worker);worker=-1;}
+    if(r<0){running=0;sceKernelDeleteThread(worker);worker=-1;if(control_registered)sceIoDelDrv("streameroc");}
     return r;
 }
 int module_stop(SceSize args,void *argp) {
     (void)args;(void)argp;running=0;
+    control_ready=0;
+    if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}
     if(worker>=0){sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);worker=-1;}
     return 0;
 }
