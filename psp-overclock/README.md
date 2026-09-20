@@ -283,6 +283,19 @@ ownership/abort guards remain unchanged. This does not lock the instruction
 cache and **is not proof that the shutdown is fixed**; hardware confirmation
 is required. No cache manipulation, voltage change or memory unlocking was added.
 
+Hardware follow-up (2026-09-20): after a restart, the user ran Soul Calibur,
+Tomb Raider, GTA Vice City Stories, then the same three games again, followed
+by PSP Streamer. All seven starts survived. The six game sessions recorded
+`target applied`, `diag_failed=0` and a register estimate of 416250 kHz for the
+418 MHz request. Game names are assigned from the user's sequence; the log
+itself reports only the shared `disc0:/PSP_GAME/SYSDIR/EBOOT.BIN` path.
+This supports the inline-settle correction, but is not a general stability
+guarantee. The final PSP Streamer session did **not** apply OC: Sony returned
+success without changing ratio 3 / multiplier `0124E114`, and the raw-path
+input guard rejected that inherited state with phase 12 / result -4. The
+plugin disabled clock writes as intended. That initialization case remains
+open; a running player is not evidence of successful overclocking.
+
 With `report=1`, every existing event now also includes a record sequence,
 event-string address/length/FNV-1a hash and numeric clock diagnostics. Empty
 event strings are reported as `EMPTY_EVENT`. The clock algorithm, Sony call,
