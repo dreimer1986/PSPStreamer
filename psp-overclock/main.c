@@ -218,7 +218,7 @@ static void snapshot(const char *event) {
     unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
         "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
-        "build=oc-inline-settle-2\nrecord_sequence=%u\nevent_address=%08X\nevent_length=%d\nevent_hash=%08X\n"
+        "build=oc-inherited-start-3\nrecord_sequence=%u\nevent_address=%08X\nevent_length=%d\nevent_hash=%08X\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\nenforce_unlimited=%d\ntarget_mhz=%d\n"
         "app_control=%d\napp_control_active=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"

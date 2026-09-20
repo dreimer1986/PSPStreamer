@@ -401,7 +401,16 @@ static int ready(void){
     if(fail_ratio&&(CTL&0x80)&&(CTL&15)==(unsigned)fail_ratio)return -1;
     CTL&=~0x80;return fail_ready?-1:0;
 }
-static void multiplier(unsigned int n){assert(locked&&(CTL&0x8f)==5);multiplier_calls++;MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
+static int inherited_writes;
+static void multiplier(unsigned int n){
+    assert(locked);
+    if((CTL&0x8f)!=5) {
+        assert((CTL==3||CTL==4) && (MUL&0xffff00ffU)==0x01240014U);
+        assert(n+1==((MUL>>8)&255) && n>=OC_NORMAL_NUM);
+        assert(CPU==0x01ff01ff && BUS==0x01ff01ff);inherited_writes++;
+    }
+    multiplier_calls++;MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;
+}
 static unsigned ratio_writes[8],ratio_multipliers[8];static int ratio_count;
 static void oc_ratio_write(unsigned int n){
     assert(locked&&ratio_count<8);ratio_multipliers[ratio_count]=MUL;
@@ -504,12 +513,34 @@ int main(void) {
         running=1;suspended=0;sony_mode=mode;
         int before=sony_calls,r=startup_apply();
         assert(sony_calls==before+1 && !locked);
-        if(mode==0){assert(!r && matches());assert(restore()==0);}
+        if(mode<=1){assert(!r && matches());assert(restore()==0);}
         else {
-            assert(r==(mode==1?-4:mode==2?-77:-2));
+            assert(r==(mode==2?-77:-2));
             assert(!multiplier_calls); /* Never force the raw path after failure. */
         }
     }
+    assert(inherited_writes==45); /* 225 -> 180 before any upward ratio write. */
+    for(int index=3;index<=4;index++) {
+        CTL=index;MUL=0x0124E114;CPU=BUS=0x01ff01ff;
+        running=1;suspended=0;changed=0;sony_mode=1;ratio_count=0;
+        assert(startup_apply()==0 && matches());
+        for(int i=0;i<ratio_count;i++)assert(ratio_multipliers[i]==0x0124B414);
+        assert(restore()==0);
+    }
+    /* Startup preparation cancels safely and never overwrites a competitor. */
+    for(int fault=1;fault<=4;fault++) {
+        CTL=3;MUL=0x0124E114;CPU=BUS=0x01ff01ff;
+        running=1;suspended=0;changed=0;ratio_count=0;multiplier_calls=0;
+        interfere=fault==4?0:fault;
+        mutate_at=fault==4?"clock_inherited_reduce_begin":0;
+        int r=startup_apply();
+        assert(r==((fault==1||fault==4)?-3:-2));
+        assert(!locked && !changed && !ratio_count);
+        assert(multiplier_calls==(fault==4?0:1));
+    }
+    interfere=0;mutate_at=0;running=1;suspended=0;
+    CTL=3;MUL=0x0125E114;CPU=BUS=0x01ff01ff;multiplier_calls=0;
+    assert(startup_apply()==-4 && !multiplier_calls); /* Unknown PLL recipe. */
     /* Patched no-op with a safe state retains the proven raw fallback. */
     running=1;suspended=0;changed=0;sony_mode=1;ratio_count=0;
     CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;

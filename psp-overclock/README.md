@@ -38,8 +38,42 @@ Sony preparation step; the direct register writer's stricter checks are not
 relaxed. Sony failure aborts startup; success is followed by actual register
 validation, never assumed to mean 333 MHz. CFW can replace the call with a
 successful no-op. A safe unchanged state retains the existing direct fallback;
-an unsafe mixed state is still rejected. Profile changes, enforcement ramps
+the narrowly recognized inherited state described below is first reduced.
+Other unsafe mixed states are still rejected. Profile changes, enforcement ramps
 and exit restoration remain direct and do not repeat the Sony call.
+
+### Inherited OC startup recovery (`build=oc-inherited-start-3`)
+
+PSP Streamer's repeated failure was phase 12 / -4 before app control became
+active: Sony returned success but left control 3 and multiplier `0124E114`.
+The player contains no Sony clock setter. Its app-control requests are not
+accepted until plugin startup completes; this was not intentional app ownership.
+The installed ARK settings also contained no explicit CPU override. The logs
+prove the ineffective call, not which firmware/plugin component caused it.
+
+After a successful Sony call, startup now recognizes only control 3 or 4,
+upper multiplier bits `0124`, denominator 20, numerator 181..254, and both
+domains exactly `01FF01FF`. It decreases the numerator one unit at a time to
+180 **before** any ratio increase. Each write retains the denominator, upper
+bits and domains, followed by the inline settling sequence. The worker yields
+between steps and checks all four registers before and after each write, plus
+after the last yield. Cancellation or interference stops the operation.
+
+This preparation does not claim normal ratio-5 ownership. On cancellation it
+leaves the reduced state in place: no blind restore is attempted while still
+at ratio 3/4. The existing strict `apply()` path then accepts the normalized
+180/20 state and performs its established adjacent ratio transition and ramp.
+An effective Sony call, stock 9/1, and already-valid ratio-5 state do not enter
+this fallback. No Sony hooks are removed, no calls are repeatedly forced, and
+the player's code/configuration is unchanged.
+
+`clock_inherited_reduce_begin` and `clock_inherited_reduce_ready` bracket the
+fallback; numeric phase 21 identifies its failures. No per-step file writes.
+Eleven OC host checks pass, including the exact recorded tuple, control 3/4,
+downward-only writes, baseline multipliers at ratio changes, cancellation,
+foreign writes, unknown PLL recipe rejection and the inline machine-code check.
+Hardware confirmation of this new fallback is pending. Test with ARK Auto,
+the existing INI and PSP Streamer both directly and after leaving a game.
 
 Events `clock_sony_baseline_begin` and `clock_sony_baseline_result` bracket the
 call. `sony_baseline_result` is its hexadecimal return value (`80000000` means
@@ -265,7 +299,7 @@ reload or automatic overclock activation has been added.
 
 ### Optional diagnostic overlay (experimental)
 
-### Clock diagnostic build (`build=oc-inline-settle-2`)
+### Clock diagnostics (inline-settle build and later)
 
 The latest reported Soul Calibur shutdown ended after `clock_raw_guard_ready`
 at ratio 5, multiplier 9/1 and full CPU/bus domains. The Sony call had returned;
@@ -319,7 +353,8 @@ Phase IDs: 1 startup, 2 Sony input guard, 3 Sony call, 4 Sony return;
 10 apply, 11 PLL-ready wait, 12 input validation, 13 post-report checkpoint
 (argument identifies its parent phase), 14 ratio normalization, 15 multiplier
 normalization, 16 domain normalization, 17 low-clock profile, 18 OC ramp step,
-19 ramp yield, 20 final comparison; 30 restore, 31 restore multiplier,
+19 ramp yield, 20 final comparison, 21 inherited startup reduction;
+30 restore, 31 restore multiplier,
 32 restore domains. Common returns: -1 ready timeout, -2 cancellation/suspend,
 -3 changed/unexpected registers or ownership mismatch, -4 unsupported input;
 Sony API errors retain their original value. Stage and raw tuples distinguish
