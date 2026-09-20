@@ -346,6 +346,7 @@ static unsigned int CTL=5,MUL=0x01240901,CPU=0x01ff01ff,BUS=0x01ff01ff;
 static const char *mutate_at;
 static int running=1,suspended,changed,target=443,fail_ready,interfere,yields;
 static int report=1,snapshots,locked,fail_ratio,multiplier_calls;
+static int sony_mode,sony_calls,sony_baseline_result;
 typedef int OcClockGuard;
 static OcClockGuard oc_clock_lock(void){assert(!locked);locked=1;return 1;}
 static void oc_clock_unlock(OcClockGuard g){assert(g==1&&locked);locked=0;}
@@ -375,6 +376,16 @@ static void sceKernelDelayThreadCB(int n) {
     if(interfere==3)running=0;
 }
 #include "clock_transition.h"
+static int scePowerSetClockFrequency(int pll,int cpu,int bus) {
+    assert(!locked && pll==333 && cpu==333 && bus==166);sony_calls++;
+    if(sony_mode==1)return 0; /* ARK successful no-op. */
+    if(sony_mode==2)return -77;
+    CTL=5;MUL=0x01240901;CPU=0x01ff01ff;BUS=0x00ff01ff;
+    if(sony_mode==3)suspended=1;
+    if(sony_mode==4)running=0;
+    return 0;
+}
+#include "sony_startup.h"
 int main(void) {
     assert(oc_supported_model(2));
     CPU=BUS=0x00800100;
@@ -446,6 +457,33 @@ int main(void) {
     assert(apply()==0&&matches()&&ratio_count==2);
     assert(ratio_multipliers[0]==0x01240901&&ratio_multipliers[1]==0x01240901);
     assert(snapshots>0&&!locked);
+    assert(sony_calls==0); /* Profiles/restore never call Sony. */
+    /* Only startup gets the Sony baseline. Exact inherited tuple from logs. */
+    for(int mode=0;mode<5;mode++) {
+        CTL=3;MUL=0x0124E114;CPU=BUS=0x01ff01ff;
+        changed=0;target=418;ratio_count=0;multiplier_calls=0;
+        running=1;suspended=0;sony_mode=mode;
+        int before=sony_calls,r=startup_apply();
+        assert(sony_calls==before+1 && !locked);
+        if(mode==0){assert(!r && matches());assert(restore()==0);}
+        else {
+            assert(r==(mode==1?-4:mode==2?-77:-2));
+            assert(!multiplier_calls); /* Never force the raw path after failure. */
+        }
+    }
+    /* Patched no-op with a safe state retains the proven raw fallback. */
+    running=1;suspended=0;changed=0;sony_mode=1;ratio_count=0;
+    CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
+    assert(startup_apply()==0 && matches() && ratio_count==3);
+    assert(restore()==0);
+    changed=0;CTL=5;MUL=0x0124E114;
+    assert(startup_apply()==0 && matches());assert(restore()==0);
+    changed=0;CTL=2;int before=sony_calls;
+    assert(startup_apply()==-4 && sony_calls==before);
+    CTL=3;MUL=0x01240801;
+    assert(startup_apply()==-4 && sony_calls==before);
+    MUL=0x01240901;suspended=1;assert(startup_apply()==-2 && sony_calls==before);
+    suspended=0;running=0;assert(startup_apply()==-2 && sony_calls==before);
     return 0;
 }
 '''

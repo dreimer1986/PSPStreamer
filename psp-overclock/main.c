@@ -34,6 +34,7 @@ static volatile int running, suspended;
 static int worker=-1, enabled, target=333, enforce, enforce_unlimited, report=1, changed;
 static int configured_enabled, power_callback_id=-1, power_slot=-1;
 static int power_auto_result=-1, power_register_result=-1;
+static int sony_baseline_result=(int)0x80000000U;
 static int config_io_result, config_bytes, config_keys, config_error_line;
 static const char *config_state="not attempted";
 static char directory[192]="ms0:/SEPLUGINS/StreamerOC/";
@@ -219,6 +220,7 @@ static void snapshot(const char *event) {
         "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
         "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
         "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
+        "sony_baseline_result=%08X\n"
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
         "suspend_flags=%08X\nsuspend_observed_us=%u%06u\nprevious_journal_result=%08X\noverlay=%d\n"
@@ -233,6 +235,7 @@ static void snapshot(const char *event) {
         directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
+        (unsigned int)sony_baseline_result,
         scePowerGetCpuClockFrequencyInt(),
         oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus,
         (unsigned int)pending_suspend_flags,(unsigned int)(suspend_tick/1000000ULL),
@@ -252,6 +255,7 @@ static void snapshot(const char *event) {
 static int matches(void);
 static int restore(void);
 #include "clock_transition.h"
+#include "sony_startup.h"
 static int power_callback(int count,int flags,void *arg) {
     (void)count;(void)arg;
     if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY)) {
@@ -285,7 +289,7 @@ static int thread_main(SceSize args,void *argp) {
     if(pad.Buttons&PSP_CTRL_RTRIGGER){enabled=0;status="R bypass: monitor only";}
     if(running && enabled && !suspended && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_GAME) {
         snapshot("startup_clock_begin");
-        int r=apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
+        int r=startup_apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
     snapshot("startup_result");
     /* The stable plugin initialized clocks before exposing any app API.

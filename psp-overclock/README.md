@@ -30,9 +30,27 @@ VRAM without hooks; optional `overlay=2` hooks framebuffer submission syscalls.
 If an application changes the PLL/domain setup during a yielded ramp, the
 ramp aborts and enforcement is disabled rather than continuing blindly.
 
-Clock changes no longer call Sony setters at all: CFW can replace those with
-successful no-ops, while their cached getters do not describe a direct PLL
-overclock. Register writes use the reference's CP0 Status.IE masking and
+Startup now makes one reference-style `scePowerSetClockFrequency(333,333,166)`
+call before the direct PLL sequence. It runs in the worker, with interrupts
+and dispatch enabled, after the existing startup wait and safety checks.
+The observed inherited OC multiplier at PLL ratio 3/4 is allowed into this
+Sony preparation step; the direct register writer's stricter checks are not
+relaxed. Sony failure aborts startup; success is followed by actual register
+validation, never assumed to mean 333 MHz. CFW can replace the call with a
+successful no-op. A safe unchanged state retains the existing direct fallback;
+an unsafe mixed state is still rejected. Profile changes, enforcement ramps
+and exit restoration remain direct and do not repeat the Sony call.
+
+Events `clock_sony_baseline_begin` and `clock_sony_baseline_result` bracket the
+call. `sony_baseline_result` is its hexadecimal return value (`80000000` means
+not called yet); the same snapshots contain the before/after clock registers.
+Host checks cover the call order, inherited-state preparation, patched no-op,
+failure, cancellation and existing ramps/restoration. Hardware safety of the
+reintroduced Sony call is **not yet confirmed**. Keep the configured tested
+target, start with ARK Auto, and compare startup plus subsequent app starts.
+
+Sony's cached getters do not describe a direct PLL overclock. Register writes
+use the reference's CP0 Status.IE masking and
 dispatch suspension; neither file I/O nor kernel calls occur inside that
 critical section. For the observed 222 MHz / ratio-3 state,
 normalization uses ARK-5's adjacent ratio sequence (3, 4, 5), checking each
