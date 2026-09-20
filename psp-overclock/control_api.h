@@ -6,6 +6,10 @@
 #define OC_CMD_STATUS 0x534f0001u
 #define OC_CMD_CPU_KHZ 0x534f0002u
 #define OC_CMD_TARGET 0x534f0003u
+#define OC_CMD_PREPARE_EXIT 0x534f0004u
+#define OC_CMD_EXIT_STATUS 0x534f0005u
+/* PREPARE_EXIT stops future requests and asks the worker to restore its
+ * owned baseline before loadexec. EXIT_STATUS: 1 pending, 0 done, <0 failed. */
 #define OC_CMD_SET 0x534f1000u
 #define OC_CMD_SET_MASK 0xfffff000u
 /* STATUS: 0 ready/applied, 1 pending; negative unavailable/disabled/failed. */

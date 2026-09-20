@@ -180,3 +180,27 @@ and injects completion failures at indices 3/4/5 to prove that no multiplier
 write follows a failed baseline transition. All twelve maintenance tests pass.
 This is a correction to the baseline precondition, not a hardware-confirmed
 fix or a complete explanation of why earlier builds appeared stable.
+
+## Hardware success and separate exit-path follow-up
+
+The user confirms startup and music/video/profile transitions now work with
+`e9245b7`. Session `2950502` records successful profile requests and a final
+433 MHz target (432900 kHz register estimate) at 66910 ms. A later forced
+exit after Start failed to respond caused a hard power-off. No
+`session_stopping`/`session_end` follows in this session. This does not prove
+whether `module_stop` was called or identify the cause of the power-off.
+
+Review found two concrete browser-exit problems: Start was processed only
+after a pending remote cancellation finished, and the exit tail ignored the
+nonblocking stop result before unloading network dependencies. Start is now
+handled before directory/remote waiting, both directory and remote requests
+are cancelled/reaped for at most two seconds, and a timeout leaves their
+network modules intact for loadexec cleanup. Workers are never force-killed.
+
+The optional plugin API now supports PREPARE_EXIT/EXIT_STATUS. The player
+requests worker shutdown before loadexec, including the HOME callback; it
+waits at most 2.5 seconds for clock restoration, overlay shutdown and power
+callback unregistration. Missing/old plugins remain supported. The running
+clock sequence, A/V pipeline and autoplay clock profiles are unchanged.
+These are targeted exit fixes, not hardware-verified resolution of the
+reported power-off; test both normal browser Start and HOME exit.

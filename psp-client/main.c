@@ -36,6 +36,7 @@
 #include "tv_canvas.h"
 #include "help_pages.h"
 #include "power_policy.h"
+#include "exit_policy.h"
 static void help_open(int topic);
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
@@ -554,6 +555,7 @@ static void keep_awake(void) {
 
 int exit_callback(int arg1, int arg2, void *common) {
     (void)arg1; (void)arg2; (void)common;
+    prepare_oc_exit();
     sceKernelExitGame();
     return 0;
 }
@@ -2734,6 +2736,12 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
 
 #include "library_fetch.h"
 #include "library_request.h"
+static int stop_browser_requests(void) {
+    library_cancel();
+    int browser_stopped=browser_remote_stop();
+    if(library_pending)library_request_poll();
+    return browser_stopped && library_thread<0;
+}
 
 static void refresh_library(void) {
     char encoded_path[ID_SIZE * 3 + 1];
@@ -3048,6 +3056,9 @@ int main(void) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();
+        /* Exit must not wait behind a stalled directory/remote request. */
+        if (((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) ||
+            (browser_deferred_buttons & PSP_CTRL_START)) break;
         if(library_pending) {
             if(pad.Buttons & PSP_CTRL_CIRCLE)library_cancel();
             int completed=library_request_poll();
@@ -3307,15 +3318,19 @@ int main(void) {
         if (dirty) { show(selected); dirty = 0; }
         sceKernelDelayThread(20000);
     }
-    browser_remote_stop();
-    playback_clock_release();
+    int browser_stopped=exit_join_worker(stop_browser_requests);
+    prepare_oc_exit();
     if (display_output.tv) display_output_select(&display_output, 0);
     free(tv_canvas.pixels);
-    sceNetApctlTerm();
-    sceNetInetTerm();
-    sceNetTerm();
-    sceUtilityUnloadNetModule(PSP_NET_MODULE_INET);
-    sceUtilityUnloadNetModule(PSP_NET_MODULE_COMMON);
+    /* A cancelled DNS/TLS worker can still be unwinding. Never pull its
+     * network modules away. loadexec owns final cleanup on timeout. */
+    if(browser_stopped) {
+        sceNetApctlTerm();
+        sceNetInetTerm();
+        sceNetTerm();
+        sceUtilityUnloadNetModule(PSP_NET_MODULE_INET);
+        sceUtilityUnloadNetModule(PSP_NET_MODULE_COMMON);
+    }
     sceKernelExitGame();
     return 0;
 }

@@ -136,6 +136,14 @@ callers must wait for STATUS to finish before assuming a target was applied.
 Suspend, unsupported models, startup bypass and conflict protection still
 disable clock control. The device is removed when the plugin unloads.
 
+PSP Streamer also sends PREPARE_EXIT before `sceKernelExitGame`, both from
+the browser and the HOME/PS exit callback. The worker rejects further clock
+requests, stops its overlay and restores only its own recognized clock state
+before acknowledging EXIT_STATUS. The player waits at most 2.5 seconds;
+missing/older plugins are tolerated. This is not a global exit hook for other
+apps. It avoids depending solely on plugin unload during loadexec, but cannot
+recover an already stalled CPU or guarantee exit from a hung firmware module.
+
 With `overlay=1`, startup, application requests and observed clock changes
 also show the existing overlay for five seconds. Changes made by other apps
 are sampled every 500 ms, including monitor mode; very short changes between

@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_bounded_exit_handshake_and_dependency_teardown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'exit-policy'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
+                            '-I', str(ROOT / 'psp-client'),
+                            str(ROOT / 'tests/exit_policy_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+        code = (ROOT / 'psp-client/main.c').read_text()
+        callback = code[code.index('int exit_callback('):code.index('int callback_thread(')]
+        self.assertLess(callback.index('prepare_oc_exit()'), callback.index('sceKernelExitGame()'))
+        tail = code[code.index('int browser_stopped=exit_join_worker'):]
+        self.assertLess(tail.index('prepare_oc_exit()'), tail.index('sceNetApctlTerm()'))
+        self.assertIn('if(browser_stopped)', tail)
+        loop = code[code.index('playback_clock(idle_cpu_mhz);'):]
+        self.assertLess(loop.index('pad.Buttons & PSP_CTRL_START'), loop.index('if(library_pending)'))
+        self.assertLess(loop.index('pad.Buttons & PSP_CTRL_START'), loop.index('!browser_remote_stop()'))
+
     def test_oc_driver_published_after_clock_startup_and_joined_before_removal(self):
         code = (ROOT / 'psp-overclock/main.c').read_text()
         worker = code[code.index('static int thread_main('):code.index('int module_start(')]
@@ -98,6 +115,7 @@ int main(void){
 typedef int PspIoDrvFileArg;
 static int target=333,configured_target=443,control_ready,app_control,enabled,suspended,running=1;
 static int control_pending=-1,control_result;
+static int exit_requested,worker_exit_done,exit_result;
 static unsigned CTL,MUL,CPU;
 static int sceKernelGetModel(void){return 2;}
 static int oc_supported_model(int m){return m==2;}
@@ -127,6 +145,14 @@ int main(void){
     app_control=1;
     assert(control_devctl(NULL,"",OC_CMD_SET|222,&target,4,NULL,0)<0);
     assert(control_devctl(NULL,"",OC_CMD_STATUS,NULL,0,&target,4)<0);
+    assert(call(OC_CMD_EXIT_STATUS)<0);
+    app_control=0;assert(call(OC_CMD_PREPARE_EXIT)<0&&running);
+    app_control=1;assert(call(OC_CMD_PREPARE_EXIT)==0&&!running&&!control_ready);
+    assert(call(OC_CMD_EXIT_STATUS)==1&&control_pending==-1);
+    assert(call(OC_CMD_SET|433)<0);
+    worker_exit_done=1;assert(call(OC_CMD_EXIT_STATUS)==0);
+    exit_result=-3;assert(call(OC_CMD_EXIT_STATUS)==-3);
+    assert(call(OC_CMD_PREPARE_EXIT)==0&&call(OC_CMD_EXIT_STATUS)==-3);
     return 0;
 }
 '''

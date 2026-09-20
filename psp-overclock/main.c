@@ -46,6 +46,7 @@ static volatile unsigned long long suspend_tick;
 static int overlay_enabled=1;
 static int app_control=1, configured_target, control_registered;
 static volatile int control_ready, control_pending=-1, control_result;
+static volatile int exit_requested,worker_exit_done,exit_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
@@ -57,6 +58,12 @@ static int control_devctl(PspIoDrvFileArg *arg,const char *name,unsigned int cmd
                          void *in,int inlen,void *out,int outlen) {
     (void)arg;(void)name;
     if(in || out || inlen || outlen)return -1;
+    if(cmd==OC_CMD_EXIT_STATUS)return exit_requested?(worker_exit_done?exit_result:1):-1;
+    if(cmd==OC_CMD_PREPARE_EXIT) {
+        if(!app_control)return -1;
+        exit_requested=1;control_ready=0;control_pending=-1;running=0;
+        return 0;
+    }
     if(cmd==OC_CMD_CPU_KHZ) {
         unsigned int khz=0;
         if(oc_supported_model(sceKernelGetModel())) {
@@ -350,11 +357,13 @@ static int thread_main(SceSize args,void *argp) {
     snapshot("session_stopping");
     control_ready=0;
     overlay_until=0;overlay_update(0);
-    if(changed && !suspended)restore();
-    enabled=0;status="worker stopped";
+    if(changed && !suspended)exit_result=restore();
+    else if(changed)exit_result=-2;
+    enabled=0;status=exit_result?"worker stopped: clock restore refused":"worker stopped: baseline restored or unchanged";
     snapshot("session_end");
     if(power_slot>=0)scePowerUnregisterCallback(power_slot);
     if(power_callback_id>=0)sceKernelDeleteCallback(power_callback_id);
+    __sync_synchronize();worker_exit_done=1;
     return 0;
 }
 int module_start(SceSize args,void *argp) {
