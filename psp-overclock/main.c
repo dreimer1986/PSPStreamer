@@ -101,7 +101,12 @@ static void overlay_update(int toggle) {
     unsigned long long now=sceKernelGetSystemTimeWide();
     if(toggle)overlay_until=overlay_until?0:now+5000000ULL;
     if(overlay_until && now>=overlay_until)overlay_until=0;
-    if(oc_hook_installed && !overlay_until){oc_hook_publish(NULL,0);return;}
+    if(oc_hook_installed && !overlay_until){
+        int was_visible=oc_hook_visible;
+        oc_hook_publish(NULL,0);
+        if(was_visible)oc_hook_idle_refresh(1);
+        return;
+    }
     if(!overlay_until && !overlay.valid)return;
     if(overlay_until && now<overlay_next_draw && !toggle)return;
     /* Bounded polling, not an unbounded VBlank wait: display shutdown or
@@ -132,7 +137,7 @@ static void overlay_update(int toggle) {
     snprintf(lines[0],40,"OC CPU %u.%u BUS %u.%u MHZ EST",cpu/1000,(cpu%1000)/100,bus/1000,(bus%1000)/100);
     snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
-    if(oc_hook_installed)oc_hook_publish(lines,1);
+    if(oc_hook_installed){oc_hook_publish(lines,1);oc_hook_idle_refresh(0);}
     else oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
     overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }
@@ -218,6 +223,7 @@ static void snapshot(const char *event) {
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
         "suspend_flags=%08X\nsuspend_observed_us=%u%06u\nprevious_journal_result=%08X\noverlay=%d\n"
         "overlay_hook_installed=%d\noverlay_hook_present_calls=%u\n"
+        "overlay_hook_draws=%u\noverlay_hook_fallback_draws=%u\noverlay_hook_rejected=%u\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
         event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
@@ -231,7 +237,7 @@ static void snapshot(const char *event) {
         oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus,
         (unsigned int)pending_suspend_flags,(unsigned int)(suspend_tick/1000000ULL),
         (unsigned int)(suspend_tick%1000000ULL),(unsigned int)journal_result,overlay_enabled,
-        oc_hook_installed,oc_hook_calls);
+        oc_hook_installed,oc_hook_calls,oc_hook_draws,oc_hook_fallback_draws,oc_hook_rejected);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
     snprintf(path,sizeof(path),"%sStreamerOC-events.log",directory);

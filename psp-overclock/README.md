@@ -313,18 +313,25 @@ module unload is refused if a tracked presentation call is still executing.
 Clock reads and text formatting stay in the worker. The hook only draws cached
 text and maintains three per-buffer backups, covering usual double/triple
 buffering. It does not wait for VBlank, allocate, log or set clocks. When hidden,
-each buffer's unchanged overlay pixels are restored on its next submission;
-a static screen may therefore retain the last overlay until it is presented
-again. Suspend/mode changes discard stale backups. Other overlays hooking the
+each buffer's unchanged overlay pixels are restored on its next submission.
+The worker also restores the current buffer when hiding, including static
+screens. Suspend/mode changes discard stale backups. Other overlays hooking the
 same syscall are not a supported combination.
 
 This aims to reduce flicker, **not guarantee universal compatibility**: late GE
-writes can still overwrite the text, immediate submissions can tear, and apps
-bypassing the syscall will not show it. If the display export cannot be found,
+writes can still overwrite the text and immediate submissions can tear. If no
+hook-driven draw occurred for 100 ms while visible, the worker refreshes the
+current framebuffer near VBlank. This covers static menus, in-place rendering
+and apps bypassing the syscall. Both paths share one raster lock and per-buffer
+backups. Normal continuously hooked presentation does not use this fallback;
+fallback rendering can still flicker like mode 1. If the display export cannot be found,
 the worker falls back to mode-1 polling and logs
 `overlay_hook_unavailable_polling`. Otherwise logs include
-`overlay_hook_installed` and `overlay_hook_present_calls`; a zero count during
-rendering suggests this app bypasses the hooked path. Use `overlay=1` to revert
+`overlay_hook_installed`, `overlay_hook_present_calls`, `overlay_hook_draws`,
+`overlay_hook_fallback_draws` and `overlay_hook_rejected`. These distinguish a
+hook actually drawing from mere installation, unsupported surfaces and fallback
+refreshes. A zero call count during rendering suggests this app bypasses the
+hooked path or does not submit new buffers. Use `overlay=1` to revert
 or `0` to disable, then restart the app. Default remains 1. This version was
 compiled without running tests, as requested; hardware validation is pending.
 
