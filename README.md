@@ -541,8 +541,12 @@ number entry. The optional [StreamerOC plugin](psp-overclock/README.md) needs
 `enabled=1` and `app_control=1`. Above 333 MHz, requests are limited to the
 plugin's configured `target_mhz`; set that only to an overclock you have tested.
 Without the plugin no clocks are changed. All profiles default to disabled.
-Playback cleanup releases its override; the browser then applies its own
-profile. Startup/module initialization retains the existing clock behavior.
+Track/episode changes, seeks and radio reconnects keep the current clock while
+loading. The next active renderer requests its profile only if it differs;
+there is no intermediate return to the INI target or browser clock. Returning
+to the media browser applies its idle profile directly (`0` releases to the
+INI target). An explicitly disabled next playback profile (`0`) also releases
+the previous override. App exit retains the coordinated plugin shutdown.
 Start underclock testing at 222 MHz, not 66 MHz: low clocks can slow the
 browser, decoding and storage/network I/O. Requested MHz are not guaranteed
 exact physical frequencies. Enable plugin `overlay=1` to see changes.

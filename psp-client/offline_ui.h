@@ -394,7 +394,7 @@ static void offline_browser(void) {
     int server=0,selected=0,dirty=1;unsigned int old=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;
     unsigned long long repeat=0;offline_scan();
     while(1) {
-        playback_clock(idle_cpu_mhz);
+        playback_clock_idle();
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;
         if(dirty) {

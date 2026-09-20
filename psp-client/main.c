@@ -2005,11 +2005,12 @@ static int play_audio_once(const char *media_id, const char *title) {
  * screen owns no audio socket, PCM queue or GU list. Never autoplay a station. */
 static int play_audio(const char *media_id,const char *title) {
     int result;
-    playback_clock_release();
+    /* Keep the current profile across track changes/reconnects. The next
+     * active renderer selects its profile; only a real browser return idles. */
     do {
         power_music=1;
         result=play_audio_once(media_id,title);
-        power_music=0;playback_clock_release();scePowerTick(PSP_POWER_TICK_ALL);
+        power_music=0;scePowerTick(PSP_POWER_TICK_ALL);
         if(!radio_is_live(media_id) || !radio_next_action)return result;
         int paused=radio_next_action==2;
         unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
@@ -2048,7 +2049,6 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
-    playback_clock_release();
     plex_report_begin(media_id);
     video_controls.visible=video_controls.saved=0;
     video_controls.selected=3;
@@ -2448,7 +2448,7 @@ done:
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
     video_watch_stop();
-    playback_clock_release();scePowerTick(PSP_POWER_TICK_ALL);
+    scePowerTick(PSP_POWER_TICK_ALL);
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;
@@ -3052,7 +3052,7 @@ int main(void) {
     }
     while (1) {
         unsigned long long now;
-        playback_clock(idle_cpu_mhz);
+        playback_clock_idle();
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();

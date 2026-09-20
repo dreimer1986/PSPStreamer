@@ -40,6 +40,20 @@ int main(void){
     stuck=1;unsigned long long start=tick;playback_clock(166);
     assert(clock_error<0&&tick-start==3000000&&last_set==0);
     stuck=0;pending=0;playback_clock_release();
+    /* Episode/track/seek boundaries retain the request cache: identical
+     * profiles send nothing, different renderers request exactly one target. */
+    playback_clock(266);before=sets;
+    for(int i=0;i<20;i++)playback_clock(266);
+    assert(sets==before&&clock_lease&&last_set==266);
+    playback_clock(133);assert(sets==before+1&&last_set==133);
+    before=sets;playback_clock(133);assert(sets==before);
+    idle_cpu_mhz=133;playback_clock_idle();assert(sets==before);
+    idle_cpu_mhz=222;playback_clock_idle();assert(sets==before+1&&last_set==222);
+    idle_cpu_mhz=0;playback_clock_idle();assert(sets==before+2&&last_set==0&&!clock_lease);
+    before=sets;playback_clock_idle();assert(sets==before);
+    /* Explicit zero next-profile still releases a previous override. */
+    playback_clock(266);before=sets;playback_clock(0);
+    assert(sets==before+1&&last_set==0&&!clock_lease);
     assert(!power_allow_display_idle(0));
     screen_idle=1;assert(!power_allow_display_idle(0));
     power_music=1;assert(power_allow_display_idle(0)&&!power_allow_display_idle(1));

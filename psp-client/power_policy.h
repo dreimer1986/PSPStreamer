@@ -40,4 +40,8 @@ static void playback_clock_release(void){
     clock_lease=0;clock_requested=-1;
     clock_retry=0;
 }
+static void playback_clock_idle(void){
+    if(idle_cpu_mhz)playback_clock(idle_cpu_mhz);
+    else playback_clock_release();
+}
 static int clock_control_status(void){return sceIoDevctl(OC_DEVICE,OC_CMD_STATUS,NULL,0,NULL,0);}

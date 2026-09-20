@@ -22,7 +22,7 @@ class MaintenanceTests(unittest.TestCase):
         tail = code[code.index('int browser_stopped=exit_join_worker'):]
         self.assertLess(tail.index('prepare_oc_exit()'), tail.index('sceNetApctlTerm()'))
         self.assertIn('if(browser_stopped)', tail)
-        loop = code[code.index('playback_clock(idle_cpu_mhz);'):]
+        loop = code[code.index('playback_clock_idle();'):]
         self.assertLess(loop.index('pad.Buttons & PSP_CTRL_START'), loop.index('if(library_pending)'))
         self.assertLess(loop.index('pad.Buttons & PSP_CTRL_START'), loop.index('!browser_remote_stop()'))
 
@@ -98,6 +98,12 @@ int main(void){
         self.assertIn('if(r)enabled=0;', code)
 
     def test_optional_app_clock_profiles_and_lcd_idle(self):
+        code = (ROOT / 'psp-client/main.c').read_text()
+        self.assertNotIn('playback_clock_release();', code)
+        self.assertIn('playback_clock_idle();', code)
+        offline = (ROOT / 'psp-client/offline_ui.h').read_text()
+        self.assertIn('playback_clock_idle();', offline)
+        self.assertNotIn('playback_clock_release();', offline)
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / 'power'
             subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=undefined',
