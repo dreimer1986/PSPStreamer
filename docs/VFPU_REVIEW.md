@@ -67,7 +67,9 @@ Use the normal EBOOT/PRX pair, enable existing debug output, then play the same
 music for roughly 30 seconds per preset: `fft-spectrum-demo.milk` (built-in
 mode 8), `custom-spectrum-demo.milk` (custom stereo spectrum), and optionally Cauldron
 as an interpreter-heavy comparison. Stop normally to flush the existing
-diagnostic log in `PSP/SYSTEM`. Keep CPU target, output and fullscreen setting
+diagnostic log in `PSP/SYSTEM`. Switch presets within the same playback before
+stopping, or save the log after each playback: the next music start truncates
+`PSPStreamer-watch-music.txt`. Keep CPU target, output and fullscreen setting
 constant; actual OC initialization must succeed if comparing fixed clocks.
 
 No new log is required merely to verify audible playback. A representative
@@ -78,5 +80,40 @@ accuracy. A future vector kernel needs a PSP-side scalar/vector timing and
 numerical comparison, including silence, impulses, tones, maximum PCM and
 non-finite handling where applicable. Report any observed errors explicitly.
 
-Decision: feasibility review complete; hardware cost measurement pending.
-Do not promise a frame-rate improvement from this instrumentation build.
+## Hardware result and decision
+
+The 2026-09-20 follow-up log contains `custom-spectrum-demo.milk`, LCD fullscreen,
+341 completed frames, 664 warm FFT calls and no cold initialization. The user
+reports 222 MHz; this profiler does not record actual CPU clock, so treat that
+as reported operating context, not a verified frequency measurement. The
+built-in spectrum test was not retained. No OC changes were made for this review.
+
+| Measurement | Mean elapsed time |
+| --- | ---: |
+| Sum of seven existing frame phases | 31,704 µs/frame |
+| Frame/shape evaluation | 10,103 µs/frame |
+| Custom-wave evaluation | 7,380 µs/frame |
+| FFT preparation | 276 µs/warm FFT |
+| FFT transform | 952 µs/warm FFT |
+| FFT magnitude | 120 µs/warm FFT |
+
+The sum per FFT is 1,348 µs. At 664/341 FFTs per rendered frame, this is about
+2,625 µs/frame, or **8.3%** of the measured frame-phase sum. Preparation plus
+magnitude total about 771 µs/frame (**2.4%**). Preparation also includes scalar
+bit reversal, so even this small share is not entirely the proposed window
+multiplication kernel. Eliminating all work in those two phases would save
+only that share in this sample; a real VFPU implementation cannot achieve
+zero cost. The two evaluation phases together account for **55.1%**.
+
+These calculations use rounded reported averages, assume the retained FFT
+calls belong to the completed frames, and are approximate. GPU waits and
+preemption are included in frame time. They are not measured VFPU speedups
+or predicted display FPS; the scheduler also deliberately throttles rendering
+(2,042 skipped calls in this run). Do not extrapolate linearly to another CPU
+frequency, TV output or another preset.
+
+**Decision: assessment complete; defer a VFPU rewrite.** The evidence does not
+justify prioritizing it over formula/geometry evaluation work. Keep the scalar
+FFT and optional profiling. Revisit SIMD if representative workloads show a
+larger FFT share, or alongside a separately justified FFT redesign. No VFPU
+implementation or frame-rate improvement is claimed by this change.
