@@ -154,3 +154,29 @@ still occurs without it. This isolates an actual first-regression difference;
 it does **not** establish driver registration as the cause. Diagnostic
 checkpoints remain to narrow the failing stage if it still occurs. Personal
 INI/ARK settings, app profiles and the player EBOOT are not modified.
+
+## Guard completed; failure before multiplier checkpoint
+
+Session `2934845` with verified build `a340ef7` ends at
+`clock_raw_guard_ready` (6291 ms): CTL `3`, MUL `01240901`, full domains,
+Sony 222 MHz and `control_driver=0`. The device interface is not registered,
+and the guard-only round trip completed. This rules out the new driver as a
+necessary cause of this reproduced hang. The next missing checkpoint is
+`clock_raw_multiplier_ready`, before ratio transitions or the 433 MHz ramp.
+The precise failing instruction remains unproven: this interval also includes
+guard reacquisition, the multiplier write, settling and checkpoint handling.
+
+The reference tester requests 333 MHz before initial multiplier adjustment.
+Our old Sony baseline call returned success without establishing that state;
+removing it still left denominator conversion ahead of baseline preparation.
+The correction now preserves the original multiplier through the bounded
+3→4→5 ratio transition, verifies ratio 5, and only then converts 9/1 to
+180/20. No new frequency formula, target, profile, or client API is introduced.
+Existing ratio checkpoints now precede the multiplier checkpoint.
+
+The host harness rejects every multiplier write outside ratio 5, checks the
+original multiplier at each startup ratio step for initial indices 3 and 4,
+and injects completion failures at indices 3/4/5 to prove that no multiplier
+write follows a failed baseline transition. All twelve maintenance tests pass.
+This is a correction to the baseline precondition, not a hardware-confirmed
+fix or a complete explanation of why earlier builds appeared stable.

@@ -302,7 +302,7 @@ static unsigned int CTL=5,MUL=0x01240901,CPU=0x01ff01ff,BUS=0x01ff01ff;
 #include <string.h>
 static const char *mutate_at;
 static int running=1,suspended,changed,target=443,fail_ready,interfere,yields;
-static int report=1,snapshots,locked;
+static int report=1,snapshots,locked,fail_ratio,multiplier_calls;
 typedef int OcClockGuard;
 static OcClockGuard oc_clock_lock(void){assert(!locked);locked=1;return 1;}
 static void oc_clock_unlock(OcClockGuard g){assert(g==1&&locked);locked=0;}
@@ -313,10 +313,17 @@ static void snapshot(const char *event){
 }
 #define SYNC() ((void)0)
 static void settle(void){assert(locked);}
-static int ready(void){assert(locked);CTL&=~0x80;return fail_ready?-1:0;}
-static void multiplier(unsigned int n){assert(locked);MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
-static unsigned ratio_writes[8];static int ratio_count;
-static void oc_ratio_write(unsigned int n){assert(locked&&ratio_count<8);ratio_writes[ratio_count++]=n;CTL=n;}
+static int ready(void){
+    assert(locked);
+    if(fail_ratio&&(CTL&0x80)&&(CTL&15)==(unsigned)fail_ratio)return -1;
+    CTL&=~0x80;return fail_ready?-1:0;
+}
+static void multiplier(unsigned int n){assert(locked&&(CTL&0x8f)==5);multiplier_calls++;MUL=(MUL&0xffff0000)|(n<<8)|OC_DEN;}
+static unsigned ratio_writes[8],ratio_multipliers[8];static int ratio_count;
+static void oc_ratio_write(unsigned int n){
+    assert(locked&&ratio_count<8);ratio_multipliers[ratio_count]=MUL;
+    ratio_writes[ratio_count++]=n;CTL=n;
+}
 #include "ratio_transition.h"
 static void sceKernelDelayThreadCB(int n) {
     assert(n==10000&&!locked);yields++;
@@ -360,6 +367,7 @@ int main(void) {
     CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
     assert(apply()==0&&matches()&&yields==54);
     assert(ratio_count==3&&ratio_writes[0]==0x83&&ratio_writes[1]==0x84&&ratio_writes[2]==0x85);
+    for(int i=0;i<3;i++)assert(ratio_multipliers[i]==0x01240901);
     assert(restore()==0);
 
     interfere=2;suspended=0;
@@ -374,16 +382,26 @@ int main(void) {
     MUL=0x01240901;CPU=0;assert(apply()==-4);
     CPU=BUS=0x01ff01ff;target=65;assert(apply()==-4);
     target=472;assert(apply()==-4);
-    const char *boundaries[]={"clock_raw_guard_ready","clock_raw_multiplier_ready",
-        "clock_raw_ratio_3_ready","clock_raw_ratio_4_ready","clock_raw_ratio_5_ready"};
+    const char *boundaries[]={"clock_raw_guard_ready","clock_raw_ratio_3_ready",
+        "clock_raw_ratio_4_ready","clock_raw_ratio_5_ready","clock_raw_multiplier_ready"};
     for(unsigned i=0;i<5;i++) {
         CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
         target=433;changed=0;ratio_count=0;mutate_at=boundaries[i];
         assert(apply()==-3&&!locked);
-        assert(ratio_count==(i<2?0:(int)i-1));
+        assert(ratio_count==(i<4?(int)i:3));
         assert(restore()==-3); /* Never acquire foreign state after logging. */
     }
     mutate_at=0;
+    for(fail_ratio=3;fail_ratio<=5;fail_ratio++) {
+        CTL=3;MUL=0x01240901;CPU=BUS=0x01ff01ff;
+        target=433;changed=0;ratio_count=0;multiplier_calls=0;
+        assert(apply()==-1&&!locked&&multiplier_calls==0);
+        assert(MUL==0x01240901&&ratio_count==fail_ratio-2);
+    }
+    fail_ratio=0;changed=0;ratio_count=0;
+    CTL=4;MUL=0x01240901;
+    assert(apply()==0&&matches()&&ratio_count==2);
+    assert(ratio_multipliers[0]==0x01240901&&ratio_multipliers[1]==0x01240901);
     assert(snapshots>0&&!locked);
     return 0;
 }

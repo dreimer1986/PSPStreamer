@@ -37,6 +37,10 @@ dispatch suspension; neither file I/O nor kernel calls occur inside that
 critical section. For the observed 222 MHz / ratio-3 state,
 normalization uses ARK-5's adjacent ratio sequence (3, 4, 5), checking each
 completed step instead of jumping to 5. Unknown initial ratios fail closed.
+The original multiplier is preserved until ratio 5 is confirmed. Only then
+is the stock 9/1 representation converted to 180/20 and the OC ramp started.
+This explicitly establishes the baseline requested by the reference tester
+instead of changing the PLL denominator while still at ratio 3.
 See [startup investigation and regression checks](../docs/OC_STARTUP_REGRESSION.md).
 
 This is a bounded adaptation, not a verbatim copy of the two-minute stress

@@ -97,13 +97,18 @@ static int apply(void) {
     if(!result && (index<3 || index>5 || !cn || !bn || cn>cd || bn>bd ||
                    !known_multiplier))result=-4;
     if(!result)result=oc_clock_checkpoint("clock_raw_guard_ready",&g);
+    /* The tester requests the 333 MHz baseline BEFORE changing 9/1 to
+     * 180/20. A patched Sony setter previously left us at ratio 3 instead.
+     * Establish/read back ratio 5 with the current multiplier untouched;
+     * do not write a new denominator in the observed failing ratio-3 state. */
+    if(!result)result=oc_ratio_to_five(oc_ratio_checkpoint,&g);
+    if(!result && (CTL&0x8f)!=5)result=-3;
     if(!result) {
         /* Reduce an existing recognized overclock before opening dividers. */
         if(den==OC_DEN)while(num>OC_NORMAL_NUM){multiplier(--num);settle();}
         multiplier(OC_NORMAL_NUM);settle();
         oc_remember();
         result=oc_clock_checkpoint("clock_raw_multiplier_ready",&g);
-        if(!result)result=oc_ratio_to_five(oc_ratio_checkpoint,&g);
         if(!result) {
             oc_domains(0x01ff01ff,0x01ff01ff);
             if((CPU&0x01ff01ff)!=0x01ff01ff || (BUS&0x01ff01ff)!=0x01ff01ff ||
