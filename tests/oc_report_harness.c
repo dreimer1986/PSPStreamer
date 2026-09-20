@@ -26,6 +26,7 @@ static int sceIoWrite(int fd,const char *text,int length) {
     return length;
 }
 static int sceIoClose(int fd) {assert(fd==7);closed++;return failure==4?-44:0;}
+static int sceIoSync(const char *device,unsigned flags){assert(!strcmp(device,"ms0:")||!strcmp(device,"ef0:"));assert(!flags);return failure==5?-45:0;}
 #include "report_io.h"
 int main(void) {
     assert(oc_report_write("events.log","session1\n",9,1)==0);
@@ -38,5 +39,10 @@ int main(void) {
     failure=3;assert(oc_report_write("events.log","x",1,1)==-1);
     failure=4;assert(oc_report_write("events.log","x",1,1)==-44);
     assert(opened==closed);
+    assert(oc_report_flush("ms0:/SEPLUGINS/StreamerOC/file")==0);
+    assert(oc_report_flush("ef0:/SEPLUGINS/StreamerOC/file")==0);
+    assert(oc_report_flush("no-device")<0);
+    assert(oc_report_flush("0123456789012345:/file")<0);
+    failure=5;assert(oc_report_flush("ms0:/file")==-45);
     return 0;
 }

@@ -68,8 +68,12 @@ Do not add both lines for the same plugin.
 2. First test `enabled=1`, `target_mhz=333`, `enforce=0`, restart the homebrew,
    and check status, playback, Stop and exit. Only then try a frequency known
    to be stable on this particular PSP. Accepted requested range: 66–471 MHz.
-   Frequencies up to 333 MHz use Sony's clock API (PLL 333, bus half CPU);
-   higher targets use the existing PLL ramp. Low frequencies can starve
+   Targets below 333 MHz use Sony's clock API only after the reference PLL
+   and domain initialization (PLL 333, bus half CPU). 333 MHz itself keeps
+   the established reference initialization; higher targets use its PLL ramp.
+   Before switching profiles, a custom PLL is ramped down and restoration
+   errors stop the transition. Sony getters alone cannot confirm a restored
+   clock; register estimates are checked too. Low frequencies can starve
    decoding, networking or Memory Stick I/O; 66 MHz is a limit, not a promise
    that a particular workload runs there. Start underclock tests at 222 MHz.
 3. With `enforce=1`, the worker checks every 500 ms and reapplies the target if
@@ -130,6 +134,10 @@ not calendar dates; they can restart after reboot. File order and session-start
 records separate runs. Logged events include:
 
 - Session start and startup result (including bypass/initialization failure).
+- With reporting enabled, startup wait completion, clock request start, before
+  and after the Sony baseline call, completed domain initialization and bounded
+  ramp checkpoints. These distinguish early driver/startup failures from an
+  actual clock transition; no file writes happen with interrupts disabled.
 - Detected target mismatch **before** correction, reapplication result and
   enforcement/conflict-limit shutdown.
 - Suspend/resume, recorded after resume with the observed suspend tick/flags.
@@ -141,6 +149,9 @@ changes between polls are not automatically captured. Observed changes are
 also recorded in monitor mode. Each event is written and closed immediately; partial
 writes are handled. `previous_journal_result` reports the preceding append's
 I/O result (zero on success), so a later snapshot can expose a failed write.
+After both files close, `sceIoSync` flushes their device; a sync failure is
+also carried forward in `previous_journal_result`. This matters for diagnosing
+hard shutdowns with Memory Stick caching enabled.
 `report=0` disables **both** files. The log does not auto-rotate or delete old
 sessions; archive/remove it on a PC when no application is using the plugin.
 

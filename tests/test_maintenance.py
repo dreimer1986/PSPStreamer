@@ -253,13 +253,18 @@ int main(void) {
 #include "clock_math.h"
 static unsigned int CTL=5,MUL=0,CPU=0x01ff01ff,BUS=0x01ff01ff;
 static int running=1,suspended,changed,target=443,fail_ready,interfere,yields,sony_owned,sony_cpu=333,sony_bus=166;
+static int report=1,sony_noop,sony_failure,sony_calls,snapshots;
+static void snapshot(const char *event){assert(event);snapshots++;}
 #define SYNC() ((void)0)
 static void settle(void) {}
 static int ready(void) {CTL&=~0x80;return fail_ready?-1:0;}
 static int sceKernelCpuSuspendIntr(void) {return 1;}
 static void sceKernelCpuResumeIntr(int n) {assert(n==1);}
 static int scePowerSetClockFrequency(int p,int c,int b) {
-    assert(p==333&&c>=66&&c<=333&&b==c/2);sony_cpu=c;sony_bus=b;
+    assert(p==333&&c>=66&&c<=333&&b==c/2);sony_calls++;
+    if(sony_failure)return -17;
+    if(sony_noop)return 0;
+    sony_cpu=c;sony_bus=b;
     CTL=5;MUL=(180<<8)|20;CPU=(c<<16)|333;BUS=(b<<16)|333;return 0;
 }
 static int scePowerGetCpuClockFrequencyInt(void){return sony_cpu;}
@@ -275,6 +280,7 @@ int main(void) {
     target=333;assert(!matches());target=443; /* Sony getter still says 333. */
     restore(); assert(((MUL>>8)&255)==180);
     target=333;assert(apply()==0&&matches());
+    assert(CPU==0x01ff01ff&&BUS==0x01ff01ff&&!sony_owned);
     target=66;assert(apply()==0&&matches()&&sony_cpu==66&&sony_bus==33);
     MUL=(239<<8)|20;assert(!matches());MUL=(180<<8)|20;
     restore();assert(sony_cpu==333&&sony_bus==166);
@@ -282,6 +288,18 @@ int main(void) {
     assert(apply()==-3 && yields==1); /* abort before a second write */
     interfere=0;suspended=1;assert(apply()==-2);
     suspended=0;fail_ready=1;assert(apply()==-1);
+    fail_ready=0;changed=sony_owned=0;sony_noop=1;target=433;yields=0;
+    CTL=5;MUL=0x01240901;CPU=BUS=0x01ff01ff;sony_cpu=333;sony_bus=333;
+    assert(apply()==0&&matches()&&yields==54); /* Recorded ARK startup registers. */
+    assert(restore()==0);changed=0;
+    target=133;assert(apply()==-3); /* Patched Sony no-op must not claim success. */
+    sony_noop=0;sony_owned=changed=0;target=133;assert(apply()==0);
+    sony_failure=1;target=433;
+    assert(apply()==-17&&sony_owned==133); /* Never continue after failed restore. */
+    sony_failure=0;
+    MUL=(239<<8)|20;int calls=sony_calls;
+    assert(apply()==-3&&sony_calls==calls); /* External PLL change: don't fight it. */
+    assert(snapshots>0);
     return 0;
 }
 '''

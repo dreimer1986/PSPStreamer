@@ -203,21 +203,27 @@ static void snapshot(const char *event) {
     journal_result=oc_report_write(path,text,n,1);
     snprintf(path,sizeof(path),"%sStreamerOC-status.txt",directory);
     oc_report_write(path,text,n,0);
+    /* Close is not a storage barrier with ARK's Memory Stick cache enabled.
+     * Persist startup markers before attempting the next hardware step. */
+    int flushed=oc_report_flush(path);
+    if(flushed<0)journal_result=flushed;
 }
 static int matches(void);
-static void restore(void);
+static int restore(void);
 static int apply(void) {
     if(!running || suspended)return -2;
-    if(target<=333) {
-        if(changed)restore();
-        if(scePowerSetClockFrequency(333,target,target/2)<0)return -1;
-        sony_owned=target;changed=1;
-        return matches()?0:-3;
+    /* Never hand an active custom PLL to Sony's cached clock state. Finish
+     * the reference downward transition first, and propagate refusal/errors. */
+    if(changed) {
+        int restored=restore();
+        if(restored<0)return restored;
+        changed=0;
     }
-    if(sony_owned)restore();
     /* The tester starts from Sony's 333/333/166 setup, then adjusts PLL and
      * domain ratios. Its busy loops and unbounded upward scan are not copied. */
+    snapshot("clock_sony_baseline_begin");
     if(scePowerSetClockFrequency(333,333,166)<0)return -1;
+    snapshot("clock_sony_baseline_done");
     changed=1;
     int intr=sceKernelCpuSuspendIntr();
     multiplier(OC_NORMAL_NUM);settle();
@@ -234,6 +240,15 @@ static int apply(void) {
     }
     sceKernelCpuResumeIntr(intr);
     if(result)return result;
+    snapshot("clock_domains_ready");
+    /* 333 retains the same complete reference initialization as higher
+     * targets. Sony underclocking starts only from this normalized state. */
+    if(target<333) {
+        if(!running || suspended)return -2;
+        if(scePowerSetClockFrequency(333,target,target/2)<0)return -1;
+        sony_owned=target;
+        return matches()?0:-3;
+    }
     unsigned int wanted=oc_numerator(target);
     for(unsigned int num=OC_NORMAL_NUM+1;num<=wanted;num++) {
         if(!running || suspended)return -2;
@@ -246,11 +261,12 @@ static int apply(void) {
         }
         multiplier(num);settle();sceKernelCpuResumeIntr(intr);
         sceKernelDelayThreadCB(10000);
+        if(report && ((num-OC_NORMAL_NUM)%16==0 || num==wanted))snapshot("clock_ramp_progress");
     }
     return matches()?0:-3;
 }
 static int matches(void) {
-    if(target<=333) {
+    if(target<333) {
         /* Sony still reports 333 after a direct PLL overclock. Never treat
          * that cached value as proof that switching back already happened. */
         if(sony_owned!=target)return 0;
@@ -263,25 +279,29 @@ static int matches(void) {
     return (CTL&0x8f)==5 && (MUL&0xffff)==((oc_numerator(target)<<8)|OC_DEN) &&
         (CPU&0x01ff01ff)==0x01ff01ff && (BUS&0x01ff01ff)==0x01ff01ff;
 }
-static void restore(void) {
+static int restore(void) {
     if(sony_owned) {
-        if(abs(scePowerGetCpuClockFrequencyInt()-sony_owned)<=1 &&
-           abs(scePowerGetBusClockFrequencyInt()-sony_owned/2)<=1)
-            scePowerSetClockFrequency(333,333,166);
-        sony_owned=0;return;
+        unsigned int cpu=oc_khz(CTL,MUL,CPU),bus=oc_khz(CTL,MUL,BUS);
+        if(abs(scePowerGetCpuClockFrequencyInt()-sony_owned)>1 ||
+           abs(scePowerGetBusClockFrequencyInt()-sony_owned/2)>1 ||
+           (cpu && abs((int)cpu-sony_owned*1000)>2000) ||
+           (bus && abs((int)bus-(sony_owned/2)*1000)>2000))return -3;
+        int r=scePowerSetClockFrequency(333,333,166);
+        if(r<0)return r;
+        sony_owned=0;return 0;
     }
     /* Only undo our known register recipe, not a different plugin's PLL.
      * Start at the actual numerator, not the configured maximum (tester bug). */
-    if((CTL&0x8f)!=5 || (MUL&255)!=OC_DEN)return;
+    if((CTL&0x8f)!=5 || (MUL&255)!=OC_DEN)return -3;
     unsigned int num=(MUL>>8)&255;
     while(num>OC_NORMAL_NUM) {
         int intr=sceKernelCpuSuspendIntr();
         if((CTL&0x8f)!=5 || (MUL&0xffff)!=((num<<8)|OC_DEN)) {
-            sceKernelCpuResumeIntr(intr);return;
+            sceKernelCpuResumeIntr(intr);return -3;
         }
         multiplier(--num);settle();sceKernelCpuResumeIntr(intr);
     }
-    scePowerSetClockFrequency(333,333,166);
+    return scePowerSetClockFrequency(333,333,166);
 }
 static int power_callback(int count,int flags,void *arg) {
     (void)count;(void)arg;
@@ -311,14 +331,16 @@ static int thread_main(SceSize args,void *argp) {
     snapshot("session_start");
     SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
     while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
+    snapshot("startup_wait_complete");
     SceCtrlData pad;sceCtrlPeekBufferPositive(&pad,1);
     if(pad.Buttons&PSP_CTRL_RTRIGGER){enabled=0;status="R bypass: monitor only";}
     if(running && enabled && !suspended && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_GAME) {
+        snapshot("startup_clock_begin");
         int r=apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
     snapshot("startup_result");
     control_ready=1;
-    if(enabled)overlay_notify();
+    if(enabled){snapshot("startup_overlay_begin");overlay_notify();}
     unsigned int previous=0,conflicts=0;
     unsigned int last_ctl=0,last_mul=0,last_cpu=0,last_bus=0;
     int last_sony=-1;
@@ -345,6 +367,7 @@ static int thread_main(SceSize args,void *argp) {
             /* Keep pending set while applying so clients can wait for ack. */
             int request=control_pending;
             target=request?request:configured_target;
+            snapshot("app_clock_begin");
             int r=matches()?0:apply();
             control_result=r;
             if(r)enabled=0;
