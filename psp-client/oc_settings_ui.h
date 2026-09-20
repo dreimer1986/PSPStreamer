@@ -22,6 +22,7 @@ static void oc_settings(void) {
             for(int i=0;i<7;i++) {
                 char row[96],value[24];
                 if(i==1)snprintf(value,sizeof(value),"%d MHz",*values[i]);
+                else if(i==6)snprintf(value,sizeof(value),"%s",tr(*values[i]==2?TXT_OC_HOOK:*values[i]==1?TXT_OC_POLLING:TXT_OFF));
                 else snprintf(value,sizeof(value),"%s",tr(*values[i]?TXT_SETTINGS_ON:TXT_OFF));
                 snprintf(row,sizeof(row),"%c %s: %s",i==selected?'>':' ',tr((TextId)(TXT_OC_ENABLED+i)),value);
                 settings_line(i,i==selected,row);
@@ -43,7 +44,8 @@ static void oc_settings(void) {
             else if(selected==1) {
                 int value=*values[1]+((movement&PSP_CTRL_LEFT)?-1:1);
                 if(value>=66 && value<=471)*values[1]=value;
-            } else *values[selected]=!*values[selected];
+            } else if(selected==6)*values[selected]=(*values[selected]+((movement&PSP_CTRL_LEFT)?2:1))%3;
+            else *values[selected]=!*values[selected];
             repeat=now+((pressed&movement)?400000ULL:150000ULL);dirty=1;
         }
         old=pad.Buttons;sceKernelDelayThread(20000);

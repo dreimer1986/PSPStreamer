@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT
  * Adapted PLL sequence from m-c/d's Experimental Overclock Stress Tester.
  * See LICENSE and README for source revision and safety limits.
- * No syscall/display hooks, permanent firmware patches or memory unlocking.
+ * Optional overlay=2 syscall hook; no permanent patches or memory unlocking.
  */
 #include <pspkernel.h>
 #include <psppower.h>
@@ -52,6 +52,7 @@ static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
 #include "overlay_vblank.h"
+#include "overlay_hook.h"
 
 /* The I/O manager dispatches this optional API without mandatory client
  * imports. All hardware writes stay in our worker, never the caller thread. */
@@ -96,24 +97,27 @@ static void overlay_notify(void) {
 static void overlay_update(int toggle) {
     if(!overlay_enabled)return;
     /* A resumed application may have reused VRAM: never restore stale pixels. */
-    if(suspended){overlay.valid=0;overlay_until=0;return;}
+    if(suspended){overlay.valid=0;overlay_until=0;oc_hook_publish(NULL,0);return;}
     unsigned long long now=sceKernelGetSystemTimeWide();
     if(toggle)overlay_until=overlay_until?0:now+5000000ULL;
     if(overlay_until && now>=overlay_until)overlay_until=0;
+    if(oc_hook_installed && !overlay_until){oc_hook_publish(NULL,0);return;}
     if(!overlay_until && !overlay.valid)return;
     if(overlay_until && now<overlay_next_draw && !toggle)return;
     /* Bounded polling, not an unbounded VBlank wait: display shutdown or
      * cable removal must not strand module_stop. Only active OSD waits. */
-    if(!oc_overlay_vblank())return;
+    if(!oc_hook_installed && !oc_overlay_vblank())return;
     if(suspended){overlay.valid=0;overlay_until=0;return;}
     void *base=NULL;int stride,format,mode,width,height;
-    if(sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
+    if(!oc_hook_installed && (sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
        sceDisplayGetMode(&mode,&width,&height)<0 ||
-       !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format)) {
+       !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format))) {
         overlay.valid=0;return;
     }
-    if(overlay.valid && (overlay.stride!=stride || overlay.format!=format))overlay.valid=0;
-    oc_osd_restore(&overlay);
+    if(!oc_hook_installed) {
+        if(overlay.valid && (overlay.stride!=stride || overlay.format!=format))overlay.valid=0;
+        oc_osd_restore(&overlay);
+    }
     if(!overlay_until)return;
     unsigned int cpu=0,bus=0;
     if(oc_supported_model(sceKernelGetModel())) {
@@ -128,7 +132,8 @@ static void overlay_update(int toggle) {
     snprintf(lines[0],40,"OC CPU %u.%u BUS %u.%u MHZ EST",cpu/1000,(cpu%1000)/100,bus/1000,(bus%1000)/100);
     snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
-    oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
+    if(oc_hook_installed)oc_hook_publish(lines,1);
+    else oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
     overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }
 
@@ -212,6 +217,7 @@ static void snapshot(const char *event) {
         "sony_api_mhz=%d\npll_estimate_khz=%u\ncpu_estimate_khz=%u\nbus_estimate_khz=%u\n"
         "pll_control=%08X\npll_multiplier=%08X\ncpu_domain=%08X\nbus_domain=%08X\n"
         "suspend_flags=%08X\nsuspend_observed_us=%u%06u\nprevious_journal_result=%08X\noverlay=%d\n"
+        "overlay_hook_installed=%d\noverlay_hook_present_calls=%u\n"
         "Estimates assume the reference 37 MHz base and PLL ratio index 5.\n"
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
         event,(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
@@ -224,7 +230,8 @@ static void snapshot(const char *event) {
         scePowerGetCpuClockFrequencyInt(),
         oc_khz(ctl,mul,0x01ff01ff),oc_khz(ctl,mul,cpu),oc_khz(ctl,mul,bus),ctl,mul,cpu,bus,
         (unsigned int)pending_suspend_flags,(unsigned int)(suspend_tick/1000000ULL),
-        (unsigned int)(suspend_tick%1000000ULL),(unsigned int)journal_result,overlay_enabled);
+        (unsigned int)(suspend_tick%1000000ULL),(unsigned int)journal_result,overlay_enabled,
+        oc_hook_installed,oc_hook_calls);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
     snprintf(path,sizeof(path),"%sStreamerOC-events.log",directory);
@@ -282,6 +289,10 @@ static int thread_main(SceSize args,void *argp) {
         control_registered=sceIoAddDrv(&control_driver)>=0;
         control_ready=control_registered;
         snapshot("control_driver_ready");
+    }
+    if(running && overlay_enabled==2) {
+        int result=oc_hook_install();
+        snapshot(result?"overlay_hook_unavailable_polling":"overlay_hook_installed");
     }
     if(enabled){snapshot("startup_overlay_begin");overlay_notify();}
     unsigned int previous=0,conflicts=0;
@@ -362,6 +373,7 @@ static int thread_main(SceSize args,void *argp) {
     snapshot("session_stopping");
     control_ready=0;
     overlay_until=0;overlay_update(0);
+    oc_hook_remove();
     if(changed && !suspended)exit_result=restore();
     else if(changed)exit_result=-2;
     enabled=0;status=exit_result?"worker stopped: clock restore refused":"worker stopped: baseline restored or unchanged";
@@ -390,6 +402,11 @@ int module_stop(SceSize args,void *argp) {
     (void)args;(void)argp;running=0;
     control_ready=0;
     if(worker>=0){sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);worker=-1;}
+    oc_hook_remove();
+    /* Refuse unload rather than free code still executing in a presenter. */
+    SceInt64 deadline=sceKernelGetSystemTimeWide()+100000LL;
+    while(oc_hook_users && sceKernelGetSystemTimeWide()<deadline)sceKernelDelayThread(1000);
+    if(oc_hook_users)return -1;
     /* Joining first closes the race with late driver registration. New
      * commands already fail because running was cleared before the join. */
     if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}

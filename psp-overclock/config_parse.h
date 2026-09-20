@@ -48,12 +48,14 @@ static int oc_config_parse(char *text, int length, OcConfig *out, int *keys, int
         if(!strcmp(line,"target_mhz")) {
             if(number<66)goto invalid;
             draft.target=number;
+        } else if(!strcmp(line,"overlay")) {
+            if(number>2)goto invalid;
+            draft.overlay=number;
         } else {
             if(number>1)goto invalid;
             if(!strcmp(line,"enabled"))draft.enabled=number;
             else if(!strcmp(line,"enforce"))draft.enforce=number;
             else if(!strcmp(line,"report"))draft.report=number;
-            else if(!strcmp(line,"overlay"))draft.overlay=number;
             else if(!strcmp(line,"app_control"))draft.app_control=number;
             else if(!strcmp(line,"enforce_unlimited"))draft.enforce_unlimited=number;
             else goto invalid;

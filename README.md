@@ -562,7 +562,11 @@ install the plugin/directory first. Invalid INIs are not overwritten. Saving
 validates all values, writes a temporary file and keeps the previous INI as
 `StreamerOC.ini.bak`. Comments are replaced with the standard seven-key layout.
 The editor does not install/enable ARK's plugin entry or test clock stability.
-The existing overlay remains Off/On; no new display hook is enabled.
+Overlay offers `0=Off`, `1=polling` (the previous default) and
+`2=framebuffer hook` (experimental, opt-in). Mode 2 follows standard user-mode
+framebuffer submissions; apps using direct/kernel presentation can bypass it.
+Switch back to 1 if an app has display problems. Restart the application after
+changing the mode; this is not an in-session display patch switch.
 
 `screen_idle=0` keeps the display awake as before; `1` allows normal LCD
 power saving during music; `2` allows it throughout the app. Dimming/off

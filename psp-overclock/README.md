@@ -24,9 +24,9 @@ frequency; its PLL-ready wait is unbounded, and its downward transition starts
 at the configured maximum rather than the actual register value. Its bitwise
 PLL-index test is also not an equality test. Those assumptions are not carried
 over here. The new implementation has bounded waits, exact ratio checks and
-reads the actual numerator before reducing it. No framebuffer hooks or global
-memory-protection unlock are used. The optional diagnostic overlay writes a
-small rectangle into validated VRAM without installing display hooks.
+reads the actual numerator before reducing it. No global memory-protection
+unlock is used. The default overlay writes a small rectangle into validated
+VRAM without hooks; optional `overlay=2` hooks framebuffer submission syscalls.
 If an application changes the PLL/domain setup during a yielded ramp, the
 ramp aborts and enforcement is disabled rather than continuing blindly.
 
@@ -255,13 +255,13 @@ L+R+SELECT still appends a snapshot to the log. `overlay=1` is the default;
 the overlay is independent of `report`. Key combinations are not consumed,
 so the application can also react to them.
 
-This is a small ASCII overlay at the upper left, refreshed at up to 30 Hz only
+With `overlay=1`, this is a small ASCII overlay at the upper left, refreshed at up to 30 Hz only
 while visible. Drawing starts in a detected VBlank; polling yields and is
 bounded to 20 ms. A missing display or suspend cancels the wait. This reduces
 the gap between redraws but cannot prevent applications overwriting the OSD,
 nor guarantee that all pixel writes fit inside the blanking interval.
 The clock enforcement check remains at 500 ms. No GU state,
-display mode, frame-buffer selection or syscall/display hooks are changed.
+display mode, frame-buffer selection or syscall/display hooks are changed in mode 1.
 The rasterizer accepts validated VRAM-backed 565/5551/4444/8888 surfaces up to
 720x480 and uses their actual stride. Unsupported/main-RAM framebuffers are
 skipped. TV-Out visibility depends on whether the active TV surface is exposed
@@ -299,6 +299,34 @@ it does not provide an independently calibrated CPU cycle measurement. A
 synthetic timed-loop benchmark is therefore deliberately not labelled “MHz”.
 No register readout proves performance or stability; both need real hardware
 tests. Host tests cover formula/model bounds, not physical PLL behavior.
+
+### Framebuffer hook: overlay=2
+
+Mode 2 hooks the standard user-mode `sceDisplaySetFrameBuf` syscall through
+ARK's SystemControl API. After a successful submission, it draws into that
+submitted VRAM surface, using its pixel format and stride. The original call,
+its parameters and return value are preserved. Kernel/direct display calls
+are not patched. No GE command lists, framebuffer addresses or video modes
+are replaced. The original syscall mapping is restored on worker shutdown;
+module unload is refused if a tracked presentation call is still executing.
+
+Clock reads and text formatting stay in the worker. The hook only draws cached
+text and maintains three per-buffer backups, covering usual double/triple
+buffering. It does not wait for VBlank, allocate, log or set clocks. When hidden,
+each buffer's unchanged overlay pixels are restored on its next submission;
+a static screen may therefore retain the last overlay until it is presented
+again. Suspend/mode changes discard stale backups. Other overlays hooking the
+same syscall are not a supported combination.
+
+This aims to reduce flicker, **not guarantee universal compatibility**: late GE
+writes can still overwrite the text, immediate submissions can tear, and apps
+bypassing the syscall will not show it. If the display export cannot be found,
+the worker falls back to mode-1 polling and logs
+`overlay_hook_unavailable_polling`. Otherwise logs include
+`overlay_hook_installed` and `overlay_hook_present_calls`; a zero count during
+rendering suggests this app bypasses the hooked path. Use `overlay=1` to revert
+or `0` to disable, then restart the app. Default remains 1. This version was
+compiled without running tests, as requested; hardware validation is pending.
 
 ## Editing from PSPStreamer
 

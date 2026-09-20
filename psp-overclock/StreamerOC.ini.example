@@ -14,5 +14,6 @@ app_control=1
 report=1
 # Optional OSD: clock changes automatically show 5 seconds.
 # L+R+Triangle shows/hides it manually too.
-# Enabled by default; no display hooks. May flicker in fast-rendering apps.
+# 0=off, 1=VBlank polling (default, no hooks), 2=framebuffer syscall hook.
+# Mode 2 is experimental; direct/kernel rendering may bypass it.
 overlay=1
