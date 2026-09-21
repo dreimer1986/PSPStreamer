@@ -126,6 +126,14 @@ legacy response limit. Offline downloads still use whole-file overlays; new
 conversions exceeding 960 normalized text intervals use burn-in instead of
 silently truncating subtitles. Previously converted files need reconversion.
 
+Subtitle choices show format and available Forced/SDH (hearing-impaired)/Default
+flags alongside the title. Same-language alternatives are numbered. `smaller`
+marks the smallest track only when all alternatives of that language have known
+byte sizes and the same format. This does **not** identify its content as Forced
+or signs/songs. No extra scan is performed to obtain missing statistics. The
+labels apply to mounted files, Plex and Jellyfin on both PSP and web. After an
+update, reselect a saved web preference if multiple tracks make it ambiguous.
+
 The password is used only to obtain a user token, not saved. Tokens and device
 identity live in owner-only `jellyfin.json` under `PSP_STREAMER_SETTINGS_DIR`
 (`/data` in Docker/Home Assistant). Disconnect removes the local token; revoke

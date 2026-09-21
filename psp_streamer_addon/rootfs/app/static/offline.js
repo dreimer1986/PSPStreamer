@@ -13,7 +13,14 @@ function restoreTrack(select,wanted){
   if(wanted==='First audio track'||wanted==='Erste Tonspur'){
     if(options.length){select.value=options[0].value;return true;}return false;
   }
-  const match=options.find(o=>o.textContent===wanted)||((wanted==='Off'||wanted==='Aus')?options.find(o=>o.value==='-1'||o.value==='off'):
-    lang(wanted)!=='und'&&options.find(o=>lang(o.textContent)===lang(wanted)));
+  let match=options.find(o=>o.textContent===wanted);
+  if(!match && (wanted==='Off'||wanted==='Aus'))match=options.find(o=>o.value==='-1'||o.value==='off');
+  if(!match && lang(wanted)!=='und'){
+    const same=options.filter(o=>lang(o.textContent)===lang(wanted));
+    // Preserve old plain titles only when the enriched match is unambiguous.
+    const title=wanted.trim().split(/\s+/).slice(1).join(' ');
+    const legacy=same.filter(o=>title && o.textContent.split(' | ').slice(1).join(' | ')===title);
+    if(legacy.length===1)match=legacy[0];else if(same.length===1)match=same[0];
+  }
   if(match){select.value=match.value;return true;}return false;
 }

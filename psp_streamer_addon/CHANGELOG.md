@@ -1,3 +1,10 @@
+# 0.1.42
+
+- Distinguish subtitle tracks using titles, Forced/SDH/Default flags and codec names, on both PSP and web UI.
+- Number same-language alternatives; mark the smallest only when comparable same-codec byte statistics exist. No media scan or subtitle extraction is added.
+- Do not silently restore the first same-language web selection when a saved label is ambiguous.
+- Server-only update, compatible with existing PSP clients. Docker and Home Assistant contain identical changes.
+
 # 0.1.41
 
 - Page complete text-subtitle timelines for Jellyfin, Plex and mounted file sources; matching PSP client required.

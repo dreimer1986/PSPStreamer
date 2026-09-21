@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .pgs import PgsCue, parse_pgs
 from .subtitle_pages import display_timeline, subtitle_page
+from .track_labels import subtitle_labels
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
@@ -822,21 +823,19 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json(cached)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_tags=language,title,artist,album,album_artist", "-of", "json", str(source)],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json", str(source)],
             capture_output=True, text=True, timeout=20, check=False,
         )
         if result.returncode:
             raise ValueError("Could not inspect media file")
         streams = json.loads(result.stdout).get("streams", [])
-        audio, subtitles = [], []
+        audio, subtitles = [], subtitle_labels(streams)
         for stream in streams:
             tags = stream.get("tags", {})
             language = str(tags.get("language", "und"))[:15]
             title = track_label(tags.get("title"))
             if stream.get("codec_type") == "audio":
                 audio.append({"n": str(len(audio)), "l": language, "t": title})
-            elif stream.get("codec_type") == "subtitle":
-                subtitles.append({"n": str(len(subtitles)), "l": language, "t": title})
         duration = json.loads(result.stdout).get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
         if source.suffix.lower() in AUDIO_EXTENSIONS:
