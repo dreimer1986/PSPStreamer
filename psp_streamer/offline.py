@@ -227,7 +227,13 @@ class OfflineQueue:
                     data = self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map',
                                           f'0:s:{track}', '-f', 'srt', 'pipe:1'], job)
                     text = data.decode('utf-8')
-                payload['c'] = self.parse_cues(text, 1000)
+                from .subtitle_pages import display_timeline
+                payload['c'] = display_timeline(self.parse_cues(text, 1000))
+                if len(payload['c']) > 960:
+                    # OVL1 is a legacy whole-file overlay, without online page
+                    # fetching. Never silently truncate downloaded subtitles.
+                    payload['c'] = []
+                    burn = track
             elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
                 from .pgs import parse_pgs
                 sup = folder / 'extract.sup'
@@ -284,7 +290,8 @@ class OfflineQueue:
         if shutil.disk_usage(folder).free < 32 * 1024 * 1024:
             raise ValueError('Insufficient server disk space')
         burn = self._subtitles(job, source, probe, folder)
-        bitmap = burn >= 0
+        from .server import BITMAP_SUBTITLE_CODECS
+        bitmap = burn >= 0 and subtitles[burn]['codec_name'] in BITMAP_SUBTITLE_CODECS
         command = self.command_builder(source, job['audio'], 'mp3' if music else 'flv', job['profile'] == 'low',
                                       burn, job['audio_quality'], None, 0, bitmap, job['profile'] == 'tv', job['video_fps'])
         if '-re' in command:

@@ -3,6 +3,7 @@
  * existing firmware APIs and receive complete packets with container PTS.
  */
 #include "flv.h"
+#include "pts_drain.h"
 #include "mp3_preroll.h"
 typedef struct {
     unsigned char *data;
@@ -17,6 +18,7 @@ static TimedQueue timed_video, timed_audio;
 static volatile int timed_active, timed_running, timed_eof, timed_error, timed_playing;
 static const char * volatile timed_error_step = "FLV/PTS stream";
 static volatile int timed_has_audio, timed_audio_done;
+static volatile int timed_video_blocked, timed_audio_waiting;
 static volatile int timed_socket = -1;
 static int timed_reader_id = -1;
 static int timed_video_origin, timed_video_origin_set, timed_position_ms;
@@ -44,7 +46,10 @@ static void timed_queue_destroy(TimedQueue *q) {
 }
 static int timed_put(TimedQueue *q, const unsigned char *data, int size, int pts) {
     TimedPacket *p;
-    while (timed_running && !timed_wait(q->free)) {}
+    while (timed_running && !timed_wait(q->free)) {
+        if(q==&timed_video)timed_video_blocked=1;
+    }
+    if(q==&timed_video)timed_video_blocked=0;
     if (!timed_running) return -1;
     p = &q->slots[q->write % 128];
     p->data = memalign(64, (size + 63) & ~63);

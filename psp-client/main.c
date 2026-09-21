@@ -90,6 +90,7 @@ typedef struct {
     int end_ms;
     char text[SUBTITLE_TEXT_SIZE];
 } SubtitleCue;
+#include "subtitle_pages.h"
 typedef struct { int start, end, x, y, width, height, canvas_width, canvas_height; } BitmapCue;
 
 static char response[RESPONSE_SIZE];
@@ -360,6 +361,10 @@ static StreamTrack audio_tracks[8], subtitle_tracks[8];
 static int audio_track_count, subtitle_track_count;
 static SubtitleCue *subtitle_cues;
 static int subtitle_cue_count;
+static SubtitlePage *subtitle_pages;
+static int subtitle_page_bank, subtitle_paged_response;
+static volatile int subtitle_pages_live, subtitle_page_ready, subtitle_page_position;
+static volatile int subtitle_page_failures;
 static unsigned char *subtitle_font;
 static BitmapCue *bitmap_cues;
 static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1, bitmap_bytes;
@@ -691,13 +696,15 @@ static int http_get_binary(const char *path, unsigned char *buffer, int buffer_s
 #include "offline_source.h"
 
 static int prepare_client_subtitles(const char *media_id, int tv_profile) {
-    char path[ID_SIZE + 64];
+    char path[ID_SIZE + 128];
     int result;
     subtitle_cue_count = 0;
     subtitle_client_side = 0;
+    subtitle_pages_live=subtitle_page_ready=subtitle_paged_response=subtitle_page_failures=0;
+    if(subtitle_pages) {free(subtitle_pages);subtitle_pages=NULL;subtitle_cues=NULL;}
     if (subtitle_cues) { free(subtitle_cues); subtitle_cues = NULL; }
     if (selected_subtitle_track < 0 && !offline_active) return 0;
-    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
+    snprintf(path, sizeof(path), "/api/subtitles/%s?track=%d&tv=%d&timebase=ms&page=1&at_ms=%d", media_id, selected_subtitle_track, tv_profile, stream_start_seconds*1000);
     result = offline_active ? offline_subtitle_json() : media_request_get(path, response, sizeof(response), 210000, 1);
     /* Offline overlays are optional (no subs, or already burned into video).
      * Preserve that behaviour; only a failed online request blocks startup. */
@@ -731,6 +738,7 @@ static int prepare_client_subtitles(const char *media_id, int tv_profile) {
         return 0;
     }
     if (!strstr(response, "\"t\":\"text\"")) return 0;
+    subtitle_paged_response=!offline_active && strstr(response,"\"paged\":1")!=NULL;
     subtitle_client_side = 1;
     return 0;
 }
@@ -741,6 +749,17 @@ static int prepare_client_subtitles(const char *media_id, int tv_profile) {
 static void subtitle_parse_prepared_response(void) {
     char *cursor;
     if (!subtitle_client_side || subtitle_cues) return;
+    if(subtitle_paged_response) {
+        subtitle_pages=memalign(64,2*sizeof(*subtitle_pages));
+        if(!subtitle_pages || !subtitle_page_parse(response,subtitle_pages)) {
+            free(subtitle_pages);subtitle_pages=NULL;subtitle_client_side=0;return;
+        }
+        subtitle_page_bank=0;subtitle_cues=subtitle_pages[0].cues;
+        subtitle_cue_count=subtitle_pages[0].count;
+        subtitle_page_position=stream_start_seconds*1000;
+        __sync_synchronize();subtitle_pages_live=1;
+        return;
+    }
     cursor = strstr(response, "\"c\":[");
     if (!cursor) { subtitle_client_side = 0; return; }
     cursor = strchr(cursor, '[');
@@ -761,13 +780,30 @@ static void subtitle_parse_prepared_response(void) {
 }
 
 static void subtitle_release(void) {
-    if (subtitle_cues) free(subtitle_cues);
+    /* The remote worker is joined before this owner releases either bank. */
+    subtitle_pages_live=0;
+    if(subtitle_pages)free(subtitle_pages);
+    else if (subtitle_cues) free(subtitle_cues);
+    subtitle_pages=NULL;subtitle_page_ready=0;
     if (subtitle_font) free(subtitle_font);
     subtitle_cues = NULL;
     subtitle_font = NULL;
     subtitle_cue_count = 0;
     if (bitmap_cues) free(bitmap_cues);
     bitmap_cues = NULL; bitmap_cue_count = 0; bitmap_client_side = 0; bitmap_loaded_cue = -1;
+}
+
+/* Sole render-thread consumer. Publish the freed bank only after switching;
+ * background HTTP/JSON parsing never touches the bank being drawn. */
+static void subtitle_page_advance(int position_ms) {
+    subtitle_page_position=position_ms;
+    if(!subtitle_pages_live || !subtitle_page_ready)return;
+    __sync_synchronize();
+    if(position_ms<subtitle_pages[subtitle_page_bank].until)return;
+    subtitle_page_bank=1-subtitle_page_bank;
+    subtitle_cues=subtitle_pages[subtitle_page_bank].cues;
+    subtitle_cue_count=subtitle_pages[subtitle_page_bank].count;
+    __sync_synchronize();subtitle_page_ready=0;
 }
 
 static void bitmap_present(int frame, const char *media_id) {
@@ -1293,6 +1329,7 @@ static int prepare_timed_video(TimedPacket *packet) {
         video_watch_ping("subtitle/overlay");
         cue_ms = offline_active ? packet->pts : stream_start_seconds * 1000 + packet->pts - timed_video_origin;
         playback_position_ms = cue_ms;
+        subtitle_page_advance(cue_ms);
         playback_draw_target = (u32 *)video_staging;
         if (!tvout_video_active) {
             subtitle_present(cue_ms);
@@ -1514,9 +1551,11 @@ static int audio_thread(SceSize args, void *argp) {
             write_slot_reserved = 1;
         }
         if (timed_active) {
+            timed_audio_waiting=1;
             while (timed_running && !timed_get(&timed_audio, &timed_packet)) {
                 if (timed_eof) break;
             }
+            timed_audio_waiting=0;
             if (!timed_packet.data) break;
             frame_size = mp3_frame_size(timed_packet.data, timed_packet.size);
             if (frame_size != timed_packet.size || frame_size > MP3_MAX_FRAME_BYTES) {
@@ -2071,6 +2110,7 @@ static int play_h264(const char *media_id) {
     unsigned long long next_volume_repeat_tick = 0;
     unsigned int previous_buttons = 0;
     int paused = 0;
+    PtsDrainClock drain_clock={0};
     if(offline_active) {offline_prepare_seek(stream_start_seconds);stream_start_seconds=offline_seek_ms/1000;}
     playback_reached_end = 0;
     playback_paused = 0;
@@ -2136,6 +2176,7 @@ static int play_h264(const char *media_id) {
 
     timed_active = timed_running = 1;
     timed_eof = timed_error = timed_audio_done = timed_playing = 0;
+    timed_video_blocked=timed_audio_waiting=0;
     timed_has_audio = -1;
     timed_video_origin_set = timed_position_ms = 0;
     timed_video.free = timed_video.ready = timed_audio.free = timed_audio.ready = -1;
@@ -2284,7 +2325,12 @@ static int play_h264(const char *media_id) {
         previous_buttons = pad.Buttons;
         if (paused) { if (!pause_tick) pause_tick = sceKernelGetSystemTimeWide(); sceKernelDelayThread(75000); continue; }
 
-        if (pause_tick) { video_only_tick += sceKernelGetSystemTimeWide() - pause_tick; pause_tick = 0; }
+        if (pause_tick) {
+            unsigned long long elapsed=sceKernelGetSystemTimeWide()-pause_tick;
+            video_only_tick+=elapsed;
+            if(drain_clock.active)drain_clock.tick+=elapsed;
+            pause_tick=0;
+        }
         if (timed_error || audio_state < 0) {
             result = timed_error ? timed_error : audio_state;
             video_step = timed_error ? timed_error_step : "MP3";
@@ -2354,16 +2400,27 @@ static int play_h264(const char *media_id) {
         {
             int sync;
             unsigned int copy_us = 0;
+            unsigned long long clock_now=sceKernelGetSystemTimeWide();
+            int audio_end=(int)audio_current_timestamp_ms+audio_dac_samples*1000/44100;
+            if(timed_has_audio && !timed_audio_done)
+                pts_drain_update(&drain_clock,clock_now,video_first_presented && audio_clock_started,
+                    (int)audio_current_timestamp_ms,audio_end,timed_video_blocked,timed_audio_waiting,
+                    timed_audio.read==timed_audio.write,audio_played_blocks==audio_blocks_published);
             if (timed_has_audio && timed_audio_done && !tail_clock) {
-                video_only_tick = sceKernelGetSystemTimeWide();
-                video_only_origin = (int)audio_current_timestamp_ms +
-                    audio_dac_samples * 1000 / 44100;
+                video_only_tick = clock_now;
+                video_only_origin = audio_end;
+                if(timed_video_origin+timed_position_ms>video_only_origin)
+                    video_only_origin=timed_video_origin+timed_position_ms;
+                if(drain_clock.active && pts_drain_time(&drain_clock,clock_now)>video_only_origin)
+                    video_only_origin=pts_drain_time(&drain_clock,clock_now);
+                drain_clock.active=0;
                 tail_clock = 1;
             }
             sync = pts_presentation_status(prepared, video_first_presented,
-                timed_has_audio && !timed_audio_done, audio_clock_started,
+                timed_has_audio && !timed_audio_done && !drain_clock.active, audio_clock_started,
                 (int)audio_current_timestamp_ms, current.pts, duration,
-                video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
+                drain_clock.active?pts_drain_time(&drain_clock,clock_now):
+                    video_only_origin + (int)((clock_now - video_only_tick) / 1000ULL));
             if (!sync) {
                 sync_trace_record(current.pts, 0, 0);
                 sceKernelDelayThread(2000); continue;
@@ -2374,9 +2431,10 @@ static int play_h264(const char *media_id) {
                 video_watch_ping("VBlank");
                 sceDisplayWaitVblankStart();
                 sync = pts_presentation_status(prepared, video_first_presented,
-                    timed_has_audio && !timed_audio_done, audio_clock_started,
+                    timed_has_audio && !timed_audio_done && !drain_clock.active, audio_clock_started,
                     (int)audio_current_timestamp_ms, current.pts, duration,
-                    video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
+                    drain_clock.active?pts_drain_time(&drain_clock,sceKernelGetSystemTimeWide()):
+                        video_only_origin + (int)((sceKernelGetSystemTimeWide() - video_only_tick) / 1000ULL));
                 if (!sync) continue;
                 if (sync == 1) {
                     unsigned long long copy_start = debug_enabled ? sceKernelGetSystemTimeWide() : 0;
@@ -2574,8 +2632,31 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     return 1;
 }
 
+static void subtitle_page_prefetch(unsigned long long *retry) {
+    if(!subtitle_pages_live || subtitle_page_ready || !remote_control_running)return;
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    if(now<*retry)return;
+    __sync_synchronize();
+    int bank=subtitle_page_bank,offset=subtitle_pages[bank].next;
+    if(offset<0 || (long long)subtitle_page_position+30000<subtitle_pages[bank].until)return;
+    char path[ID_SIZE+128];
+    snprintf(path,sizeof(path),"/api/subtitles/%s?track=%d&timebase=ms&page=1&offset=%d",
+             audio_media_id,selected_subtitle_track,offset);
+    /* This worker already owns the control-plane TLS slot. Cached cue pages
+     * use it between polls; no new thread, socket pool or render-path HTTP.
+     * response is no longer used by the render thread for paged text. */
+    int result=remote_http_get_budget(path,response,sizeof(response),&remote_control_running,10000);
+    if(!remote_control_running)return;
+    SubtitlePage *page=subtitle_pages+(1-bank);
+    if(result<0 || !subtitle_page_parse(response,page) || page->offset!=offset) {
+        subtitle_page_failures++;*retry=sceKernelGetSystemTimeWide()+2000000ULL;return;
+    }
+    __sync_synchronize();subtitle_page_ready=1;*retry=0;
+}
+
 static int remote_control_thread(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
+    unsigned long long subtitle_retry=0;
     (void)args; (void)argp;
     while (remote_control_running) {
         char path[ID_SIZE+192], reply[2048], action[16];
@@ -2589,7 +2670,10 @@ static int remote_control_thread(SceSize args, void *argp) {
             json_value(reply, "action", action, sizeof(action))) {
             if (remote_state_reset(reply, &sequence)) continue;
             field = strstr(reply, "\"seq\":");
-            if (!field || atoi(field + 6) <= sequence) { sceKernelDelayThread(500000); continue; }
+            if (!field || atoi(field + 6) <= sequence) {
+                subtitle_page_prefetch(&subtitle_retry);
+                sceKernelDelayThread(500000); continue;
+            }
             if (remote_control_running && field && atoi(field + 6) > sequence &&
                 !strcmp(action, "play")) {
                 /* Do not consume Play: exit through normal video teardown,
@@ -2606,6 +2690,8 @@ static int remote_control_thread(SceSize args, void *argp) {
                 if (seconds >= 0 && seconds <= 86400) remote_control_seek_seconds = seconds;
             }
         }
+        if(!remote_control_action && remote_control_seek_seconds<0)
+            subtitle_page_prefetch(&subtitle_retry);
         sceKernelDelayThread(500000);
     }
     plex_report_stop(sequence);

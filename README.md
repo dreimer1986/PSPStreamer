@@ -117,9 +117,14 @@ Jellyfin-device remote control and offline progress synchronization are not
 included. Original-file bandwidth between Jellyfin and PSPStreamer still applies.
 Embedded text subtitles are requested through Jellyfin's subtitle-export API
 where its media-source mapping is available, avoiding a complete video transfer
-just to extract text. Existing PSP limits still apply: at most 1,800 text cues;
-heavily fragmented ASS/karaoke tracks can exceed this and be truncated. This
-limit also predates Jellyfin and needs a separate subtitle-storage redesign.
+just to extract text. With server 0.1.41 and the matching PSP client, text cues
+are loaded in 256-entry pages in the background, including for Plex and files
+on mounted SMB shares. There is no whole-episode cue-count cutoff. Seeking
+loads the page matching the target timestamp. Identical neighbouring ASS cues
+are merged; bitmap subtitle handling is unchanged. Older clients retain the
+legacy response limit. Offline downloads still use whole-file overlays; new
+conversions exceeding 960 normalized text intervals use burn-in instead of
+silently truncating subtitles. Previously converted files need reconversion.
 
 The password is used only to obtain a user token, not saved. Tokens and device
 identity live in owner-only `jellyfin.json` under `PSP_STREAMER_SETTINGS_DIR`

@@ -51,6 +51,7 @@ static int video_watch_worker(SceSize args,void *argp) {
                 "position_ms=%d paused=%d timed_running=%d eof=%d error=%d audio_done=%d\n"
                 "video_queue=%u audio_queue=%u audio_running=%d audio_state=%d published=%u played=%u\n"
                 "threads: reader=%d dac=%d remote=%d\n"
+                "demux: video_blocked=%d audio_waiting=%d subtitles_paged=%d page_ready=%d page_errors=%d\n"
                 "remote: phase=%s attempts=%u completed=%u result=%d sequence=%d success_age_ms=%u\n\n",
                 now,tvout_video_active,video_watch_stage,h264_hw_last_step(),
                 now-heartbeat,now-last_progress,position,playback_paused,
@@ -59,6 +60,7 @@ static int video_watch_worker(SceSize args,void *argp) {
                 audio_running,audio_state,(unsigned int)audio_blocks_published,
                 (unsigned int)audio_played_blocks,timed_reader_id,
                 (int)audio_output_thread_id,remote_control_thread_id,
+                timed_video_blocked,timed_audio_waiting,subtitle_pages_live,subtitle_page_ready,subtitle_page_failures,
                 remote_http_stage,remote_http_attempts,remote_http_completed,
                 remote_http_last_result,remote_control_sequence,now-last_remote);
             (void)n;

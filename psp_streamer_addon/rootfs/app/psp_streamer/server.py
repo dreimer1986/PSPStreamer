@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .pgs import PgsCue, parse_pgs
+from .subtitle_pages import display_timeline, subtitle_page
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
@@ -44,7 +45,7 @@ MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 TEXT_SUBTITLE_CODECS = {"ass", "mov_text", "srt", "ssa", "subrip", "text", "webvtt"}
 BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "xsub"}
 PSP_SUBTITLE_FPS = 20.1
-MAX_SUBTITLE_CUES = 1800
+MAX_SUBTITLE_CUES = 1800  # compatibility response for older, unpaged clients
 PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
 
 
@@ -105,8 +106,6 @@ def parse_srt_cues(value: str, fps: float = PSP_SUBTITLE_FPS) -> list[list[objec
         text = psp_subtitle_text("|".join(lines[line_index + 1:]))
         if text and end > start:
             cues.append([round(start * fps / 1000), round(end * fps / 1000), text])
-        if len(cues) >= MAX_SUBTITLE_CUES:
-            break
     return cues
 
 
@@ -516,7 +515,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms")
+                paged = query.get('page', ['0'])[0] == '1'
+                offset = int(query['offset'][0]) if 'offset' in query else None
+                at_ms = int(query.get('at_ms', ['0'])[0])
+                if (offset is not None and offset < 0) or not 0 <= at_ms <= 2147483647:
+                    raise ValueError('Invalid subtitle page position')
+                return self.subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms", paged, offset, at_ms)
             if parsed.path.startswith("/api/bitmap-subtitles/"):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
@@ -858,7 +862,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self.server.metadata_cache[token] = payload
         self.send_json(payload)
 
-    def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False) -> None:
+    def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False,
+                  paged: bool = False, offset: int | None = None, at_ms: int = 0) -> None:
         """Return a compact cue list without involving the video transcode.
 
         Text tracks are converted by FFmpeg to its canonical SRT form.  This
@@ -867,19 +872,23 @@ class AppHandler(BaseHTTPRequestHandler):
         deliberately report their kind now; the PSP client can retain the
         proven burn-in fallback until its sprite overlay transport lands.
         """
-        fps = 1000 if milliseconds else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
+        fps = 1000 if milliseconds or paged else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
         cache_key = (token, track, fps)
         with self.server.subtitle_cache_lock:
             cached = self.server.subtitle_cache.get(cache_key)
+        def respond(payload):
+            if paged:
+                return self.send_json(subtitle_page(payload, offset, at_ms))
+            return self.send_json(dict(payload, c=payload['c'][:MAX_SUBTITLE_CUES]))
         if cached is not None:
-            return self.send_json(cached)
+            return respond(cached)
         if token.startswith('jellyfin.'):
             text = self.server.jellyfin.text_subtitle(token, track)
             if text is not None:
-                payload = {'t': 'text', 'c': parse_srt_cues(text, fps)}
+                payload = {'t': 'text', 'c': display_timeline(parse_srt_cues(text, fps))}
                 with self.server.subtitle_cache_lock:
                     self.server.subtitle_cache[cache_key] = payload
-                return self.send_json(payload)
+                return respond(payload)
         _, source = self.server.library.decode(token)
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", f"s:{track}",
@@ -899,10 +908,10 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             if extracted.returncode:
                 raise ValueError("Could not extract subtitle track")
-            payload = {"t": "text", "c": parse_srt_cues(extracted.stdout, fps)}
+            payload = {"t": "text", "c": display_timeline(parse_srt_cues(extracted.stdout, fps))}
         with self.server.subtitle_cache_lock:
             self.server.subtitle_cache[cache_key] = payload
-        self.send_json(payload)
+        respond(payload)
 
     def pgs_cues(self, token: str, track: int) -> list[PgsCue]:
         cache_key = (token, track)

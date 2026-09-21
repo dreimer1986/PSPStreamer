@@ -1,3 +1,10 @@
+# 0.1.41
+
+- Page complete text-subtitle timelines for Jellyfin, Plex and mounted file sources; matching PSP client required.
+- Merge repeated ASS text and bound each PSP page to 256 cues; seeking requests the appropriate page.
+- Use burn-in for new offline conversions whose text timeline exceeds the legacy offline overlay capacity.
+- Matching client fixes an end-of-episode demux deadlock that prevented automatic next-episode playback. Normal audio-master synchronization and network timeouts remain unchanged.
+
 # 0.1.40
 
 - Jellyfin connection and independent source selection in web Settings; user tokens stay on the server.
