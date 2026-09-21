@@ -118,6 +118,10 @@ static void *md_texture(int index) {
     return (void *)(uintptr_t)(0x04000000 + MD_TEXTURE_BASE + index*MD_TEXTURE_BYTES);
 }
 static void md_target(int offset, int stride, int width, int height) {
+    /* Shape centers and edges have independent color/alpha. Flat shading
+     * takes the last (often transparent) edge vertex for the whole triangle.
+     * Restore explicitly, including after GU list restarts and UI switches. */
+    sceGuShadeModel(GU_SMOOTH);
     sceGuDrawBufferList(offset ? md_pixel_format : GU_PSM_8888, (void *)(uintptr_t)offset, stride);
     sceGuOffset(2048-width/2, 2048-height/2);
     sceGuViewport(2048, 2048, width, height);

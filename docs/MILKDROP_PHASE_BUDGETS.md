@@ -105,3 +105,12 @@ Also compare a familiar demanding preset and the formerly failing green-machine
 preset. Try normal/fullscreen rendering, preset changes, music Stop and then a
 video. Check controls and clean audio. Only EBOOT/PSPStreamer.prx plus the two
 new preset files change; no server or OC plugin update is needed.
+
+Hardware follow-up: the wave-budget demo runs, but slowly. The phase-memory
+demo was reported black despite valid formula output. Its transparent edge
+exposed missing explicit `GU_SMOOTH` state: flat shading uses the last vertex,
+making the whole triangle transparent. The renderer now selects smooth shading
+whenever it restores a render target, including list restarts. The GU harness
+starts each list without that state, requires it before drawing, and exercises
+the actual demo in LCD/TV and windowed/fullscreen layouts. This checks submitted
+geometry/state, not hardware rasterization; visual confirmation remains needed.

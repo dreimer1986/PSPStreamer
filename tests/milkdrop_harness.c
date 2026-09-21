@@ -26,6 +26,7 @@ static int raw_target, raw_source;
 static int gu_live, starts, syncs, target_offset, target_width, target_height, stride;
 static int fail_init, fail_start;
 static int pending_continue,restore_target,finish_syncs,fail_restart;
+static int smooth_shading;
 static int edram_size = 2*1024*1024, mesh_calls, ring_calls, sprite_calls;
 static unsigned char *list_base;
 static size_t list_used;
@@ -47,6 +48,7 @@ static int sceGuInit(void) {
 }
 static void sceGuTerm(void) { assert(gu_live); gu_live=0;pending_continue=restore_target=0; }
 static int sceGuStart(int mode, void *list) {
+    smooth_shading=0; /* Do not inherit interpolation from an earlier effect. */
     if(fail_start || (fail_restart && pending_continue)) return -1;
     assert(gu_live && mode==GU_DIRECT); starts++; list_base=list; list_used=0;
     if(pending_continue) {
@@ -83,7 +85,7 @@ static void sceGuScissor(int x,int y,int w,int h) {
 }
 static void sceGuDisable(int what) { (void)what; }
 enum { GU_ADD=100,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,GU_FIX,GU_POINTS,GU_TRIANGLE_FAN,GU_TCC_RGB,GU_SMOOTH };
-static void sceGuShadeModel(int mode){assert(mode==GU_SMOOTH);}
+static void sceGuShadeModel(int mode){assert(mode==GU_SMOOTH);smooth_shading=1;}
 static int shade_draws;
 static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b) {
     assert(op==GU_ADD);
@@ -149,6 +151,7 @@ static void *sceGuGetMemory(int bytes) {
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
+    assert(smooth_shading); /* Transparent shape edges need interpolated alpha. */
     assert(!restore_target);
     const MdVertex *v=data;
     MdVertex unpacked[4*MD_CUSTOM_POINTS];
@@ -274,7 +277,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
 }
 /* GU_ADAPTER */
 int main(int argc,char **argv) {
-    assert(argc==39 || argc==40);
+    assert(argc==40 || argc==41);
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -526,6 +529,7 @@ int main(int argc,char **argv) {
     for(int fixture=1;fixture<argc;fixture++) {
     expected_passes=fixture<=23?4:(fixture==28 || fixture==29)?2:1;
     int explosion=strstr(argv[fixture],"Geiss - Explosion nz+")!=NULL;
+    int phase_memory=strstr(argv[fixture],"phase-memory-demo")!=NULL;
     if(explosion)expected_passes=2;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
@@ -534,12 +538,19 @@ int main(int argc,char **argv) {
         expected_height=full?(tv?480:272):tv?208:75;
         assert(md_start());
         assert(!md_preset_state.ready);
-        for(int frame=0;frame<(explosion?30:600);frame++) {
+        for(int frame=0;frame<((explosion || phase_memory)?30:600);frame++) {
             memset(bands,frame%2?90:10,sizeof(bands));
             test_time+=100000;
             assert(md_frame(tv,full,bands,75,test_time,3)==1);
             assert(covered_width==expected_width);
             assert(md_preset_state.ready);
+            if(phase_memory) {
+                assert(md_shape_frame->count[0]==1);
+                const MdShape *shape=&md_shape_frame->shapes[0][0];
+                assert(shape->x>=.25f && shape->x<=.75f);
+                assert(shape->y>=.3f && shape->y<=.7f);
+                assert(shape->a>.7f && shape->a2==0 && smooth_shading);
+            }
             if(fixture==33)assert(md_shape_frame->count[0]==128);
             if(explosion)assert(md_shape_frame->count[1]==311);
             if(fixture==27) {
