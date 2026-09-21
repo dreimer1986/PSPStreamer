@@ -741,6 +741,39 @@ class PresetTests(unittest.TestCase):
             self.assertEqual(error.line, 3)
             self.assertEqual(error.key.decode(), key)
 
+    def test_known_desktop_ignored_numeric_fields(self):
+        base=b'[preset00]\nzoom=1.02\nnWaveMode=0\n'
+        code,expected,_=self.parse(base)
+        self.assertEqual(code,0)
+        keys=['nEchoWrap_x','nEchoWrap_y','nWrapMode_x','nWrapMode_y']
+        for slot in range(4):
+            keys.extend(f'wavecode_{slot}_{field}' for field in ('bDrawBack','x','y'))
+            keys.extend(f'shapecode_{slot}_{field}' for field in
+                        ('tex_capture','tex_cx','tex_cy','bDrawBack','x_wrap_mode','y_wrap_mode'))
+        for key in keys:
+            for value in ('0','1','-2.5'):
+                code,actual,error=self.parse(base+f'{key}={value}\n'.encode())
+                self.assertEqual(code,0,(key,error.key))
+                self.assertEqual(bytes(actual),bytes(expected),key)
+            for value in ('nan','inf','1e99','1oops',''):
+                self.assertEqual(self.parse(base+f'{key}={value}\n'.encode())[0],2,key)
+        for key in ('nEchoWrap_z','wavecode_0_bDrawBack_typo','shapecode_0_tex_capture_typo'):
+            self.assertNotEqual(self.parse(base+f'{key}=0\n'.encode())[0],0,key)
+        self.assertNotEqual(self.parse(b'[preset00]\nnEchoWrap_x=0\n')[0],0)
+
+    def test_extra_desktop_slots_are_inert(self):
+        base=b'[preset00]\nzoom=1.02\n'
+        _,expected,_=self.parse(base)
+        for slot in ('4','9','10','999999999999999999999999'):
+            for key in (f'wavecode_{slot}_enabled',f'shapecode_{slot}_enabled',
+                        f'wave_{slot}_per_point1',f'shape_{slot}_init1'):
+                code,actual,error=self.parse(base+f'{key}=not executable!\n'.encode())
+                self.assertEqual(code,0,(key,error.key))
+                self.assertEqual(bytes(actual),bytes(expected))
+        for key in ('wavecode_-4_enabled','wavecode_4_', 'shape_4bad_init1','wavecode_4_x!'):
+            self.assertNotEqual(self.parse(base+f'{key}=0\n'.encode())[0],0)
+        self.assertNotEqual(self.parse(b'[preset00]\nwavecode_4_enabled=1\n')[0],0)
+
     def test_shader_fallback_preserves_nonshader_preset(self):
         self.assertEqual(self.parse((ROOT / 'psp-client/presets/shader-fallback-demo.milk').read_bytes())[0], 0)
         base = b'[preset00]\nzoom=1.02\nnWaveMode=0\nper_frame_1=rot=sin(time)*0.1;\n'
@@ -1263,7 +1296,7 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         self.assertEqual(preset.decor.shapes[0].sides,32)
         self.assertEqual(preset.decor.echo_orient,3)
         self.assertEqual(preset.decor.wave_thick,1)
-        for key,value in (("shapecode_4_enabled",1),("shapecode_0_sides",3.5),
+        for key,value in (("shapecode_0_sides",3.5),
             ("shapecode_0_textured",.5),("shapecode_0_per_frame1",0)):
             self.assertNotEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],0)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)

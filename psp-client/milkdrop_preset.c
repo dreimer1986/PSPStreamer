@@ -64,6 +64,43 @@ static int md_shader_source(const char *key) {
     while(*p>='0' && *p<='9') p++;
     return !*p;
 }
+/* Known fork-only INI fields. Desktop state.cpp never requests these keys
+ * (CState/CWave/CShape::Import), so they have no effect there either. Keep
+ * this explicit: a misspelled supported field must still be reported. */
+static int md_desktop_ignored_field(const char *key) {
+    if(!strcmp(key,"nEchoWrap_x") || !strcmp(key,"nEchoWrap_y") ||
+       !strcmp(key,"nWrapMode_x") || !strcmp(key,"nWrapMode_y"))return 1;
+    if(!strncmp(key,"wavecode_",9) && strlen(key)>=12 &&
+       key[9]>='0' && key[9]<'0'+MD_CUSTOM_WAVES && key[10]=='_') {
+        const char *field=key+11;
+        return !strcmp(field,"bDrawBack") || !strcmp(field,"x") || !strcmp(field,"y");
+    }
+    if(!strncmp(key,"shapecode_",10) && strlen(key)>=13 &&
+       key[10]>='0' && key[10]<'0'+MD_SHAPES && key[11]=='_') {
+        const char *field=key+12;
+        return !strcmp(field,"tex_capture") || !strcmp(field,"tex_cx") ||
+            !strcmp(field,"tex_cy") || !strcmp(field,"bDrawBack") ||
+            !strcmp(field,"x_wrap_mode") || !strcmp(field,"y_wrap_mode");
+    }
+    return 0;
+}
+/* Desktop imports exactly slots 0..3. Some forks export more; these records
+ * must not allocate storage or execute code on PSP, just as in MilkDrop 2.
+ * Saturate the index while scanning, avoiding overflow on hostile input. */
+static int md_extra_desktop_slot(const char *key) {
+    const char *p;
+    int limit,slot=0;
+    if(!strncmp(key,"wavecode_",9)) {p=key+9;limit=MD_CUSTOM_WAVES;}
+    else if(!strncmp(key,"wave_",5)) {p=key+5;limit=MD_CUSTOM_WAVES;}
+    else if(!strncmp(key,"shapecode_",10)) {p=key+10;limit=MD_SHAPES;}
+    else if(!strncmp(key,"shape_",6)) {p=key+6;limit=MD_SHAPES;}
+    else return 0;
+    if(*p<'0' || *p>'9')return 0;
+    do {if(slot<limit)slot=slot*10+(*p-'0');p++;} while(*p>='0' && *p<='9');
+    if(slot<limit || *p++!='_' || !*p)return 0;
+    for(;*p;p++)if(!isalnum((unsigned char)*p) && *p!='_')return 0;
+    return 1;
+}
 #include "preset_source.h"
 void md_free_preset(MdFilePreset *p) {
     pm_program_free(&p->program);pm_program_free(&p->init_program);pm_program_free(&p->pixel_program);
@@ -215,6 +252,16 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         }
         if (!section) { result=md_file_error(error,MD_FILE_INVALID,number,key); goto done; }
         if(md_shader_source(key)) continue;
+        if(md_extra_desktop_slot(key))continue;
+        if(md_desktop_ignored_field(key)) {
+            /* Unlike opaque HLSL, these are numeric settings. Do not hide
+             * corrupt/truncated values, even though no renderer consumes them. */
+            errno=0;parsed=strtof(value,&end);
+            if(end==value || *md_trim(end) || errno==ERANGE || !isfinite(parsed)) {
+                result=md_file_error(error,MD_FILE_INVALID,number,key);goto done;
+            }
+            continue;
+        }
         if(!strcmp(key,"b1n")||!strcmp(key,"b2n")||!strcmp(key,"b3n")||
            !strcmp(key,"b1x")||!strcmp(key,"b2x")||!strcmp(key,"b3x")||!strcmp(key,"b1ed")) {
             /* Blur levels feed only the skipped desktop shader passes. */

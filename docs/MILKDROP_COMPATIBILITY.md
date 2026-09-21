@@ -7,6 +7,28 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
+Import compatibility with fork exports: known numeric fields not read by
+MilkDrop 2's `CState/CWave/CShape::Import` are accepted without an effect:
+`nEchoWrap_x/y`, `nWrapMode_x/y`, custom-wave `bDrawBack/x/y`, and custom-shape
+`bDrawBack/tex_capture/tex_cx/tex_cy/x_wrap_mode/y_wrap_mode`. This does not
+implement those fork-specific effects. Numeric values must still be finite and
+well formed; unknown names in supported slots remain errors.
+
+Like the reference's `MAX_CUSTOM_WAVES=4` and `MAX_CUSTOM_SHAPES=4`, only slots
+0–3 are imported. Additional numbered slots are skipped without allocating
+storage or compiling their formulas. Malformed slot identifiers still fail;
+a file containing only ignored records is not a usable preset.
+
+Import audit: **1,701/1,715** files load (previously 1,688), with no import
+regressions. All **13 newly loadable presets** pass the same 120-frame audit.
+Together with the preceding 1,624 passing presets, this gives **1,637** known
+passes; this batch reran imports for the full collection and runtime evaluation
+only for the 27 previously rejected files, not all existing runtime cases.
+The unchanged 64 known runtime failures and 14 import failures remain separate
+work. Representative hardware checks: `BDRV et AL shifter - tumbling cubes 5`,
+`ORB - Fire and Fumes 2`, and `BrainStain- boiling-mix2(redi jedi full carb mix)`.
+Host evaluation does not establish visual parity or real-time PSP performance.
+
 Fixed-function reference corrections: render-target setup explicitly restores
 smooth vertex color/alpha interpolation, including GU list restarts. Thick
 wave copies follow Desktop's positive-y displacement translated to PSP's
