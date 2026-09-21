@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_phase_budgets_native_clear_and_global_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'phase'
+            subprocess.run(['cc','-std=c11','-O3','-Wall','-Wextra','-Werror',
+                '-fsanitize=address,undefined,float-cast-overflow','-I',str(ROOT/'psp-client'),
+                str(ROOT/'tests/preset_phase_harness.c'),str(ROOT/'psp-client/preset_math.c'),
+                '-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_fft_profiling_preserves_spectrum(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'fft-profile'

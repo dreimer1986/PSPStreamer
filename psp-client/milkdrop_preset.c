@@ -427,7 +427,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
     if (!next.ready) {
         float initial[PM_VALUES];
         memcpy(initial,v,sizeof(initial));
-        if (!pm_execute_runtime(&p->init_program,initial,&line,&next.runtime))
+        if (!pm_execute_init_runtime(&p->init_program,initial,&line,&next.runtime))
             return md_file_error(error,MD_FILE_INVALID,line,"init formula");
         memcpy(next.q,initial+PM_Q_BASE,sizeof(next.q));
         memcpy(next.user,initial+PM_USER_BASE,sizeof(next.user));
@@ -438,7 +438,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
      * before every frame. Ordinary output fields also restart from static. */
     memcpy(v+PM_Q_BASE,next.q,sizeof(next.q));
     memcpy(v+PM_USER_BASE,next.user,sizeof(next.user));
-    if (!pm_execute_runtime(&p->program, v, &line,&next.runtime))
+    if (!pm_execute_frame_runtime(&p->program, v, &line,&next.runtime))
         return md_file_error(error, MD_FILE_INVALID, line, "formula");
     for (int i = 0; i < 9; i++) {
         if (p->legacy && isfinite(v[i])) {
@@ -544,7 +544,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
         if(!local->ready) {
             md_engine_inputs(sv,seconds,signal,(float)next.frames,next.fps);
             memcpy(sv+PM_Q_BASE,next.q,sizeof(next.q));
-            if(!pm_execute_runtime(&program->init,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
+            if(!pm_execute_init_runtime(&program->init,sv,&line,&local->runtime)) return md_file_error(error,MD_FILE_INVALID,line,"shape init");
             memcpy(local->t,sv+PM_T_BASE,sizeof(local->t));
             memcpy(local->user,sv+PM_USER_BASE,sizeof(local->user));
             local->ready=1;
@@ -613,7 +613,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         memcpy(v+PM_USER_BASE,ws->frame.user,sizeof(ws->frame.user));
         memcpy(v+PM_SHAPE_BASE+10,&w->r,4*sizeof(float)); v[PM_WAVE_BASE]=w->samples;
         if(!ws->frame.ready) {
-            if(!pm_execute_runtime(&w->init,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave init");
+            if(!pm_execute_init_runtime(&w->init,v,&line,&ws->frame.runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave init");
             memcpy(ws->frame.t,v+PM_T_BASE,sizeof(ws->frame.t)); ws->frame.ready=1;
         }
         memcpy(v+PM_T_BASE,ws->frame.t,sizeof(ws->frame.t));
@@ -630,33 +630,53 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         /* Desktop seeds point inputs before running wave-frame code. Frame
          * assignments must not leak into the separate point VM. */
         md_engine_inputs(v,seconds,signal,state->frames?(float)(state->frames-1):0,state->fps);
-        int count=(int)n,sep=(int)w->sep;
+        int source_samples=(int)n,count=source_samples,sep=(int)w->sep;
+        /* Spend no more frame fuel to accommodate dense custom waves.
+         * Share the remaining pool by requested point work, reserving later
+         * wave setup. Branches/loops use conservative hints; the VM retains
+         * hard limits and still reports genuine formula errors. */
+        unsigned long long own=(unsigned)pm_program_work_hint(&w->point)*count;
+        unsigned long long total=own,reserve=0;
+        for(int later=slot+1;later<MD_CUSTOM_WAVES;later++)if(p->waves[later].enabled) {
+            const MdCustomWave *other=&p->waves[later];
+            int requested=other->frame.count?MD_CUSTOM_POINTS:(int)md_limit(other->samples,2,MD_CUSTOM_POINTS);
+            total+=(unsigned)pm_program_work_hint(&other->point)*requested;
+            reserve+=pm_program_work_hint(&other->frame);
+            if(!state->waves[later].frame.ready)reserve+=pm_program_work_hint(&other->init);
+        }
+        unsigned long long available=(unsigned)pm_frame_remaining();
+        available=available>reserve?available-reserve:0;
+        if(own && total>available) {
+            count=(int)(available*(unsigned)count/total);
+            if(count<2)count=2;
+        }
+        if(count!=source_samples)v[PM_WAVE_BASE]=(float)count;
         /* Keep <=512-point presets byte-for-byte on their old sample path.
          * Larger explicit requests span the available PCM window using linear
          * interpolation. Spectrum bins likewise interpolate only above 512. */
-        int source_count=count>576?576:count;
+        int source_count=source_samples>576?576:source_samples;
         int offset=(576-source_count)/2;
-        if(!w->spectrum && count<=512 && count+sep>576)sep=576-count;
-        if(!w->spectrum && count>512) {
+        if(!w->spectrum && source_samples<=512 && source_samples+sep>576)sep=576-source_samples;
+        if(!w->spectrum && source_samples>512) {
             source_count=576-sep;
             offset=sep/2;
         }
         float a[MD_CUSTOM_POINTS],b[MD_CUSTOM_POINTS];
         float wave_scale=md_limit(p->wave_scale,-100,100);
         float mix=sqrtf(w->smoothing*.98f),gain=w->scaling*wave_scale/32768.0f;
-        for(int i=0;i<count;i++) {
+        for(int i=0;i<source_samples;i++) {
             if(w->spectrum) {
-                float pos=(float)i*(512-sep)/count;
+                float pos=(float)i*(512-sep)/source_samples;
                 int bin=(int)pos;
                 float sg=w->scaling*wave_scale;
-                float frac=count>512?pos-bin:0;
+                float frac=source_samples>512?pos-bin:0;
                 int end=bin<511?bin+1:bin;
                 a[i]=(spectrum_left[bin]+frac*(spectrum_left[end]-spectrum_left[bin]))*sg;
                 b[i]=(spectrum_right[bin]+frac*(spectrum_right[end]-spectrum_right[bin]))*sg;
-            } else if(count<=512) {
+            } else if(source_samples<=512) {
                 a[i]=left[offset+i-sep/2]*gain; b[i]=right[offset+i+sep/2]*gain;
             } else {
-                float pos=(float)i*(source_count-1)/(count-1);
+                float pos=(float)i*(source_count-1)/(source_samples-1);
                 int j=(int)pos,end=j+1<source_count?j+1:j;
                 float frac=pos-j;
                 int l=offset-sep/2,r=offset+sep/2;
@@ -665,10 +685,18 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
             }
             if(i) {a[i]=a[i]*(1-mix)+a[i-1]*mix; b[i]=b[i]*(1-mix)+b[i-1]*mix;}
         }
-        for(int i=count-2;i>=0;i--) {a[i]=a[i]*(1-mix)+a[i+1]*mix; b[i]=b[i]*(1-mix)+b[i+1]*mix;}
+        for(int i=source_samples-2;i>=0;i--) {a[i]=a[i]*(1-mix)+a[i+1]*mix; b[i]=b[i]*(1-mix)+b[i+1]*mix;}
         for(int i=0;i<count;i++) {
-            v[PM_WAVE_BASE+1]=(float)i/(count-1); v[PM_WAVE_BASE+2]=a[i]; v[PM_WAVE_BASE+3]=b[i];
-            v[PM_SHAPE_BASE+4]=.5f+a[i]; v[PM_SHAPE_BASE+5]=.5f+b[i];
+            int j=i;float fraction=0;
+            if(count!=source_samples) {
+                float position=(float)i*(source_samples-1)/(count-1);
+                j=(int)position;fraction=position-j;
+            }
+            int end=j+1<source_samples?j+1:j;
+            float av=a[j],bv=b[j];
+            if(fraction){av+=fraction*(a[end]-av);bv+=fraction*(b[end]-bv);}
+            v[PM_WAVE_BASE+1]=(float)i/(count-1); v[PM_WAVE_BASE+2]=av; v[PM_WAVE_BASE+3]=bv;
+            v[PM_SHAPE_BASE+4]=.5f+av; v[PM_SHAPE_BASE+5]=.5f+bv;
             memcpy(v+PM_SHAPE_BASE+10,colors,sizeof(colors));
             if(!pm_execute_runtime(&w->point,v,&line,&ws->point_runtime)) return md_file_error(error,MD_FILE_INVALID,line,"wave point");
             for(int k=0;k<4;k++) if(!isfinite(v[PM_SHAPE_BASE+10+k]))

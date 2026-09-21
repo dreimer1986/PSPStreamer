@@ -1609,6 +1609,45 @@ shape_1_per_frame1=counter=counter+2; rad=t1; x=q1;
         for expr in ('psp_low=2;',):
             self.assertNotEqual(self.parse(('[preset00]\nshape_0_per_frame1='+expr).encode())[0],0)
 
+    def test_dense_waves_share_frame_fuel_without_losing_endpoints(self):
+        class Vertex(ctypes.Structure):
+            _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),
+                      ('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]
+        class Geometry(ctypes.Structure):
+            _fields_=[('count',ctypes.c_int),('vertices',Vertex*CUSTOM_POINTS)]
+        lines=['[preset00]','fWaveScale=1']
+        for slot in range(4):
+            lines += [f'wavecode_{slot}_enabled=1',f'wavecode_{slot}_samples={CUSTOM_POINTS}',
+                      f'wavecode_{slot}_smoothing=0',f'wavecode_{slot}_scaling=1',
+                      f'wave_{slot}_per_point1='+'q1=q1+0;'*30+'x=sample;y=value1;']
+        code,preset,error=self.parse('\n'.join(lines).encode())
+        self.assertEqual(code,0,(error.line,error.key))
+        fn=self.library.md_eval_custom_waves
+        fn.argtypes=[ctypes.POINTER(Preset),ctypes.c_float,ctypes.POINTER(Signal),
+                     ctypes.POINTER(ctypes.c_short),ctypes.POINTER(ctypes.c_short),
+                     ctypes.POINTER(ctypes.c_float),ctypes.POINTER(ctypes.c_float),
+                     ctypes.POINTER(PresetState),ctypes.POINTER(Geometry),ctypes.POINTER(Error)]
+        state=PresetState();out=(Geometry*4)()
+        samples=(ctypes.c_short*576)(*[i*20 for i in range(576)])
+        for frame in range(3):
+            self.assertEqual(self.evaluate_state(preset,state,frame/30)[0],0)
+            self.assertEqual(fn(ctypes.byref(preset),frame/30,None,samples,samples,None,None,
+                                ctypes.byref(state),out,ctypes.byref(error)),0,(error.line,error.key))
+            self.assertGreaterEqual(self.library.pm_frame_remaining(),0)
+            for wave in out:
+                self.assertGreater(wave.count,2)
+                self.assertLess(wave.count,CUSTOM_POINTS)
+                self.assertEqual(wave.vertices[0].x,0)
+                self.assertEqual(wave.vertices[wave.count-1].x,256)
+                self.assertAlmostEqual(wave.vertices[0].y,0,places=5)
+                self.assertAlmostEqual(wave.vertices[wave.count-1].y,575*20/32768*256,places=4)
+        # Reducing density must not swallow a genuinely invalid expression.
+        code,preset,error=self.parse(b'[preset00]\nwavecode_0_enabled=1\nwave_0_per_point1=x=megabuf(-1);')
+        self.assertEqual(code,0)
+        state=PresetState();self.assertEqual(self.evaluate_state(preset,state,0)[0],0)
+        self.assertNotEqual(fn(ctypes.byref(preset),0,None,samples,samples,None,None,
+                               ctypes.byref(state),out,ctypes.byref(error)),0)
+
     def test_custom_wave_context_and_geometry(self):
         class Vertex(ctypes.Structure):
             _fields_=[('u',ctypes.c_float),('v',ctypes.c_float),('color',ctypes.c_uint),('x',ctypes.c_float),('y',ctypes.c_float),('z',ctypes.c_float)]

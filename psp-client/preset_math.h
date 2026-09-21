@@ -9,7 +9,8 @@ enum { PM_MAX_OPS = 4096, PM_TOTAL_OPS = 16384, PM_MAX_RECORDS = 1024, PM_STACK 
        PM_WAVE_BASE = PM_T_BASE + 8, PM_EFFECT_BASE = PM_WAVE_BASE + 4,
        PM_ENGINE_BASE = PM_EFFECT_BASE + 5, PM_INPUT_BASE = PM_ENGINE_BASE + 3,
        PM_MONITOR = PM_INPUT_BASE + 6, PM_WRAP = PM_MONITOR + 1, PM_VALUES = PM_WRAP + 1,
-       PM_PIXEL_OPS = 4096, PM_MEMORY = 4096, PM_FUEL = 4096 };
+       PM_PIXEL_OPS = 4096, PM_MEMORY = 4096, PM_GLOBAL_MEMORY = 8192,
+       PM_FUEL = 4096, PM_PHASE_FUEL = 65536, PM_FRAME_FUEL = 131072 };
 typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
@@ -42,6 +43,10 @@ int pm_compile_mapped(PmProgram *program,const char *source,const PmSourceLocati
  * recursion. See docs/MILKDROP_COMPATIBILITY.md for scopes and limits. */
 int pm_execute(const PmProgram *program, float values[PM_VALUES], int *error_line);
 int pm_execute_runtime(const PmProgram *program, float values[PM_VALUES], int *error_line, PmRuntime *runtime);
+/* Once-per-frame/setup work shares the SAME global frame budget; point VMs
+ * retain their smaller invocation cap. Setup recognizes bounded clear loops. */
+int pm_execute_frame_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime);
+int pm_execute_init_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime);
 /* Call once per visualization frame. Limits total work across all points. */
 void pm_begin_frame(void);
 /* Conservative scheduling hints; neither function grants additional fuel. */

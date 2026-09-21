@@ -223,7 +223,7 @@ int pm_compile_shape(PmProgram *program, const char *source, int line, PmSymbols
 int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols *symbols, int point) {
     return compile_context(program,source,line,symbols,point?4:3);
 }
-static float global_memory[PM_MEMORY], registers[100];
+static float global_memory[PM_GLOBAL_MEMORY], registers[100];
 static PmRuntime fallback_runtime;
 static int frame_fuel=-1;
 void pm_begin_frame(void) {frame_fuel=262144;}
@@ -236,7 +236,7 @@ int pm_frame_remaining(void) {return frame_fuel<0?262144:frame_fuel;}
 /* Only memory-using programs pay for journaling. Roll back on invalid math,
  * bytecode, address, or exhausted execution budget; no allocations in playback. */
 typedef struct {float *address,old;} Write;
-enum {JOURNAL_SIZE=2*PM_MEMORY+100};
+enum {JOURNAL_SIZE=PM_MEMORY+PM_GLOBAL_MEMORY+100};
 typedef struct {int count;PmRuntime *runtime;unsigned int dirty[(JOURNAL_SIZE+31)/32];Write writes[JOURNAL_SIZE];} Journal;
 static int write_value(Journal *j,float *address,float value) {
     /* Most point formulas never write memory/registers. Initialize their
@@ -245,8 +245,8 @@ static int write_value(Journal *j,float *address,float value) {
     uintptr_t a=(uintptr_t)address;
     int id;
     if(a>=(uintptr_t)j->runtime->memory && a<(uintptr_t)(j->runtime->memory+PM_MEMORY)) id=(int)((a-(uintptr_t)j->runtime->memory)/sizeof(float));
-    else if(a>=(uintptr_t)global_memory && a<(uintptr_t)(global_memory+PM_MEMORY)) id=PM_MEMORY+(int)((a-(uintptr_t)global_memory)/sizeof(float));
-    else if(a>=(uintptr_t)registers && a<(uintptr_t)(registers+100)) id=2*PM_MEMORY+(int)((a-(uintptr_t)registers)/sizeof(float));
+    else if(a>=(uintptr_t)global_memory && a<(uintptr_t)(global_memory+PM_GLOBAL_MEMORY)) id=PM_MEMORY+(int)((a-(uintptr_t)global_memory)/sizeof(float));
+    else if(a>=(uintptr_t)registers && a<(uintptr_t)(registers+100)) id=PM_MEMORY+PM_GLOBAL_MEMORY+(int)((a-(uintptr_t)registers)/sizeof(float));
     else return 0;
     unsigned int bit=1U<<(id&31);
     if(!(j->dirty[id/32]&bit)) {
@@ -255,10 +255,11 @@ static int write_value(Journal *j,float *address,float value) {
     }
     *address=value;return 1;
 }
-static int address_index(float x) {
-    if(!isfinite(x) || x<0 || x>=PM_MEMORY) return -1;
-    int i=(int)(x+.00001f);return i<PM_MEMORY?i:-1;
+static int bounded_address(float x,int limit) {
+    if(!isfinite(x) || x<0 || x>=limit) return -1;
+    int i=(int)(x+.00001f);return i<limit?i:-1;
 }
+static int address_index(float x) {return bounded_address(x,PM_MEMORY);}
 /* NSEEL's default double assignment clears exceptional/denormal values.
  * Use the corresponding float exponent here (the PSP VM remains float).
  * The expression still returns its RHS; compound stores bypass this filter. */
@@ -290,10 +291,19 @@ typedef struct {
     unsigned short ids[PM_VALUES];
     int count;
 } ValueJournal;
-static int execute(const PmProgram *program,float local[PM_VALUES],int *error_line,PmRuntime *runtime,Journal *journal,ValueJournal *variables) {
+static void variable_store(ValueJournal *variables,float *local,int id,float value) {
+    unsigned int bit=1U<<(id&31);
+    if(!(variables->dirty[id/32]&bit)) {
+        variables->dirty[id/32]|=bit;variables->old[id]=local[id];
+        variables->ids[variables->count++]=(unsigned short)id;
+    }
+    local[id]=value;
+}
+#include "preset_clear_loop.h"
+static int execute(const PmProgram *program,float local[PM_VALUES],int *error_line,PmRuntime *runtime,Journal *journal,ValueJournal *variables,int allowance,int init) {
     float stack[PM_STACK];
     struct {int start,end,left,stack;} loops[PM_DEPTH];
-    int used = 0,depth=0,fuel=PM_FUEL;
+    int used = 0,depth=0,fuel=allowance;
     *error_line = 0;
     if (!program_valid(program)) return 0;
     for (int i = 0; i < program->count; i++) {
@@ -312,13 +322,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         if (op->op == STORE || op->op==KEEP) {
             if (!used || (op->op==STORE && used!=1) || op->arg < 0 || op->arg>=PM_VALUES ||
                 (op->arg >= 10 && op->arg < 17)) return 0;
-            unsigned int bit=1U<<(op->arg&31);
-            if(!(variables->dirty[op->arg/32]&bit)) {
-                variables->dirty[op->arg/32]|=bit;
-                variables->old[op->arg]=local[op->arg];
-                variables->ids[variables->count++]=(unsigned short)op->arg;
-            }
-            local[op->arg] = op->value?stack[used-1]:assigned_value(stack[used-1]);
+            variable_store(variables,local,op->arg,op->value?stack[used-1]:assigned_value(stack[used-1]));
             if(op->op==STORE) used--;
             continue;
         }
@@ -330,7 +334,13 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             if(op->op==LOOP) {
                 if(!used) return 0;
                 a=stack[--used];if(!isfinite(a))return 0;
-                count=a<1?0:a>PM_FUEL?PM_FUEL:(int)a;
+                if(init) {
+                    float value=0;
+                    int cleared=clear_loop(program,i,a,local,runtime,journal,variables,&fuel,&value);
+                    if(cleared<0)return 0;
+                    if(cleared){stack[used++]=value;i=op->arg-1;continue;}
+                }
+                count=a<1?0:a>1048576?1048576:(int)a;
                 if(!count) {stack[used++]=0;i=op->arg-1;continue;}
             }
             loops[depth].start=i;loops[depth].end=op->arg-1;
@@ -354,7 +364,8 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         if(op->op==MEML || op->op==GMEML || op->op==MEMS || op->op==GMEMS) {
             int store=op->op==MEMS || op->op==GMEMS;
             if(used<1+store) return 0;
-            int index=address_index(stack[used-1-store]);if(index<0) return 0;
+            int global=op->op==GMEML || op->op==GMEMS;
+            int index=bounded_address(stack[used-1-store],global?PM_GLOBAL_MEMORY:PM_MEMORY);if(index<0) return 0;
             float *memory=(op->op==GMEML || op->op==GMEMS)?global_memory:runtime->memory;
             if(store) {
                 a=stack[--used];if(!write_value(journal,memory+index,op->value?a:assigned_value(a))) return 0;
@@ -461,7 +472,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
     if (used || depth) return 0;
     *error_line=0; return 1;
 }
-int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime) {
+static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime,int allowance,int init) {
     if(!program->count) {*error_line=0;return 1;}
     /* VM/global registers already belong to the sole visual renderer thread.
      * Keep enlarged bounded rollback scratch off the PSP's 256-KiB stack. */
@@ -469,12 +480,21 @@ int pm_execute_runtime(const PmProgram *program,float values[PM_VALUES],int *err
     static ValueJournal variables;
     variables.count=0;memset(variables.dirty,0,sizeof(variables.dirty));
     unsigned int random=runtime->random;
-    if(execute(program,values,error_line,runtime,&journal,&variables)) return 1;
+    if(execute(program,values,error_line,runtime,&journal,&variables,allowance,init)) return 1;
     while(variables.count) {
         int id=variables.ids[--variables.count];values[id]=variables.old[id];
     }
     while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
     runtime->random=random;return 0;
+}
+int pm_execute_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {
+    return execute_runtime(p,v,line,r,PM_FUEL,0);
+}
+int pm_execute_frame_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {
+    return execute_runtime(p,v,line,r,PM_FRAME_FUEL,0);
+}
+int pm_execute_init_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {
+    return execute_runtime(p,v,line,r,PM_PHASE_FUEL,1);
 }
 int pm_execute(const PmProgram *program,float values[PM_VALUES],int *error_line) {
     return pm_execute_runtime(program,values,error_line,&fallback_runtime);

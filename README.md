@@ -738,6 +738,12 @@ The [parser/density update](docs/MILKDROP_PARSER_DENSITY.md) adds larger compile
 formula blocks, empty-statement/point-input compatibility, a 16×16 warp grid
 with a budget-aware fallback, and up to 1024 custom-wave points. Test with
 `extended-formula-demo.milk`, `fine-mesh-demo.milk`, and `dense-wave-demo.milk`.
+The [phase-budget update](docs/MILKDROP_PHASE_BUDGETS.md) accelerates recognized
+init zero-fill loops, separates once-per-frame work from point-call limits,
+and reduces dense custom-wave point counts within the unchanged total frame
+budget. Shared memory has 8192 slots; per-context memory remains 4096. Try
+`phase-memory-demo.milk` and `wave-budget-demo.milk`. These PSP limits can
+change a preset's appearance; unsupported memory/math is not silently ignored.
 The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
 is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,

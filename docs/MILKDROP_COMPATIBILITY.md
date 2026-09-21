@@ -104,6 +104,12 @@ the execution budget, including nested loops. Exhaustion reports a preset
 error and the application falls back to its normal visualization; it does
 not stop the audio worker.
 
+The counted-loop ceiling is the reference's 1,048,576 iterations; fuel usually
+stops expensive loops much earlier. Init-only pure sequential zero-fill loops
+are recognized and run as bounded native clears of resident PSP memory. Their
+index/result is preserved, but zero stores outside resident memory are omitted.
+Other out-of-range accesses still fail. See [phase scheduling](MILKDROP_PHASE_BUDGETS.md).
+
 `megabuf(i)` or `base[index]` accesses local memory. Each preset-frame,
 preset-pixel, shape-frame, wave-frame and wave-point context owns its own buffer.
 Init shares its matching frame buffer. Buffers reset on preset activation.
@@ -150,11 +156,12 @@ the video/audio playback clocks or chosen video frame rate.
 | Allocated bytecode per preset | 16384 instructions total; empty contexts allocate nothing |
 | Named locals | 128 per context, 31-character names |
 | Operand stack / parser depth | 48 / 64 |
-| Local memory per context / shared memory | 4096 float slots each |
-| Work per invocation / visual frame | 4096 / 262144 steps, including bulk memory work |
+| Local memory per context / shared memory | 4096 / 8192 float slots |
+| Work per point/ordinary invocation / init / main frame program | 4096 / 65536 / 131072 steps |
+| Shared work per visual frame | 262144 steps, including native clears and bulk memory work |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
 | Shapes | Up to 4 × 512 instances, budget-aware fallback; 100 sides each; GPU batches of 32 shapes |
-| Custom waves | 4 × 1024 points; requests above 512 use interpolated audio input |
+| Custom waves | Up to 4 × 1024 points; budget-aware density, retaining audio-window endpoints |
 
 The latest [owned formula storage](MILKDROP_STORAGE.md) documents allocation,
 ownership, the collection comparison and `formula-storage-demo.milk`.

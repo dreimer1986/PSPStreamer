@@ -1,0 +1,15 @@
+[preset00]
+fDecay=.95
+nWaveMode=0
+fWaveAlpha=0
+per_frame_init_1=n=0;loop(200000,megabuf(n)=0;gmegabuf(n)=0;n+=1;);
+per_frame_1=n=0;loop(1024,gmegabuf(n)=.5+.2*sin(n*.03+time);n+=1;);
+per_frame_2=gmegabuf(7000)=.5+.25*sin(time);
+shapecode_0_enabled=1
+shapecode_0_sides=32
+shapecode_0_rad=.08
+shapecode_0_r=.1
+shapecode_0_g=.8
+shapecode_0_b=1
+shapecode_0_a=.8
+shape_0_per_frame1=x=gmegabuf(7000);y=gmegabuf(500);
