@@ -30,8 +30,9 @@ provide the same integration. No Plex password or token belongs in the PSP CFG.
 2. Select a discovered server connection and press **Use connection**. Prefer a
    reachable HTTPS connection; an HTTP LAN connection also works, but does not
    encrypt the token on that LAN. TLS verification is never disabled.
-3. Enable **Plex library**, optionally disable **Filesystem library** and/or
-   **Internet radio**, then **Save sources**. Refresh the PSP library with Square.
+3. **Plex library** is enabled automatically after the connection is verified.
+   Optionally disable **Filesystem library** and/or **Internet radio**, then
+   **Save sources**. Refresh the PSP library with Square.
    Enter **Plex** to browse films, series/seasons, music/artists/albums or playlists.
 
 **No path mapping or SMB mount is required.** PSP Streamer reads the original

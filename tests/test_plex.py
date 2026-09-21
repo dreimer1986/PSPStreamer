@@ -89,6 +89,8 @@ class PlexTests(unittest.TestCase):
             self.plex.poll()
 
     def test_only_discovered_identity_checked_connections(self):
+        self.plex.config['enabled'] = False
+        before = dict(self.plex.config)
         self.plex.resources = [{'clientIdentifier': 'server1', 'accessToken': 'resource-secret',
                                 'connections': [{'uri': 'https://host.plex.direct:32400'}]}]
         with self.assertRaises(ValueError):
@@ -96,9 +98,23 @@ class PlexTests(unittest.TestCase):
         with patch.object(self.plex, 'request', return_value={'MediaContainer': {'machineIdentifier': 'other'}}):
             with self.assertRaises(ValueError):
                 self.plex.select('server1', 'https://host.plex.direct:32400')
+        self.assertEqual(self.plex.config, before)
+        with patch.object(self.plex, 'request', side_effect=ValueError('Unavailable')):
+            with self.assertRaises(ValueError):
+                self.plex.select('server1', 'https://host.plex.direct:32400')
+        self.assertEqual(self.plex.config, before)
         with patch.object(self.plex, 'request', return_value={'MediaContainer': {'machineIdentifier': 'server1'}}):
             selected = self.plex.select('server1', 'https://host.plex.direct:32400')
         self.assertNotIn('resource-secret', json.dumps(selected))
+        self.assertTrue(selected['enabled'])
+        for key in ('files', 'radio', 'mappings'):
+            self.assertEqual(self.plex.config[key], before[key])
+        reopened = Plex(self.root / 'settings', [self.media])
+        self.addCleanup(reopened.close)
+        self.assertTrue(reopened.config['enabled'])
+        self.plex.configure(dict(enabled=False, files=True, radio=True,
+                                 mappings=self.plex.config['mappings']))
+        self.assertFalse(self.plex.public()['enabled'])
 
     def test_pagination_and_playlist_context(self):
         with patch.object(self.plex, 'listing', return_value={'Metadata': [self.row], 'totalSize': 102}):

@@ -1,3 +1,9 @@
+# 0.1.43
+
+- Automatically enable the Plex source after successfully selecting and verifying a server, matching Jellyfin setup.
+- Failed connections leave source settings unchanged; manually disabling Plex remains supported.
+- Identical Docker/Home Assistant update; no PSP update required.
+
 # 0.1.42
 
 - Distinguish subtitle tracks using titles, Forced/SDH/Default flags and codec names, on both PSP and web UI.

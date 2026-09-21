@@ -128,7 +128,8 @@ class Plex:
             result = self.request('/identity', url=url, token=resource['accessToken'])
             if result.get('MediaContainer', {}).get('machineIdentifier') != server:
                 raise ValueError('Plex server identity does not match')
-            self.config.update(url=url.rstrip('/'), token=resource['accessToken'], server=server)
+            self.config.update(url=url.rstrip('/'), token=resource['accessToken'], server=server,
+                               enabled=True)
             self.cache.clear()
             self.parents.clear()
             with self.report_condition:
