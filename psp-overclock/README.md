@@ -72,8 +72,14 @@ fallback; numeric phase 21 identifies its failures. No per-step file writes.
 Eleven OC host checks pass, including the exact recorded tuple, control 3/4,
 downward-only writes, baseline multipliers at ratio changes, cancellation,
 foreign writes, unknown PLL recipe rejection and the inline machine-code check.
-Hardware confirmation of this new fallback is pending. Test with ARK Auto,
-the existing INI and PSP Streamer both directly and after leaving a game.
+On 2026-09-21 the user reported a successful follow-up and requested closure
+of the OC tasks. The new log was no longer mounted when reviewed, so this is
+user-reported hardware success, not independently verified register values
+or a claim about every startup/profile combination. The earlier six-game
+sequence remains log-verified below. The resolved startup/shutdown tasks and
+obsolete test history were removed from the working ToDo; separate visual
+confirmation of the overlay refresh remains open. No clock code was changed
+after the successful follow-up.
 
 Events `clock_sony_baseline_begin` and `clock_sony_baseline_result` bracket the
 call. `sony_baseline_result` is its hexadecimal return value (`80000000` means
