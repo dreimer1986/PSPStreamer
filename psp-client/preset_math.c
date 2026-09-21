@@ -8,6 +8,15 @@
 #include <errno.h>
 #include <stdint.h>
 #include "preset_trig.h"
+#ifdef PM_AUDIT
+/* Host collection audits only; no diagnostic writes/strings in PSP builds. */
+static const char *audit_reason="";
+const char *pm_audit_reason(void) {return audit_reason;}
+void pm_audit_reset(void) {audit_reason="";}
+#define PM_REASON(reason) (audit_reason=(reason))
+#else
+#define PM_REASON(reason) ((void)0)
+#endif
 enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT,
        FLOOR, CEIL, ATAN, EXP, LOG, LOG10, SQR, SIGN, POW, ATAN2, ABOVE, BELOW, EQUAL,
        TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP,
@@ -92,7 +101,7 @@ static void space(Parser *p) {
     }
 }
 static int emit(Parser *p, int op, int arg, float value) {
-    if (p->code->count >= PM_MAX_OPS) { p->error = PM_INVALID; return 0; }
+    if (p->code->count >= PM_MAX_OPS) { PM_REASON("bytecode capacity");p->error = PM_INVALID; return 0; }
     if(p->code->count==p->code->capacity) {
         int capacity=p->code->capacity?p->code->capacity*2:64;
         if(capacity>PM_MAX_OPS)capacity=PM_MAX_OPS;
@@ -191,7 +200,7 @@ local:
         if(!strcmp(s,reserved[i])) goto unsupported;
     for(int i=0;i<p->symbols->count;i++)
         if(!strcmp(s,p->symbols->names[i])) return PM_USER_BASE+i;
-    if(p->symbols->count>=PM_USER_COUNT) { p->error=PM_INVALID; return -1; }
+    if(p->symbols->count>=PM_USER_COUNT) { PM_REASON("variable capacity");p->error=PM_INVALID; return -1; }
     id=p->symbols->count++;
     strcpy(p->symbols->names[id],s); /* tokenizer bounds names to 31 bytes */
     return PM_USER_BASE+id;
@@ -224,12 +233,35 @@ int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols 
     return compile_context(program,source,line,symbols,point?4:3);
 }
 static float global_memory[PM_GLOBAL_MEMORY], registers[100];
+/* Desktop gmegabuf addresses need not be dense. Keep the same 32-KiB data
+ * budget but map 256-value pages anywhere in its 1-Mi-value address space.
+ * No heap allocation, eviction, aliasing or discarded nonzero writes. Reads
+ * and zero stores to untouched pages require no resident storage. */
+enum { GLOBAL_PAGES=PM_GLOBAL_MEMORY/PM_GLOBAL_PAGE_SIZE };
+static unsigned char global_page_map[PM_GLOBAL_ADDRESS_SPACE/PM_GLOBAL_PAGE_SIZE];
+static unsigned short global_page_keys[GLOBAL_PAGES];
+static int global_page_count;
+_Static_assert(GLOBAL_PAGES<256,"global page encoding");
+static float *global_cell(int index,int create) {
+    int page=index/PM_GLOBAL_PAGE_SIZE,physical=global_page_map[page];
+    if(!physical && create) {
+        if(global_page_count>=GLOBAL_PAGES){PM_REASON("global page capacity");return NULL;}
+        physical=++global_page_count;
+        global_page_keys[physical-1]=(unsigned short)page;
+        global_page_map[page]=(unsigned char)physical;
+        /* Free pages are already zero: reset clears the pool and a failed
+         * call journals every write before releasing its new reservations.
+         * Do not clear twice or move init work into the frame-call budget. */
+    }
+    return physical?global_memory+(physical-1)*PM_GLOBAL_PAGE_SIZE+index%PM_GLOBAL_PAGE_SIZE:NULL;
+}
 static PmRuntime fallback_runtime;
 static int frame_fuel=-1;
 void pm_begin_frame(void) {frame_fuel=262144;}
 void pm_reset_globals(void) {
     pm_trig_reset();
     memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
+    memset(global_page_map,0,sizeof(global_page_map));global_page_count=0;
     memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
 }
 int pm_frame_remaining(void) {return frame_fuel<0?262144:frame_fuel;}
@@ -308,7 +340,8 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
     if (!program_valid(program)) return 0;
     for (int i = 0; i < program->count; i++) {
         const PmOp *op = &program->code[i];
-        if(--fuel<0 || frame_fuel==0) return 0;
+        if(--fuel<0) {PM_REASON("invocation fuel");return 0;}
+        if(frame_fuel==0) {PM_REASON("aggregate frame fuel");return 0;}
         if(frame_fuel>0) frame_fuel--;
         float a, b = 0, result = 0;
         *error_line = op->line;
@@ -365,12 +398,17 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             int store=op->op==MEMS || op->op==GMEMS;
             if(used<1+store) return 0;
             int global=op->op==GMEML || op->op==GMEMS;
-            int index=bounded_address(stack[used-1-store],global?PM_GLOBAL_MEMORY:PM_MEMORY);if(index<0) return 0;
-            float *memory=(op->op==GMEML || op->op==GMEMS)?global_memory:runtime->memory;
+            int index=bounded_address(stack[used-1-store],global?PM_GLOBAL_ADDRESS_SPACE:PM_MEMORY);
+            if(index<0) {PM_REASON(global?"global address":"local address");return 0;}
+            float *cell=global?global_cell(index,0):runtime->memory+index;
             if(store) {
-                a=stack[--used];if(!write_value(journal,memory+index,op->value?a:assigned_value(a))) return 0;
+                a=stack[--used];float value=op->value?a:assigned_value(a);
+                if(!cell && (value!=0 || signbit(value))) {
+                    cell=global_cell(index,1);if(!cell)return 0;
+                }
+                if(cell && !write_value(journal,cell,value))return 0;
                 stack[used-1]=a;
-            } else stack[used-1]=memory[index];
+            } else stack[used-1]=cell?*cell:0;
             continue;
         }
         if(op->op==MEMCPY || op->op==MEMSET) {
@@ -473,6 +511,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
     *error_line=0; return 1;
 }
 static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int *error_line,PmRuntime *runtime,int allowance,int init) {
+    PM_REASON("");
     if(!program->count) {*error_line=0;return 1;}
     /* VM/global registers already belong to the sole visual renderer thread.
      * Keep enlarged bounded rollback scratch off the PSP's 256-KiB stack. */
@@ -480,11 +519,13 @@ static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int 
     static ValueJournal variables;
     variables.count=0;memset(variables.dirty,0,sizeof(variables.dirty));
     unsigned int random=runtime->random;
+    int old_pages=global_page_count;
     if(execute(program,values,error_line,runtime,&journal,&variables,allowance,init)) return 1;
     while(variables.count) {
         int id=variables.ids[--variables.count];values[id]=variables.old[id];
     }
     while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
+    while(global_page_count>old_pages)global_page_map[global_page_keys[--global_page_count]]=0;
     runtime->random=random;return 0;
 }
 int pm_execute_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {

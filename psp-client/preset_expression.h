@@ -97,6 +97,12 @@ static int unary(Parser *p) {
     } else if(isdigit((unsigned char)*p->p) || *p->p=='.') {
         errno=0;float v=strtof(p->p,&end);
         if(end!=p->p && errno!=ERANGE && isfinite(v)) {p->p=end;ok=emit(p,PUSH,0,v);}
+        /* NSEEL's lexer accepts a lone dot as DBLCONST; nseel_translate
+         * converts it with atof, yielding zero. Thus .-.4 means 0-.4.
+         * Consume only that token, never repair missing operators/digits. */
+        else if(*p->p=='.' && !isdigit((unsigned char)p->p[1])) {
+            p->p++;ok=emit(p,PUSH,0,0);
+        }
     } else if(name(p,text)) {
         space(p);
         if(*p->p=='(') {

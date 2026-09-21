@@ -2,7 +2,8 @@
  * Recognize ONLY loop(count, [g]megabuf(index)=0; ...; index=index+1).
  * No arbitrary loop truncation, nonzero fill, branches or skipped side effects.
  * Zeroing outside physically available PSP memory is intentionally clipped;
- * subsequent ordinary out-of-range accesses still fail explicitly.
+ * subsequent ordinary out-of-range accesses still fail explicitly. Sparse
+ * global pages outside the cleared logical range must remain untouched.
  */
 static int clear_loop(const PmProgram *p,int start,float repeats,float *local,
     PmRuntime *runtime,Journal *journal,ValueJournal *variables,int *fuel,float *result) {
@@ -29,17 +30,31 @@ static int clear_loop(const PmProgram *p,int start,float repeats,float *local,
     if(!count){*result=0;return 1;}
     int lo=(int)initial,hi=lo+count,work=0;
     for(int type=0;type<2;type++)if(mask&(1<<type)) {
-        int limit=type?PM_GLOBAL_MEMORY:PM_MEMORY;
-        int first=lo<0?0:lo>limit?limit:lo,last=hi<0?0:hi>limit?limit:hi;
-        work+=last-first;
+        if(type) {
+            for(int page=0;page<global_page_count;page++) {
+                int base=global_page_keys[page]*PM_GLOBAL_PAGE_SIZE;
+                int first=lo>base?lo:base,last=hi<base+PM_GLOBAL_PAGE_SIZE?hi:base+PM_GLOBAL_PAGE_SIZE;
+                if(last>first)work+=last-first;
+            }
+        } else {
+            int first=lo<0?0:lo>PM_MEMORY?PM_MEMORY:lo,last=hi<0?0:hi>PM_MEMORY?PM_MEMORY:hi;
+            work+=last-first;
+        }
     }
     if(work>*fuel || (frame_fuel>=0 && work>frame_fuel))return -1;
     *fuel-=work;if(frame_fuel>=0)frame_fuel-=work;
     for(int type=0;type<2;type++)if(mask&(1<<type)) {
-        int limit=type?PM_GLOBAL_MEMORY:PM_MEMORY;
-        int first=lo<0?0:lo>limit?limit:lo,last=hi<0?0:hi>limit?limit:hi;
-        float *memory=type?global_memory:runtime->memory;
-        for(int i=first;i<last;i++)if(!write_value(journal,memory+i,0))return -1;
+        if(type) {
+            for(int page=0;page<global_page_count;page++) {
+                int base=global_page_keys[page]*PM_GLOBAL_PAGE_SIZE;
+                int first=lo>base?lo:base,last=hi<base+PM_GLOBAL_PAGE_SIZE?hi:base+PM_GLOBAL_PAGE_SIZE;
+                for(int i=first;i<last;i++)
+                    if(!write_value(journal,global_memory+page*PM_GLOBAL_PAGE_SIZE+i-base,0))return -1;
+            }
+        } else {
+            int first=lo<0?0:lo>PM_MEMORY?PM_MEMORY:lo,last=hi<0?0:hi>PM_MEMORY?PM_MEMORY:hi;
+            for(int i=first;i<last;i++)if(!write_value(journal,runtime->memory+i,0))return -1;
+        }
     }
     *result=(float)hi;variable_store(variables,local,id,*result);
     return 1;

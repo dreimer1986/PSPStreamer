@@ -1,0 +1,24 @@
+[preset00]
+// Original PSPStreamer diagnostic: high logical addresses, unchanged RAM budget.
+fDecay=.94
+nWaveMode=0
+fWaveAlpha=0
+per_frame_init_1=n=0;loop(1048576,gmegabuf(n)=0;n+=1;);
+per_frame_1=gmegabuf(50000)=.5+.28*sin(time);gmegabuf(10000)=.5+.2*cos(time*.8);
+per_frame_2=gmegabuf(1048575)=.65+.2*sin(time*1.3);gmegabuf(0)=.15;
+shapecode_0_enabled=1
+shapecode_0_sides=32
+shapecode_0_rad=.08
+shapecode_0_r=.1
+shapecode_0_g=.8
+shapecode_0_b=1
+shapecode_0_a=.9
+shape_0_per_frame1=x=gmegabuf(50000);y=gmegabuf(10000);a=gmegabuf(1048575);
+shapecode_1_enabled=1
+shapecode_1_sides=4
+shapecode_1_rad=.025
+shapecode_1_r=1
+shapecode_1_g=.5
+shapecode_1_b=.1
+shapecode_1_a=1
+shape_1_per_frame1=x=gmegabuf(0);y=.-.4+.9;

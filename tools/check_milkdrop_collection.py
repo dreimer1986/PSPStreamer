@@ -32,6 +32,9 @@ def main():
         _fields_=[('count',ctypes.c_int),('vertices',Vertex*CUSTOM_POINTS)]
     PresetTests.setUpClass()
     test = PresetTests()
+    reason=getattr(test.library,'pm_audit_reason',None)
+    reset_reason=getattr(test.library,'pm_audit_reset',None)
+    if reason:reason.restype=ctypes.c_char_p
     records = []
     pixel=test.library.md_eval_pixel_grid
     pixel.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,ctypes.POINTER(Signal),
@@ -53,10 +56,12 @@ def main():
     shape_frame=ShapeFrame();decor=Decor();color=ctypes.c_uint()
     try:
         for path in sorted(args.collection.rglob('*.milk')):
+            if reset_reason:reset_reason()
             preset, error = Preset(), Error()
             code = test.load(str(path).encode(), ctypes.byref(preset), ctypes.byref(error))
             record = {'file': str(path.relative_to(args.collection)), 'parse': code,
                       'line': error.line, 'key': error.key.decode(errors='replace')}
+            if code and reason:record['failure_reason']=reason().decode()
             if code == 0 and args.frames:
                 test.library.pm_reset_globals()
                 state = PresetState()
@@ -85,6 +90,7 @@ def main():
                               eval_key=error.key.decode(errors='replace'))
                 if code:
                     record['frame_fuel_remaining']=test.library.pm_frame_remaining()
+                    if reason:record['failure_reason']=reason().decode()
                 if expanded:record['shape_instances']=list(shape_frame.count)
             records.append(record)
         print(json.dumps({'total': len(records), 'parse_ok': sum(r['parse']==0 for r in records),

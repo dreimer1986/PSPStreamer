@@ -7,6 +7,12 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
+The [sparse-memory/import correction](MILKDROP_SPARSE_MEMORY.md) accepts EEL's
+lone-dot zero constant and maps high global addresses into the unchanged
+32-KiB resident data pool. Try `sparse-global-demo.milk`. Local memory and all
+execution budgets remain unchanged; the linked guide separates remaining
+malformed files from resource limits requiring further work.
+
 Import compatibility with fork exports: known numeric fields not read by
 MilkDrop 2's `CState/CWave/CShape::Import` are accepted without an effect:
 `nEchoWrap_x/y`, `nWrapMode_x/y`, custom-wave `bDrawBack/x/y`, and custom-shape
@@ -19,14 +25,15 @@ Like the reference's `MAX_CUSTOM_WAVES=4` and `MAX_CUSTOM_SHAPES=4`, only slots
 storage or compiling their formulas. Malformed slot identifiers still fail;
 a file containing only ignored records is not a usable preset.
 
-Import audit: **1,701/1,715** files load (previously 1,688), with no import
-regressions. All **13 newly loadable presets** pass the same 120-frame audit.
-Together with the preceding 1,624 passing presets, this gives **1,637** known
-passes; this batch reran imports for the full collection and runtime evaluation
-only for the 27 previously rejected files, not all existing runtime cases.
-The unchanged 64 known runtime failures and 14 import failures remain separate
-work. Representative hardware checks: `BDRV et AL shifter - tumbling cubes 5`,
-`ORB - Fire and Fumes 2`, and `BrainStain- boiling-mix2(redi jedi full carb mix)`.
+Current audit: **1,705/1,715** files load and **1,646** pass 120 frames, up from
+1,701 / 1,637 after the fork-field batch. No previously passing preset regressed.
+The full collection was evaluated, followed by a focused rerun of all 83
+global-memory users after eliminating redundant page clearing. Ten import
+failures remain, alongside 51 runtime invocation-budget failures and eight
+local-memory address failures. See the sparse-memory guide for details.
+The preceding fork-field hardware checks were confirmed by the user:
+`BDRV et AL shifter - tumbling cubes 5`, `ORB - Fire and Fumes 2`, and
+`BrainStain- boiling-mix2(redi jedi full carb mix)`.
 Host evaluation does not establish visual parity or real-time PSP performance.
 
 Fixed-function reference corrections: render-target setup explicitly restores
@@ -187,7 +194,8 @@ the video/audio playback clocks or chosen video frame rate.
 | Allocated bytecode per preset | 16384 instructions total; empty contexts allocate nothing |
 | Named locals | 128 per context, 31-character names |
 | Operand stack / parser depth | 48 / 64 |
-| Local memory per context / shared memory | 4096 / 8192 float slots |
+| Local memory per context / resident shared memory | 4096 / 8192 float slots |
+| Global logical addresses / resident pages | 0–1048575 / 32 pages of 256 floats; no eviction |
 | Work per point/ordinary invocation / init / main frame program | 4096 / 65536 / 131072 steps |
 | Shared work per visual frame | 262144 steps, including native clears and bulk memory work |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |

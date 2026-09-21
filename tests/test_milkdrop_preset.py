@@ -129,7 +129,7 @@ class PresetTests(unittest.TestCase):
         cls.root = Path(cls.directory.name)
         library = cls.root / "preset.so"
         subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                        "-shared", "-fPIC", "-fsanitize=undefined,float-cast-overflow",
+                        "-shared", "-fPIC", "-DPM_AUDIT", "-fsanitize=undefined,float-cast-overflow",
                         str(ROOT / "psp-client/milkdrop_preset.c"),
                         str(ROOT / "psp-client/preset_math.c"),
                         str(ROOT / "psp-client/milkdrop_signal.c"),
@@ -760,6 +760,34 @@ class PresetTests(unittest.TestCase):
         for key in ('nEchoWrap_z','wavecode_0_bDrawBack_typo','shapecode_0_tex_capture_typo'):
             self.assertNotEqual(self.parse(base+f'{key}=0\n'.encode())[0],0,key)
         self.assertNotEqual(self.parse(b'[preset00]\nnEchoWrap_x=0\n')[0],0)
+
+    def test_desktop_lone_dot_constant(self):
+        values,_=self.execute_eel('a=.;b=.-.4;c=if(1,.-.4,1);d=.5;e=-.;')
+        self.assertEqual(values['a'],0)
+        self.assertAlmostEqual(values['b'],-.4)
+        self.assertAlmostEqual(values['c'],-.4)
+        self.assertEqual(values['d'],.5)
+        self.assertEqual(values['e'],0)
+        for formula in ('q1=..5;','q1=.foo;','q1=. + ;'):
+            self.assertNotEqual(self.parse(b'[preset00]\nper_frame_1='+formula.encode())[0],0)
+        # INI numeric settings do not go through the EEL lexer.
+        self.assertNotEqual(self.parse(b'[preset00]\nzoom=.\n')[0],0)
+
+    def test_host_audit_distinguishes_resource_failures(self):
+        reason=self.library.pm_audit_reason
+        reason.restype=ctypes.c_char_p
+        self.library.pm_reset_globals()
+        self.execute_eel('q1=megabuf(4096);',success=False)
+        self.assertEqual(reason(),b'local address')
+        self.execute_eel('q1=gmegabuf(1048576);',success=False)
+        self.assertEqual(reason(),b'global address')
+        self.library.pm_begin_frame()
+        self.execute_eel('loop(1000000,q1+=1);',success=False)
+        self.assertEqual(reason(),b'invocation fuel')
+        self.library.pm_audit_reset()
+        formula=''.join(f'var{i}=1;' for i in range(USERS+1))
+        self.assertNotEqual(self.parse(f'[preset00]\nper_frame_1={formula}\n'.encode())[0],0)
+        self.assertEqual(reason(),b'variable capacity')
 
     def test_extra_desktop_slots_are_inert(self):
         base=b'[preset00]\nzoom=1.02\n'

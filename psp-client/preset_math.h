@@ -10,6 +10,7 @@ enum { PM_MAX_OPS = 4096, PM_TOTAL_OPS = 16384, PM_MAX_RECORDS = 1024, PM_STACK 
        PM_ENGINE_BASE = PM_EFFECT_BASE + 5, PM_INPUT_BASE = PM_ENGINE_BASE + 3,
        PM_MONITOR = PM_INPUT_BASE + 6, PM_WRAP = PM_MONITOR + 1, PM_VALUES = PM_WRAP + 1,
        PM_PIXEL_OPS = 4096, PM_MEMORY = 4096, PM_GLOBAL_MEMORY = 8192,
+       PM_GLOBAL_ADDRESS_SPACE = 1048576, PM_GLOBAL_PAGE_SIZE = 256,
        PM_FUEL = 4096, PM_PHASE_FUEL = 65536, PM_FRAME_FUEL = 131072 };
 typedef struct { float memory[PM_MEMORY]; unsigned int random; } PmRuntime;
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;

@@ -47,7 +47,7 @@ int main(void) {
     compile("q1=gmegabuf(7000);q2=reg99;");
     assert(pm_execute_runtime(&program,values,&line,&runtime));
     assert(values[PM_Q_BASE]==17 && values[PM_Q_BASE+1]==21);
-    compile("q1=gmegabuf(8192);");assert(!pm_execute_runtime(&program,values,&line,&runtime));
+    compile("q1=gmegabuf(1048576);");assert(!pm_execute_runtime(&program,values,&line,&runtime));
     compile("q1=megabuf(4096);");assert(!pm_execute_runtime(&program,values,&line,&runtime));
     /* No recognition of loops with another side effect/nonzero fills. */
     compile("n=0;loop(200000,megabuf(n)=1;n+=1;);");pm_begin_frame();
@@ -66,6 +66,58 @@ int main(void) {
     assert(!pm_execute_frame_runtime(&program,values,&line,&runtime));
     assert(pm_frame_remaining()==0);
     compile("q1=1;");assert(!pm_execute_init_runtime(&program,values,&line,&runtime));
+    /* Sparse high addresses share across contexts, without aliasing. */
+    pm_reset_globals();pm_begin_frame();
+    compile("gmegabuf(0)=3;gmegabuf(50000)=9;gmegabuf(1048575)=13;"
+            "q1=gmegabuf(50000)+gmegabuf(0);q2=gmegabuf(49999);");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==12 && values[PM_Q_BASE+1]==0);
+    compile("n=49999;loop(2,gmegabuf(n)=0;n+=1;);q1=gmegabuf(50000);q2=gmegabuf(1048575);");
+    assert(pm_execute_init_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==0 && values[PM_Q_BASE+1]==13);
+    /* A failed invocation rolls back both values AND new page reservations. */
+    pm_reset_globals();pm_begin_frame();
+    compile("n=0;loop(32,gmegabuf(n)=2;n+=256;);megabuf(-1)=0;");
+    assert(!pm_execute_frame_runtime(&program,values,&line,&runtime));
+    compile("n=50000;loop(32,gmegabuf(n)=7;n+=256;);q1=gmegabuf(0);");
+    assert(pm_execute_frame_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==0);
+    compile("gmegabuf(50000)=99;gmegabuf(0)=1;");
+    assert(!pm_execute_runtime(&program,values,&line,&runtime));
+    compile("q1=gmegabuf(50000);q2=gmegabuf(0);");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==7 && values[PM_Q_BASE+1]==0);
+    /* Reading and zeroing untouched addresses never consumes page capacity. */
+    pm_reset_globals();pm_begin_frame();
+    compile("n=0;loop(4096,q1=gmegabuf(n);gmegabuf(n)=0;n+=256;);");
+    assert(pm_execute_frame_runtime(&program,values,&line,&runtime));
+    compile("gmegabuf(1048575)=15;q1=gmegabuf(1048575);");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==15);
+    /* First use must not charge a second page clear against the frame budget.
+     * The pool is zero from reset/rollback, so first/repeated work is equal. */
+    pm_reset_globals();pm_begin_frame();
+    compile("n=0;loop(32,gmegabuf(n)=1;n+=256;);");
+    assert(pm_execute_frame_runtime(&program,values,&line,&runtime));
+    int first_fuel=pm_frame_remaining();pm_begin_frame();
+    assert(pm_execute_frame_runtime(&program,values,&line,&runtime));
+    assert(pm_frame_remaining()==first_fuel);
+    /* Page-local untouched cells must still be zero when a released physical
+     * page is reused at another logical address. */
+    pm_reset_globals();pm_begin_frame();
+    compile("gmegabuf(50000)=17;gmegabuf(50001)=19;megabuf(-1)=0;");
+    assert(!pm_execute_runtime(&program,values,&line,&runtime));
+    compile("gmegabuf(0)=2;q1=gmegabuf(80);q2=gmegabuf(81);");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==0 && values[PM_Q_BASE+1]==0);
+    /* Clear rollback respects logical high-page addresses, not physical slots. */
+    compile("gmegabuf(1048575)=15;");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    compile("n=1048570;loop(6,gmegabuf(n)=0;n+=1;);megabuf(-1)=0;");
+    assert(!pm_execute_init_runtime(&program,values,&line,&runtime));
+    compile("q1=gmegabuf(1048575);");
+    assert(pm_execute_runtime(&program,values,&line,&runtime));
+    assert(values[PM_Q_BASE]==15);
     pm_program_free(&program);
     return 0;
 }
