@@ -566,7 +566,10 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
             if(k>=10 && k<=21) {lo=-FLT_MAX;hi=FLT_MAX;}
             if(!isfinite(value))
                 return md_file_error(error,MD_FILE_INVALID,pm_assignment_line(&program->frame,PM_SHAPE_BASE+k),"shape range");
-            sv[PM_SHAPE_BASE+k]=(k==0 || k==2 || k==3 || k==22)?fabsf(value)>=.00001f:md_limit(value,lo,hi);
+            /* Desktop casts these drawing flags to int before testing them.
+             * Compare magnitudes to avoid undefined float-to-int overflow. */
+            sv[PM_SHAPE_BASE+k]=(k==2 || k==3 || k==22)?fabsf(value)>=1:
+                k==0?fabsf(value)>=.00001f:md_limit(value,lo,hi);
         }
         if(instance<MD_SHAPE_INSTANCES) {
             int output=instance?MD_SHAPES+slot*(MD_SHAPE_INSTANCES-1)+instance-1:slot;

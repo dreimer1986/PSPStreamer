@@ -28,12 +28,13 @@ _Static_assert(sizeof(MdPlainVertex)==16,"untextured GU vertex layout");
 /* Keep immutable storage until GU completion. No texture coordinates are
  * consumed by these untextured passes; prepare all three in one traversal. */
 static void md_thick_wave(int primitive,const MdVertex *vertices,int count,int split) {
+    /* Desktop offsets toward positive D3D y; PSP screen y points downward. */
     MdPlainVertex *copies=sceGuGetMemory(3*count*sizeof(*copies));
     for(int i=0;i<count;i++) {
         const MdVertex *v=&vertices[i];
         copies[i]=(MdPlainVertex){v->color,v->x+1,v->y,v->z};
-        copies[count+i]=(MdPlainVertex){v->color,v->x+1,v->y+1,v->z};
-        copies[2*count+i]=(MdPlainVertex){v->color,v->x,v->y+1,v->z};
+        copies[count+i]=(MdPlainVertex){v->color,v->x+1,v->y-1,v->z};
+        copies[2*count+i]=(MdPlainVertex){v->color,v->x,v->y-1,v->z};
     }
     int format=GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D;
     for(int pass=0;pass<3;pass++) {
@@ -147,7 +148,7 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
     sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
     if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
     md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
-    static const float dx[]={0,1,1,0},dy[]={0,0,1,1};
+    static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
     for(int pass=0;pass<(thick?4:1);pass++) {
         MdPlainVertex *out=sceGuGetMemory(2*count*sizeof(*out));int used=0;
         for(int i=0;i<count;i++) {

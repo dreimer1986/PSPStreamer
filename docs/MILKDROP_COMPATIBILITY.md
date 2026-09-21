@@ -7,6 +7,15 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
+Fixed-function reference corrections: render-target setup explicitly restores
+smooth vertex color/alpha interpolation, including GU list restarts. Thick
+wave copies follow Desktop's positive-y displacement translated to PSP's
+downward screen coordinates (one texel upward). Formula-controlled shape
+`additive`, `textured` and `thick` flags follow integer truth: magnitudes below
+one are false. Shape outlines require positive `border_a` before byte wrapping.
+These match MilkDrop 2's `DrawCustomShapes`/`DrawCustomWaves` paths rather than
+introducing extra PSP limits. Static preset flag validation is unchanged.
+
 Geiss export compatibility: original `ob_a`/`ib_a` and
 `nMotionVectorsX`/`nMotionVectorsY` map to the same fields as the earlier aliases.
 Empty/comment-only numbered equation records are accepted; numbering and real

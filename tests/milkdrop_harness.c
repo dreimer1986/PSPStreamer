@@ -40,6 +40,7 @@ static int capture_clipped_wave,captured_count;
 static MdVertex captured_wave[8];
 static const MdVertex *shape_fan;
 static int outline_pass, thick_outline_draws;
+static int forbid_phase_border;
 static unsigned int sceGeEdramGetSize(void) { return edram_size; }
 static unsigned long long sceKernelGetSystemTimeWide(void) { return test_time; }
 static int sceGuInit(void) {
@@ -152,6 +153,7 @@ static void *sceGuGetMemory(int bytes) {
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
     assert(smooth_shading); /* Transparent shape edges need interpolated alpha. */
+    if(forbid_phase_border) assert(type!=GU_LINE_STRIP || count!=33);
     assert(!restore_target);
     const MdVertex *v=data;
     MdVertex unpacked[4*MD_CUSTOM_POINTS];
@@ -532,6 +534,8 @@ int main(int argc,char **argv) {
     int phase_memory=strstr(argv[fixture],"phase-memory-demo")!=NULL;
     if(explosion)expected_passes=2;
     assert(md_load_preset(argv[fixture],&md_custom_preset,&demo_error)==MD_FILE_OK);
+    forbid_phase_border=phase_memory;
+    if(phase_memory)md_custom_preset.decor.shapes[0].border_a=-.5f;
     for(int tv=0;tv<2;tv++) for(int full=0;full<2;full++) {
         expected_left=full?0:tv?26:38; expected_top=full?0:tv?86:74;
         expected_width=full?(tv?720:480):tv?508:306;
@@ -610,6 +614,7 @@ int main(int argc,char **argv) {
         assert(!md_images_ready && !md_images[0].pixels);
     }
     }
+    forbid_phase_border=0;
     /* Layout changes bypass the frame throttle and reset only feedback.
      * Scanout format stays 32-bit even when TV feedback becomes RGB565. */
     /* Four independent slots, then a partial load failure: neither case may
@@ -664,7 +669,7 @@ int main(int argc,char **argv) {
             assert(captured_count==4); /* no artificial bridge across split */
             assert(captured_wave[0].x==0 && captured_wave[1].x==100);
             assert(captured_wave[2].x==400 && captured_wave[3].x==512);
-            assert(captured_wave[0].y==11 && captured_wave[3].y==21);
+            assert(captured_wave[0].y==9 && captured_wave[3].y==19);
             sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         }
         capture_clipped_wave=fail_restart=0;md_stop();assert(!md_list);

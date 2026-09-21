@@ -79,7 +79,7 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
             sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,fill);
         }
         unsigned int border_color=md_shape_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
-        if(border_color>>24) {
+        if(p->border_a>0 && (border_color>>24)) {
             int passes=p->thick_outline!=0?4:1;
             /* Four one-feedback-texel offsets, following MilkDrop 2's
              * fixed-function border. Its positive D3D y is upward; our GU

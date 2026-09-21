@@ -1,3 +1,9 @@
+# 0.1.39
+
+- Keep file-based MP3/FLV streams alive during long pauses confirmed by the matching PSP's remote-control heartbeat, including Plex playback.
+- Preserve the existing inactivity timeout for missing clients; expired pause heartbeats do not hold transcoding slots indefinitely.
+- Resume partial writes without repeating bytes. Requires the matching PSP client update; Docker and Home Assistant use identical server code.
+
 # 0.1.38
 
 - Password login page, bounded browser sessions, logout and CSRF protection; PSP Basic authentication stays compatible.

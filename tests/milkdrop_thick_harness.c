@@ -37,7 +37,7 @@ int main(void) {
                 const MdVertex *v=&vertices[start+i];
                 assert(p[i].color==v->color && p[i].z==v->z);
                 assert(p[i].x==v->x+(pass<2?1:0));
-                assert(p[i].y==v->y+(pass>0?1:0));
+                assert(p[i].y==v->y-(pass>0?1:0));
             }
         }
     }

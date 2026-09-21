@@ -35,6 +35,15 @@ class LibraryTests(unittest.TestCase):
                 thread.start()
                 connection = http.client.HTTPConnection(*server.server_address, timeout=3)
                 try:
+                    token = library.encode(MediaItem(0, "video.mkv"))
+                    lease = server.stream_pauses.begin('127.0.0.1', token)
+                    for state in ('paused', 'playing', 'paused', 'stopped'):
+                        connection.request('GET', f'/api/remote/next?after=0&media={token}&state={state}')
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 200)
+                        response.read()
+                        self.assertEqual(server.stream_pauses.paused(lease), state == 'paused')
+                    server.stream_pauses.end(lease)
                     commands = [
                         {"action": "play", "id": library.encode(MediaItem(0, "song.mp3"))},
                         {"action": "pause"}, {"action": "resume"},

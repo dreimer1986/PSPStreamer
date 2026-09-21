@@ -1663,15 +1663,22 @@ static int json_integer(const char *from, const char *key, int fallback);
 /* Published by the playback loop; reporting piggybacks on the existing HTTP
  * worker. Never contact Plex (or wait for it) from the DAC/display thread. */
 static char plex_playing_id[ID_SIZE];
+static char playback_report_id[ID_SIZE];
 static volatile int plex_position_ms, plex_paused, plex_started;
 static void plex_report_path(char *path, size_t capacity, int sequence, int stopped) {
     if (plex_playing_id[0] && plex_started)
         snprintf(path, capacity, "/api/remote/next?after=%d&plex=%s&state=%s&position=%d&duration=%d",
             sequence, plex_playing_id, stopped?"stopped":plex_paused?"paused":"playing",
             plex_position_ms, (int)(current_duration_seconds*1000.0f));
-    else snprintf(path, capacity, "/api/remote/next?after=%d", sequence);
+    else snprintf(path, capacity, "/api/remote/next?after=%d&state=%s", sequence,
+        stopped?"stopped":plex_paused?"paused":"playing");
+    if(playback_report_id[0] && !(plex_playing_id[0] && plex_started)) {
+        size_t used=strlen(path);
+        snprintf(path+used,capacity-used,"&media=%s",playback_report_id);
+    }
 }
 static void plex_report_begin(const char *id) {
+    snprintf(playback_report_id,sizeof(playback_report_id),"%s",id);
     snprintf(plex_playing_id,sizeof(plex_playing_id),"%s",!strncmp(id,"plex.",5)?id:"");
     plex_position_ms=stream_start_seconds*1000;plex_paused=plex_started=0;
 }
@@ -1787,9 +1794,9 @@ static int play_audio_once(const char *media_id, const char *title) {
     remote_result = offline_music ? 0 : music_remote_start();
     while (audio_running && remote_result >= 0) {
         playback_clock(music_visual_active?milkdrop_cpu_mhz:music_cpu_mhz);
+        plex_paused=paused;
         if(plex_playing_id[0]) {
             plex_position_ms=stream_start_seconds*1000+(int)((unsigned long long)audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
-            plex_paused=paused;
             plex_started=audio_played_blocks>0;
         }
         video_watch_ping("music loop");

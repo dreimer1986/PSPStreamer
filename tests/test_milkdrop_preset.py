@@ -1445,6 +1445,16 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
             self.assertNotEqual(self.parse(f"[preset00]\nshapecode_0_thickOutline={value}".encode())[0],0)
         self.assertEqual(self.parse(b"[preset00]\nshapecode_0_thickOutline=1\nshapecode_0_thickOutline=0")[0],2)
 
+    def test_shape_formula_flags_use_desktop_integer_truth(self):
+        for value in (0, .5, -.5, .999, -.999, 1, -1, 1.5, 1e30):
+            code,preset,error=self.parse(('[preset00]\nshapecode_0_enabled=1\n'
+                f'shape_0_per_frame1=additive={value};textured={value};thick={value};').encode())
+            self.assertEqual(code,0)
+            self.assertEqual(self.evaluate_state(preset,PresetState(),0)[0],0)
+            shape=self.last_decor.shapes[0]
+            for actual in (shape.additive,shape.textured,shape.thick_outline):
+                self.assertEqual(actual,abs(value)>=1)
+
     def test_conditional_lazy_nested_and_boolean_math(self):
         cases = (("if(1,2,1/0)",2), ("if(0,sqrt(-1),3)",3),
             ("if(-1,2,3)",2), ("if(.000001,2,3)",3),

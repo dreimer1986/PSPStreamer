@@ -34,6 +34,7 @@ from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, 
 from .plex import Plex
 from .plex_media import RemoteSource
 from .web_session import WebSessions
+from .stream_pause import StreamPauses, write_stream
 from .catalogue import browse as browse_catalogue, folder_media
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
@@ -461,6 +462,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == "/api/remote/next":
+                media = query.get('media') or query.get('plex')
+                if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
+                    self.server.stream_pauses.report(self.client_address[0], media[0],
+                        query['state'][0] == 'paused')
                 if query.get('plex'):
                     try:
                         self.server.plex.report(query['plex'][0], query.get('state', ['playing'])[0],
@@ -932,20 +937,16 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
         radio_lease = None
+        pause_lease = None
         try:
-            # A PSP that crashes or suspends mid-stream can otherwise leave a
-            # blocking socket write and monopolise the sole transcode slot.
-            # Subtitle font initialisation can delay the first H.264 frame;
-            # the PSP intentionally holds audio muted until that point.  Keep
-            # its full queue alive instead of timing it out after 12 seconds.
-            # A disconnected PSP/hotspot can leave TCP half-open.  Free the
-            # two playback slots promptly; font/subtitle preparation happens
-            # before the first write and is unaffected by this timeout.
-            # Audio deliberately waits while a subtitle-enabled video stream
-            # prepares its first frame.  Its queue must survive that wait;
-            # video sockets can be reclaimed quickly after a disconnect.
+            # Keep the existing startup/subtitle inactivity allowance. During
+            # blocked body writes only, fresh client-confirmed pause reports
+            # suspend that allowance. Lost clients still expire; font setup
+            # is before body writes and retains its existing behavior.
             timeout_default = "180" if container in {"mp3", "flv"} else "5"
-            self.connection.settimeout(float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default)))
+            write_timeout = float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default))
+            self.connection.settimeout(write_timeout)
+            pause_lease = self.server.stream_pauses.begin(self.client_address[0], token)
             subtitle_source = None
             bitmap_subtitle = False
             if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
@@ -1009,13 +1010,16 @@ class AppHandler(BaseHTTPRequestHandler):
             # the PSP paused and then caught up. read1() returns what ffmpeg
             # has produced now; small blocks keep frame cadence intact.
             chunk_size = 4 * 1024 if container in {"mjpeg", "h264", "flv"} else 64 * 1024
+            self.wfile.flush()
+            self.connection.settimeout(min(1.0, write_timeout))
             while chunk := process.stdout.read1(chunk_size):
-                self.wfile.write(chunk)
-                self.wfile.flush()
+                write_stream(self.connection, chunk, write_timeout,
+                             lambda: self.server.stream_pauses.paused(pause_lease))
             process.wait(timeout=15)
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             pass
         finally:
+            self.server.stream_pauses.end(pause_lease)
             if radio_lease:
                 self.server.radio.end(token, radio_lease)
             if process and process.poll() is None:
@@ -1038,6 +1042,7 @@ class AppServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], library: Library):
         self.settings = PasswordSettings()
         self.web_sessions = WebSessions()
+        self.stream_pauses = StreamPauses()
         cert = os.environ.get("PSP_STREAMER_TLS_CERT", "")
         key = os.environ.get("PSP_STREAMER_TLS_KEY", "")
         self.tls_context = None

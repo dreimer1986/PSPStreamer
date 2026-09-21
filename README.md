@@ -945,6 +945,18 @@ Protected responses are non-cacheable. Login attempts are limited per connecting
 IP (a reverse proxy may share this allowance). The native PSP and API clients
 continue to use HTTP Basic with fixed username **psp** and the same password.
 
+### Long playback pauses (server/HA app 0.1.39)
+
+Update both the server and PSP client for long MP3/video pauses. The client
+reports its actual pause state through the existing remote-control poll, for
+both filesystem and Plex media. A fresh report lets the server wait while the
+PSP's receive buffer is full, instead of closing the stream after 180 seconds.
+Resume continues the same byte stream without restarting the decoder. A pause
+report expires after 45 seconds without updates; ordinary write-inactivity
+limits then apply again. This does not change subtitle startup timeouts and
+cannot prevent a router or reverse proxy from enforcing its own idle timeout.
+Radio retains its separate pause/reconnect-to-live behavior.
+
 ### Web navigation (server/HA app 0.1.38)
 
 The PSP retries transient directory-loading failures up to three attempts,

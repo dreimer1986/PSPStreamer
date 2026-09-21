@@ -22,7 +22,7 @@ static int music_remote_worker(SceSize args, void *argp) {
         snprintf(path, sizeof(path), "/api/remote/next?after=%d%s%s", sequence,
                  music_radio_id[0]?"&radio=":"",music_radio_id);
 #ifdef PSPSTREAMER_PLEX_REPORT
-        if(plex_playing_id[0]) plex_report_path(path,sizeof(path),sequence,0);
+        if(!music_radio_id[0]) plex_report_path(path,sizeof(path),sequence,0);
 #endif
         if (remote_http_get(path, reply, sizeof(reply), &music_remote_running) >= 0 &&
             music_remote_running && json_value(reply, "action", action, sizeof(action))) {
