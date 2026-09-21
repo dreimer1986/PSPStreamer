@@ -864,8 +864,10 @@ The [Hyperdrive target subset](docs/HYPERDRIVE_TARGET.md) additionally supports
 the real circular PCM waveform (mode 0), `dx/dy`, texture clamp and gamma
 brightness. Copy your original preset as `presets/active.milk`; third-party
 presets are not bundled in Git. This is not full MilkDrop compatibility.
-Visualization feedback now renders at **512×256**, using 32-bit color on LCD
-and RGB565 on TV. Echo/brightness are composed offscreen before presentation;
+Visualization feedback now renders at **512×512**, using RGB565 on LCD and TV.
+TV preserves raw feedback in a 512 KiB main-RAM buffer using a GPU copy; if that
+allocation fails it retains 512×256 feedback. LCD uses two EDRAM surfaces.
+Echo/brightness are composed offscreen before presentation;
 see [memory layout and hardware-test notes](docs/MILKDROP_PRESENTATION.md).
 The [extended fixed-function subset](docs/MILKDROP_FIXED_FUNCTION.md) adds
 animated transform centers/stretch, wave styling, echo, borders and four

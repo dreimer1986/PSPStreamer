@@ -15,6 +15,9 @@ enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D
        GU_TEXTURE_2D, GU_PSM_8888, GU_TFX_MODULATE, GU_TCC_RGBA, GU_LINEAR,
        GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES, GU_NEAREST, GU_OTHER_COLOR, GU_ONE_MINUS_OTHER_COLOR };
 static int effect_texture,filter_src,filter_dst,filter_fix;
+static void *md_raw_image;
+static int md_height;
+static int raw_copies;
 static float filter_values[8],filter_source;
 static int copy_tile;
 static int fade_texture;
@@ -114,11 +117,12 @@ static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
         assert(rgba[((64/8)*(128/4)+64/4)*128+3]==255);
         external_binds++; fade_texture=effect_texture=0; return;
     }
-    assert(!level && (w==512 || w==64) && h==256 && s==w);
+    assert(!level && (w==512 || w==64) && h==md_height && s==w);
     assert(!texture_swizzled);
     effect_texture=w==64;
-    fade_texture=offset>2097152;
-    if(fade_texture) {assert(w==512 && h==256 && s==512);return;}
+    fade_texture=offset>2097152 && texture!=md_raw_image;
+    if(texture==md_raw_image) {assert(target_changes<=2);texture_offset=-1;return;}
+    if(fade_texture) {assert(w==512 && h==md_height && s==512);return;}
     assert(offset==1474560 || offset==1736704 || offset==557056 || offset==1081344 || offset==1998848 || offset==1605632);
     assert(offset!=(uintptr_t)target_offset);
     texture_offset=(int)offset;
@@ -138,10 +142,16 @@ static void sceGuCopyImage(int format,int sx,int sy,int w,int h,int stride,const
                           int dx,int dy,int ds,void *dest) {
     uintptr_t src=(uintptr_t)source-0x04000000,dst=(uintptr_t)dest-0x04000000;
     assert(format==GU_PSM_8888 || format==GU_PSM_5650);
-    assert(!sy && !dx && !dy && w==64 && h==256 && stride==512 && ds==64 && sx>=0 && sx<=448);
+    if(dest==md_raw_image) {
+        assert(format==GU_PSM_5650 && !sx && !sy && !dx && !dy);
+        assert(w==512 && h==512 && stride==512 && ds==512);
+        assert(target_changes==1 && src==(uintptr_t)raw_target && raw_source==-1);
+        raw_source=raw_target;raw_target=-1;raw_copies++;return;
+    }
+    assert(!sy && !dx && !dy && w==64 && h==md_height && stride==512 && ds==64 && sx>=0 && sx<=448);
     assert(src==(uintptr_t)target_offset && src==(uintptr_t)raw_source && target_changes==2);
     assert(dst==1998848 || dst==1605632);
-    assert(dst+64*256*(format==GU_PSM_8888?4:2)<=2097152);
+    assert(dst+64*md_height*(format==GU_PSM_8888?4:2)<=2097152);
     copy_tile=sx/64; filter_source=filter_values[copy_tile];
 }
 static void *sceGuGetMemory(int bytes) {
@@ -178,7 +188,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     if(type==GU_TRIANGLES && count==6 && target_changes==2) {
         assert(target_changes==2 && target_offset==raw_source && texture_offset==raw_target);
-        assert(v[0].x==0 && v[0].y==0 && v[4].x==512 && v[4].y==256);
+        assert(v[0].x==0 && v[0].y==0 && v[4].x==512 && v[4].y==md_height);
         assert(v[1].color==v[3].color && v[2].color==v[5].color);
         assert(v[0].color!=v[1].color || v[0].color!=v[2].color);
         composition_width+=512;shade_draws++;
@@ -186,11 +196,11 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(type==GU_TRIANGLES && count!=MD_MESH_VERTICES) {
         assert(target_changes==1 && count>0 && count<=15*MD_SHAPE_SIDES && count%3==0);
-        for(int i=0;i<count;i++)assert(v[i].x>=0 && v[i].x<=512 && v[i].y>=0 && v[i].y<=256);
+        for(int i=0;i<count;i++)assert(v[i].x>=0 && v[i].x<=512 && v[i].y>=0 && v[i].y<=md_height);
     }
     else if(type==GU_TRIANGLES) {
         assert(count==MD_MESH_VERTICES && target_changes==1);
-        assert(target_width==512 && target_height==256);
+        assert(target_width==512 && target_height==md_height);
         raw_target=target_offset; raw_source=texture_offset;
         assert(raw_target!=raw_source);
         float right=0;
@@ -204,7 +214,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     }
     else if(format==14 && (type==GU_LINES || type==GU_POINTS)) {
         assert(type==GU_POINTS || count%2==0);ring_calls++;
-        for(int i=0;i<count;i++)assert(v[i].x>=0 && v[i].x<=512 && v[i].y>=0 && v[i].y<=256);
+        for(int i=0;i<count;i++)assert(v[i].x>=0 && v[i].x<=512 && v[i].y>=0 && v[i].y<=md_height);
     }
     else if(type==GU_LINES) { assert(count<=MD_MOTION_MAX_VERTICES && count%2==0); }
     else if(type==GU_LINE_STRIP || type==GU_POINTS) {
@@ -237,7 +247,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             if(target_changes==2) {
                 assert(texture_offset!=target_offset);
                 assert(target_offset==raw_source && texture_offset==raw_target);
-                assert(v[0].x==composition_width%512 && v[0].y==0 && v[1].y==256);
+                assert(v[0].x==composition_width%512 && v[0].y==0 && v[1].y==md_height);
                 composition_width+=(int)(v[1].x-v[0].x);
                 assert(composition_width<=512*expected_passes);
             }
@@ -256,19 +266,19 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         if(type==GU_TRIANGLE_FAN || (type==GU_LINE_STRIP &&
            (count<=33 || count==MD_SHAPE_SIDES+1) && count!=16 && count!=31)) {
             /* Only interior shapes use the fan/line-strip fast path now. */
-            assert(target_width==512 && target_height==256 && target_changes==1);
+            assert(target_width==512 && target_height==md_height && target_changes==1);
             assert(v[i].x>=0 && v[i].x<=512);
-            assert(v[i].y>=0 && v[i].y<=256);
+            assert(v[i].y>=0 && v[i].y<=md_height);
         } else if(type==GU_LINES || count==170 || count==240 || count==256 || count==480) {
             /* Mode 4 intentionally moves its line beyond the texture edge;
              * the viewport scissor clips it, not coordinate clamping. */
-            assert(target_width==512 && target_height==256 && target_changes==1);
+            assert(target_width==512 && target_height==md_height && target_changes==1);
             assert(v[i].x>-2048 && v[i].x<2048);
             assert(v[i].y>-2048 && v[i].y<2048);
         } else if(count==192 || count==383) {
             /* The new custom wave reaches x=1. Thick copies extend one pixel
              * past the feedback edge and are clipped by the same scissor. */
-            assert(target_width==512 && target_height==256 && target_changes==1);
+            assert(target_width==512 && target_height==md_height && target_changes==1);
             assert(v[i].x>=-1 && v[i].x<=target_width+1);
             assert(v[i].y>=-1 && v[i].y<=target_height+1);
         } else {
@@ -277,7 +287,17 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         }
     }
 }
+#include <malloc.h>
+static int fail_feedback_allocation;
+static void *test_memalign(size_t alignment,size_t size) {
+    if(fail_feedback_allocation && size==512*512*2) {
+        fail_feedback_allocation=0;return NULL;
+    }
+    return memalign(alignment,size);
+}
+#define memalign test_memalign
 /* GU_ADAPTER */
+#undef memalign
 int main(int argc,char **argv) {
     assert(argc==40 || argc==41);
     md_profile_reset(1);
@@ -640,14 +660,31 @@ int main(int argc,char **argv) {
         int calls=starts;
         assert(md_frame(tv,1,bands,0,test_time,0)==1 && starts==calls+1);
         assert(md_texture_base==(tv?1474560:557056));
-        assert(md_texture_bytes==(tv?262144:524288));
-        assert(md_pixel_format==(tv?GU_PSM_5650:GU_PSM_8888));
+        assert(md_texture_bytes==524288 && md_height==512);
+        assert(md_pixel_format==GU_PSM_5650);
+        assert((md_raw_image!=NULL)==tv);
         assert(md_front==1 && raw_source==md_texture_base);
         assert(target_offset==0 && target_bpp==4);
     }
     md_stop();
     for(int i=0;i<557056;i++) assert(vram[i]==0xa5);
-    for(int i=1998848;i<edram_size;i++) assert(vram[i]==0xa5);
+    for(int i=2064384;i<edram_size;i++) assert(vram[i]==0xa5);
+    assert(raw_copies>0 && !md_raw_image);
+    /* Allocation failure retains the old TV layout and can recover on the
+     * next output change. Audio owns none of these resources. */
+    assert(md_start());fail_feedback_allocation=1;
+    expected_left=expected_top=0;expected_width=720;expected_height=480;
+    assert(md_frame(1,1,bands,0,test_time,0)==1);
+    assert(!md_raw_image && md_height==256 && md_texture_bytes==262144);
+    assert(!fail_feedback_allocation);
+    expected_width=480;expected_height=272;
+    assert(md_frame(0,1,bands,0,test_time,0)==1);
+    assert(md_height==512 && !md_raw_image);
+    expected_width=720;expected_height=480;
+    assert(md_frame(1,1,bands,0,test_time,0)==1);
+    assert(md_height==512 && md_raw_image);
+    md_stop();
+    md_texture_base=557056; /* Direct list-restart checks use LCD storage. */
     assert(md_profiles[0].frames>0);
     assert(md_profiles[0].skipped>0);
     char profile[1024];

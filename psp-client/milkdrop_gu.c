@@ -16,7 +16,11 @@
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
-#define MD_HEIGHT 256
+static int md_height=512;
+#define MD_HEIGHT md_height
+/* TV scanout leaves room for one 512-square RGB565 surface plus scratch.
+ * Preserve raw feedback in main RAM via GE copy, never a CPU frame copy. */
+static void *md_raw_image;
 static int md_texture_base, md_texture_bytes, md_pixel_format;
 #define MD_TEXTURE_BYTES md_texture_bytes
 #define MD_TEXTURE_BASE md_texture_base
@@ -94,7 +98,7 @@ void md_begin_preset(unsigned int fade_ms) {
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         md_fade_image=memalign(64,MD_TEXTURE_BYTES);
         if(md_fade_image) {
-            memcpy(md_fade_image,(void *)(uintptr_t)(0x44000000+MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES),MD_TEXTURE_BYTES);
+            memcpy(md_fade_image,(void *)(uintptr_t)(0x44000000+MD_TEXTURE_BASE+(md_raw_image?0:1-md_front)*MD_TEXTURE_BYTES),MD_TEXTURE_BYTES);
             sceKernelDcacheWritebackRange(md_fade_image,MD_TEXTURE_BYTES);
             md_fade_ms=fade_ms>5000?5000:fade_ms;md_fade_start=sceKernelGetSystemTimeWide();
         }
@@ -108,6 +112,9 @@ static void md_expand(MdVertex *v, int count, int half_texel) {
     for (int i=0;i<count;i++) {
         v[i].x *= 2;
         v[i].u = half_texel ? (v[i].u-.5f)*2+.5f : v[i].u*2;
+        float scale=(float)MD_HEIGHT/MD_TEXTURE;
+        v[i].y *= scale;
+        v[i].v = half_texel ? (v[i].v-.5f)*scale+.5f : v[i].v*scale;
     }
 }
 void md_set_tv_title_bottom(int bottom) {
@@ -115,8 +122,11 @@ void md_set_tv_title_bottom(int bottom) {
     md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
 }
 
+static int md_offset(int index) {
+    return MD_TEXTURE_BASE+(md_raw_image?(index==2?1:0):index)*MD_TEXTURE_BYTES;
+}
 static void *md_texture(int index) {
-    return (void *)(uintptr_t)(0x04000000 + MD_TEXTURE_BASE + index*MD_TEXTURE_BYTES);
+    return (void *)(uintptr_t)(0x04000000 + md_offset(index));
 }
 static void md_target(int offset, int stride, int width, int height) {
     /* Shape centers and edges have independent color/alpha. Flat shading
@@ -147,7 +157,7 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
     memcpy(md_clip_wave_source,v,count*sizeof(*v));
     sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
     if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
-    md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+    md_target(md_offset(1-md_front),MD_WIDTH,MD_WIDTH,MD_HEIGHT);
     static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
     for(int pass=0;pass<(thick?4:1);pass++) {
         MdPlainVertex *out=sceGuGetMemory(2*count*sizeof(*out));int used=0;
@@ -210,6 +220,7 @@ void md_stop(void) {
     md_images_clear();
     md_fade_clear();
     sceGuTerm();
+    free(md_raw_image);md_raw_image=NULL;
     free(md_list); md_list = NULL;
     free(md_shape_frame);md_shape_frame=NULL;
 }
@@ -241,11 +252,22 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_profile_begin();
     if (tv != md_last_tv) {
         md_fade_clear();
+        free(md_raw_image);md_raw_image=NULL;
+        md_height=512;
+        if(tv) {
+            md_raw_image=memalign(64,MD_WIDTH*MD_HEIGHT*2);
+            if(!md_raw_image)md_height=256; /* Proven two-surface fallback. */
+            else {
+                memset(md_raw_image,0,MD_WIDTH*MD_HEIGHT*2);
+                sceKernelDcacheWritebackRange(md_raw_image,MD_WIDTH*MD_HEIGHT*2);
+            }
+        }
         md_texture_base = tv ? 768*480*4 : 512*272*4;
-        md_texture_bytes = MD_WIDTH*MD_HEIGHT*(tv ? 2 : 4);
-        md_pixel_format = tv ? GU_PSM_5650 : GU_PSM_8888;
-        if ((unsigned int)(MD_TEXTURE_BASE + 2*MD_TEXTURE_BYTES + MD_TEXTURE_BYTES/8) > sceGeEdramGetSize()) return 0;
-        memset((void *)(uintptr_t)(0x44000000 + MD_TEXTURE_BASE), 0, 2*MD_TEXTURE_BYTES);
+        md_texture_bytes = MD_WIDTH*MD_HEIGHT*2;
+        md_pixel_format = GU_PSM_5650;
+        int surfaces=md_raw_image?1:2;
+        if ((unsigned int)(MD_TEXTURE_BASE + surfaces*MD_TEXTURE_BYTES + MD_TEXTURE_BYTES/8) > sceGeEdramGetSize()) return 0;
+        memset((void *)(uintptr_t)(0x44000000 + MD_TEXTURE_BASE), 0, surfaces*MD_TEXTURE_BYTES);
         md_front=0; target=1;
     }
     if (!md_origin) md_origin = now;
@@ -310,9 +332,9 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     sceGuDisable(GU_LIGHTING); sceGuDisable(GU_BLEND);
     sceGuDisable(GU_ALPHA_TEST); sceGuDisable(GU_STENCIL_TEST);
     sceGuEnable(GU_SCISSOR_TEST); sceGuEnable(GU_TEXTURE_2D);
-    md_target(MD_TEXTURE_BASE + target*MD_TEXTURE_BYTES, MD_WIDTH, MD_WIDTH, MD_HEIGHT);
+    md_target(md_offset(target), MD_WIDTH, MD_WIDTH, MD_HEIGHT);
     sceGuTexMode(md_pixel_format, 0, 0, 0);
-    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(md_front));
+    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_raw_image?md_raw_image:md_texture(md_front));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(GU_LINEAR, GU_LINEAR);
     int wrap=preset==3 && !next_state.wrap ? GU_CLAMP : GU_REPEAT;
@@ -396,9 +418,14 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     /* The old feedback is no longer needed. Compose echo/gamma into that
      * surface, keeping the new RAW feedback intact for the next frame.
      * Never expose the dark base or intermediate additive passes on screen. */
-    md_target(MD_TEXTURE_BASE + md_front*MD_TEXTURE_BYTES, MD_WIDTH, MD_WIDTH, MD_HEIGHT);
+    if(md_raw_image) {
+        sceGuCopyImage(md_pixel_format,0,0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_texture(target),
+                       0,0,MD_WIDTH,md_raw_image);
+        sceGuTexSync();
+    }
+    md_target(md_offset(md_front), MD_WIDTH, MD_WIDTH, MD_HEIGHT);
     sceGuEnable(GU_TEXTURE_2D);
-    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(target));
+    sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_raw_image?md_raw_image:md_texture(target));
     sceGuTexWrap(GU_CLAMP, GU_CLAMP);
     sceGuTexFlush();
     const MdDecor *d=&frame_decor;

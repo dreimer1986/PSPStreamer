@@ -40,7 +40,7 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
              * explicitly reselect our feedback target before any drawing. */
             sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
             if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
-            md_target(MD_TEXTURE_BASE+(1-md_front)*MD_TEXTURE_BYTES,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+            md_target(md_offset(1-md_front),MD_WIDTH,MD_WIDTH,MD_HEIGHT);
             submitted=0;
         }
         submitted+=weight;
@@ -62,7 +62,7 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
             } else {
                 sceGuTexMode(md_pixel_format,0,0,0);
                 sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGB);
-                sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_texture(md_front));
+                sceGuTexImage(0,MD_WIDTH,MD_HEIGHT,MD_WIDTH,md_raw_image?md_raw_image:md_texture(md_front));
             }
             sceGuTexFlush();
         } else sceGuDisable(GU_TEXTURE_2D);
@@ -157,6 +157,7 @@ static void md_present(int left,int top,int width,int height,float gamma,
                         .color=md_rgba(strength*mix*shade[i][0],strength*mix*shade[i][1],strength*mix*shade[i][2],1)};
                     md_echo_uv((float)x,(float)y,zoom,orient,&v[j].u,&v[j].v);
                     v[j].u*=2;
+                    v[j].v*=(float)MD_HEIGHT/MD_TEXTURE;
                 }
                 sceGuDrawArray(GU_TRIANGLES,MD_FORMAT,6,NULL,v);
                 continue;
@@ -169,6 +170,7 @@ static void md_present(int left,int top,int width,int height,float gamma,
                 md_echo_uv((float)x/width,0,zoom,orient,&v[0].u,&v[0].v);
                 md_echo_uv((float)end/width,1,zoom,orient,&v[1].u,&v[1].v);
                 v[0].u*=2; v[1].u*=2;
+                v[0].v*=(float)MD_HEIGHT/MD_TEXTURE; v[1].v*=(float)MD_HEIGHT/MD_TEXTURE;
                 sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
             }
         }
@@ -178,11 +180,12 @@ static void md_present(int left,int top,int width,int height,float gamma,
 static void md_darken_center(float aspect) {
     MdVertex *v=sceGuGetMemory(6*sizeof(*v));
     const float x[]={0,-1,0,1,0,-1},y[]={0,0,-1,0,1,0};
-    for(int i=0;i<6;i++) v[i]=(MdVertex){.x=256+x[i]*12.8f*aspect,.y=128+y[i]*6.4f,.color=i?0:0x18000000};
+    for(int i=0;i<6;i++) v[i]=(MdVertex){.x=256+x[i]*12.8f*aspect,
+        .y=MD_HEIGHT*(.5f+y[i]*.025f),.color=i?0:0x18000000};
     sceGuDisable(GU_TEXTURE_2D); md_blend(0);
     sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,6,NULL,v); sceGuDisable(GU_BLEND);
 }
-/* PSP lacks a destination-times-itself blend factor. Copy one 64x256 tile
+/* PSP lacks a destination-times-itself blend factor. Copy one 64-wide tile
  * of the composed image into spare EDRAM, then use it as the source operand.
  * Never sample the active render target or modify the raw feedback surface. */
 static void md_image_effects(const float effects[5]) {
