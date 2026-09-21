@@ -71,6 +71,23 @@ class TextureTests(unittest.TestCase):
                 for offset in range(0,len(pixels),4):
                     self.assertTrue(all(abs(pixels[offset+c]-reference[c])<=3 for c in range(3)))
                 lib.md_image_free(ctypes.byref(image))
+            # Non-uniform, non-power-of-two JPEG: check exact column/row
+            # selection as well as the GU swizzle, not just solid colours.
+            pattern=PillowImage.new('RGB',(150,73))
+            pattern.putdata([((x*13+y*3)%256,(x*7+y*11)%256,(x*3+y*17)%256)
+                             for y in range(73) for x in range(150)])
+            encoded=io.BytesIO();pattern.save(encoded,format='JPEG',quality=95)
+            path.write_bytes(encoded.getvalue())
+            reference=PillowImage.open(io.BytesIO(encoded.getvalue())).convert('RGB')
+            image=Image()
+            self.assertEqual(lib.md_image_load(str(path).encode(),ctypes.byref(image)),1)
+            pixels=ctypes.string_at(image.pixels,image.width*image.height*4)
+            for y in range(image.height):
+                for x in range(image.width):
+                    pos=((y//8)*(image.width//4)+x//4)*128+(y%8)*16+(x%4)*4
+                    expected=reference.getpixel((x*150//image.width,y*73//image.height))
+                    self.assertTrue(all(abs(pixels[pos+c]-expected[c])<=2 for c in range(3)))
+            lib.md_image_free(ctypes.byref(image))
             for data in (jpeg(1025,16),jpeg(16,16,'CMYK'),jpeg(150,150)[:-30],b'\xff\xd8'+b'x'*100):
                 path.write_bytes(data)
                 image=Image(None,7,9)

@@ -60,6 +60,10 @@ static unsigned char *md_jpeg_decode(const unsigned char *data,size_t length,
     ctx->pixels=memalign(64,w*h*4);
     ctx->row=malloc(ctx->decoder.output_width*3);
     if(!ctx->pixels || !ctx->row)md_jpeg_error((j_common_ptr)&ctx->decoder);
+    /* Column selection is identical on every output row. Keep exact integer
+     * nearest-neighbour sampling, but divide only once per output column. */
+    unsigned int source_x[256];
+    for(unsigned int x=0;x<w;x++)source_x[x]=x*ctx->decoder.output_width/w*3;
     unsigned int target_y=0;
     while(ctx->decoder.output_scanline<ctx->decoder.output_height) {
         unsigned int source_y=ctx->decoder.output_scanline;
@@ -67,9 +71,8 @@ static unsigned char *md_jpeg_decode(const unsigned char *data,size_t length,
         if(jpeg_read_scanlines(&ctx->decoder,&row,1)!=1)md_jpeg_error((j_common_ptr)&ctx->decoder);
         while(target_y<h && target_y*ctx->decoder.output_height/h==source_y) {
             for(unsigned int x=0;x<w;x++) {
-                unsigned int sx=x*ctx->decoder.output_width/w;
                 unsigned char *dest=ctx->pixels+(target_y*w+x)*4;
-                memcpy(dest,ctx->row+sx*3,3);dest[3]=255;
+                memcpy(dest,ctx->row+source_x[x],3);dest[3]=255;
             }
             target_y++;
         }
@@ -94,8 +97,8 @@ int md_image_load(const char *path, MdImage *out) {
        fseek(file,0,SEEK_SET)) goto done;
     data=malloc((size_t)length);
     if(!data || fread(data,1,(size_t)length,file)!=(size_t)length) goto done;
-    /* Reject huge headers before invoking the decoder. Native GU dimensions
-     * are powers of two; no hidden stretching, padding or downscaling. */
+    /* Reject huge headers before decoding. PNG requires native GU dimensions;
+     * JPEG is resized to bounded power-of-two dimensions by md_jpeg_decode. */
     unsigned int w=0,h=0;
     if(data[0]==0xff && data[1]==0xd8) {
         pixels=md_jpeg_decode(data,(size_t)length,&w,&h);
@@ -110,6 +113,10 @@ int md_image_load(const char *path, MdImage *out) {
     pixels=memalign(64,w*h*4);
     if(!pixels || !png_image_finish_read(&png,NULL,pixels,0,NULL)) goto done;
     }
+    /* Both decoders have finished using the compressed input. Release it
+     * before allocating a second pixel buffer for the GU layout. */
+    png_image_free(&png);
+    free(data);data=NULL;
     /* GE's 16-byte x 8-row blocks improve main-RAM texture cache locality.
      * Do this only on activation, not in the per-frame rendering path. */
     swizzled=memalign(64,w*h*4);

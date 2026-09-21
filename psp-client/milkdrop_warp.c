@@ -76,7 +76,10 @@ void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset 
         }
         float px = 2.0f*x/MD_GRID - 1, py = 1 - 2.0f*y/MD_GRID;
         float zoom=p->zoom;
-        if(p->zoomexp!=1) {
+        /* 1 raised to any exponent remains 1, including overflow of the
+         * inner power. Avoid two libm calls per vertex without approximating
+         * the non-unit zoom path or changing per-pixel formula execution. */
+        if(zoom!=1 && p->zoomexp!=1) {
             float radius=radii[y*(MD_GRID+1)+x];
             zoom=powf(p->zoom,powf(p->zoomexp,radius*2-1));
         }

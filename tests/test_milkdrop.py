@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MilkDropTests(unittest.TestCase):
+    def test_unit_zoom_skips_powers_without_changing_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'unit-zoom'
+            subprocess.run(['cc','-std=c11','-O3','-Wall','-Wextra','-Werror',
+                '-fno-builtin-powf','-fsanitize=undefined','-I',str(ROOT/'psp-client'),
+                str(ROOT/'tests/warp_unit_zoom.c'),str(ROOT/'psp-client/milkdrop_warp.c'),
+                '-Wl,--wrap=powf','-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_phase_budgets_native_clear_and_global_memory(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'phase'
