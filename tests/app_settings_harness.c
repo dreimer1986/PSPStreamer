@@ -15,6 +15,7 @@ static int server_port=8091,server_https,tv_ui_auto,selected_audio_track,selecte
 static int selected_audio_quality=2,selected_video_fps,playback_volume=24,audio_shuffle;
 static int music_preset_auto,music_preset_seconds=60,music_preset_fade_ms=1500;
 static int debug_enabled;
+static int md_high_resolution=1;
 static int music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle;
 static int playback_clock_valid(int mhz){return mhz==0||(mhz>=66&&mhz<=471);}
 static int clock_choice(int mhz,int direction){(void)mhz;return direction>0?66:471;}
@@ -50,6 +51,10 @@ static void help_open(int topic) {assert(topic==HELP_BROWSE);help_visits++;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
+    AppSettings resolution;
+    settings_capture(&resolution);assert(resolution.value[SET_RESOLUTION]==1);
+    resolution.value[SET_RESOLUTION]=0;settings_apply(&resolution);assert(!md_high_resolution);
+    resolution.value[SET_RESOLUTION]=1;settings_apply(&resolution);assert(md_high_resolution);
     AppSettings state;settings_capture(&state);assert(!strcmp(state.password,"ä:test"));
     assert(state.value[SET_DEBUG]==0);
     state.value[SET_CPU_MUSIC]=222;state.value[SET_CPU_MILKDROP]=443;

@@ -59,6 +59,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_IDLE] = "Medienauswahl-CPU",
     [TXT_SETTINGS_CPU_VIDEO] = "Video-CPU (Plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD-Ruhemodus",
+    [TXT_SETTINGS_RESOLUTION] = "MilkDrop-Auflösung",
     [TXT_SETTINGS_OC] = "StreamerOC-Plugin",
 
     [TXT_OC_TITLE] = "STREAMEROC EINSTELLUNGEN",

@@ -581,6 +581,7 @@ music_preset=active.milk
 preset_auto=0
 preset_seconds=60
 preset_fade_ms=1500
+milkdrop_high_resolution=1
 volume=24
 shuffle=0
 language=en
@@ -651,6 +652,12 @@ MilkDrop automation: `preset_auto=0` disables automatic changes (default);
 `1` selects in order, `2` randomly and `3` randomly weighted by each preset's
 `fRating`. `preset_seconds` accepts 30–600 seconds (default 60).
 `preset_fade_ms` accepts 0–5000 (default 1500; 0 means a hard cut).
+
+`milkdrop_high_resolution=1` selects 512×512 feedback (default); `0` restores
+the faster 512×256 mode, including the original 32-bit LCD feedback. Change it
+in **Settings → MilkDrop resolution** and save with Start. No app restart is
+needed: it applies when music/visualization is next started. The setting affects
+both LCD and TV, windowed and fullscreen, not video playback or spectrum mode.
 In the Circle preset browser, **Square** cycles modes and **Triangle** cycles
 30/60/120-second intervals. Settings are saved when leaving the browser.
 An optional `presets/playlist.txt` limits automation to one exact filename per

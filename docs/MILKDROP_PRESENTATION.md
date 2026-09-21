@@ -2,6 +2,13 @@
 
 ## Current: 512×512 feedback on LCD and TV
 
+Selectable in Settings → MilkDrop resolution, persisted as
+`milkdrop_high_resolution=1` (default). Set `0` for the original 512×256 path,
+including RGBA8888 feedback on LCD. The main-menu setting takes effect on the
+next visualization start, without restarting the app. The renderer also detects
+quality changes at frame boundaries and rebuilds buffers after GPU completion;
+the host harness covers switching quality on the same output in one session.
+
 Both outputs now use 512×512 RGB565 feedback. Scanout, GUI, video playback,
 receiver apertures and fullscreen dimensions remain unchanged. Logical geometry
 remains 256-square and is expanded on both axes, including texture coordinates,

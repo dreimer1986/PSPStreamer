@@ -17,6 +17,8 @@
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
 static int md_height=512;
+int md_high_resolution=1;
+static int md_last_high_resolution;
 #define MD_HEIGHT md_height
 /* TV scanout leaves room for one 512-square RGB565 surface plus scratch.
  * Preserve raw feedback in main RAM via GE copy, never a CPU frame copy. */
@@ -203,6 +205,7 @@ int md_start(void) {
     }
     md_front = 0; md_origin = md_next = 0;
     md_last_tv = md_last_fullscreen = -1;
+    md_last_high_resolution=-1;
     md_signal_reset(&md_signal_state); md_signal_active = 0;
     memset(&md_preset_state,0,sizeof(md_preset_state));
     memset(md_right,0,sizeof(md_right));
@@ -244,17 +247,17 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     /* Once per activation, before starting any GU list. Never decode in the
      * shape loop. Failed assets use the existing preset-error UI. */
     if(preset==3 && !md_images_prepare()) return -1;
-    if (now < md_next && tv == md_last_tv && fullscreen == md_last_fullscreen &&
+    if (now < md_next && tv == md_last_tv && md_high_resolution==md_last_high_resolution && fullscreen == md_last_fullscreen &&
         top == md_last_top) {
         if(md_profile_current>=0)md_profiles[md_profile_current].skipped++;
         return 1;
     }
     md_profile_begin();
-    if (tv != md_last_tv) {
+    if (tv != md_last_tv || md_high_resolution!=md_last_high_resolution) {
         md_fade_clear();
         free(md_raw_image);md_raw_image=NULL;
-        md_height=512;
-        if(tv) {
+        md_height=md_high_resolution?512:256;
+        if(tv && md_high_resolution) {
             md_raw_image=memalign(64,MD_WIDTH*MD_HEIGHT*2);
             if(!md_raw_image)md_height=256; /* Proven two-surface fallback. */
             else {
@@ -263,8 +266,8 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
             }
         }
         md_texture_base = tv ? 768*480*4 : 512*272*4;
-        md_texture_bytes = MD_WIDTH*MD_HEIGHT*2;
-        md_pixel_format = GU_PSM_5650;
+        md_pixel_format = (!tv && !md_high_resolution)?GU_PSM_8888:GU_PSM_5650;
+        md_texture_bytes = MD_WIDTH*MD_HEIGHT*(md_pixel_format==GU_PSM_8888?4:2);
         int surfaces=md_raw_image?1:2;
         if ((unsigned int)(MD_TEXTURE_BASE + surfaces*MD_TEXTURE_BYTES + MD_TEXTURE_BYTES/8) > sceGeEdramGetSize()) return 0;
         memset((void *)(uintptr_t)(0x44000000 + MD_TEXTURE_BASE), 0, surfaces*MD_TEXTURE_BYTES);
@@ -471,6 +474,7 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_profile_commit();
     md_front = target;
     md_last_tv = tv; md_last_fullscreen = fullscreen;
+    md_last_high_resolution=md_high_resolution;
     md_last_top = top;
     finished = sceKernelGetSystemTimeWide();
     cost = finished - now;

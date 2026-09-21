@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "milkdrop_warp.h"
 #include "h264_hw.h"
 #include "language.h"
 #include "display_output.h"
@@ -444,6 +445,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line,"preset_auto=",12)) music_preset_auto=atoi(line+12);
             else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
             else if (!strncmp(line,"preset_fade_ms=",15)) music_preset_fade_ms=atoi(line+15);
+            else if (!strncmp(line,"milkdrop_high_resolution=",25)) md_high_resolution=atoi(line+25)!=0;
             else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
             else if (!strncmp(line, "play_mode=", 10)) download_before_play = !strcmp(line + 10, "download");
             else if (!strncmp(line, "volume=", 7)) playback_volume = atoi(line + 7);
@@ -484,6 +486,7 @@ static int save_playback_settings(void) {
     length += snprintf(data + length, sizeof(data) - length, "play_mode=%s\n",download_before_play?"download":"stream");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
+    length += snprintf(data+length,sizeof(data)-length,"milkdrop_high_resolution=%d\n",md_high_resolution);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);

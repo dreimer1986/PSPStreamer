@@ -683,6 +683,17 @@ int main(int argc,char **argv) {
     expected_width=720;expected_height=480;
     assert(md_frame(1,1,bands,0,test_time,0)==1);
     assert(md_height==512 && md_raw_image);
+    /* Change quality with the same output, without restarting GU/the app. */
+    for(int tv=0;tv<=1;tv++) {
+        expected_width=tv?720:480;expected_height=tv?480:272;
+        for(int high=0;high<=1;high++) {
+            md_high_resolution=high;
+            assert(md_frame(tv,1,bands,0,test_time,0)==1);
+            assert(md_height==(high?512:256));
+            assert(md_pixel_format==(!tv&&!high?GU_PSM_8888:GU_PSM_5650));
+            assert((md_raw_image!=NULL)==(tv&&high));
+        }
+    }
     md_stop();
     md_texture_base=557056; /* Direct list-restart checks use LCD storage. */
     assert(md_profiles[0].frames>0);

@@ -25,6 +25,8 @@ music_preset=active.milk
 preset_auto=0
 preset_seconds=60
 preset_fade_ms=1500
+# 1 = sharper 512x512; 0 = faster original 512x256. No app restart needed.
+milkdrop_high_resolution=1
 volume=24
 shuffle=0
 language=en

@@ -58,6 +58,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_IDLE] = "Browser CPU",
     [TXT_SETTINGS_CPU_VIDEO] = "Video CPU (plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD idle",
+    [TXT_SETTINGS_RESOLUTION] = "MilkDrop resolution",
     [TXT_SETTINGS_OC] = "StreamerOC plugin",
 
     [TXT_OC_TITLE] = "STREAMEROC SETTINGS",
