@@ -92,6 +92,45 @@ Protocol references: [Plex authentication flow](https://forums.plex.tv/t/authent
 and [Plex Media Server API](https://developer.plex.tv/pms/). The adapter is an
 independent implementation; no Tautulli source was copied.
 
+### Jellyfin (server/HA app 0.1.40)
+
+Update both the server and PSP client. Open **Settings → Jellyfin**, enter your
+server's HTTP(S) address, username and password, then **Connect Jellyfin**.
+Connection enables the source; **Save sources** independently enables/disables
+Files, Plex, Jellyfin and Radio. Refresh the PSP library with Square.
+Use a dedicated Jellyfin user with access to the desired libraries and permission
+to download originals. Use HTTPS for credentials outside a trusted local network.
+
+Movies, series/seasons/episodes, music and playlists use the existing PSP browser.
+Lists are paginated; next/previous and audio shuffle use the source collection
+or playlist, including page boundaries. Web metadata includes description,
+watched status and a resume-position button. Actual online playback reports
+start/progress/pause/stop to Jellyfin in its native ticks; downloading a file
+alone does not mark it watched. Reporting runs outside playback/UI threads.
+
+Jellyfin supplies the original file over authenticated, range-capable HTTP(S).
+Only PSPStreamer transcodes it; no shared media mount is necessary. Embedded
+audio, text/PGS subtitle selection and offline conversion reuse the existing
+pipeline. This first integration uses the item's default original version;
+multipart files and external subtitle sidecars are not supported. Posters,
+Jellyfin-device remote control and offline progress synchronization are not
+included. Original-file bandwidth between Jellyfin and PSPStreamer still applies.
+Embedded text subtitles are requested through Jellyfin's subtitle-export API
+where its media-source mapping is available, avoiding a complete video transfer
+just to extract text. Existing PSP limits still apply: at most 1,800 text cues;
+heavily fragmented ASS/karaoke tracks can exceed this and be truncated. This
+limit also predates Jellyfin and needs a separate subtitle-storage redesign.
+
+The password is used only to obtain a user token, not saved. Tokens and device
+identity live in owner-only `jellyfin.json` under `PSP_STREAMER_SETTINGS_DIR`
+(`/data` in Docker/Home Assistant). Disconnect removes the local token; revoke
+the device in Jellyfin as well to invalidate it upstream. Tokens never enter
+PSP configuration, public API replies or FFmpeg arguments. Redirects carrying
+credentials are blocked, and HTTPS certificates are verified.
+
+The ordinary Docker image and Home Assistant app contain identical adapters.
+Reference: [official Jellyfin API client](https://github.com/jellyfin/jellyfin-apiclient-python).
+
 ### Internet radio and music tags (server 0.1.33)
 
 Update the server **and the PSP build**. In the web UI, open **Settings → Internet Radio**,
@@ -967,16 +1006,16 @@ HTTP client errors (such as 401/404) are not retried. This directory-only policy
 does not shorten metadata, subtitle-preparation or playback timeouts. Firmware
 cleanup must finish before another request starts; threads are never forcibly killed.
 
-**Library** groups mounted media roots under **Files**, alongside **Plex** and
+**Library** groups mounted media roots under **Files**, alongside **Plex**, **Jellyfin** and
 **Internet Radio**. Sources can be disabled in **Settings**. The Sources button
 always returns to that overview; returning from a filesystem folder no longer
-loses Plex or Radio. Jellyfin and DLNA are not implemented yet.
+loses other sources. DLNA is not implemented yet.
 
 **Remote control** shows Pause/Resume/Stop even without a selected file, but
 track/quality/seek/download options appear only after selection. Music hides
 video and subtitle controls; live radio also hides seeking and downloads.
 **Downloads** contains conversion previews and the persistent queue.
-**Settings** contains source switches, Plex, radio stations and the password.
+**Settings** contains source switches, Plex/Jellyfin connections, radio stations and the password.
 The language selector switches between English and German and is remembered
 in that browser; the PSP language setting is independent. Web translations
 are in `static/i18n.js`. Docker and Home Assistant ship identical web assets.

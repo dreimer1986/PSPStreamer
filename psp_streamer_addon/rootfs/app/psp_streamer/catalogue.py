@@ -10,11 +10,15 @@ def browse(server, root=0, path=''):
             folders.append({'name': 'Files', 'path': ':files:'})
         if sources['enabled']:
             folders.append({'name': 'Plex', 'path': ':plex:'})
+        if getattr(server, 'jellyfin', None) and server.jellyfin.config['enabled']:
+            folders.append({'name': 'Jellyfin', 'path': ':jellyfin:'})
         if sources['radio']:
             folders.append({'name': 'Internet Radio', 'path': ':radio:'})
         return dict(root=0, path='', parent=None, folders=folders, videos=[])
     if path.startswith(':plex:'):
         return server.plex.browse(root, path)
+    if path.startswith(':jellyfin:'):
+        return server.jellyfin.browse(root, path)
     if path == ':radio:' and sources['radio']:
         return server.radio.browse(root)
     if not sources['files']:
@@ -47,11 +51,11 @@ def browse(server, root=0, path=''):
 
 def folder_media(server, root, path, recursive=False):
     """Bound traversal, deduplicate IDs, and follow Plex pagination explicitly."""
-    if path in ('', '.', ':files:', ':plex:', ':radio:'):
+    if path in ('', '.', ':files:', ':plex:', ':jellyfin:', ':jellyfin:playlists', ':radio:'):
         raise ValueError('Select a media folder, not a source overview')
     # "This folder" includes earlier Plex pages, even if the user opened it
     # from page two. Pagination is not a child folder.
-    if path.startswith(':plex:'):
+    if path.startswith((':plex:', ':jellyfin:')):
         path = path.split('@')[0]
     pending, seen, media = [path], set(), {}
     while pending:
@@ -69,7 +73,7 @@ def folder_media(server, root, path, recursive=False):
                 raise ValueError('At most 128 files per batch; select a smaller folder')
         for folder in listing['folders']:
             child = folder['path']
-            if current.startswith(':plex:') and '@' in child:
+            if current.startswith((':plex:', ':jellyfin:')) and '@' in child:
                 if child.split('@')[0] == current.split('@')[0] and int(child.split('@')[1]) > int(current.split('@')[1] if '@' in current else 0):
                     pending.append(child)
             elif recursive:

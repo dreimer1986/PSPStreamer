@@ -79,6 +79,10 @@ int main(int argc,char **argv) {
     assert(strstr(report_path,"state=paused"));
     plex_report_stop(10);assert(stop_reports==1);
     plex_report_begin("filesystem-id");plex_report_stop(10);assert(stop_reports==1);
+    plex_report_begin("jellyfin.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.0123456789ab");
+    plex_started=1;plex_report_path(report_path,sizeof(report_path),10,0);
+    assert(strstr(report_path,"&plex=jellyfin."));
+    plex_report_begin("filesystem-id");
     plex_paused=1;plex_report_path(report_path,sizeof(report_path),10,0);
     assert(strstr(report_path,"state=paused&media=filesystem-id"));
     plex_paused=0;plex_report_path(report_path,sizeof(report_path),10,0);

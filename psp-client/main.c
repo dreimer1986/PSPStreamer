@@ -1679,7 +1679,8 @@ static void plex_report_path(char *path, size_t capacity, int sequence, int stop
 }
 static void plex_report_begin(const char *id) {
     snprintf(playback_report_id,sizeof(playback_report_id),"%s",id);
-    snprintf(plex_playing_id,sizeof(plex_playing_id),"%s",!strncmp(id,"plex.",5)?id:"");
+    snprintf(plex_playing_id,sizeof(plex_playing_id),"%s",
+        (!strncmp(id,"plex.",5) || !strncmp(id,"jellyfin.",9))?id:"");
     plex_position_ms=stream_start_seconds*1000;plex_paused=plex_started=0;
 }
 static void plex_report_stop(int sequence) {
@@ -2501,7 +2502,7 @@ static void parse_stream_tracks(const char *array_key, StreamTrack *tracks, int 
 }
 
 static int load_media_metadata(const char *media_id) {
-    current_media_plex=!strncmp(media_id,"plex.",5);
+    current_media_plex=!strncmp(media_id,"plex.",5) || !strncmp(media_id,"jellyfin.",9);
     char path[ID_SIZE + 32], duration[24];
     int result;
     snprintf(path, sizeof(path), "/api/metadata/%s", media_id);
@@ -2690,7 +2691,7 @@ static void url_encode(const char *source, char *destination, size_t length) {
 }
 
 static void parent_path(void) {
-    if(!strncmp(current_path,":plex:",6)) {
+    if(!strncmp(current_path,":plex:",6) || !strncmp(current_path,":jellyfin:",10)) {
         snprintf(current_path,sizeof(current_path),"%s",current_parent_path);
         return;
     }
@@ -3281,7 +3282,7 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                if(!strncmp(items[selected].value,"plex.",5) && (playback_reached_end || video_file_direction)) {
+                if((!strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) && (playback_reached_end || video_file_direction)) {
                     char following_id[ID_SIZE];
                     snprintf(following_id,sizeof(following_id),"%s",items[selected].value);
                     int following=remote_next_media(following_id,sizeof(following_id),items[selected].is_audio,video_file_direction);
@@ -3316,7 +3317,7 @@ int main(void) {
                 sceKernelDelayThread(500000);
                 if(load_media_metadata(items[selected].value)<0)break;
             } while (1);
-            if(!strncmp(items[selected].value,"plex.",5)) {
+            if(!strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) {
                 refresh_library();
                 if(selected>=item_count)selected=item_count?item_count-1:0;
             }

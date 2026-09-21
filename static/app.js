@@ -19,8 +19,8 @@ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.data
 function timeLabel(seconds){return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');}
 function selectionCount(){ $('#selectionCount').textContent=t('{n} selected',{n:checked.size});$('#prepareSelected').disabled=!checked.size;}
 function folderLabel(folder){
-  const system=[':files:',':plex:',':radio:',':plex:playlists'].includes(folder.path)||
-    (folder.path.startsWith(':plex:')&&folder.path.includes('@')&&['Previous page','Next page'].includes(folder.name));
+  const system=[':files:',':plex:',':jellyfin:',':radio:',':plex:playlists',':jellyfin:playlists'].includes(folder.path)||
+    ((folder.path.startsWith(':plex:')||folder.path.startsWith(':jellyfin:'))&&folder.path.includes('@')&&['Previous page','Next page'].includes(folder.name));
   return system?t(folder.name):folder.name;
 }
 function clearMedia(){chooseGeneration++;selected=media=null;remotePlaying=false;$('#title').textContent=t('PSP controls');$('#details').replaceChildren();$('#mediaOptions').hidden=true;$('#play').disabled=$('#queue').disabled=true;}
@@ -29,7 +29,7 @@ async function browse(next=''){
   const d=await api(`/api/library?root=${root}&path=${encodeURIComponent(next)}`);if(generation!==browseGeneration)return;
   root=d.root;path=d.path;listing=d;checked.clear();clearMedia();selectionCount();
   $('#crumb').textContent=path||t('Sources');$('#parent').disabled=d.parent===null;
-  $('#batchTools').hidden=['',':files:',':plex:',':radio:'].includes(path);
+  $('#batchTools').hidden=['',':files:',':plex:',':jellyfin:',':jellyfin:playlists',':radio:'].includes(path);
   const box=$('#library');box.replaceChildren();
   for(const f of d.folders){const b=button('▸ '+folderLabel(f),()=>browse(f.path));b.className='item folder';box.append(b);}
   for(const v of d.videos){const row=document.createElement('div');row.className='item';
@@ -60,7 +60,7 @@ async function choose(v){
     $('#seek').max=Math.floor(+d.d||0);$('#seek').value=0;$('#seekLabel').textContent='0:00';
     $('#queue').textContent=t(audio?'Prepare MP3 download':'Convert for download');
     $('#details').textContent=[d.artist,d.album,d.title,d.year,+d.d>0?timeLabel(+d.d):'',d.summary].filter(Boolean).join(' · ')||t(live?'Live radio':audio?'Music stream':'Ready to play');
-    if(d.provider==='plex'){
+    if(d.provider==='plex'||d.provider==='jellyfin'){
       const state=document.createElement('p');state.textContent=t(d.watched?'Watched':'Unwatched');$('#details').append(state);
       if(d.resume>0)$('#details').append(button(t('Resume at {time}',{time:timeLabel(d.resume)}),()=>{$('#seek').value=d.resume;$('#seek').dispatchEvent(new Event('input'));}));
     }
@@ -171,7 +171,10 @@ action('#plexDisconnect',async()=>{if(!confirm(t('Disconnect Plex and restore Fi
 action('#plexLink',async()=>{clearTimeout(plexTimer);const generation=++plexGeneration,d=await post('/api/plex/link');$('#plexAuth').href=d.url;$('#plexAuth').hidden=false;$('#plexStatus').textContent=t('Authorize on Plex, then return here.');
   const poll=async()=>{if(generation!==plexGeneration)return;try{const d=await post('/api/plex/poll');if(d.linked){$('#plexAuth').hidden=true;await plexRefresh();await plexServers();}else plexTimer=setTimeout(poll,2000);}catch(e){fail(e)}};plexTimer=setTimeout(poll,2000);
 });
-$('#sourceForm').onsubmit=async event=>{event.preventDefault();try{const mappings=[...document.querySelectorAll('.mapping')].map(row=>{const fields=row.querySelectorAll('input');return {plex:fields[0].value,local:fields[1].value};});await post('/api/plex/settings',{files:$('#sourceFiles').checked,enabled:$('#sourcePlex').checked,radio:$('#sourceRadio').checked,mappings});await plexRefresh();await browse('');message(t('Saved. Refresh the PSP library with Square.'));}catch(e){fail(e)}};
+async function jellyfinRefresh(){const s=await api('/api/jellyfin');$('#sourceJellyfin').checked=s.enabled;$('#jellyfinUrl').value=s.url;$('#jellyfinUser').value=s.username;$('#jellyfinStatus').textContent=(s.selected?t('Connected as {user}',{user:s.username}):t('Jellyfin not connected.'))+(s.report_error?' — '+s.report_error:'');}
+$('#jellyfinForm').onsubmit=async event=>{event.preventDefault();try{await post('/api/jellyfin/login',{url:$('#jellyfinUrl').value,username:$('#jellyfinUser').value,password:$('#jellyfinPassword').value});$('#jellyfinPassword').value='';await jellyfinRefresh();await browse('');}catch(e){$('#jellyfinPassword').value='';fail(e)}};
+action('#jellyfinDisconnect',async()=>{await post('/api/jellyfin/disconnect');await Promise.all([jellyfinRefresh(),plexRefresh()]);await browse('');});
+$('#sourceForm').onsubmit=async event=>{event.preventDefault();try{const jf=$('#sourceJellyfin').checked;if(!jf&&!$('#sourceFiles').checked&&!$('#sourcePlex').checked&&!$('#sourceRadio').checked)throw Error(t('Keep at least one source enabled'));const mappings=[...document.querySelectorAll('.mapping')].map(row=>{const fields=row.querySelectorAll('input');return {plex:fields[0].value,local:fields[1].value};});if(jf)await post('/api/jellyfin/settings',{enabled:true});await post('/api/plex/settings',{files:$('#sourceFiles').checked,enabled:$('#sourcePlex').checked,radio:$('#sourceRadio').checked,mappings});if(!jf)await post('/api/jellyfin/settings',{enabled:false});await Promise.all([plexRefresh(),jellyfinRefresh()]);await browse('');message(t('Saved. Refresh the PSP library with Square.'));}catch(e){fail(e)}};
 async function radioRefresh(){const stations=await api('/api/radio');$('#radioStations').replaceChildren();for(const s of stations){const row=document.createElement('div');row.className='job';const name=document.createElement('strong');name.textContent=s.name;row.append(name,button(t('Select'),()=>choose({...s,kind:'audio',live:true})),button(t('Edit'),()=>{for(const [id,key] of [['radioId','id'],['radioName','name'],['radioUrl','url']])$('#'+id).value=s[key];}),button(t('Delete'),async()=>{if(!confirm(t('Remove station?')))return;await post('/api/radio',{id:s.id,delete:true});if(selected?.id===s.id)clearMedia();await radioRefresh();}));$('#radioStations').append(row);}}
 $('#radioForm').onsubmit=async event=>{event.preventDefault();try{await post('/api/radio',{id:$('#radioId').value,name:$('#radioName').value.trim(),url:$('#radioUrl').value.trim()});$('#radioForm').reset();await radioRefresh();message(t('Saved. Refresh the PSP library with Square.'));}catch(e){fail(e)}};
 action('#radioClear',()=>$('#radioForm').reset());
@@ -182,6 +185,6 @@ $('#passwordForm').onsubmit=async event=>{event.preventDefault();if($('#newPassw
 async function poll(){try{if(view==='downloads')await updateDownloads();if(selected?.live&&view==='remote'){const item=selected,d=await api('/api/radio/status/'+encodeURIComponent(item.id));if(selected===item)$('#details').textContent=d.radio_active?[d.radio_station,d.radio_title||t('No title supplied')].join(' · '):t('Stopped / paused / reconnecting');}}catch(e){fail(e)}setTimeout(poll,3000);}
 async function init(){const session=await api('/api/session');csrf=session.csrf;$('#logout').hidden=!session.protected;
   preferences=await api('/api/offline/preferences');for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile']])if(preferences[key])$('#'+id).value=preferences[key];
-  await browse('');await Promise.all([plexRefresh(),radioRefresh(),passwordSettings()]);setView('library');poll();
+  await browse('');await Promise.all([plexRefresh(),jellyfinRefresh(),radioRefresh(),passwordSettings()]);setView('library');poll();
 }
 init().catch(fail);

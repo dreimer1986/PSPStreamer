@@ -32,6 +32,7 @@ from .pgs import PgsCue, parse_pgs
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
+from .jellyfin import Jellyfin
 from .plex_media import RemoteSource
 from .web_session import WebSessions
 from .stream_pause import StreamPauses, write_stream
@@ -128,12 +129,18 @@ class Library:
     def __init__(self, roots: list[Path]):
         self.roots = roots
         self.plex = None
+        self.jellyfin = None
 
     def encode(self, item: MediaItem) -> str:
         raw = json.dumps({"r": item.root, "p": item.relative}, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
     def decode(self, token: str) -> tuple[MediaItem, Path | RemoteSource]:
+        if token.startswith('jellyfin.') and self.jellyfin:
+            source = self.jellyfin.source(token)
+            if source.suffix.lower() not in MEDIA_EXTENSIONS:
+                raise ValueError('Unsupported Jellyfin original format')
+            return MediaItem(-1, source.name), source
         if token.startswith('plex.') and self.plex:
             source = self.plex.source(token)
             if source.suffix.lower() not in MEDIA_EXTENSIONS:
@@ -168,6 +175,8 @@ class Library:
         """
         if token.startswith('plex.') and self.plex:
             return self.plex.next_media(token, shuffle, previous)
+        if token.startswith('jellyfin.') and self.jellyfin:
+            return self.jellyfin.next_media(token, shuffle, previous)
         item, source = self.decode(token)
         root = self.roots[item.root]
         directory = (root / item.relative).parent.resolve()
@@ -428,6 +437,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     query.get('recursive', ['0'])[0] == '1')})
             if parsed.path == '/api/plex':
                 return self.send_json(self.server.plex.public())
+            if parsed.path == '/api/jellyfin':
+                return self.send_json(self.server.jellyfin.public())
             if parsed.path == '/api/plex/servers':
                 return self.send_json(self.server.plex.servers())
             if parsed.path.startswith('/api/plex/details/'):
@@ -466,9 +477,17 @@ class AppHandler(BaseHTTPRequestHandler):
                 if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
                     self.server.stream_pauses.report(self.client_address[0], media[0],
                         query['state'][0] == 'paused')
+                    provider = (self.server.jellyfin if media[0].startswith('jellyfin.') else
+                                self.server.plex if media[0].startswith('plex.') else None)
+                    if provider and provider.media_bridge:
+                        try:
+                            provider.media_bridge.report_pause(provider.split(media[0])[0], query['state'][0]=='paused')
+                        except ValueError:
+                            pass
                 if query.get('plex'):
                     try:
-                        self.server.plex.report(query['plex'][0], query.get('state', ['playing'])[0],
+                        provider = self.server.jellyfin if query['plex'][0].startswith('jellyfin.') else self.server.plex
+                        provider.report(query['plex'][0], query.get('state', ['playing'])[0],
                             query.get('position', ['0'])[0], query.get('duration', ['0'])[0])
                     except ValueError:
                         pass  # Reporting must never block or break the remote control.
@@ -574,6 +593,26 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.web_sessions.revoke(self.headers.get('Cookie'))
                 self.session_cookie = self.cookie_value('', 0)
                 return self.send_json({'ok': True})
+            if parsed.path.startswith('/api/jellyfin/'):
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 8192:
+                    self.close_connection = True
+                    raise ValueError('Invalid Jellyfin settings length')
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict):
+                    raise ValueError('Invalid Jellyfin settings')
+                action = parsed.path.rsplit('/', 1)[-1]
+                if action == 'login':
+                    return self.send_json(self.server.jellyfin.login(data))
+                if action == 'settings':
+                    return self.send_json(self.server.jellyfin.configure(data))
+                if action == 'disconnect':
+                    result = self.server.jellyfin.disconnect()
+                    if not any(self.server.plex.config[k] for k in ('enabled', 'files', 'radio')):
+                        self.server.plex.config['files'] = True
+                        self.server.plex.save()
+                    return self.send_json(result)
+                return self.send_error_json(HTTPStatus.NOT_FOUND, 'Not found')
             if parsed.path.startswith('/api/plex/'):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 2 <= length <= 8192:
@@ -775,7 +814,7 @@ class AppHandler(BaseHTTPRequestHandler):
             station = self.server.radio.get(token)
             return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
         cached = self.server.metadata_cache.get(token)
-        if cached is not None and not token.startswith('plex.'):
+        if cached is not None and not token.startswith(('plex.', 'jellyfin.')):
             return self.send_json(cached)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
@@ -813,6 +852,8 @@ class AppHandler(BaseHTTPRequestHandler):
         # active, so retain this tiny response for subsequent openings.
         if token.startswith('plex.'):
             payload.update(self.server.plex.details(token))
+        elif token.startswith('jellyfin.'):
+            payload.update(self.server.jellyfin.details(token))
         else:
             self.server.metadata_cache[token] = payload
         self.send_json(payload)
@@ -832,6 +873,13 @@ class AppHandler(BaseHTTPRequestHandler):
             cached = self.server.subtitle_cache.get(cache_key)
         if cached is not None:
             return self.send_json(cached)
+        if token.startswith('jellyfin.'):
+            text = self.server.jellyfin.text_subtitle(token, track)
+            if text is not None:
+                payload = {'t': 'text', 'c': parse_srt_cues(text, fps)}
+                with self.server.subtitle_cache_lock:
+                    self.server.subtitle_cache[cache_key] = payload
+                return self.send_json(payload)
         _, source = self.server.library.decode(token)
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", f"s:{track}",
@@ -1057,6 +1105,11 @@ class AppServer(ThreadingHTTPServer):
         self.plex = Plex(os.environ.get('PSP_STREAMER_SETTINGS_DIR') or
                          str(Path.home() / '.cache/psp-streamer'), library.roots)
         library.plex = self.plex
+        self.jellyfin = Jellyfin(os.environ.get('PSP_STREAMER_SETTINGS_DIR') or
+                                str(Path.home() / '.cache/psp-streamer'), library.roots)
+        library.jellyfin = self.jellyfin
+        self.plex.additional_source = lambda: self.jellyfin.config['enabled']
+        self.jellyfin.additional_source = lambda: any(self.plex.config[k] for k in ('enabled','files','radio'))
         self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
             os.environ.get('PSP_STREAMER_SETTINGS_DIR') or str(Path.home() / '.cache/psp-streamer'))
         self.metadata_cache: dict[str, object] = {}
@@ -1086,6 +1139,8 @@ class AppServer(ThreadingHTTPServer):
             self.offline.close()
         if hasattr(self, 'plex'):
             self.plex.close()
+        if hasattr(self, 'jellyfin'):
+            self.jellyfin.close()
         super().server_close()
 
     def get_request(self):

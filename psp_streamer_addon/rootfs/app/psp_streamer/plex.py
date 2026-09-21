@@ -154,7 +154,7 @@ class Plex:
                     raise ValueError('Source switches must be booleans')
             if data['enabled'] and not self.config['token']:
                 raise ValueError('Link and select a Plex server first')
-            if not any(data[k] for k in ('enabled', 'files', 'radio')):
+            if not any(data[k] for k in ('enabled', 'files', 'radio')) and not getattr(self, 'additional_source', lambda: False)():
                 raise ValueError('Keep at least one source enabled')
             self.config.update({k: data[k] for k in ('enabled', 'files', 'radio')}, mappings=checked)
             self.cache.clear()
@@ -239,7 +239,7 @@ class Plex:
         with self.lock:
             if self.media_bridge is None:
                 self.media_bridge = PlexMediaBridge(self)
-            return self.media_bridge.source(part, name, row.get('updatedAt', 0))
+            return self.media_bridge.source(part, name, row.get('updatedAt', 0), str(row.get('ratingKey', '')))
 
     def listing(self, kind, key, offset=0):
         endpoint = {'s': f'/library/sections/{key}/all', 'm': f'/library/metadata/{key}/children',

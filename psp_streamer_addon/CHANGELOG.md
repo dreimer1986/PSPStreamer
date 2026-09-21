@@ -1,3 +1,12 @@
+# 0.1.40
+
+- Jellyfin connection and independent source selection in web Settings; user tokens stay on the server.
+- Browse libraries, episodes, music and playlists with pagination, metadata, resume information and automatic successors.
+- Read authenticated originals directly; reuse PSP transcoding, embedded subtitles and offline downloads without a shared mount.
+- Report actual PSP playback start/progress/pause/stop asynchronously to Jellyfin.
+- Propagate confirmed pauses through the original-file bridge as well as the PSP output stream.
+- Requires the matching PSP update. Docker and Home Assistant ship identical source code.
+
 # 0.1.39
 
 - Keep file-based MP3/FLV streams alive during long pauses confirmed by the matching PSP's remote-control heartbeat, including Plex playback.

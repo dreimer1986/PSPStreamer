@@ -4,6 +4,15 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.40** adds Jellyfin alongside Files, Plex and Radio. In the web UI,
+open **Settings → Jellyfin**, enter the server address and user credentials,
+then connect. Source switches remain independent; refresh the PSP library
+after installing the matching client build. The token is stored privately in
+`/data/jellyfin.json`; the password is not saved. No extra HA options, shared
+mounts or exposed ports are required. Originals are transcoded by PSPStreamer,
+with embedded subtitles, offline conversion and online playback reporting.
+See the main README for limitations and recommended dedicated-user permissions.
+
 Version **0.1.33** adds Internet radio management in the web UI, a radio folder
 on the PSP, ICY sender/current-title display and ID3 music tags. Install the
 matching PSP build. Station URLs persist in `/data/radio.json`; no additional

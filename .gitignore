@@ -17,6 +17,7 @@ psp-client/third_party/
 # Local configuration
 .env
 plex.json
+jellyfin.json
 certificates/
 *.pem
 *.key

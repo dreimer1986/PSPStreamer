@@ -1,5 +1,9 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Connect with your Jellyfin server address and user account. Originals are transcoded only by PSPStreamer.':'Mit Jellyfin-Serveradresse und Benutzerkonto verbinden. Nur PSPStreamer wandelt die Originaldateien um.',
+  'Server address':'Serveradresse','Username':'Benutzername','Connect Jellyfin':'Jellyfin verbinden',
+  'Disconnect Jellyfin':'Jellyfin trennen','Connected as {user}':'Verbunden als {user}',
+  'Jellyfin not connected.':'Jellyfin nicht verbunden.','Keep at least one source enabled':'Mindestens eine Quelle aktiviert lassen',
   'Language':'Sprache','Sign out':'Abmelden','Sign in':'Anmelden','Password':'Passwort',
   'Sign in with your server password.':'Mit dem Serverpasswort anmelden.',
   'Incorrect password':'Falsches Passwort','Please sign in':'Bitte anmelden',

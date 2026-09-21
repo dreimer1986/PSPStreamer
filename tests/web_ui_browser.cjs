@@ -16,6 +16,7 @@ const root=path.resolve(__dirname,'../static');
       {id:'video3',name:'Episode 3.mkv',kind:'video'},
       {id:'music',name:'Musik Grüße.flac',kind:'audio'}];
     let preferences={},recursive=false,delayMetadata=false;
+    let jellyfin={enabled:false,selected:false,url:'',username:''};
     await page.route('http://psp.test/**',async route=>{
       const request=route.request(),url=new URL(request.url());
       if(url.pathname.startsWith('/api/')){
@@ -26,6 +27,8 @@ const root=path.resolve(__dirname,'../static');
           case '/api/offline/preferences':if(body)preferences=body;data=preferences;break;
           case '/api/offline/jobs':data=[];break;
           case '/api/plex':data={files:true,enabled:true,radio:true,mappings:[],linked:false};break;
+          case '/api/jellyfin':data=jellyfin;break;
+          case '/api/jellyfin/login':assert.equal(body.password,'test-password');jellyfin={enabled:true,selected:true,url:body.url,username:body.username};data=jellyfin;break;
           case '/api/radio':data=[];break;
           case '/api/settings':data={password_editable:true,password_set:true};break;
           case '/api/library':{
@@ -94,6 +97,11 @@ const root=path.resolve(__dirname,'../static');
     await page.getByRole('button',{name:'Bibliothek',exact:true}).waitFor();
     await page.setViewportSize({width:390,height:844});
     await click('[data-view=settings]');
+    await page.fill('#jellyfinUrl','https://jellyfin.example.org');
+    await page.fill('#jellyfinUser','tester');await page.fill('#jellyfinPassword','test-password');
+    await page.locator('#jellyfinForm button').click();
+    await page.waitForFunction(()=>document.querySelector('#sourceJellyfin').checked);
+    assert.equal(await page.inputValue('#jellyfinPassword'),'');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:'/tmp/psp-web-mobile.png',fullPage:true});
     assert.deepEqual(errors,[]);

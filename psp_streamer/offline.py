@@ -221,9 +221,13 @@ class OfflineQueue:
             from .server import TEXT_SUBTITLE_CODECS, BITMAP_SUBTITLE_CODECS
             codec = streams[track]['codec_name']
             if codec in TEXT_SUBTITLE_CODECS:
-                data = self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map',
-                                      f'0:s:{track}', '-f', 'srt', 'pipe:1'], job)
-                payload['c'] = self.parse_cues(data.decode('utf-8'), 1000)
+                text = (self.library.jellyfin.text_subtitle(job['id'], track)
+                        if job['id'].startswith('jellyfin.') and self.library.jellyfin else None)
+                if text is None:
+                    data = self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map',
+                                          f'0:s:{track}', '-f', 'srt', 'pipe:1'], job)
+                    text = data.decode('utf-8')
+                payload['c'] = self.parse_cues(text, 1000)
             elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
                 from .pgs import parse_pgs
                 sup = folder / 'extract.sup'
