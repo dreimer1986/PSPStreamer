@@ -26,7 +26,10 @@ enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT
        TAN, ASIN, ACOS, BNOT, BAND, BOR, SIGMOID, IF, JZ, JUMP,
        DROP, KEEP, MOD, BITAND, BITOR, NEQ, LE, GE, BOOL, RAND, INVSQRT,
        REGL, REGS, MEML, MEMS, GMEML, GMEMS, DUP, LOOP, LOOPEND, WHILE, WHILEEND,
-       EXEC2, EXEC3, MEMCPY, MEMSET, FREEMBUF, ASSIGN };
+       EXEC2, EXEC3, MEMCPY, MEMSET, FREEMBUF, ASSIGN,
+       FAST_PUSH_ADD,FAST_PUSH_SUB,FAST_PUSH_MUL,FAST_LOAD_ADD,FAST_LOAD_SUB,FAST_LOAD_MUL };
+#include "preset_math_cache.h"
+static void prepare_program(PmProgram *program);
 static int binary(int op) {
     return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL) ||
            op==BAND || op==BOR || op==SIGMOID || (op>=MOD && op<=GE);
@@ -46,6 +49,7 @@ void pm_program_free(PmProgram *program) {
     free(program->code);memset(program,0,sizeof(*program));
 }
 void pm_program_compact(PmProgram *program) {
+    prepare_program(program);
     if(!program->count){int lines=program->lines;pm_program_free(program);program->lines=lines;return;}
     if(program->capacity==program->count)return;
     PmOp *code=realloc(program->code,(size_t)program->count*sizeof(*code));
@@ -54,6 +58,27 @@ void pm_program_compact(PmProgram *program) {
 static int program_valid(const PmProgram *p) {
     return p->count>=0 && p->count<=p->capacity && p->capacity<=PM_MAX_OPS &&
         p->capacity>=0 && (!p->capacity || p->code);
+}
+/* Import-time preparation, no sidecar allocation and no relocation: retain
+ * the second instruction so branches, source lines and fallback stay exact. */
+static void prepare_program(PmProgram *p) {
+    if(!program_valid(p))return;
+    for(int i=0;i<p->count;i++) {
+        int op=p->code[i].op;
+        if(op>=FAST_PUSH_ADD && op<=FAST_LOAD_MUL)
+            p->code[i].op=op<FAST_LOAD_ADD?PUSH:LOAD;
+    }
+#ifndef PM_REFERENCE_EXECUTION
+    /* Keep native initialization-loop recognition and loop-heavy code intact. */
+    for(int i=0;i<p->count;i++)if(p->code[i].op==LOOP || p->code[i].op==WHILE)return;
+    for(int i=0;i+1<p->count;i++) {
+        int op=p->code[i].op,next=p->code[i+1].op;
+        if((op==PUSH || op==LOAD) && next>=ADD && next<=MUL) {
+            p->code[i].op=(op==PUSH?FAST_PUSH_ADD:FAST_LOAD_ADD)+next-ADD;
+            i++;
+        }
+    }
+#endif
 }
 static int function(const char *name) {
     static const struct {const char *name; int op;} list[]={
@@ -280,6 +305,7 @@ void pm_begin_frame(void) {frame_fuel=PM_TOTAL_FUEL;}
 void pm_reset_globals(void) {
     resource_limits=0;
     pm_trig_reset();
+    pm_math_cache_reset();
     memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
     memset(global_page_map,0,sizeof(global_page_map));global_page_count=0;
     memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
@@ -382,6 +408,28 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
         if(frame_fuel>0) frame_fuel--;
         float a, b = 0, result = 0;
         *error_line = op->line;
+        PmOp scalar;
+        if(op->op>=FAST_PUSH_ADD && op->op<=FAST_LOAD_MUL) {
+            int load=op->op>=FAST_LOAD_ADD;
+            int arithmetic=ADD+op->op-(load?FAST_LOAD_ADD:FAST_PUSH_ADD);
+            if(i+1>=program->count || program->code[i+1].op!=arithmetic)return 0;
+            if(used>=PM_STACK || (load && (op->arg<0 || op->arg>=PM_VALUES)))return 0;
+            result=load?local[op->arg]:op->value;
+            if(!load && !isfinite(result))return 0;
+            if(used && fuel>0 && frame_fuel!=0
+#ifdef __PSP__
+               && !(allowance>PM_FUEL && !(fuel&4095))
+#endif
+            ) {
+                fuel--;if(frame_fuel>0)frame_fuel--;
+                *error_line=program->code[++i].line;
+                a=stack[used-1];
+                stack[used-1]=arithmetic==ADD?a+result:arithmetic==SUB?a-result:a*result;
+                continue;
+            }
+            /* Budget/yield/underflow edges follow the original instructions. */
+            scalar=*op;scalar.op=load?LOAD:PUSH;op=&scalar;
+        }
         if (op->op == PUSH || op->op == LOAD) {
             if (used >= PM_STACK) return 0;
             if (op->op == LOAD && (op->arg < 0 || op->arg >= PM_VALUES)) return 0;
@@ -504,6 +552,10 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             if (!used) return 0;
             b = a; a = stack[--used];
         }
+        int memo=-1;
+        if(pm_math_cache_lookup(op->op,a,b,&result,&memo)) {
+            stack[used++]=result;continue;
+        }
         switch (op->op) {
             case DIV:
                 /* Do not issue a hardware divide-by-zero on the PSP. Keep
@@ -562,6 +614,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             }
             default: return 0;
         }
+        pm_math_cache_store(memo,result);
         stack[used++] = result;
     }
     if (used || depth) return 0;
