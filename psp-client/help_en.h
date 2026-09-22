@@ -73,8 +73,8 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
     },
     [HELP_PAGE_VISUALS]={
         .title="Music: visualizations",
-        .step1_title="SQUARE: Spectrum / MilkDrop",
-        .step1_text="Both react to the playing music.",
+        .step1_title="SQUARE: change visualization",
+        .step1_text="Spectrum / MilkDrop / Tunnel test.",
         .step2_title="TRIANGLE: fullscreen on / off",
         .step2_text="The old X + TRIANGLE works too.",
         .step3_title="O: open MilkDrop preset list",

@@ -9,6 +9,21 @@
 #include "milkdrop_warp.h"
 #include "milkdrop_decor.h"
 #include "milkdrop_preset.h"
+#include "tunnel_visual.h"
+typedef struct {float x,y,z,w;} ScePspFVector4;
+typedef struct {ScePspFVector4 x,y,z,w;} ScePspFMatrix4;
+enum {GU_TRANSFORM_3D=0,GU_PROJECTION=200,GU_VIEW,GU_MODEL,GU_CLIP_PLANES,GU_FOG,GU_COLOR_BUFFER_BIT};
+static int tunnel_test,tunnel_draws,matrix_calls;
+static void sceGuSetMatrix(int kind,const ScePspFMatrix4 *m) {
+    assert(kind==GU_PROJECTION || kind==GU_VIEW || kind==GU_MODEL);
+    if(kind==GU_PROJECTION)assert(m->x.x>0 && m->y.y>0 && m->z.w==-1 && m->w.z<0);
+    else assert(m->x.x==1 && m->y.y==1 && m->z.z==1 && m->w.w==1);
+    matrix_calls++;
+}
+static void sceGuClearColor(unsigned int color){assert(color==0xff000000);}
+static void sceGuClear(int bits){assert(bits==GU_COLOR_BUFFER_BIT);}
+static void sceGuDepthRange(int near,int far){assert(near==65535 && far==0);}
+static void sceGuDepthMask(int disabled){assert(disabled==1);}
 enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D=8,
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
@@ -77,7 +92,7 @@ static void sceGuDrawBufferList(int format,void *offset,int width) {
     target_offset=(int)(uintptr_t)offset; stride=width;
     assert(target_offset==0 || target_offset==1474560 || target_offset==1736704 ||
            target_offset==557056 || target_offset==1081344);
-    if (!target_offset) assert(format==GU_PSM_8888 && target_changes==3);
+    if (!target_offset) assert(format==GU_PSM_8888 && target_changes==(tunnel_test?2:3));
 }
 static void sceGuOffset(int x,int y) { (void)x; (void)y; }
 static void sceGuViewport(int x,int y,int w,int h) {
@@ -109,6 +124,10 @@ static void sceGuTexMode(int p,int a,int b,int c) {
 }
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
     uintptr_t offset=(uintptr_t)texture-0x04000000;
+    if(tunnel_test && w==64 && h==64) {
+        assert(!level && s==64 && !((uintptr_t)texture&63) && texture_format==GU_PSM_8888);
+        return;
+    }
     if(w==128 && h==128 && offset>2097152) {
         assert(!level && s==128 && !((uintptr_t)texture&63));
         assert(texture_swizzled && texture_format==GU_PSM_8888);
@@ -166,6 +185,20 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     if(forbid_phase_border) assert(type!=GU_LINE_STRIP || count!=33);
     assert(!restore_target);
     const MdVertex *v=data;
+    if(tunnel_test) {
+        assert(!indices && (const unsigned char *)data>=list_base &&
+               (const unsigned char *)(v+count)<=list_base+list_used);
+        if(format==7) {
+            assert(type==GU_TRIANGLES && count==TUNNEL_VERTICES && target_offset);
+            for(int i=0;i<count;i++)assert(isfinite(v[i].x) && isfinite(v[i].y) && isfinite(v[i].z));
+            tunnel_draws++;return;
+        }
+        assert(format==15 && type==GU_SPRITES && !target_offset);
+        assert(v[0].x==expected_left+covered_width && v[0].y==expected_top);
+        assert(v[1].y==expected_top+expected_height);
+        covered_width+=(int)(v[1].x-v[0].x);assert(covered_width<=expected_width);
+        return;
+    }
     MdVertex unpacked[4*MD_CUSTOM_POINTS];
     assert((format==15 || format==14) && !indices);
     if(format==15) {
@@ -299,7 +332,7 @@ static void *test_memalign(size_t alignment,size_t size) {
 /* GU_ADAPTER */
 #undef memalign
 int main(int argc,char **argv) {
-    assert(argc==40 || argc==41);
+    assert(argc==40 || argc==41 || (argc==2 && !strcmp(argv[1],"--tunnel")));
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -309,6 +342,25 @@ int main(int argc,char **argv) {
     assert(mmap(vram,edram_size,PROT_READ|PROT_WRITE,
                 MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0)==vram);
     memset(vram,0xa5,edram_size);
+    if(argc==2) {
+        tunnel_test=1;memset(bands,75,sizeof(bands));
+        for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
+            md_high_resolution=resolution;assert(md_start());
+            expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
+            expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
+            expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
+            int previous=tunnel_draws;
+            for(int f=0;f<4;f++) {
+                test_time+=100000;assert(md_frame(tv,full,bands,75,test_time,4)==1);
+                assert(covered_width==expected_width);
+                int before=starts;assert(md_frame(tv,full,bands,75,test_time,4)==1 && starts==before);
+            }
+            assert(tunnel_draws==previous+4);md_stop();assert(!gu_live && !md_list);
+        }
+        assert(tunnel_draws==32 && matrix_calls==96);
+        printf("Tunnel: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);
+        return 0;
+    }
     md_warp_mesh(mesh,&identity,0);
     for(int i=0;i<MD_MESH_VERTICES;i++) {
         assert(fabsf(mesh[i].u-mesh[i].x-.5f)<.0001f);

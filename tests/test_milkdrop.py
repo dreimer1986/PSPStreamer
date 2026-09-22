@@ -94,7 +94,7 @@ class MilkDropTests(unittest.TestCase):
                             '-I',str(ROOT/'psp-client'),str(source),'-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True)
 
-    def test_square_only_toggles_spectrum_and_file_preset(self):
+    def test_square_cycles_spectrum_file_preset_and_tunnel(self):
         source=(ROOT / "psp-client/main.c").read_text()
         music=source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         block=music[music.index("if ((pad.Buttons & PSP_CTRL_SQUARE)"):]
@@ -127,6 +127,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/milkdrop_wave_extra.c"),
                             str(ROOT / "psp-client/milkdrop_decor.c"),
                             str(ROOT / "psp-client/milkdrop_texture.c"),
+                            str(ROOT / "psp-client/tunnel_visual.c"),
                             "-lpng", "-ljpeg", "-lz", "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary),str(ROOT / "psp-client/presets/branch-beat-demo.milk"),
                             str(ROOT / "psp-client/presets/init-orbit-demo.milk"),
@@ -170,7 +171,7 @@ class MilkDropTests(unittest.TestCase):
         source = (ROOT / "psp-client/main.c").read_text()
         music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         self.assertIn("fullscreen = music_saved_fullscreen", music)
-        self.assertIn("visual_preset = music_saved_visual_preset == 4 ? 4 : 0", music)
+        self.assertIn("visual_preset = music_saved_visual_preset == 5 ? 5 : music_saved_visual_preset == 4 ? 4 : 0", music)
         self.assertIn("music_saved_fullscreen = fullscreen;", music)
         self.assertIn("music_saved_visual_preset = visual_preset;", music)
         self.assertIn("visual_preset != 4 || preset_result == MD_FILE_OK", music)

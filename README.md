@@ -874,10 +874,27 @@ Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compac
 
 Component TV playback uses native 720×480 output. By default, the browser and options stay on the PSP LCD and video switches to the TV. With `tv_ui=auto`, TV menus and video share the same output mode: Stop/end returns to the TV menu without an LCD mode reset. The existing Select+L+R TV check is available from either browser and returns to its originating output. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands. This GUI update does not require a server/add-on update.
 
-During music, **Square** toggles between **spectrum analysis and MilkDrop**.
+During music, **Square** cycles **spectrum analysis → MilkDrop → Tunnel test → spectrum**.
 MilkDrop uses the selected preset file (initially `presets/active.milk`). Copy
 the supplied `psp-client/presets` folder beside EBOOT. The three early built-in
 test effects are no longer part of the user-facing selection.
+
+**Tunnel test** is an experimental, original fixed-function 3D visualization:
+curved rock-textured walls, distance shading and bass/level response. It is a
+performance prototype inspired by Monkey, **not a reconstruction of Monkey's
+cave-generation algorithm**. No original DLL code or textures are included.
+The small texture is generated internally; no new files or server update are
+needed. Triangle switches window/fullscreen on LCD and native TV; Square leaves
+the tunnel, Circle selects a MilkDrop preset, and Start stops normally. The view
+is remembered across music tracks within the app session. The existing MilkDrop
+clock/resolution preferences apply to this shared visualizer renderer as well.
+
+The prototype has 28 rings × 24 sides (1,296 triangles), no depth buffer or
+programmable shaders, and retains the music renderer's conservative scheduling
+(at most about 20 updates/s, fewer when expensive). It does not alter audio
+threads, decoding or clocks. Please test motion, audio, input response and
+switching back to MilkDrop/spectrum and then to video. Only if real PSP performance
+is satisfactory will further analysis of Monkey's actual cave algorithm follow.
 Legacy `fShader` hue shading now uses fixed-function corner colors; compare
 `legacy-shading-demo.milk` and `legacy-shading-off-demo.milk`. Both also exercise
 echo zoom below 1. This is not HLSL shader support.

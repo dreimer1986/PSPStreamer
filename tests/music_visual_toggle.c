@@ -18,18 +18,20 @@ static void input(unsigned int buttons) {
 }
 static void press(void) {input(0);input(PSP_CTRL_SQUARE);}
 int main(void) {
-    for(int i=0;i<8;i++) {
+    for(int i=0;i<9;i++) {
         press();
-        assert(visual_preset==(i%2?0:4));
+        int expected=i%3==0?4:i%3==1?5:0;
+        assert(visual_preset==expected);
         assert(music_saved_visual_preset==visual_preset);
-        assert(music_visual_active==!(i%2));
+        assert(music_visual_active==(expected!=0));
         input(PSP_CTRL_SQUARE); /* Holding does not toggle again. */
-        assert(visual_preset==(i%2?0:4));
+        assert(visual_preset==expected);
     }
-    assert(starts==4 && stops==4 && begins==4);
+    assert(starts==6 && stops==9 && begins==3);
     assert(next_preset_tick==60001000 && preset_notice_tick==~0ULL);
     preset_result=1;press();
-    assert(visual_preset==4 && !music_visual_active && starts==4);
+    assert(visual_preset==4 && !music_visual_active && starts==6);
+    press();assert(visual_preset==5 && music_visual_active); /* Broken preset cannot block tunnel. */
     press();assert(!visual_preset);
     preset_result=0;allow_start=0;press();
     assert(!visual_preset && !music_visual_active && !music_saved_visual_preset);

@@ -14,6 +14,7 @@
 #include <math.h>
 #include "milkdrop_profile.h"
 #include "preset_fpu.h"
+#include "tunnel_visual.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -148,6 +149,7 @@ static void md_target(int offset, int stride, int width, int height) {
     sceGuScissor(0, 0, width, height);
 }
 #include "milkdrop_decor_gu.h"
+#include "tunnel_gu.h"
 /* Copy before list reuse; renderer-owned scratch avoids stack growth. */
 static MdVertex md_clip_wave_source[2*MD_CUSTOM_POINTS-1];
 static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int thick) {
@@ -189,6 +191,7 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
 }
 int md_start(void) {
     if (md_list) return 1;
+    memset(&tunnel_state,0,sizeof(tunnel_state));
     if (sceGeEdramGetSize() < 2*1024*1024) return 0;
     md_list = memalign(64, MD_LIST_BYTES);
     if (!md_list) return 0;
@@ -251,7 +254,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     MdDecor frame_decor;
     unsigned int custom_color = 0;
     unsigned long long finished, cost;
-    if (!md_list || preset < 0 || preset > 3) return 0;
+    if (!md_list || preset < 0 || preset > 4) return 0;
     /* Once per activation, before starting any GU list. Never decode in the
      * shape loop. Failed assets use the existing preset-error UI. */
     if(preset==3 && !md_images_prepare()) return -1;
@@ -283,6 +286,14 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     }
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
+    if(preset==4) {
+        md_profile_mark(0);
+        for(int i=1;i<5;i++)md_profile_sample[i]=0;
+        if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
+        md_trace("Tunnel geometry");
+        tunnel_draw(bands,level,now,width,height);
+        goto present_scene;
+    }
     /* Render-thread scratch: extended EEL memories must not consume the PSP
      * stack twice before entering the frame/point evaluators. */
     static MdPresetState next_state;
@@ -470,9 +481,11 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
             sceGuDisable(GU_BLEND);
         }
     }
+present_scene:
     sceGuTexSync();
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
     sceGuEnable(GU_TEXTURE_2D);
+    sceGuTexMode(md_pixel_format,0,0,0);
     sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_texture(md_front));
     sceGuTexWrap(GU_CLAMP, GU_CLAMP);
     sceGuTexFlush();
