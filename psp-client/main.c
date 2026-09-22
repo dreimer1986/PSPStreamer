@@ -656,6 +656,7 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
 }
 
 #include "remote_http.h"
+#include "menu_artwork.h"
 #include "media_request.h"
 
 static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
@@ -2087,6 +2088,7 @@ static int play_audio_once(const char *media_id, const char *title) {
 /* Every retry joins the old workers and releases the codec first. The waiting
  * screen owns no audio socket, PCM queue or GU list. Never autoplay a station. */
 static int play_audio(const char *media_id,const char *title) {
+    menu_art_select(""); /* No decorative image RAM or requests during playback. */
     int result;
     /* Keep the current profile across track changes/reconnects. The next
      * active renderer selects its profile; only a real browser return idles. */
@@ -2136,6 +2138,7 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    menu_art_select("");
     plex_report_begin(media_id);
     video_controls.visible=video_controls.saved=0;
     video_controls.selected=3;
@@ -2890,6 +2893,7 @@ static int stop_browser_requests(void) {
 static void refresh_library(void) {
     char encoded_path[ID_SIZE * 3 + 1];
     if(library_pending)return;
+    menu_art_select("");
     if (!network_ready || !http_ready) {
         strcpy(status, tr(TXT_WIFI_NOT_READY));
         return;
@@ -2932,6 +2936,11 @@ static void gui_library_shell(const char *section) {
         for (y = 0; y < VIDEO_HEIGHT; y++)
             memcpy(vram + y * VIDEO_STRIDE, menu_skin + y * VIDEO_WIDTH * 4, VIDEO_WIDTH * 4);
         gui_skin_receiver(vram);
+        if(!strcmp(section,tr(TXT_MEDIA_LIBRARY)) || !strcmp(section,tr(TXT_PREPARING_MEDIA)) ||
+           !strcmp(section,tr(TXT_FILE_DETAILS)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
+            menu_art_draw(vram,VIDEO_STRIDE,36,37,312,128,0);
+        if(!strcmp(section,tr(TXT_PREPARING_MEDIA)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
+            menu_art_draw(vram,VIDEO_STRIDE,376,110,72,53,1);
         gui_text(27, 11, 0x00FFFFFF, "PSP STREAMER // %s", section);
         return;
     }
@@ -2971,6 +2980,7 @@ static void gui_library_shell(const char *section) {
 static void show(int selected) {
     int i, first, last;
     if (selected < 0 || selected >= item_count) selected = 0;
+    menu_art_select(item_count?items[selected].value:"");
     if (tv_ui_active) {
         tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
         if(tls_notice())tv_text(34,302,48,1,TV_AMBER,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
@@ -2996,17 +3006,24 @@ static void show(int selected) {
     gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_SELECTED));
     if (item_count) gui_text(376, 57, 0x00FFFFFF, "%.11s", items[selected].title);
     else gui_text(376, 57, 0x00FFFFFF, "%s", tr(TXT_WAITING));
+    if(menu_art_has_cover()) {
+        menu_art_draw((u32 *)0x44000000,VIDEO_STRIDE,376,70,72,65,1);
+        if(item_count)gui_text(376,138,0x008A9BAA,"%s",items[selected].is_folder?tr(TXT_FOLDER):tr(items[selected].is_audio?TXT_MUSIC:TXT_VIDEO));
+        gui_text(376,150,0x008A9BAA,tr(TXT_ENTRIES),item_count);
+    } else {
     if (item_count) gui_text(376, 76, 0x008A9BAA, "%s", items[selected].is_folder ? tr(TXT_FOLDER) : (items[selected].is_audio ? tr(TXT_MUSIC) : tr(TXT_VIDEO)));
     gui_text(376, 90, 0x008A9BAA, tr(TXT_ENTRIES), item_count);
     if(debug_enabled) gui_text(376, 104, 0x008A9BAA, tr(TXT_PROFILE), active_network_profile);
     if (hardware_runtime_result == 0 && debug_enabled) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
     else if (hardware_runtime_result != 0 && hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
     gui_text(376, 138, 0x00FFFFFF, "%.11s", status);
+    }
     /* The tiny receiver sidebar intentionally clips ordinary status copy.
      * Decoder diagnostics need their complete signed hex code, however. */
     if (!strncmp(status, "MP3 ", 4)) gui_text(38, 160, 0x00FFB000, "%s", status);
     if(tls_notice())gui_text(38,166,0x0000D8FF,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
     else if(!network_ready)gui_text(38,166,0x0000D8FF,"%.48s",status);
+    else if(menu_art_has_cover())gui_text(38,166,0x008A9BAA,"%.48s",status);
     gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
 }
 
@@ -3043,6 +3060,8 @@ static void media_info(int selected) {
                 gui_text(38, 128, 0x008A9BAA, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
             }
             gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
+            int art_top=67+(audio_track_count+subtitle_track_count)*10;
+            if(art_top<132)menu_art_draw((u32 *)0x44000000,VIDEO_STRIDE,376,art_top,72,163-art_top,1);
             if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
             for (i = 0; i < audio_track_count && i < 6; i++)
                 gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);
@@ -3226,6 +3245,7 @@ int main(void) {
             dirty = 1;
             next_tv_redraw_tick = now + 150000ULL;
         }
+        if(menu_art_changed){dirty=1;menu_art_changed=0;}
         /* Stop before anything that can change network settings, use the
          * library buffer, or launch another remote worker. Navigation can
          * continue while HTTPS is connecting. Local input takes precedence. */
@@ -3248,6 +3268,7 @@ int main(void) {
             int remote_audio, remote_subtitle, remote_is_audio, remote_start;
             if (remote_poll_play(remote_media_id, sizeof(remote_media_id), &remote_audio,
                                  &remote_subtitle, &remote_is_audio, &remote_start)) {
+                menu_art_select(remote_media_id);
                 selected_audio_track = remote_audio;
                 selected_subtitle_track = remote_subtitle;
                 stream_start_seconds = remote_start;
@@ -3292,6 +3313,7 @@ int main(void) {
         }
         if ((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) break;
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old_buttons & PSP_CTRL_CIRCLE)) {
+            menu_art_select("");
             offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
         }
         if (debug_enabled && (pad.Buttons & (PSP_CTRL_SELECT | PSP_CTRL_LTRIGGER | PSP_CTRL_RTRIGGER)) ==
@@ -3466,6 +3488,7 @@ int main(void) {
         sceKernelDelayThread(20000);
     }
     int browser_stopped=exit_join_worker(stop_browser_requests);
+    if(browser_stopped){free(menu_art_active);menu_art_active=NULL;}
     prepare_oc_exit();
     if (display_output.tv) display_output_select(&display_output, 0);
     free(tv_canvas.pixels);

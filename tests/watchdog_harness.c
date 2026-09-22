@@ -12,6 +12,8 @@ static int playback_position_ms,playback_paused,timed_playing,tvout_video_active
 static int timed_running,timed_eof,timed_error,timed_audio_done,audio_running,audio_state;
 static int audio_blocks_published,audio_played_blocks,timed_reader_id,audio_output_thread_id,remote_control_thread_id;
 static int remote_http_last_result,remote_control_sequence,audio_start=1;
+/* Keep the stub telemetry in step with the existing watchdog format. */
+static int timed_video_blocked,timed_audio_waiting,subtitle_pages_live,subtitle_page_ready,subtitle_page_failures;
 static unsigned int remote_http_attempts,remote_http_completed;
 static const char *remote_http_stage="idle";
 static struct {unsigned int write,read;} timed_video,timed_audio;

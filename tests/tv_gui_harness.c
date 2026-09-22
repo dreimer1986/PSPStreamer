@@ -77,6 +77,10 @@ static const char *audio_quality_name(void) { return "160k"; }
 __asm__(".section .rodata\n.global receiver_tv_skin\n.global receiver_tv_skin_end\n"
         "receiver_tv_skin:\n.incbin \"assets/menu_skin_tv.raw\"\nreceiver_tv_skin_end:\n.text\n");
 #include "music_ui.h"
+static int menu_art_has_cover(void){return 0;}
+static void menu_art_draw(u32 *p,int stride,int x,int y,int w,int h,int cover){
+    (void)p;(void)cover;assert(stride>=x+w && y+h<=480);
+}
 #include "tv_gui.h"
 
 static void dump_frame(const char *directory, const char *language, int view, int variant) {

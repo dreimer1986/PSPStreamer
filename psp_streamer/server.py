@@ -436,6 +436,22 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path == '/api/psp-artwork':
+                selector = query.get('item', [''])[0]
+                provider = self.server.plex if selector.startswith(('plex.', ':plex:')) else self.server.jellyfin
+                folder = re.fullmatch(r':(plex|jellyfin):m([0-9a-f]+)', selector)
+                token = provider.token(folder[2]) if folder else selector
+                try:
+                    data = provider.artwork.psp(token)
+                except ValueError:
+                    return self.send_error_json(404, 'Artwork unavailable')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/octet-stream')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'private, no-store')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if parsed.path.startswith('/api/theme/'):
                 token = parsed.path.rsplit('/', 1)[-1]
                 provider = self.server.plex if token.startswith('plex.') else self.server.jellyfin

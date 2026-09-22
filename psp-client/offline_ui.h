@@ -391,6 +391,7 @@ static int offline_play(const OfflineEntry *item) {
     return result;
 }
 static void offline_browser(void) {
+    menu_art_select("");
     int server=0,selected=0,dirty=1;unsigned int old=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;
     unsigned long long repeat=0;offline_scan();
     while(1) {

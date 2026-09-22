@@ -4,6 +4,8 @@ import hashlib
 import re
 import threading
 import time
+import struct
+import subprocess
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener
 from urllib.error import URLError
@@ -20,6 +22,57 @@ class Artwork:
         self.cache = OrderedDict()
         self.cache_bytes = 0
         self.slots = threading.BoundedSemaphore(4)
+        self.psp_cache = OrderedDict()
+
+    def psp(self, token):
+        """Bounded RGB565 menu packet; no image decoder/modules needed on PSP."""
+        self.provider.split(token)
+        with self.provider.lock:
+            key = (token, self.provider.config['url'], self.provider.config['token'])
+        with self.lock:
+            cached = self.psp_cache.get(key)
+            if cached and cached[0] > time.monotonic():
+                self.psp_cache.move_to_end(key)
+                return cached[1]
+        row = self.provider.metadata(token)
+        # Episodes share series artwork; tracks share album artwork. This also
+        # keeps season/episode menus visually consistent with their parent.
+        parent = (row.get('grandparentRatingKey') if row.get('type') == 'episode' else
+                  row.get('parentRatingKey') if row.get('type') == 'track' else None) if self.provider.art_provider == 'plex' else (
+                  row.get('SeriesId') if row.get('Type') == 'Episode' else row.get('AlbumId') if row.get('Type') == 'Audio' else None)
+        if parent:
+            try:
+                parent_token = self.provider.token(str(parent))
+                row = self.provider.metadata(parent_token)
+                token = parent_token
+            except ValueError:
+                pass
+        links = self.links(row, token)
+        planes = []
+        for kind, width, height in [('backdrop',320,180), ('cover',80,112)]:
+            data = b''
+            if kind in links:
+                try:
+                    image, _ = self.get(token, kind)
+                    mode = 'increase' if kind == 'backdrop' else 'decrease'
+                    fit = f'crop={width}:{height}' if kind == 'backdrop' else f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black'
+                    result = subprocess.run(['ffmpeg','-v','error','-max_alloc','16777216','-threads','1',
+                        '-i','pipe:0','-an','-vf',f'scale={width}:{height}:force_original_aspect_ratio={mode},{fit}',
+                        '-threads','1','-frames:v','1','-pix_fmt','rgb565le','-f','rawvideo','pipe:1'],
+                        input=image, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+                    if result.returncode == 0 and len(result.stdout) == width*height*2:
+                        data = result.stdout
+                except (ValueError, OSError, subprocess.TimeoutExpired):
+                    pass  # Decorative data must never prevent media selection.
+            planes.append(data)
+        background, cover = planes
+        packet = struct.pack('<4sHHHHII', b'PSPA',320,180,80,112,len(background),len(cover))+background+cover
+        with self.lock:
+            self.psp_cache[key] = (time.monotonic()+(600 if background or cover else 30), packet)
+            self.psp_cache.move_to_end(key)
+            while len(self.psp_cache)>8:
+                self.psp_cache.popitem(last=False)
+        return packet
 
     def paths(self, row):
         if self.provider.art_provider == 'plex':

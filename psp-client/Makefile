@@ -31,6 +31,7 @@ preset_math.o: preset_trig.h
 preset_math.o: preset_clear_loop.h preset_local_memory.h
 main.o: music_preset_ui.h remote_http.h browser_remote.h library_request.h media_request.h remote_state.h video_watchdog.h stream_diagnostic.h spectrum_fullscreen.h
 main.o: server_auth.h video_controls.h
+main.o: menu_artwork.h
 main.o: preset_catalog.h preset_browser.h
 main.o: preset_sequence.h
 main.o tls_transport.o: tls_transport.h

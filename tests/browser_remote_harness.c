@@ -40,6 +40,13 @@ static int remote_http_get(const char *path,char *reply,int capacity,volatile in
     if(!*running || fail_http)return -1;
     strcpy(reply,"{\"seq\":8,\"action\":\"play\",\"id\":\"example\"}");return strlen(reply);
 }
+static int art_requested,art_delivered,art_completed;
+static int menu_art_schedule(void){int result=art_requested;art_requested=0;return result;}
+static void menu_art_download(volatile int *running){
+    entered=1;
+    while(*running && !release_reply)pause_ms();
+}
+static void menu_art_complete(int deliver){art_delivered+=deliver;art_completed++;}
 #include "browser_remote.h"
 #define ID_SIZE 512
 static atomic_int library_entered, library_release;
@@ -110,5 +117,16 @@ int main(void) {
     library_failures=3;library_error=-1003;library_calls=0;library_pending=1;completed=0;
     for(int i=0;i<1000 && !completed;i++){completed=library_request_poll();pause_ms();}
     assert(completed==1&&library_calls==1&&library_result==-1003);
+    /* Art uses the same worker but must never replay its previous Play reply. */
+    browser_remote_next=fake_now+1000000;art_requested=1;entered=0;release_reply=0;
+    assert(!browser_remote_poll(7));while(!entered)pause_ms();
+    release_reply=1;
+    for(int i=0;i<1000 && browser_remote_thread_id>=0;i++){pause_ms();assert(!browser_remote_poll(7));}
+    assert(browser_remote_thread_id==-1 && art_completed==1 && art_delivered==1);
+    assert(browser_remote_next==0); /* Remote control resumes immediately. */
+    browser_remote_next=fake_now+1000000;art_requested=1;entered=0;release_reply=0;
+    assert(!browser_remote_poll(7));while(!entered)pause_ms();
+    while(!browser_remote_stop())pause_ms();
+    assert(art_completed==2 && art_delivered==1);
     return 0;
 }

@@ -187,6 +187,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         view == TV_VIEW_OPTIONS ? TXT_STREAM_OPTIONS : TXT_NOW_PLAYING);
     if (!tv_ui_active || tvout_video_active || !tv_canvas.pixels) return;
     tv_shell(section);
+    if(view!=TV_VIEW_MUSIC)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,32,60,498,244,0);
     if (view == TV_VIEW_LIBRARY) {
         int first = item_count ? selected / TV_GUI_ROWS * TV_GUI_ROWS : 0;
         tv_text(34, 65, 38, 2, TV_MUTED, "%s", current_path[0] ? current_path : "/");
@@ -198,11 +199,18 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
                     items[i].is_folder ? '+' : items[i].is_audio ? '~' : '>', items[i].title);
         }
         tv_text(562, 66, 10, 1, TV_AMBER, "%s", tr(TXT_SELECTED));
-        tv_text(562, 91, 10, 7, TV_WHITE, "%s", item_count ? items[selected].title : tr(TXT_WAITING));
+        tv_text(562, 91, 10, menu_art_has_cover()?2:7, TV_WHITE, "%s", item_count ? items[selected].title : tr(TXT_WAITING));
+        if(menu_art_has_cover()) {
+            menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,128,116,113,1);
+            tv_text(562,248,10,1,TV_MUTED,tr(TXT_ENTRIES),item_count);
+            tv_text(562,273,10,2,TV_CYAN,"%s",status);
+        } else {
         tv_text(562, 209, 10, 2, TV_MUTED, tr(TXT_ENTRIES), item_count);
         tv_text(562, 244, 10, 3, TV_CYAN, "%s", status);
+        }
         tv_help(tr(TXT_LIBRARY_CONTROLS));
     } else if (view == TV_VIEW_LOADING) {
+        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,130,116,166,1);
         tv_text(34, 67, 38, 2, TV_AMBER, "%s", tr(TXT_READING_MEDIA));
         tv_text(34, 121, 38, 3, TV_WHITE, "%s", title ? title : tr(TXT_LOADING_TRACKS));
         tv_text(34, 197, 38, 3, TV_MUTED, "%s", tr(TXT_SOURCE_WAKING));
@@ -223,12 +231,15 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
             tv_text(34, 228, 38, 1, TV_MUTED, tr(TXT_SUBTITLE_TRACKS), subtitle_track_count);
         }
         tv_text(562, 66, 10, 1, TV_AMBER, "%s", tr(TXT_STREAMS));
+        int art_top=98+(audio_track_count+subtitle_track_count)*18;
+        if(art_top<250)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,art_top,116,300-art_top,1);
         for (i = 0; i < audio_track_count && i < 6; i++)
             tv_text(562, 94 + i * 18, 10, 1, TV_WHITE, "A%d %s", i + 1, audio_tracks[i].language);
         for (i = 0; i < subtitle_track_count && i + audio_track_count < 11; i++)
             tv_text(562, 94 + (i + audio_track_count) * 18, 10, 1, TV_CYAN, "S%d %s", i + 1, subtitle_tracks[i].language);
         tv_help(tr(TXT_INFO_CONTROLS));
     } else if (view == TV_VIEW_OPTIONS) {
+        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,195,116,105,1);
         tv_text(34, 66, 38, 1, TV_CYAN, "%s", tr(TXT_STREAM_OPTIONS));
         tv_rect(&tv_canvas, 32, 105 + row * (audio_only ? 60 : 40), 498, audio_only ? 48 : 38, 0x003B4824);
         if (audio_only) {

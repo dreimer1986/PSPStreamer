@@ -3,6 +3,7 @@ import http.client
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import threading
 import unittest
 from email.message import Message
@@ -14,6 +15,36 @@ from psp_streamer.server import AppServer, Library
 
 
 class ArtworkTests(unittest.TestCase):
+    def test_psp_menu_bounds_and_request_lifetime(self):
+        root=Path(__file__).resolve().parents[1]
+        binary=Path(self.temp.name)/'menu-artwork'
+        subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
+            '-I',str(root/'psp-client'),str(root/'tests/menu_artwork_harness.c'),
+            '-o',str(binary)],check=True)
+        subprocess.run([str(binary)],check=True,timeout=5)
+
+    def test_psp_packet_conversion_cache_and_series_parent(self):
+        import struct
+        token=self.plex.token('42');parent=self.plex.token('1')
+        row={'ratingKey':'1','thumb':'/library/metadata/1/thumb/1','art':'/library/metadata/1/art/1'}
+        logo=(Path(__file__).resolve().parents[1]/'static/logo.png').read_bytes()
+        with patch.object(self.plex,'metadata',side_effect=[{'type':'episode','grandparentRatingKey':'1'},row]) as metadata, \
+                patch.object(self.plex.artwork,'get',return_value=(logo,'image/png')) as get:
+            packet=self.plex.artwork.psp(token)
+            self.assertEqual(struct.unpack('<4sHHHHII',packet[:20]),(b'PSPA',320,180,80,112,115200,17920))
+            self.assertEqual(len(packet),133140)
+            self.assertEqual(metadata.call_args.args[0],parent)
+            self.assertEqual(get.call_count,2)
+            self.assertEqual(self.plex.artwork.psp(token),packet)
+            self.assertEqual(get.call_count,2)
+
+    def test_psp_missing_art_is_small_and_disabled_source_cannot_use_cache(self):
+        token=self.jf.token('a'*32)
+        with patch.object(self.jf,'metadata',return_value={'Id':'a'*32}):
+            self.assertEqual(len(self.jf.artwork.psp(token)),20)
+            self.jf.config['enabled']=False
+            with self.assertRaises(ValueError):self.jf.artwork.psp(token)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -78,6 +109,13 @@ class ArtworkTests(unittest.TestCase):
             path = '/api/artwork/plex.42.0123456789ab/cover'
             connection.request('GET', path)
             reply = connection.getresponse(); reply.read(); self.assertEqual(reply.status, 401)
+            connection.request('GET', '/api/psp-artwork?item=:plex:m42')
+            reply = connection.getresponse(); reply.read(); self.assertEqual(reply.status, 401)
+            with patch.object(server.plex.artwork, 'psp', return_value=b'PSPA-packet') as packet:
+                connection.request('GET', '/api/psp-artwork?item=:plex:m42', headers={'Authorization': 'Basic cHNwOnRlc3Q='})
+                reply=connection.getresponse(); self.assertEqual(reply.status,200)
+                self.assertEqual(reply.read(),b'PSPA-packet')
+                packet.assert_called_once_with(server.plex.token('42'))
             with patch.object(server.plex.artwork, 'get', return_value=(b'JPEG', 'image/jpeg')):
                 connection.request('GET', path, headers={'Authorization': 'Basic cHNwOnRlc3Q='})
                 reply = connection.getresponse(); self.assertEqual(reply.read(), b'JPEG')

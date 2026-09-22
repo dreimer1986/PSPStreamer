@@ -6,10 +6,12 @@ static volatile int browser_remote_running, browser_remote_done;
 static int browser_remote_result;
 static char browser_remote_path[64], browser_remote_reply[2048];
 static unsigned long long browser_remote_next;
+static int browser_art_task;
 
 static int browser_remote_worker(SceSize args, void *argp) {
     (void)args; (void)argp;
-    browser_remote_result = remote_http_get(browser_remote_path, browser_remote_reply,
+    if(browser_art_task)menu_art_download(&browser_remote_running);
+    else browser_remote_result = remote_http_get(browser_remote_path, browser_remote_reply,
                                             sizeof(browser_remote_reply), &browser_remote_running);
     __sync_synchronize();
     browser_remote_done = 1;
@@ -23,6 +25,7 @@ static int browser_remote_reap(void) {
         if(sceKernelWaitThreadEnd(browser_remote_thread_id, &timeout)<0)return 0;
         sceKernelDeleteThread(browser_remote_thread_id);
         browser_remote_thread_id = -1;
+        if(browser_art_task)menu_art_complete(browser_remote_running);
     }
     browser_remote_done = 0;
     return 1;
@@ -38,13 +41,17 @@ static const char *browser_remote_poll(int sequence) {
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (browser_remote_thread_id >= 0) {
         if (!browser_remote_done) return NULL;
-        int deliver=browser_remote_running;
+        int deliver=browser_remote_running && !browser_art_task;
         if(!browser_remote_reap())return NULL;
         browser_remote_running=0;
-        browser_remote_next = now + 1000000ULL;
+        browser_remote_next = browser_art_task?0:now + 1000000ULL;
         return deliver && browser_remote_result >= 0 ? browser_remote_reply : NULL;
     }
-    if (now < browser_remote_next) return NULL;
+    browser_art_task=0;
+    if (now < browser_remote_next) {
+        if(!menu_art_schedule())return NULL;
+        browser_art_task=1;
+    }
     browser_remote_next = now + 1000000ULL;
     snprintf(browser_remote_path, sizeof(browser_remote_path), "/api/remote/next?after=%d", sequence);
     browser_remote_running = 1;

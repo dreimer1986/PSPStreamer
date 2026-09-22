@@ -129,3 +129,9 @@
 - Authenticated current-media artwork for the separate HA integration 0.1.1.
 - Optional browser-only theme music preview; no PSP playback or artwork changes.
 - Bounded image caches and lazy thumbnails; no provider credentials in URLs.
+# 0.1.47
+
+- Optional bounded PSP menu artwork packets for Plex and Jellyfin.
+- Series/album covers and backdrops are resized server-side with FFmpeg; no
+  new Python dependencies, playback changes or PSP decoder initialization.
+- Requires the matching PSP application; older clients keep working.

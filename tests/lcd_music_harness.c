@@ -49,6 +49,9 @@ static int sceDisplaySetFrameBuf(void *address, int stride, int format, int sync
 static void receiver_hud(int frames) { (void)frames; }
 __asm__(".section .rodata\n.global receiver_skin\n.global receiver_skin_end\n"
         "receiver_skin:\n.incbin \"assets/menu_skin.raw\"\nreceiver_skin_end:\n.text\n");
+static void menu_art_draw(u32 *p,int stride,int x,int y,int w,int h,int cover){
+    (void)p;(void)cover;assert(stride>=x+w && y+h<=272);
+}
 /* PRODUCTION_FUNCTIONS */
 static int sceKernelGetThreadCurrentPriority(void) { return 0x20; }
 static int sceKernelChangeThreadPriority(int thread, int priority) {

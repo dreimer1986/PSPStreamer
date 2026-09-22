@@ -20,7 +20,24 @@ appears on Home Assistant's media-player entity. Update both server and
 integration, then reload the integration. Images remain password-protected;
 neither Plex/Jellyfin tokens nor the PSPStreamer password appear in browser URLs.
 The server keeps a bounded image cache (24 MiB per provider) and loads grid
-thumbnails lazily. No artwork is downloaded or rendered by the PSP.
+thumbnails lazily.
+
+### PSP menu artwork (server 0.1.47)
+
+With an updated PSP application, Plex/Jellyfin artwork also appears on LCD and
+native TV menus. Pause the selection briefly: the menu requests images in the
+background, dims the backdrop behind the main list/options and contains the
+cover in the right-hand display. Episode menus use series artwork; songs use
+their album. Text remains outside the cover. The information page shows a cover
+only if there is enough space below its track list.
+
+No setting or extra image files on the Memory Stick are needed. The server
+prepares a bounded RGB565 packet with FFmpeg; the PSP does not initialize any
+JPEG/MPEG decoder for it. Full artwork is about 130 KiB, released before media
+playback. Artwork shares the cancellable idle-browser worker, waits 500 ms after
+selection changes and never runs concurrently with playback. Missing images or
+an older server leave the normal skin intact. Square/Refresh retries a failed
+load. There is no artwork for ordinary SMB/local-file entries yet.
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
