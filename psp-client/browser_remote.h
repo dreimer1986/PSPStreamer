@@ -7,6 +7,7 @@ static int browser_remote_result;
 static char browser_remote_path[64], browser_remote_reply[2048];
 static unsigned long long browser_remote_next;
 static int browser_art_task;
+static int browser_art_turn;
 
 static int browser_remote_worker(SceSize args, void *argp) {
     (void)args; (void)argp;
@@ -44,14 +45,18 @@ static const char *browser_remote_poll(int sequence) {
         int deliver=browser_remote_running && !browser_art_task;
         if(!browser_remote_reap())return NULL;
         browser_remote_running=0;
+        browser_art_turn=!browser_art_task;
         browser_remote_next = browser_art_task?0:now + 1000000ULL;
         return deliver && browser_remote_result >= 0 ? browser_remote_reply : NULL;
     }
     browser_art_task=0;
-    if (now < browser_remote_next) {
-        if(!menu_art_schedule())return NULL;
+    /* A slow TV redraw can consume the entire polling interval. Give a
+     * pending image one turn after a remote reply even when that happens;
+     * otherwise repeated overdue control polls can starve artwork forever. */
+    if ((now < browser_remote_next || browser_art_turn) && menu_art_schedule()) {
         browser_art_task=1;
-    }
+    } else if(now < browser_remote_next)return NULL;
+    browser_art_turn=0;
     browser_remote_next = now + 1000000ULL;
     snprintf(browser_remote_path, sizeof(browser_remote_path), "/api/remote/next?after=%d", sequence);
     browser_remote_running = 1;

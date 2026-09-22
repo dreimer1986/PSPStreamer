@@ -77,10 +77,11 @@ static const char *audio_quality_name(void) { return "160k"; }
 __asm__(".section .rodata\n.global receiver_tv_skin\n.global receiver_tv_skin_end\n"
         "receiver_tv_skin:\n.incbin \"assets/menu_skin_tv.raw\"\nreceiver_tv_skin_end:\n.text\n");
 #include "music_ui.h"
-static int menu_art_has_cover(void){return 0;}
-static void menu_art_draw(u32 *p,int stride,int x,int y,int w,int h,int cover){
-    (void)p;(void)cover;assert(stride>=x+w && y+h<=480);
+#define ID_SIZE 512
+static int remote_http_get_budget(const char *path,char *out,int cap,volatile int *running,int budget){
+    (void)path;(void)out;(void)cap;(void)running;(void)budget;return -1;
 }
+#include "menu_artwork.h"
 #include "tv_gui.h"
 
 static void dump_frame(const char *directory, const char *language, int view, int variant) {
@@ -118,6 +119,24 @@ int main(int argc, char **argv) {
     cable = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 2; load_failure = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     load_failure = 0; tv_ui_start(); assert(tv_ui_active && display_output.tv && mode_calls == 1);
+    menu_art_select("plex.42.abc");clock_tick+=600000;
+    assert(menu_art_schedule());volatile int running=1;
+    menu_art_download(&running);menu_art_complete(1);assert(!menu_art_active);
+    tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
+    u32 plain=tv_canvas.pixels[300*TV_GUI_STRIDE+520];
+    menu_art_active=calloc(1,MENU_ART_BYTES);assert(menu_art_active);
+    memcpy(menu_art_active,"PSPA\x40\x01\xb4\x00\x50\x00\x70\x00",12);
+    unsigned int art_sizes[]={320*180*2,80*112*2};
+    for(int k=0;k<2;k++)for(int b=0;b<4;b++)menu_art_active[12+k*4+b]=(unsigned char)(art_sizes[k]>>(8*b));
+    for(int k=0;k<320*180;k++)menu_art_active[21+2*k]=0xf8;
+    for(int k=0;k<80*112;k++)menu_art_active[20+art_sizes[0]+2*k]=31;
+    assert(menu_art_valid(menu_art_active,MENU_ART_BYTES));
+    tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
+    assert(tv_canvas.pixels[300*TV_GUI_STRIDE+520]!=plain);
+    assert(((u32 *)0x44000000)[180*TV_GUI_STRIDE+620]==0xff0000);
+    tv_draw_view(TV_VIEW_OPTIONS,0,0,0,NULL,0);
+    assert(((u32 *)0x44000000)[245*TV_GUI_STRIDE+620]==0xff0000);
+    menu_art_select("");
     i = music_ui_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
     music_ui_restore_priority(i); assert(ui_priority == 0x20);
     priority_failure = 1;

@@ -39,6 +39,10 @@ selection changes and never runs concurrently with playback. Missing images or
 an older server leave the normal skin intact. Square/Refresh retries a failed
 load. There is no artwork for ordinary SMB/local-file entries yet.
 
+Image requests get a dedicated turn after a control reply, even if a slow TV
+redraw overruns the usual idle polling interval. LCD backdrop bounds are
+`x=36, y=29, width=312, height=123`; the cover remains separate from status text.
+
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
 ### Plex library and playlists (server 0.1.37)

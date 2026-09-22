@@ -30,8 +30,9 @@ int main(void) {
     menu_art_draw(pixels,768,562,128,116,113,1);
     assert(pixels[180*768+620]==0xff0000 && pixels[127*768+620]==0 && pixels[241*768+620]==0);
     memset(pixels,0,sizeof(pixels));
-    menu_art_draw(pixels,512,36,37,312,128,0);menu_art_draw(pixels,512,376,70,72,65,1);
-    assert(pixels[37*512+36]==63 && pixels[36*512+36]==0);
+    menu_art_draw(pixels,512,36,29,312,123,0);menu_art_draw(pixels,512,376,70,72,65,1);
+    assert(pixels[29*512+36]==63 && pixels[28*512+36]==0);
+    assert(pixels[151*512+36]==63 && pixels[152*512+36]==0);
     assert(pixels[100*512+410]==0xff0000 && pixels[138*512+410]==0);
     assert(!menu_art_valid(menu_art_active,19));menu_art_active[12]=1;
     assert(!menu_art_valid(menu_art_active,MENU_ART_BYTES));

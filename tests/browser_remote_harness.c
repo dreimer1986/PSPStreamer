@@ -128,5 +128,15 @@ int main(void) {
     assert(!browser_remote_poll(7));while(!entered)pause_ms();
     while(!browser_remote_stop())pause_ms();
     assert(art_completed==2 && art_delivered==1);
+    /* TV drawing can take longer than the remote interval: art must still
+     * get a turn after a control response, not only inside the idle gap. */
+    browser_remote_next=0;entered=0;release_reply=1;
+    assert(!browser_remote_poll(7));reply=NULL;
+    for(int i=0;i<1000 && !reply;i++){pause_ms();reply=browser_remote_poll(7);}
+    assert(reply && browser_art_turn);
+    fake_now+=2000000;art_requested=1;entered=0;release_reply=0;
+    assert(!browser_remote_poll(7));while(!entered)pause_ms();
+    assert(browser_art_task);
+    while(!browser_remote_stop())pause_ms();
     return 0;
 }

@@ -2938,7 +2938,7 @@ static void gui_library_shell(const char *section) {
         gui_skin_receiver(vram);
         if(!strcmp(section,tr(TXT_MEDIA_LIBRARY)) || !strcmp(section,tr(TXT_PREPARING_MEDIA)) ||
            !strcmp(section,tr(TXT_FILE_DETAILS)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
-            menu_art_draw(vram,VIDEO_STRIDE,36,37,312,128,0);
+            menu_art_draw(vram,VIDEO_STRIDE,36,29,312,123,0);
         if(!strcmp(section,tr(TXT_PREPARING_MEDIA)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
             menu_art_draw(vram,VIDEO_STRIDE,376,110,72,53,1);
         gui_text(27, 11, 0x00FFFFFF, "PSP STREAMER // %s", section);
