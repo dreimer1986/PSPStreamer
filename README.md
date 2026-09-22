@@ -508,15 +508,16 @@ playback controls to Home Assistant. It connects to an existing PSP Streamer
 server (Docker, the Home Assistant app/add-on, or standalone Python); it does
 not replace that server or run FFmpeg itself.
 
-In HACS, add `https://github.com/dreimer1986/PSPStreamer` as a **custom repository**
+In HACS, add `https://github.com/dreimer1986/PSPStreamerHA` as a **custom repository**
 of type **Integration**, download **PSP Streamer**, and restart Home Assistant.
 Then open **Settings → Devices & services → Add integration → PSP Streamer**
 and enter the server URL and its password. Requires Home Assistant **2026.3+**,
 server **0.1.44+**, and the matching updated PSP application for playback telemetry.
 
-See [Home Assistant integration setup, controls and limitations](docs/HOME_ASSISTANT.md).
-Adding this repository to the app/add-on store alone does **not** install the
-integration; these are two independent installation paths using the same repository.
+See [Home Assistant integration setup, controls and limitations](https://github.com/dreimer1986/PSPStreamerHA/blob/master/docs/HOME_ASSISTANT.md).
+The HACS integration has its own repository, independent of PSP application
+releases. This repository remains the source for the server app/add-on and PSP
+application. Adding it to the app/add-on store does **not** install the integration.
 
 ## Home Assistant add-on
 
