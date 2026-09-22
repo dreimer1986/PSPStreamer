@@ -14,19 +14,22 @@ typedef struct {float x,y,z,w;} ScePspFVector4;
 typedef struct {ScePspFVector4 x,y,z,w;} ScePspFMatrix4;
 enum {GU_TRANSFORM_3D=0,GU_PROJECTION=200,GU_VIEW,GU_MODEL,GU_CLIP_PLANES,GU_FOG,GU_COLOR_BUFFER_BIT};
 enum {GU_GEQUAL=300,GU_DEPTH_BUFFER_BIT=512};
-static int cave_test,cave_draws,matrix_calls;
+static int cave_test,cave_draws,matrix_calls,clear_mode,clear_count;
+static void sceGuSendCommandi(int command,int argument) {
+    assert(command==0xd3 && cave_test);
+    if(argument)assert(!clear_mode && argument==(((GU_COLOR_BUFFER_BIT|GU_DEPTH_BUFFER_BIT)<<8)|1));
+    else assert(clear_mode);
+    clear_mode=argument;
+}
 static void sceGuSetMatrix(int kind,const ScePspFMatrix4 *m) {
     assert(kind==GU_PROJECTION || kind==GU_VIEW || kind==GU_MODEL);
     if(kind==GU_PROJECTION)assert(m->x.x>0 && m->y.y>0 && m->z.w==-1 && m->w.z<0);
     else assert(m->x.x==1 && m->y.y==1 && m->z.z==1 && m->w.w==1);
     matrix_calls++;
 }
-static void sceGuClearColor(unsigned int color){assert(color==0xff000000);}
-static void sceGuClear(int bits){assert(bits==(GU_COLOR_BUFFER_BIT|(cave_test?GU_DEPTH_BUFFER_BIT:0)));}
 static void sceGuDepthRange(int near,int far){assert(near==65535 && far==0);}
 static void sceGuDepthMask(int disabled){assert(disabled==1 || (cave_test && disabled==0));}
 static void sceGuDepthFunc(int func){assert(func==GU_GEQUAL);}
-static void sceGuClearDepth(int depth){assert(depth==0);}
 static void sceGuFog(float near,float far,unsigned int color){assert(near==4 && far==14 && color==0xff000000);}
 enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D=8,
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
@@ -50,6 +53,9 @@ static void sceGuDepthBuffer(void *offset,int width) {
     assert(cave_test && width==512 && target_height==256 && target_bpp==2);
     assert((uintptr_t)offset==(unsigned)target_offset+512*256*2);
     assert((uintptr_t)offset+512*256*2<=2097152);
+    /* Every frame starts with stale depth/color, including the formerly
+     * uncleared rightmost 32 columns. The clear draw must erase all of it. */
+    memset((void *)(uintptr_t)(0x44000000+target_offset),0x77,512*256*4);
 }
 static int fail_init, fail_start;
 static int pending_continue,restore_target,finish_syncs,fail_restart;
@@ -195,7 +201,20 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
     assert(!restore_target);
     const MdVertex *v=data;
     if(cave_test) {
+        if(clear_mode) {
+            typedef struct {unsigned color;float x,y,z;} ClearVertex;
+            const ClearVertex *c=data;
+            assert(type==GU_SPRITES && format==14 && count==2 && !indices);
+            assert(target_offset && target_width==512 && target_height==256);
+            assert(c[0].x==0 && c[0].y==0 && c[1].x==512 && c[1].y==256);
+            assert(c[0].z==0 && c[1].z==0 && c[0].color==0xff000000 && c[1].color==0xff000000);
+            memset((void *)(uintptr_t)(0x44000000+target_offset),0,512*256*4);
+            clear_count++;return;
+        }
         if(format==7) {
+            const uint16_t *color=(void *)(uintptr_t)(0x44000000+target_offset);
+            const uint16_t *depth=color+512*256;
+            assert(color[511]==0 && color[512*256-1]==0 && depth[511]==0 && depth[512*256-1]==0);
             assert(!indices && type==GU_TRIANGLES && count>0 && count<=CAVE_MAX_VERTICES && count%3==0);
             assert(!((uintptr_t)data&63));
             for(int i=0;i<count;i++)assert(isfinite(v[i].x) && isfinite(v[i].y) && isfinite(v[i].z));
@@ -369,7 +388,7 @@ int main(int argc,char **argv) {
             assert(cave_draws>previous);
             md_stop();assert(!gu_live && !md_list && !cave_scene);
         }
-        assert(matrix_calls==frames*8*3);
+        assert(matrix_calls==frames*8*3 && clear_count==frames*8 && !clear_mode);
         printf("Cave: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);
         return 0;
     }

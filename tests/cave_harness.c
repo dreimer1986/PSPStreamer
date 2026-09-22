@@ -28,14 +28,31 @@ int main(void) {
      * Weighted X=.0636455146 is clamped; Y=.0579236505 is not. */
     assert(fabsf(oracle.phase[0][0]-.06f)<1e-6f);
     assert(fabsf(oracle.phase[0][1]-.0579236505f)<1e-6f);
+    /* Jitter affects odd paths only, protects the primary camera path and
+     * deliberately uses the DLL's X-only distance gate. */
+    CavePathFrame original={0};
+    for(int i=0;i<CAVE_PATHS;i++){original.x[i]=.5f;original.y[i]=.5f;original.radius[i]=.2f;}
+    original.y[1]=.9f; /* Far in Y, but source gate still admits perturbation. */
+    original.x[3]=.8f; /* Beyond source X gate: unchanged. */
+    CavePathFrame changed=original,unchanged=original;
+    unsigned random=123,disabled=123;
+    cave_paths_perturb(&changed,&random,.015f);
+    cave_paths_perturb(&unchanged,&disabled,0);
+    for(int i=0;i<CAVE_PATHS;i++) {
+        assert(unchanged.x[i]==original.x[i] && unchanged.y[i]==original.y[i] && unchanged.radius[i]==original.radius[i]);
+        if(!(i&1) || i==3)assert(changed.x[i]==original.x[i] && changed.y[i]==original.y[i] && changed.radius[i]==original.radius[i]);
+        assert(fabsf(changed.x[i]-original.x[i])<=.01501f && fabsf(changed.y[i]-original.y[i])<=.01501f);
+    }
+    assert(changed.x[1]!=original.x[1] || changed.y[1]!=original.y[1]);
     for(int n=0;n<4000;n++) {
         float before[CAVE_PATHS][2];
         for(int i=0;i<CAVE_PATHS;i++)for(int j=0;j<2;j++)before[i][j]=paths.phase[i][j];
         cave_paths_step(&paths);
         const CavePathFrame *frame=&paths.frames[n%CAVE_PATH_CACHE];
         for(int i=0;i<CAVE_PATHS;i++) {
-            assert(frame->x[i]>=.165f && frame->x[i]<=.835f);
-            assert(frame->y[i]>=.165f && frame->y[i]<=.835f);
+            float margin=(i&1)?paths.roughness:0;
+            assert(frame->x[i]>=.165f-margin && frame->x[i]<=.835f+margin);
+            assert(frame->y[i]>=.165f-margin && frame->y[i]<=.835f+margin);
             assert(frame->radius[i]>=.05f && frame->radius[i]<=.5f);
             for(int j=0;j<2;j++) {
                 float delta=paths.phase[i][j]-before[i][j];if(delta<-.1f)delta+=6.283185307f;

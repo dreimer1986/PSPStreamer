@@ -6,10 +6,13 @@ typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],radius[CAVE_PATHS];int index;}
 typedef struct {
     float seed,phase[CAVE_PATHS][2],radius[CAVE_PATHS];
     int next;
+    unsigned random;
+    float roughness;
     CavePathFrame frames[CAVE_PATH_CACHE];
 } CavePaths;
 void cave_paths_init(CavePaths *paths,unsigned seed);
-/* Recovered base oscillator branch. Alternate path blend/jitter not included. */
+/* Recovered base oscillators and odd-path jitter. Alternate path blend pending. */
 void cave_paths_step(CavePaths *paths);
+void cave_paths_perturb(CavePathFrame *frame,unsigned *random,float amount);
 int cave_paths_sample(const CavePaths *paths,float z,CavePathFrame *out,CavePathFrame *derivative);
 #endif

@@ -79,8 +79,23 @@ follows contributor 0; this is **not yet Monkey's complete camera model**.
 Analytic Z gradients include the changing center and radius, without resampling
 the field several times per vertex.
 
-Still omitted: alternate trajectory blending at `0x100047db..0x1000495d`,
-odd-contributor random perturbations at `0x1000497a..0x10004afa`, the original
+### Recovered side-path perturbations
+
+`0x1000497a..0x10004afa` perturbs only odd-numbered contributors. The main
+camera path and even-numbered paths are unchanged. Two `%173` random samples
+produce a triangular X/Y displacement; another sample multiplicatively changes
+radius. Influence is 1 below distance `.1`, falls linearly to zero at `.3`, and
+is zero thereafter. The inspected binary unusually computes that distance as
+`sqrt(2*dx*dx)`, not `sqrt(dx*dx+dy*dy)`; this is preserved, not silently corrected.
+Position/radius limits are applied before field generation.
+
+This branch is now implemented with an independent deterministic random stream.
+The PSP profile chooses roughness `.015`; this is **not claimed as Monkey's
+default** (the original value is a configurable field at object offset `0x129e4`).
+Perturbations are generated once per cached path profile, never each display
+frame, so already-generated walls do not flicker or shift.
+
+Still omitted: alternate trajectory blending at `0x100047db..0x1000495d`, the original
 camera orientation/controller, and original texture-coordinate/color behavior.
 Thus this is a reconstruction of the base oscillator branch, **not of the full
 scene routine**. The adapted field threshold/noise scale are unchanged.
@@ -108,14 +123,35 @@ scene routine**. The adapted field threshold/noise scale are unchanged.
 
 ## Validation
 
+### Right-edge depth-buffer regression
+
+The reported photo `PXL_20260922_232911376.MP.jpg` shows a stationary-looking strip
+occupying approximately the last 1/16 of the screen. Inspection found a concrete
+clear-size mismatch: the offscreen target is 512×256, but
+[PSPSDK sceGuClear](https://github.com/pspdev/pspsdk/blob/master/src/gu/sceGuClear.c)
+uses the SDK's global display width/height, initially 480×272.
+[sceGuDrawBufferList](https://github.com/pspdev/pspsdk/blob/master/src/gu/sceGuDrawBufferList.c)
+does not update those values. Scissoring limits height correctly, but the last
+32 depth-buffer columns retain previous-frame depth and can reject new walls.
+
+The cave renderer now emits a size-explicit color/depth clear sprite under GE
+clear mode, immediately restoring normal rendering. It neither changes display
+buffers nor bypasses the music GU owner. The host harness checks full 512×256
+coverage and restoration on all LCD/TV, window/fullscreen and resolution cases,
+including dirty right-edge color/depth sentinels on every frame. Hardware
+confirmation of the visible fix is still pending.
+
 Build the PSP binary first, then run only the geometry/GU/control tests:
 `python3 -m unittest tests.test_cave` and the two affected music-view tests.
 Checks cover all 256 cube sign cases in four variants, bounded slab generation,
 camera clearance, LCD/TV buffers, presentation, throttling and teardown. Rotation
 orthogonality/orientation and 2,100 analytic-gradient comparisons against central
 differences check the new math. Plane-count assertions verify actual cache reuse.
-Both the initial cave and octave/normal builds passed hardware testing without
-audio crackle or visible stutter. The 16-path build still needs its hardware
-appearance/performance check. Targeted tests also cover 4,000 path steps, phase
+The initial cave, octave/normal and 16-path builds passed hardware performance
+testing. The 16-path photo exposed the separate right-edge clear bug above.
+The corrected clear and perturbation update await hardware testing.
+Targeted tests also cover 4,000 path steps, phase
 limits, interpolation, camera clearance and the source's four-term oscillator
 reduced independently for the `seed=t=i=0` fixture.
+Perturbation tests cover the source's X-only influence gate, unchanged main/even
+paths, disabled perturbations, displacement bounds and interpolation.
