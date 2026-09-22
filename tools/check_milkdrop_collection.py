@@ -35,6 +35,8 @@ def main():
     reason=getattr(test.library,'pm_audit_reason',None)
     reset_reason=getattr(test.library,'pm_audit_reset',None)
     if reason:reason.restype=ctypes.c_char_p
+    limits=getattr(test.library,'pm_resource_limits',None)
+    if limits:limits.restype=ctypes.c_uint
     records = []
     pixel=test.library.md_eval_pixel_grid
     pixel.argtypes=[ctypes.POINTER(Preset),ctypes.POINTER(Warp),ctypes.c_float,ctypes.POINTER(Signal),
@@ -92,6 +94,7 @@ def main():
                     record['frame_fuel_remaining']=test.library.pm_frame_remaining()
                     if reason:record['failure_reason']=reason().decode()
                 if expanded:record['shape_instances']=list(shape_frame.count)
+                if limits:record['resource_limits']=limits()
             records.append(record)
         print(json.dumps({'total': len(records), 'parse_ok': sum(r['parse']==0 for r in records),
                           'frames_tested': args.frames, 'records': records}, ensure_ascii=False, indent=2))

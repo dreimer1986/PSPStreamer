@@ -8,6 +8,9 @@
 #include <errno.h>
 #include <stdint.h>
 #include "preset_trig.h"
+#ifdef __PSP__
+#include <pspkernel.h>
+#endif
 #ifdef PM_AUDIT
 /* Host collection audits only; no diagnostic writes/strings in PSP builds. */
 static const char *audit_reason="";
@@ -233,9 +236,12 @@ int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols 
     return compile_context(program,source,line,symbols,point?4:3);
 }
 static float global_memory[PM_GLOBAL_MEMORY], registers[100];
-/* Desktop gmegabuf addresses need not be dense. Keep the same 32-KiB data
- * budget but map 256-value pages anywhere in its 1-Mi-value address space.
- * No heap allocation, eviction, aliasing or discarded nonzero writes. Reads
+static unsigned int resource_limits;
+unsigned int pm_resource_limits(void) {return resource_limits;}
+/* Desktop gmegabuf addresses need not be dense. Map the bounded 64-KiB data
+ * pool into 256-value pages anywhere in its 1-Mi-value address space.
+ * No heap allocation, eviction or aliasing. At capacity, new-page stores
+ * are discarded and recorded by resource_limits. Reads
  * and zero stores to untouched pages require no resident storage. */
 enum { GLOBAL_PAGES=PM_GLOBAL_MEMORY/PM_GLOBAL_PAGE_SIZE };
 static unsigned char global_page_map[PM_GLOBAL_ADDRESS_SPACE/PM_GLOBAL_PAGE_SIZE];
@@ -245,7 +251,7 @@ _Static_assert(GLOBAL_PAGES<256,"global page encoding");
 static float *global_cell(int index,int create) {
     int page=index/PM_GLOBAL_PAGE_SIZE,physical=global_page_map[page];
     if(!physical && create) {
-        if(global_page_count>=GLOBAL_PAGES){PM_REASON("global page capacity");return NULL;}
+        if(global_page_count>=GLOBAL_PAGES){resource_limits|=PM_LIMIT_GLOBAL_PAGES;return NULL;}
         physical=++global_page_count;
         global_page_keys[physical-1]=(unsigned short)page;
         global_page_map[page]=(unsigned char)physical;
@@ -257,14 +263,15 @@ static float *global_cell(int index,int create) {
 }
 static PmRuntime fallback_runtime;
 static int frame_fuel=-1;
-void pm_begin_frame(void) {frame_fuel=262144;}
+void pm_begin_frame(void) {frame_fuel=PM_TOTAL_FUEL;}
 void pm_reset_globals(void) {
+    resource_limits=0;
     pm_trig_reset();
     memset(global_memory,0,sizeof(global_memory));memset(registers,0,sizeof(registers));
     memset(global_page_map,0,sizeof(global_page_map));global_page_count=0;
     memset(&fallback_runtime,0,sizeof(fallback_runtime));frame_fuel=-1;
 }
-int pm_frame_remaining(void) {return frame_fuel<0?262144:frame_fuel;}
+int pm_frame_remaining(void) {return frame_fuel<0?PM_TOTAL_FUEL:frame_fuel;}
 /* Only memory-using programs pay for journaling. Roll back on invalid math,
  * bytecode, address, or exhausted execution budget; no allocations in playback. */
 typedef struct {float *address,old;} Write;
@@ -291,7 +298,15 @@ static int bounded_address(float x,int limit) {
     if(!isfinite(x) || x<0 || x>=limit) return -1;
     int i=(int)(x+.00001f);return i<limit?i:-1;
 }
-static int address_index(float x) {return bounded_address(x,PM_MEMORY);}
+static int address_index(float x) {return bounded_address(x,PM_GLOBAL_ADDRESS_SPACE);}
+static int global_index(float x) {
+    if(!isfinite(x))return -1;
+    /* NSEEL's shared GRAM masks its signed integer address into 1 Mi cells. */
+    double value=(double)x+.00001;
+    int32_t index=value>=2147483648.0 || value< -2147483648.0?INT32_MIN:(int32_t)value;
+    return (int)((uint32_t)index&(PM_GLOBAL_ADDRESS_SPACE-1));
+}
+#include "preset_local_memory.h"
 /* NSEEL's default double assignment clears exceptional/denormal values.
  * Use the corresponding float exponent here (the PSP VM remains float).
  * The expression still returns its RHS; compound stores bypass this filter. */
@@ -340,6 +355,11 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
     if (!program_valid(program)) return 0;
     for (int i = 0; i < program->count; i++) {
         const PmOp *op = &program->code[i];
+#ifdef __PSP__
+        /* Larger finite setup/frame work must still yield to DAC/network
+         * workers. Point programs retain their original small hard cap. */
+        if(allowance>PM_FUEL && fuel<allowance && !(fuel&4095))sceKernelDelayThread(1);
+#endif
         if(--fuel<0) {PM_REASON("invocation fuel");return 0;}
         if(frame_fuel==0) {PM_REASON("aggregate frame fuel");return 0;}
         if(frame_fuel>0) frame_fuel--;
@@ -398,25 +418,29 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             int store=op->op==MEMS || op->op==GMEMS;
             if(used<1+store) return 0;
             int global=op->op==GMEML || op->op==GMEMS;
-            int index=bounded_address(stack[used-1-store],global?PM_GLOBAL_ADDRESS_SPACE:PM_MEMORY);
+            int index=global?global_index(stack[used-1-store]):address_index(stack[used-1-store]);
             if(index<0) {PM_REASON(global?"global address":"local address");return 0;}
-            float *cell=global?global_cell(index,0):runtime->memory+index;
+            float *cell=global?global_cell(index,0):local_cell(runtime,index,0);
             if(store) {
                 a=stack[--used];float value=op->value?a:assigned_value(a);
+                if(!global) {
+                    if(!local_write(runtime,index,value,journal))return 0;
+                    stack[used-1]=a;continue;
+                }
                 if(!cell && (value!=0 || signbit(value))) {
-                    cell=global_cell(index,1);if(!cell)return 0;
+                    cell=global_cell(index,1);
                 }
                 if(cell && !write_value(journal,cell,value))return 0;
                 stack[used-1]=a;
-            } else stack[used-1]=cell?*cell:0;
+            } else stack[used-1]=cell?*cell:global?0:local_default(runtime,index);
             continue;
         }
         if(op->op==MEMCPY || op->op==MEMSET) {
             if(used<3) return 0;
             float count=stack[used-1];int dst=address_index(stack[used-3]);
-            if(!isfinite(count) || count<0 || count>PM_MEMORY || dst<0) return 0;
+            if(!isfinite(count) || count<0 || count>PM_GLOBAL_ADDRESS_SPACE || dst<0) return 0;
             int n=(int)count,src=op->op==MEMCPY?address_index(stack[used-2]):0;
-            if(dst+n>PM_MEMORY || src<0 || (op->op==MEMCPY && src+n>PM_MEMORY)) return 0;
+            if(dst+n>PM_GLOBAL_ADDRESS_SPACE || src<0 || (op->op==MEMCPY && src+n>PM_GLOBAL_ADDRESS_SPACE)) return 0;
             if(n>fuel) return 0;
             fuel-=n;
             if(frame_fuel>=0) {
@@ -425,8 +449,11 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             }
             a=stack[used-2];
             for(int k=0;k<n;k++) {
+#ifdef __PSP__
+                if(k && !(k&4095))sceKernelDelayThread(1);
+#endif
                 int j=op->op==MEMCPY && dst>src?n-1-k:k;
-                if(!write_value(journal,runtime->memory+dst+j,op->op==MEMCPY?runtime->memory[src+j]:a)) return 0;
+                if(!local_write(runtime,dst+j,op->op==MEMCPY?local_read(runtime,src+j):a,journal)) return 0;
             }
             used-=2;continue;
         }
@@ -520,12 +547,27 @@ static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int 
     variables.count=0;memset(variables.dirty,0,sizeof(variables.dirty));
     unsigned int random=runtime->random;
     int old_pages=global_page_count;
-    if(execute(program,values,error_line,runtime,&journal,&variables,allowance,init)) return 1;
+    int old_local_pages=runtime->page_count,old_fills=runtime->fill_count;
+    PmFill fills[PM_LOCAL_FILLS];memcpy(fills,runtime->fills,sizeof(fills));
+    /* Main-frame/setup phases are bounded separately from point geometry.
+     * Their extra allowance must not increase old presets' mesh/wave density
+     * or starve all geometry after an expensive one-time initialization. */
+    int saved_frame=frame_fuel,separate=allowance>PM_FUEL;
+    if(separate)frame_fuel=-1;
+    int success=execute(program,values,error_line,runtime,&journal,&variables,allowance,init);
+    if(separate)frame_fuel=saved_frame;
+    if(success) return 1;
     while(variables.count) {
         int id=variables.ids[--variables.count];values[id]=variables.old[id];
     }
     while(journal.count) {Write *w=&journal.writes[--journal.count];*w->address=w->old;}
     while(global_page_count>old_pages)global_page_map[global_page_keys[--global_page_count]]=0;
+    while(runtime->page_count>old_local_pages) {
+        int page=--runtime->page_count;
+        runtime->pages[runtime->keys[page]]=0;runtime->keys[page]=0;
+        memset(runtime->memory+page*PM_GLOBAL_PAGE_SIZE,0,PM_GLOBAL_PAGE_SIZE*sizeof(float));
+    }
+    runtime->fill_count=old_fills;memcpy(runtime->fills,fills,sizeof(fills));
     runtime->random=random;return 0;
 }
 int pm_execute_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {

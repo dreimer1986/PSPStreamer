@@ -1,5 +1,8 @@
 # Sparse global memory and remaining preset failures
 
+Historical batch. The subsequent [import/resource update](MILKDROP_RESOURCE_LIMITS.md)
+supersedes the capacities and remaining-failure counts below.
+
 This batch changes the bounded MilkDrop interpreter/importer only. It does not
 change audio, video synchronization, networking, OC, or the server.
 

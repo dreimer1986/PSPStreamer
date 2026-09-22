@@ -189,13 +189,13 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
         float parsed;
         number++;
         while ((ch = fgetc(file)) != EOF && ch != '\n') {
-            if (++total > 65536 || used >= (int)sizeof(line)-1 || ch == 0) {
+            if (++total > PM_SOURCE_BYTES || used >= (int)sizeof(line)-1 || ch == 0) {
                 result = md_file_error(error, MD_FILE_INVALID, number, "size/encoding");
                 goto done;
             }
             line[used++] = (char)ch;
         }
-        if (ch == '\n' && ++total > 65536) {
+        if (ch == '\n' && ++total > PM_SOURCE_BYTES) {
             result = md_file_error(error, MD_FILE_INVALID, number, "size");
             goto done;
         }
@@ -214,8 +214,12 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             section = 1; continue;
         }
         equal = strchr(key, '=');
+        /* Desktop retrieves named INI keys; orphan/empty-key records do not
+         * replace a later valid numbered formula record. */
+        if (!equal && section) continue;
         if (!equal) { result = md_file_error(error, MD_FILE_INVALID, number, key); goto done; }
         *equal = 0; key = md_trim(key); value = equal+1;
+        if (!*key && section) continue;
         /* Keep formula whitespace: Desktop removes only record delimiters,
          * not spaces intentionally separating tokens at their boundaries. */
         if(strncmp(key,"per_frame_",10) && strncmp(key,"per_pixel_",10) &&
@@ -341,6 +345,7 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             }
             int k; for(k=0;k<23 && strcmp(key+12,names[k]);k++) {}
             if(k==23) { result=md_file_error(error,MD_FILE_UNSUPPORTED,number,key); goto done; }
+            if(shape_seen[slot]&(1U<<k))continue; /* Desktop: first key wins. */
             errno=0; parsed=strtof(value,&end);
             float lo=0,hi=1;
             if(k==1) {lo=-FLT_MAX;hi=FLT_MAX;} /* draw-time clamp */
@@ -352,7 +357,8 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
                 (shape_seen[slot]&(1U<<k))) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
-            if((k<4 || k==22) && parsed!=floorf(parsed)) {
+            if(k==0 || k==2 || k==3 || k==22)parsed=truncf(parsed);
+            if(k==1 && parsed!=floorf(parsed)) {
                 result=md_file_error(error,MD_FILE_INVALID,number,key); goto done;
             }
             if(k==0 || k==2 || k==3 || k==22)parsed=parsed!=0;
@@ -393,6 +399,9 @@ int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error) {
             extra_seen |= 1ULL<<k; continue;
         }
         errno = 0; parsed = strtof(value, &end);
+        /* GetPrivateProfileFloat leaves the initialized default on failed
+         * conversion. Keep nonfinite/overflow/trailing garbage diagnostics. */
+        if (end == value && !(seen & (1U << index))) {seen |= 1U << index;continue;}
         if (end == value || *md_trim(end) || errno == ERANGE || !isfinite(parsed) ||
             (seen & (1U << index))) {
             result = md_file_error(error, MD_FILE_INVALID, number, key); goto done;

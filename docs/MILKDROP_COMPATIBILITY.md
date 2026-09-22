@@ -7,11 +7,11 @@ engine is a bounded interpreter, not a port of the desktop x86 JIT.
 
 ## Implemented feature families
 
-The [sparse-memory/import correction](MILKDROP_SPARSE_MEMORY.md) accepts EEL's
-lone-dot zero constant and maps high global addresses into the unchanged
-32-KiB resident data pool. Try `sparse-global-demo.milk`. Local memory and all
-execution budgets remain unchanged; the linked guide separates remaining
-malformed files from resource limits requiring further work.
+The [import/resource update](MILKDROP_RESOURCE_LIMITS.md) expands importer
+capacity, uses bounded sparse local and shared memory, and stores large
+uniform local fills as compact defaults. Expensive setup/main-frame work has
+separate bounded fuel and cooperatively yields on PSP. Point geometry retains
+its existing budget. Try `local-sparse-fill-demo.milk` and `sparse-global-demo.milk`.
 
 Import compatibility with fork exports: known numeric fields not read by
 MilkDrop 2's `CState/CWave/CShape::Import` are accepted without an effect:
@@ -25,12 +25,9 @@ Like the reference's `MAX_CUSTOM_WAVES=4` and `MAX_CUSTOM_SHAPES=4`, only slots
 storage or compiling their formulas. Malformed slot identifiers still fail;
 a file containing only ignored records is not a usable preset.
 
-Current audit: **1,705/1,715** files load and **1,646** pass 120 frames, up from
-1,701 / 1,637 after the fork-field batch. No previously passing preset regressed.
-The full collection was evaluated, followed by a focused rerun of all 83
-global-memory users after eliminating redundant page clearing. Ten import
-failures remain, alongside 51 runtime invocation-budget failures and eight
-local-memory address failures. See the sparse-memory guide for details.
+Current import audit: **1,713/1,715** files load (previously 1,705).
+The two rejected Hexcollie files contain missing formula separators. See the
+resource-update guide for execution results and deliberate PSP approximations.
 The preceding fork-field hardware checks were confirmed by the user:
 `BDRV et AL shifter - tumbling cubes 5`, `ORB - Fire and Fumes 2`, and
 `BrainStain- boiling-mix2(redi jedi full carb mix)`.
@@ -42,8 +39,8 @@ wave copies follow Desktop's positive-y displacement translated to PSP's
 downward screen coordinates (one texel upward). Formula-controlled shape
 `additive`, `textured` and `thick` flags follow integer truth: magnitudes below
 one are false. Shape outlines require positive `border_a` before byte wrapping.
-These match MilkDrop 2's `DrawCustomShapes`/`DrawCustomWaves` paths rather than
-introducing extra PSP limits. Static preset flag validation is unchanged.
+These match MilkDrop 2's `DrawCustomShapes`/`DrawCustomWaves` paths. Static shape
+flags also use integer truth; the first repeated shape/formula INI key wins.
 
 Geiss export compatibility: original `ob_a`/`ib_a` and
 `nMotionVectorsX`/`nMotionVectorsY` map to the same fields as the earlier aliases.
@@ -143,10 +140,11 @@ error and the application falls back to its normal visualization; it does
 not stop the audio worker.
 
 The counted-loop ceiling is the reference's 1,048,576 iterations; fuel usually
-stops expensive loops much earlier. Init-only pure sequential zero-fill loops
-are recognized and run as bounded native clears of resident PSP memory. Their
-index/result is preserved, but zero stores outside resident memory are omitted.
-Other out-of-range accesses still fail. See [phase scheduling](MILKDROP_PHASE_BUDGETS.md).
+stops expensive loops much earlier. Init-only sequential constant local fills
+and shared zero clears run as bounded native operations. Their index/result
+is preserved; local ranges are clipped to the logical PSP address space.
+Shared ranges wrap according to EEL's address conversion. See the current
+[resource guide](MILKDROP_RESOURCE_LIMITS.md).
 
 `megabuf(i)` or `base[index]` accesses local memory. Each preset-frame,
 preset-pixel, shape-frame, wave-frame and wave-point context owns its own buffer.
@@ -163,7 +161,8 @@ invocation's global writes are not rolled back by a later failure.
 assignment stores zero for exceptional/denormal values, while the inspected
 Desktop compound stores do not. Non-finite renderer inputs are still rejected.
 See [numeric compatibility](MILKDROP_NUMERIC_COMPATIBILITY.md) for the exact
-scope and float/double differences. Out-of-range addresses are errors, not wrapped.
+scope and float/double differences. Invalid local addresses are errors; shared
+addresses wrap, and resident-page saturation uses the documented quiet fallback.
 
 Pixel named variables/memory persist between points and frames independently
 of preset-frame locals. Pixel q values are seeded once from the current frame,
@@ -188,16 +187,17 @@ the video/audio playback clocks or chosen video frame rate.
 
 | Resource | Limit |
 | --- | --- |
-| Preset file / physical line | 64 KiB / 2047 bytes |
-| Compiled init/frame program | 4096 instructions, 1024 numbered lines |
+| Preset file / physical line | 256 KiB / 2047 bytes |
+| Compiled init/frame program | 8192 instructions, 2048 numbered lines |
 | Compiled pixel/point program | 4096 instructions |
-| Allocated bytecode per preset | 16384 instructions total; empty contexts allocate nothing |
-| Named locals | 128 per context, 31-character names |
+| Allocated bytecode per preset | 32768 instructions total; empty contexts allocate nothing |
+| Named locals | 256 per context, 31-character names |
 | Operand stack / parser depth | 48 / 64 |
-| Local memory per context / resident shared memory | 4096 / 8192 float slots |
-| Global logical addresses / resident pages | 0–1048575 / 32 pages of 256 floats; no eviction |
-| Work per point/ordinary invocation / init / main frame program | 4096 / 65536 / 131072 steps |
-| Shared work per visual frame | 262144 steps, including native clears and bulk memory work |
+| Local memory per context / resident shared memory | 8192 / 16384 float slots |
+| Local / shared logical addresses | 0–1048575; 256-float pages; no eviction; shared indices wrap |
+| Uniform local initialization | Up to 8 range defaults, independent of resident pages |
+| Work per point/ordinary invocation / init / main frame program | 4096 / 4194304 / 4194304 steps |
+| Shared point/geometry work per visual frame | 262144 steps; setup/main frame have separate allowances |
 | Mesh | 16 × 16 cells; budget-aware 8 × 8 formula-evaluation fallback |
 | Shapes | Up to 4 × 512 instances, budget-aware fallback; 100 sides each; GPU batches of 32 shapes |
 | Custom waves | Up to 4 × 1024 points; budget-aware density, retaining audio-window endpoints |
@@ -222,7 +222,7 @@ span entries. Desktop `//` and double-backslash line comments and the optional
 leading backtick are handled before concatenation. Record separators disappear
 (even identifiers can span entries), but explicit whitespace is preserved.
 Physical source-line mappings survive into runtime diagnostics. Source buffers
-are import-only; execution and megabuf budgets remain unchanged. Try
+are import-only. Try
 `multiline-formula-demo.milk`; see [the collection comparison](MILKDROP_MULTILINE_AUDIT.md).
 Empty statements (`;;`) are accepted. Custom-wave `sample`, `value1`, `value2`
 and shape `instance`, `num_inst`/`instances` may be assigned within their formula

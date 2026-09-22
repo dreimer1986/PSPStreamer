@@ -1,6 +1,6 @@
 /* Import-only buffers: physical records become one Desktop-style program.
  * No source text/mapping allocation survives activation. File size still caps
- * aggregate text at 64 KiB; each context has a bounded record budget. */
+ * aggregate text at 256 KiB; each context has a bounded record budget. */
 enum { MD_SOURCE_BLOCKS=3+MD_SHAPES*2+MD_CUSTOM_WAVES*3 };
 typedef struct {
     char *text;
@@ -39,6 +39,11 @@ static MdSourceBlock *md_source_create(MdFilePreset *p) {
     return b;
 }
 static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int line,MdFileError *error) {
+    size_t prefix=strlen(b->prefix);
+    if(!strncmp(key,b->prefix,prefix)) {
+        char *end;long record=strtol(key+prefix,&end,10);
+        if(end!=key+prefix && !*end && record>0 && record<=b->count)return MD_FILE_OK;
+    } /* GetPrivateProfileString returns the first matching numbered key. */
     char expected[48];snprintf(expected,sizeof(expected),"%s%d",b->prefix,b->count+1);
     if(strcmp(key,expected) || b->count>=PM_MAX_RECORDS)return md_file_error(error,MD_FILE_INVALID,line,key);
     if(*text=='`')text++; /* Desktop's optional exported-line marker. */
@@ -50,7 +55,7 @@ static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int l
     size_t size=0;
     while(text[size] && !((text[size]=='/' && text[size+1]=='/') ||
                          (text[size]=='\\' && text[size+1]=='\\')))size++;
-    if(size>65536U-(unsigned)b->used-2U)return md_file_error(error,MD_FILE_INVALID,line,key);
+    if(size>PM_SOURCE_BYTES-(unsigned)b->used-2U)return md_file_error(error,MD_FILE_INVALID,line,key);
     char *joined=realloc(b->text,b->used+size+2);
     if(!joined)return md_file_error(error,MD_FILE_IO,line,"formula allocation");
     b->text=joined;b->locations[b->count++]=(PmSourceLocation){b->used,line};

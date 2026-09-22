@@ -72,6 +72,11 @@ class Symbols(ctypes.Structure):
 
 class Runtime(ctypes.Structure):
     _fields_=[("memory",ctypes.c_float*MEMORY),("random",ctypes.c_uint)]
+    if 'PM_LOCAL_FILLS' in (ROOT/'psp-client/preset_math.h').read_text():
+        class Fill(ctypes.Structure):
+            _fields_=[('lo',ctypes.c_int),('hi',ctypes.c_int),('value',ctypes.c_float)]
+        _fields_ += [('pages',ctypes.c_ubyte*4096),('keys',ctypes.c_ushort*(MEMORY//256)),
+                     ('page_count',ctypes.c_int),('fill_count',ctypes.c_int),('fills',Fill*8)]
 
 
 class ShapeProgram(ctypes.Structure):
@@ -579,8 +584,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(values['result'],16)
         values,_=self.execute_eel('memset(4,2,5);megabuf(4)+=3;freembuf(0);result=4[0]+megabuf(8);',first)
         self.assertEqual(values['result'],7)
-        for source in (f'a=megabuf({MEMORY});','megabuf(-1)=2;','gmegabuf(1e30)=0;',
-                       f'memcpy({MEMORY-1},0,2);',f'memset(0,1,{MEMORY+1});'):
+        for source in ('a=megabuf(1048576);','megabuf(-1)=2;','gmegabuf(1/0)=0;',
+                       'memcpy(1048575,0,2);','memset(0,1,1048577);'):
             before=bytes(first)
             self.execute_eel(source,first,False)
             self.assertEqual(bytes(first),before)
@@ -597,7 +602,8 @@ class PresetTests(unittest.TestCase):
             program,symbols=Program(),Symbols()
             self.assertEqual(compile_fn(ctypes.byref(program),(prefix+ending).encode(),9,ctypes.byref(symbols)),0)
             values=(ctypes.c_float*VALUES)(*([1.25]*VALUES));before=bytes(values)
-            runtime=Runtime();runtime.random=123;runtime.memory[0]=3
+            runtime=Runtime();runtime.random=123
+            self.execute_eel('megabuf(0)=3;',runtime)
             old_runtime=bytes(runtime);error=ctypes.c_int()
             self.library.pm_reset_globals();self.library.pm_begin_frame()
             self.assertEqual(fn(ctypes.byref(program),values,ctypes.byref(error),ctypes.byref(runtime)),int(not ending))
@@ -683,7 +689,7 @@ class PresetTests(unittest.TestCase):
         prefixes += [f'shape_{i}_per_frame' for i in range(4)]
         prefixes += [f'wave_{i}_per_point' for i in range(2)]
         for prefix in prefixes:
-            for i in range(1,31):lines.append(prefix+str(i)+'='+('q1=q1+.001;'*20))
+            for i in range(1,31 if prefix=='per_pixel_' else 51):lines.append(prefix+str(i)+'='+('q1=q1+.001;'*20))
         code,_,error=self.parse('\n'.join(lines).encode())
         self.assertEqual(code,2)
         self.assertEqual(error.key,b'total formula storage')
@@ -724,7 +730,8 @@ class PresetTests(unittest.TestCase):
 
     def test_expanded_file_and_line_limits(self):
         self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*4000)[0],0)
-        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*12000)[0],2)
+        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*12000)[0],0)
+        self.assertEqual(self.parse(b'[preset00]\nzoom=1\n'+b';note\n'*50000)[0],2)
         self.assertEqual(self.parse(b'[preset00]\nzoom=1\n;'+b'a'*2047)[0],2)
 
     def test_whitespace_bom_crlf_and_defaults(self):
@@ -771,22 +778,22 @@ class PresetTests(unittest.TestCase):
         for formula in ('q1=..5;','q1=.foo;','q1=. + ;'):
             self.assertNotEqual(self.parse(b'[preset00]\nper_frame_1='+formula.encode())[0],0)
         # INI numeric settings do not go through the EEL lexer.
-        self.assertNotEqual(self.parse(b'[preset00]\nzoom=.\n')[0],0)
+        self.assertEqual(self.parse(b'[preset00]\nzoom=.\n')[0],0)
 
     def test_host_audit_distinguishes_resource_failures(self):
         reason=self.library.pm_audit_reason
         reason.restype=ctypes.c_char_p
         self.library.pm_reset_globals()
-        self.execute_eel('q1=megabuf(4096);',success=False)
+        self.execute_eel('q1=megabuf(1048576);',success=False)
         self.assertEqual(reason(),b'local address')
-        self.execute_eel('q1=gmegabuf(1048576);',success=False)
+        self.execute_eel('q1=gmegabuf(1/0);',success=False)
         self.assertEqual(reason(),b'global address')
         self.library.pm_begin_frame()
         self.execute_eel('loop(1000000,q1+=1);',success=False)
         self.assertEqual(reason(),b'invocation fuel')
         self.library.pm_audit_reset()
-        formula=''.join(f'var{i}=1;' for i in range(USERS+1))
-        self.assertNotEqual(self.parse(f'[preset00]\nper_frame_1={formula}\n'.encode())[0],0)
+        formula='\n'.join(f'per_frame_{i+1}=var{i}=1;' for i in range(USERS+1))
+        self.assertNotEqual(self.parse(f'[preset00]\n{formula}\n'.encode())[0],0)
         self.assertEqual(reason(),b'variable capacity')
 
     def test_extra_desktop_slots_are_inert(self):
@@ -830,8 +837,28 @@ class PresetTests(unittest.TestCase):
         self.assertNotEqual(self.parse(headers+b'[preset00]\n'+shaders)[0], 0)
         self.assertEqual(self.parse(base+b'warp_1='+b'x'*2048)[0], 2)
 
+    def test_reference_ini_orphans_defaults_and_first_keys(self):
+        code,preset,_=self.parse(b'[preset00]\n=1\nrot=-\nper_frame_1\n'
+            b'per_frame_1=zoom=1.25;\nper_frame_1=zoom=9;\n'
+            b'shapecode_0_enabled=1\nshapecode_0_enabled=0\n'
+            b'shapecode_0_textured=.0525\n')
+        self.assertEqual(code,0)
+        self.assertEqual(preset.warp.rotation,self.parse(b'[preset00]\nzoom=1')[1].warp.rotation)
+        self.assertEqual(preset.decor.shapes[0].enabled,1)
+        self.assertEqual(preset.decor.shapes[0].textured,0)
+        code,warp,_=self.evaluate_state(preset,PresetState(),0)
+        self.assertEqual(code,0)
+        self.assertEqual(warp.zoom,1.25)
+
+    def test_sparse_uniform_demo_renders_over_multiple_frames(self):
+        code,preset,_=self.parse((ROOT/'psp-client/presets/local-sparse-fill-demo.milk').read_bytes())
+        self.assertEqual(code,0)
+        state=PresetState()
+        for frame in range(120):
+            self.assertEqual(self.evaluate_state(preset,state,frame/30)[0],0)
+
     def test_invalid_numbers_duplicates_and_sections(self):
-        for value in ("nan", "inf", "-inf", "1e99", "1e-999", "", "1 + bass",
+        for value in ("nan", "inf", "-inf", "1e99", "1e-999", "1 + bass",
                       "1; trailing"):
             result, _, error = self.parse(("[preset00]\nzoom=" + value).encode())
             self.assertEqual(result, 2, value)
@@ -900,7 +927,7 @@ class PresetTests(unittest.TestCase):
                        "rot=" + "("*70 + "0" + ")"*70 + ";",
                        "rot=" + "+".join(["0"]*1100) + ";"):
             self.assertNotEqual(self.parse(f"[preset00]\nper_frame_1={source}".encode())[0], 0)
-        for lines in ("per_frame_2=rot=0;", "per_frame_1=rot=0;\nper_frame_1=rot=0;",
+        for lines in ("per_frame_2=rot=0;",
                       "\n".join(f"per_frame_{i}=rot=0;" for i in range(1,RECORDS+2))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0], 2)
 
@@ -1325,9 +1352,9 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
         self.assertEqual(preset.decor.echo_orient,3)
         self.assertEqual(preset.decor.wave_thick,1)
         for key,value in (("shapecode_0_sides",3.5),
-            ("shapecode_0_textured",.5),("shapecode_0_per_frame1",0)):
+            ("shapecode_0_per_frame1",0)):
             self.assertNotEqual(self.parse(f"[preset00]\n{key}={value}".encode())[0],0)
-        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],2)
+        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_x=.5\nshapecode_0_x=.5")[0],0)
         self.assertEqual(self.parse(b"[preset00]\nbModWaveAlphaByVolume=1\nfModWaveAlphaStart=1\nfModWaveAlphaEnd=1")[0],0)
 
     def test_stereo_script_wave(self):
@@ -1502,9 +1529,9 @@ wave_0_per_point1=x=time/10; y=q1/10; time+=1;
                 code,preset,_=self.parse(f"[preset00]\nshapecode_{slot}_thickOutline={value}".encode())
                 self.assertEqual(code,0)
                 self.assertEqual(preset.decor.shapes[slot].thick_outline,value)
-        for value in ('.5','nan','inf'):
+        for value in ('nan','inf'):
             self.assertNotEqual(self.parse(f"[preset00]\nshapecode_0_thickOutline={value}".encode())[0],0)
-        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_thickOutline=1\nshapecode_0_thickOutline=0")[0],2)
+        self.assertEqual(self.parse(b"[preset00]\nshapecode_0_thickOutline=1\nshapecode_0_thickOutline=0")[0],0)
 
     def test_shape_formula_flags_use_desktop_integer_truth(self):
         for value in (0, .5, -.5, .999, -.999, 1, -1, 1.5, 1e30):
@@ -1933,7 +1960,6 @@ per_frame_1=wave_r=progress;
         for name in ("psp_low",):
             self.assertEqual(self.parse(f"[preset00]\nper_frame_init_1={name}=1;".encode())[0],3)
         for lines in ("per_frame_init_2=q1=0;",
-                      "per_frame_init_1=q1=0;\nper_frame_init_1=q1=1;",
                       "\n".join(f"per_frame_init_{i}=q1=0;" for i in range(1,RECORDS+2)),
                       "\n".join(f"per_frame_init_{i}=q1=0+0+0+0+0;" for i in range(1,MAX_OPS//10+2))):
             self.assertEqual(self.parse(f"[preset00]\n{lines}".encode())[0],2)

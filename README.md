@@ -827,13 +827,16 @@ with a budget-aware fallback, and up to 1024 custom-wave points. Test with
 The [phase-budget update](docs/MILKDROP_PHASE_BUDGETS.md) accelerates recognized
 init zero-fill loops, separates once-per-frame work from point-call limits,
 and reduces dense custom-wave point counts within the unchanged total frame
-budget. Shared memory has 8192 resident slots; per-context memory remains 4096. Try
-`phase-memory-demo.milk` and `wave-budget-demo.milk`. These PSP limits can
-change a preset's appearance; unsupported memory/math is not silently ignored.
-The [sparse global-memory update](docs/MILKDROP_SPARSE_MEMORY.md) maps those
-resident slots to addresses up to 1048575 without enlarging the data buffer.
-It also accepts the original EEL lone-dot zero constant. Try
-`sparse-global-demo.milk`; no server or OC-plugin update is required.
+budget. Try `phase-memory-demo.milk` and `wave-budget-demo.milk`.
+The latest [import/resource update](docs/MILKDROP_RESOURCE_LIMITS.md) raises
+file/formula capacity, adds sparse local memory and compact uniform fills,
+and gives expensive setup/main-frame formulas a separate, bounded allowance.
+Shared memory has 16384 resident floats; each context has 8192 local floats.
+Both address spaces span 1048576 logical cells. Writes requiring another page
+after the resident pool fills are discarded, without aliasing existing data;
+this deliberate PSP approximation can change a preset's appearance.
+Try `local-sparse-fill-demo.milk` and `sparse-global-demo.milk`.
+No server or OC-plugin update is required.
 The **[current MilkDrop compatibility guide](docs/MILKDROP_COMPATIBILITY.md)**
 is the authoritative feature/limit summary; older linked guides describe
 historical batches. The latest batch adds EEL operators, assignment expressions,
