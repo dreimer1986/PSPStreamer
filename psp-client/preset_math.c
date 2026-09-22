@@ -7,6 +7,7 @@
 #include <math.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "preset_trig.h"
 #ifdef __PSP__
 #include <pspkernel.h>
@@ -29,6 +30,11 @@ enum { PUSH, LOAD, STORE, ADD, SUB, MUL, DIV, NEG, SIN, COS, ABS, MIN, MAX, SQRT
 static int binary(int op) {
     return (op>=ADD && op<=DIV) || op==MIN || op==MAX || (op>=POW && op<=EQUAL) ||
            op==BAND || op==BOR || op==SIGMOID || (op>=MOD && op<=GE);
+}
+void pm_runtime_copy(PmRuntime *destination,const PmRuntime *source) {
+    if(destination==source)return;
+    memcpy(destination->memory,source->memory,(size_t)source->page_count*PM_GLOBAL_PAGE_SIZE*sizeof(float));
+    memcpy(&destination->random,&source->random,sizeof(*source)-offsetof(PmRuntime,random));
 }
 void pm_program_free(PmProgram *program) {
     free(program->code);memset(program,0,sizeof(*program));
@@ -385,6 +391,17 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             continue;
         }
 
+        /* Dense point formulas spend most instructions here. Do not walk
+         * all loop/register/memory/branch cases for elementary arithmetic.
+         * One original instruction, one fuel charge, same float operation;
+         * no fusion, fast-math, skipped assignments or changed error lines. */
+        if(op->op>=ADD && op->op<=MUL) {
+            if(used<2)return 0;
+            b=stack[--used];a=stack[used-1];
+            stack[used-1]=op->op==ADD?a+b:op->op==SUB?a-b:a*b;
+            continue;
+        }
+
         if(op->op==LOOP || op->op==WHILE) {
             if(depth>=PM_DEPTH || op->arg<=i+1 || op->arg>program->count ||
                program->code[op->arg-1].op!=(op->op==LOOP?LOOPEND:WHILEEND) || program->code[op->arg-1].arg!=i) return 0;
@@ -478,8 +495,6 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             b = a; a = stack[--used];
         }
         switch (op->op) {
-            case ADD: result=a+b; break; case SUB: result=a-b; break;
-            case MUL: result=a*b; break;
             case DIV:
                 /* Do not issue a hardware divide-by-zero on the PSP. Keep
                  * IEEE intermediates until assignment, as Desktop does. */

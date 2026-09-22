@@ -21,6 +21,9 @@ typedef struct {
     int page_count,fill_count;
     PmFill fills[PM_LOCAL_FILLS];
 } PmRuntime;
+/* Copy only resident sparse-memory pages. New pages always initialize from
+ * fill defaults; unused physical storage is deliberately not part of state. */
+void pm_runtime_copy(PmRuntime *destination,const PmRuntime *source);
 typedef struct { int count; char names[PM_USER_COUNT][32]; } PmSymbols;
 typedef struct { int op, arg, line; float value; } PmOp;
 /* Owns import-time allocation. Zero-initialize; do not shallow-copy owners.

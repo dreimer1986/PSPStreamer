@@ -1,9 +1,32 @@
 # Import and bounded-memory expansion
 
-This batch addresses the old ToDo items 3 and 4 together. Audio, networking,
-video clocks, the server and the OC plugin are unchanged. Hardware playback
-confirmation is still required; successful host evaluation is not a frame-rate
-or visual-equivalence claim.
+The import/memory batch and Martin FPU return-path fix are now confirmed on the
+PSP. The new performance changes below still need hardware feedback. Successful
+host evaluation is not a frame-rate or visual-equivalence claim.
+
+## 2026-09-22: less copying, unchanged formula semantics
+
+- Main/shape transactions no longer copy independent wave/pixel state. The main
+  scratch block shrinks from 533,468 to 190,784 bytes: **342,684 bytes (334.7 KiB)
+  less static RAM**. New allocations during playback: none.
+- Runtime transactions copy only resident local-memory pages. Newly created
+  pages still initialize from the sparse fill defaults; rollback, random state
+  and page maps remain intact.
+- ADD/SUB/MUL have an early interpreter path, with exactly the same arithmetic,
+  instruction charges and assignment filtering. No fast-math, reduced point
+  counts, increased budgets or clock changes.
+- A focused `-O3` host comparison of 120 deterministic frames against `d8f5c85`
+  produced identical geometry/fuel hashes for Wave Budget (`49c5bc69`), Local
+  Sparse Fill (`86cfd585`) and Phase Memory (`d9727a25`). One paired run took
+  111.603 → 95.034 ms, 3.077 → 0.307 ms and 11.493 → 8.411 ms respectively.
+  These are host CPU measurements, **not PSP FPS**; verify the gain on hardware.
+  Reproducer: `tests/preset_copy_bench.c` (preset path, frame count).
+- The 99 directly affected preset tests passed (two opt-in skips); the explicit
+  Martin/FPU crash smoke test still passes. No full collection rerun was made.
+
+Sync CSV saving is also buffered now: the focused 4096-row fixture uses 27
+Memory Stick writes instead of 4097. Short writes and I/O errors are handled;
+writing still happens only after playback workers stop.
 
 ## Import corrections
 
@@ -123,8 +146,11 @@ not the previously blocked initial formula evaluation. The PSP return path now
 clears exception status while traps are still masked, then restores caller
 controls/sticky flags without replaying transient cause bits. Explicit instruction
 ordering separates these writes. Bounded startup diagnostics log saved/current
-FCR31 before and after restoration. This return-path mitigation still requires
-hardware confirmation; the log does not yet prove the precise fault location.
+FCR31 before and after restoration. The user has now confirmed successful
+playback on the real PSP with this two-stage return-path correction (2026-09-22).
+The import/sparse-memory demonstration presets have also passed their hardware
+tests. This resolves the reported Martin startup/return crash; it does not remove
+the separate computation limit on `martin - city of shadows`.
 
 The complete 1715-file import check now loads **1713** (previously 1705).
 The two rejected `suksma - Hexcollie - Julian Carnival - shimmy dumb grid

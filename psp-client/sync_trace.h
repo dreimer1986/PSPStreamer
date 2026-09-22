@@ -41,9 +41,21 @@ static void sync_trace_record(int video_pts, int action, unsigned int copy_us) {
     row->shown = sync_trace_shown; row->dropped = sync_trace_dropped;
     row->pts_errors = sync_audio_pts_errors;
 }
+static int sync_trace_write_all(SceUID fd,const char *data,int size) {
+    while(size>0) {
+        int written=sceIoWrite(fd,data,size);
+        if(written<=0 || written>size)return 0;
+        data+=written;size-=written;
+    }
+    return 1;
+}
 static void sync_trace_save(int tv, int result, int start_seconds) {
     if(!debug_enabled) return;
     char line[320];
+    /* Playback has stopped. Batch tiny CSV records instead of thousands of
+     * Memory Stick calls; no background writer or extra playback lifetime. */
+    static char buffer[4096];
+    int used=0,ok=1;
     unsigned int i, first = sync_trace_count > SYNC_TRACE_CAPACITY ? sync_trace_count - SYNC_TRACE_CAPACITY : 0;
     SceUID fd = sceIoOpen(tv ? "ms0:/PSP/SYSTEM/PSPStreamer-sync-tv.csv" :
                               "ms0:/PSP/SYSTEM/PSPStreamer-sync-lcd.csv",
@@ -53,13 +65,20 @@ static void sync_trace_save(int tv, int result, int start_seconds) {
     size = snprintf(line, sizeof(line), "# result=%d,start_seconds=%d,shown=%u,dropped=%u,pts_errors=%d\n"
         "elapsed_ms,video_pts_ms,audio_block_pts_ms,dac_rest_samples,queued_blocks,decode_us,prepare_us,copy_us,action,shown,dropped,pts_errors\n",
         result, start_seconds, sync_trace_shown, sync_trace_dropped, sync_audio_pts_errors);
-    if (sceIoWrite(fd, line, size) != size) { sceIoClose(fd); return; }
+    if(size<0 || size>=(int)sizeof(line)) {sceIoClose(fd);return;}
+    memcpy(buffer,line,size);used=size;
     for (i = first; i < sync_trace_count; i++) {
         SyncTraceRow *r = &sync_trace[i % SYNC_TRACE_CAPACITY];
         size = snprintf(line, sizeof(line), "%u,%d,%d,%d,%d,%u,%u,%u,%d,%d,%d,%d\n",
             r->elapsed_ms, r->video_pts, r->audio_pts, r->rest_samples, r->queued_blocks,
             r->decode_us, r->prepare_us, r->copy_us, r->action, r->shown, r->dropped, r->pts_errors);
-        if (sceIoWrite(fd, line, size) != size) break;
+        if(size<0 || size>=(int)sizeof(line)) {ok=0;break;}
+        if(used+size>(int)sizeof(buffer)) {
+            if(!sync_trace_write_all(fd,buffer,used)){ok=0;break;}
+            used=0;
+        }
+        memcpy(buffer+used,line,size);used+=size;
     }
+    if(ok && used)sync_trace_write_all(fd,buffer,used);
     sceIoClose(fd);
 }

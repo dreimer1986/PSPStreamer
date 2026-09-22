@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * New bounded static/formula subset parser, not the original MilkDrop parser. */
 #include "milkdrop_preset.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -8,8 +9,45 @@
 #include <ctype.h>
 #include <math.h>
 #include <errno.h>
-#include <stddef.h>
 #include <float.h>
+
+static void md_copy_shape_state(MdShapeState *to,const MdShapeState *from) {
+    memcpy(to,from,offsetof(MdShapeState,runtime));
+    pm_runtime_copy(&to->runtime,&from->runtime);
+}
+static void md_copy_wave_state(MdWaveState *to,const MdWaveState *from) {
+    md_copy_shape_state(&to->frame,&from->frame);
+    memcpy(to->point_user,from->point_user,sizeof(to->point_user));
+    pm_runtime_copy(&to->point_runtime,&from->point_runtime);
+}
+/* A frame transaction owns main/shape state, not the independent wave and
+ * pixel VMs. Avoid copying those large contexts twice on every visual frame.
+ * Keep the transaction: failure must still leave committed state untouched. */
+typedef struct {
+    int ready;float q[PM_Q_COUNT],user[PM_USER_COUNT],frame_q[PM_Q_COUNT];
+    unsigned int frames;float last_seconds,fps;
+    int wave_mode;float motion[9];
+    MdShapeState shape[MD_SHAPES];
+    float effects[5];PmRuntime runtime;float monitor;int wrap;
+} MdFrameScratch;
+_Static_assert(offsetof(MdFrameScratch,shape)==offsetof(MdPresetState,shape),"frame prefix layout");
+_Static_assert(offsetof(MdFrameScratch,motion)==offsetof(MdPresetState,motion),"frame clock layout");
+static void md_read_frame_state(MdFrameScratch *to,const MdPresetState *from,const MdFilePreset *p) {
+    memcpy(to,from,offsetof(MdPresetState,shape));
+    for(int i=0;i<MD_SHAPES;i++)if(p->decor.shapes[i].enabled)
+        md_copy_shape_state(&to->shape[i],&from->shape[i]);
+    memcpy(to->effects,from->effects,sizeof(to->effects));
+    pm_runtime_copy(&to->runtime,&from->runtime);
+    to->monitor=from->monitor;to->wrap=from->wrap;
+}
+static void md_commit_frame_state(MdPresetState *to,const MdFrameScratch *from,const MdFilePreset *p) {
+    memcpy(to,from,offsetof(MdPresetState,shape));
+    for(int i=0;i<MD_SHAPES;i++)if(p->decor.shapes[i].enabled)
+        md_copy_shape_state(&to->shape[i],&from->shape[i]);
+    memcpy(to->effects,from->effects,sizeof(to->effects));
+    pm_runtime_copy(&to->runtime,&from->runtime);
+    to->monitor=from->monitor;to->wrap=from->wrap;
+}
 _Static_assert(offsetof(MdShape,border_a)==21*sizeof(float),"shape field layout");
 _Static_assert(offsetof(MdShape,thick_outline)==22*sizeof(float),"shape outline field layout");
 _Static_assert(offsetof(MdDecor,shapes)==MD_DECOR_VALUES*sizeof(float),"decor field layout");
@@ -469,7 +507,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
             return md_file_error(error, MD_FILE_INVALID, 0, "music input");
         v[10+i] = value;
     }
-    static MdPresetState next;next=*state;
+    static MdFrameScratch next;md_read_frame_state(&next,state,p);
     pm_begin_frame();md_inputs(v);v[PM_MONITOR]=next.monitor;
     v[PM_WRAP]=(float)p->wrap;
     float dt=seconds-next.last_seconds;
@@ -573,7 +611,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
         int samples=w->frame.count?MD_CUSTOM_POINTS:(int)md_limit(w->samples,2,MD_CUSTOM_POINTS);
         downstream+=(unsigned)pm_program_work_hint(&w->point)*samples;
         downstream+=pm_program_work_hint(&w->frame);
-        if(!next.waves[slot].frame.ready)downstream+=pm_program_work_hint(&w->init);
+        if(!state->waves[slot].frame.ready)downstream+=pm_program_work_hint(&w->init);
     }
     unsigned long long budget=(unsigned)pm_frame_remaining()/2;
     unsigned long long remaining=(unsigned)pm_frame_remaining();
@@ -645,7 +683,7 @@ int md_eval_preset_shapes(const MdFilePreset *p,float seconds,const MdSignal *si
     memcpy(next.frame_q,v+PM_Q_BASE,sizeof(next.frame_q));
     next.monitor=v[PM_MONITOR];
     next.frames++; next.last_seconds=seconds;
-    *state=next;
+    md_commit_frame_state(state,&next,p);
     return MD_FILE_OK;
 }
 
@@ -663,7 +701,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
         if(!w->enabled) continue;
         if(w->spectrum && (!spectrum_left || !spectrum_right)) return md_file_error(error,MD_FILE_INVALID,0,"spectrum unavailable");
         MdWaveState *ws=&next[slot];
-        *ws=state->waves[slot];
+        md_copy_wave_state(ws,&state->waves[slot]);
         float v[PM_VALUES]={0};
         md_inputs(v);
         v[9]=seconds;
@@ -780,7 +818,7 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
                geometry[slot].count*sizeof(MdVertex));
     }
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++)
-        if(p->waves[slot].enabled) state->waves[slot]=next[slot];
+        if(p->waves[slot].enabled) md_copy_wave_state(&state->waves[slot],&next[slot]);
     return MD_FILE_OK;
 }
 
@@ -788,7 +826,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
                       const MdSignal *signal, MdPresetState *state,
                       MdPreset points[MD_GRID_POINTS], MdFileError *error) {
     MdPreset next[MD_GRID_POINTS];
-    static PmRuntime runtime;runtime=state->pixel_runtime;
+    static PmRuntime runtime;pm_runtime_copy(&runtime,&state->pixel_runtime);
     float users[PM_USER_COUNT],q[PM_Q_COUNT];
     memcpy(users,state->pixel_user,sizeof(users));memcpy(q,state->frame_q,sizeof(q));
     memset(error,0,sizeof(*error));
@@ -876,6 +914,6 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         memcpy(&next[y*(MD_GRID+1)+x],out,sizeof(out));
     }
     memcpy(points,next,sizeof(next));
-    state->pixel_runtime=runtime;memcpy(state->pixel_user,users,sizeof(users));
+    pm_runtime_copy(&state->pixel_runtime,&runtime);memcpy(state->pixel_user,users,sizeof(users));
     return MD_FILE_OK;
 }
