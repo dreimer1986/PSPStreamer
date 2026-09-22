@@ -1751,8 +1751,13 @@ static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
 static int music_formula_trace_remaining;
+static int music_formula_yields_remaining;
 static void music_formula_trace(const char *event,int line,int detail) {
     if(!debug_enabled || music_formula_trace_remaining<=0)return;
+    if(!strncmp(event,"VM yield",8)) {
+        if(music_formula_yields_remaining<=0)return;
+        music_formula_yields_remaining--;
+    }
     music_formula_trace_remaining--;
     char text[192];
     snprintf(text,sizeof(text),"formula=%s source_line=%d detail=%d stack_free=%d\n",
@@ -1761,7 +1766,8 @@ static void music_formula_trace(const char *event,int line,int detail) {
 }
 static void music_visual_trace(const char *stage,int persist) {
     if(!strcmp(stage,"MilkDrop frame/shape formulas")) {
-        music_formula_trace_remaining=persist?16:0;
+        music_formula_trace_remaining=persist?64:0;
+        music_formula_yields_remaining=persist?8:0;
         pm_diagnostic_hook=debug_enabled && persist?music_formula_trace:NULL;
     }
     video_watch_ping(stage);

@@ -95,8 +95,26 @@ The next hardware log still stops at `MilkDrop frame/shape formulas`, with
 wave-stack reduction did not resolve or establish the cause. Additional
 bounded startup breadcrumbs now separate VM initialization, native local fill,
 shared clear, main-frame evaluation and entry/return of the PSP scheduling
-yield. At most 16 extra records per initial frame are written, for two frames;
+yield. At most 64 extra records per initial frame are written, for two frames;
+yield messages have their own eight-record cap so they cannot hide phase ends.
 no execution limits or clock settings are changed by this diagnostic build.
+
+The following log confirms native local fill, shared clear and init completion,
+then enters the main frame program. An earlier preset runs in the same session
+at 333 MHz. Investigation found that the renderer relied on host-default
+non-trapping floating-point evaluation while EEL deliberately permits NaN/Inf
+intermediates. [PSPSDK documents FPU exception controls](https://pspdev.github.io/pspsdk/pspfpu_8h.html),
+and [PPSSPP records PSP-default FPU traps as a hardware/emulator difference](https://github.com/hrydgard/ppsspp/issues/22098).
+
+The renderer now saves FCR31, masks IEEE trap enables/clears pending status for
+the visualization call, and restores the exact saved state on every return.
+Rounding and flush mode stay unchanged. The change is renderer-thread-local;
+it does not change audio worker state, clocks, formula budgets or memory limits.
+The host counterpart uses `feholdexcept`/`fesetenv`. A focused test explicitly
+enables invalid/divide-by-zero/overflow traps: the unguarded renderer raises
+SIGFPE on the Martin fixture, while the guarded renderer completes both Martin
+fixtures in LCD/TV paths and restores the caller's enabled traps. This is a
+reproduced defect, but successful playback on the real PSP remains to be verified.
 
 The complete 1715-file import check now loads **1713** (previously 1705).
 The two rejected `suksma - Hexcollie - Julian Carnival - shimmy dumb grid

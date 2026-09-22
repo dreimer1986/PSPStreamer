@@ -52,6 +52,7 @@ milkdrop_wave_extra.o: milkdrop_preset.h preset_math.h
 main.o milkdrop_gu.o milkdrop_wave.o milkdrop_preset.o milkdrop_decor.o: milkdrop_decor.h
 milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o: milkdrop_profile.h
+milkdrop_gu.o: preset_fpu.h
 milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h
 
 # menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.

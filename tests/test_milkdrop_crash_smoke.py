@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import tempfile
 import unittest
@@ -46,7 +47,14 @@ int main(int argc,char **argv) {
             assert(md_start());persisted=stages=0;
             for(int frame=0;frame<12;frame++) {
                 visualization_pcm_publish(pcm,576);test_time+=100000;
-                assert(md_frame(tv,1,bands,50,test_time,3)==1);
+                int traps=FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW;
+                feenableexcept(traps);
+                int result=getenv("MILKDROP_UNGUARDED_CONTROL")?
+                    md_frame_inner(tv,1,bands,50,test_time,3):
+                    md_frame(tv,1,bands,50,test_time,3);
+                assert(fegetexcept()==traps); /* caller's policy restored */
+                fedisableexcept(traps);
+                assert(result==1);
                 assert(covered_width==expected_width);
             }
             assert(persisted==12 && stages==72);
@@ -68,3 +76,9 @@ int main(int argc,char **argv) {
                 *[str(ROOT/'psp-client'/f'{name}.c') for name in sources],
                 '-lpng', '-ljpeg', '-lz', '-lm', '-o', str(binary)], check=True)
             subprocess.run([str(binary), *map(str, fixtures)], check=True, timeout=30)
+            control_env=dict(os.environ,MILKDROP_UNGUARDED_CONTROL='1')
+            control_env['ASAN_OPTIONS']=os.environ.get('ASAN_OPTIONS','')+':handle_sigfpe=0'
+            control=subprocess.run([str(binary), *map(str, fixtures)], env=control_env,
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+            self.assertEqual(control.returncode,-signal.SIGFPE,
+                             'unguarded renderer must reproduce a floating-point trap')

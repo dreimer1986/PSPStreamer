@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "milkdrop_profile.h"
+#include "preset_fpu.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -234,7 +235,7 @@ void md_stop(void) {
     free(md_list); md_list = NULL;
     free(md_shape_frame);md_shape_frame=NULL;
 }
-int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
+static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset) {
     MdVertex *mesh, *ring;
     int target = 1-md_front;
@@ -497,4 +498,11 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
      * Retain at least 50 ms idle; expensive frames rest twice their cost. */
     md_next = finished + (cost > 25000ULL ? cost*2 : 50000ULL);
     return 1;
+}
+int md_frame(int tv,int fullscreen,const unsigned char bands[12],int level,
+             unsigned long long now,int preset) {
+    MdFpuState previous=md_fpu_enter();
+    int result=md_frame_inner(tv,fullscreen,bands,level,now,preset);
+    md_fpu_leave(&previous);
+    return result;
 }
