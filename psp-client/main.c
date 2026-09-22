@@ -1801,9 +1801,9 @@ static int play_audio_once(const char *media_id, const char *title) {
     video_step = "Music startup";
     start_result = video_watch_start(1);
     if (start_result < 0) { video_step = "Diagnostic file"; video_watch_stop(); return start_result; }
-    /* Public modes: spectrum (0), file MilkDrop (4), tunnel (5), cave (6). The GU
+    /* Public modes: spectrum (0), file MilkDrop (4), cave (6). The GU
      * adapter's historical 0..2 test variants are no longer selectable. */
-    int visual_preset = music_saved_visual_preset == 6 ? 6 : music_saved_visual_preset == 5 ? 5 : music_saved_visual_preset == 4 ? 4 : 0;
+    int visual_preset = music_saved_visual_preset == 6 ? 6 : music_saved_visual_preset == 4 ? 4 : 0;
     MdFileError preset_error;
     int preset_result;
     unsigned long long preset_notice_tick = ~0ULL;
@@ -1948,7 +1948,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
             for (band = 0; band < SPECTRUM_BANDS; band++)
                 bands[band] = audio_start ? spectrum_levels[band] : 0;
-            if(debug_enabled)md_profile_select(visual_preset==6?"Cave field":visual_preset==5?"Tunnel prototype":music_preset_file,tv_ui_active,fullscreen,visual_preset-1);
+            if(debug_enabled)md_profile_select(visual_preset==6?"Cave field":music_preset_file,tv_ui_active,fullscreen,visual_preset-1);
             int rendered = md_frame(tv_ui_active, fullscreen, bands, level,
                           sceKernelGetSystemTimeWide(), visual_preset-1);
             if (rendered <= 0) {
@@ -2024,7 +2024,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
             md_stop();music_visual_active=0;
-            visual_preset = visual_preset == 0 ? 4 : visual_preset == 4 ? 6 : visual_preset == 6 ? 5 : 0;
+            visual_preset = visual_preset == 0 ? 4 : visual_preset == 4 ? 6 : 0;
             if (visual_preset) {
                 if (visual_preset != 4 || preset_result == MD_FILE_OK) {
                     music_visual_active = md_start();

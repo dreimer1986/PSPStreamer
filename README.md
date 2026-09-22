@@ -874,40 +874,30 @@ Keep `subtitle_font.raw` and `cooleyesBridge.prx` beside `EBOOT.PBP`. The compac
 
 Component TV playback uses native 720×480 output. By default, the browser and options stay on the PSP LCD and video switches to the TV. With `tv_ui=auto`, TV menus and video share the same output mode: Stop/end returns to the TV menu without an LCD mode reset. The existing Select+L+R TV check is available from either browser and returns to its originating output. Text subtitles remain local overlays; TV bitmap subtitles use server-side burn-in to avoid sprite-transfer stalls at the higher resolution. The server website can select media and send play/pause, stop and seek commands. This GUI update does not require a server/add-on update.
 
-During music, **Square** cycles **spectrum analysis → MilkDrop → Cave → Tunnel test → spectrum**.
+During music, **Square** cycles **spectrum analysis → MilkDrop → Cave → spectrum**.
 MilkDrop uses the selected preset file (initially `presets/active.milk`). Copy
 the supplied `psp-client/presets` folder beside EBOOT. The three early built-in
 test effects are no longer part of the user-facing selection.
 
-**Tunnel test** is an experimental, original fixed-function 3D visualization:
-curved rock-textured walls, distance shading and bass/level response. It is a
-performance prototype inspired by Monkey, **not a reconstruction of Monkey's
-cave-generation algorithm**. No original DLL code or textures are included.
-The small texture is generated internally; no new files or server update are
-needed. Triangle switches window/fullscreen on LCD and native TV; Square leaves
-the tunnel, Circle selects a MilkDrop preset, and Start stops normally. The view
-is remembered across music tracks within the app session. The existing MilkDrop
-clock/resolution preferences apply to this shared visualizer renderer as well.
-
-The prototype has 28 rings × 24 sides (1,296 triangles), no depth buffer or
-programmable shaders, and retains the music renderer's conservative scheduling
-(at most about 20 updates/s, fewer when expensive). It does not alter audio
-threads, decoding or clocks. Please test motion, audio, input response and
-switching back to MilkDrop/spectrum and then to video. The tube prototype has
-passed the initial LCD/TV hardware test with uninterrupted audio.
-
-**Cave** is the next, separately selectable Monkey geometry study: an independently
+**Cave** is a separately selectable Monkey geometry study: an independently
 implemented Marching Cubes surface over compact radial fields and three-octave
 noise, following the algorithm identified in the DLL. It adds branching walls,
-depth testing, procedural rock texture and distance fog. This is **not yet a
+depth testing, procedural rock texture and distance fog. Octave rotations and
+offset ranges now follow the recovered generator, and interpolated field-gradient
+normals give the walls smooth lighting. This is **not yet a
 complete reproduction of Monkey**: camera motion, contributor paths and ambiguous
 cube triangulation differ. See [verified observations and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
+Adjacent slabs reuse their shared field/gradient plane, and trigonometric path
+parameters are prepared once per plane rather than once per sample.
 The render target is fixed at 512×256 RGB565, including on TV, to fit a real depth
 buffer alongside the scanout. MilkDrop's resolution setting remains unchanged
-for MilkDrop and the original tunnel. No new assets or server update are needed.
+for MilkDrop. No new assets or server update are needed.
 Triangle toggles fullscreen; the selected mode survives song changes. From
-spectrum, press Square twice for Cave, once more for the stable tube fallback.
+spectrum, press Square twice for Cave, once more to return to spectrum.
+Circle selects a MilkDrop preset; Start stops normally. Audio clocks and queues
+are untouched. The original tube prototype was removed after the cave renderer
+passed the LCD/TV hardware test. Its source remains available in Git history.
 
 Legacy `fShader` hue shading now uses fixed-function corner colors; compare
 `legacy-shading-demo.milk` and `legacy-shading-off-demo.milk`. Both also exercise

@@ -1,9 +1,11 @@
 /* Native cached isosurface geometry; shares the music renderer's GU owner. */
 static CaveScene *cave_scene;
+static uint32_t cave_pixels[CAVE_TEXTURE*CAVE_TEXTURE] __attribute__((aligned(64)));
+static int cave_texture_ready;
 static void cave_draw(int width,int height) {
-    if(!tunnel_texture_ready) {
-        tunnel_texture(tunnel_pixels);tunnel_texture_ready=1;
-        sceKernelDcacheWritebackRange(tunnel_pixels,sizeof(tunnel_pixels));
+    if(!cave_texture_ready) {
+        cave_texture(cave_pixels);cave_texture_ready=1;
+        sceKernelDcacheWritebackRange(cave_pixels,sizeof(cave_pixels));
     }
     md_target(MD_TEXTURE_BASE,MD_WIDTH,MD_WIDTH,MD_HEIGHT);
     sceGuDepthBuffer((void *)(uintptr_t)(MD_TEXTURE_BASE+MD_TEXTURE_BYTES),MD_WIDTH);
@@ -15,7 +17,7 @@ static void cave_draw(int width,int height) {
     sceGuClearColor(0xff000000);sceGuClearDepth(0);
     sceGuClear(GU_COLOR_BUFFER_BIT|GU_DEPTH_BUFFER_BIT);
     sceGuEnable(GU_TEXTURE_2D);sceGuTexMode(GU_PSM_8888,0,0,0);
-    sceGuTexImage(0,TUNNEL_TEXTURE,TUNNEL_TEXTURE,TUNNEL_TEXTURE,tunnel_pixels);
+    sceGuTexImage(0,CAVE_TEXTURE,CAVE_TEXTURE,CAVE_TEXTURE,cave_pixels);
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);sceGuTexFilter(GU_LINEAR,GU_LINEAR);
     sceGuTexWrap(GU_REPEAT,GU_REPEAT);sceGuTexScale(1,1);sceGuTexOffset(0,0);sceGuTexFlush();
     float x,y;cave_camera(cave_scene->motion.travel,&x,&y);
