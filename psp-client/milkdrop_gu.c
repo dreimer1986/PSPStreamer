@@ -15,6 +15,7 @@
 #include "milkdrop_profile.h"
 #include "preset_fpu.h"
 #include "tunnel_visual.h"
+#include "cave_visual.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -150,6 +151,7 @@ static void md_target(int offset, int stride, int width, int height) {
 }
 #include "milkdrop_decor_gu.h"
 #include "tunnel_gu.h"
+#include "cave_gu.h"
 /* Copy before list reuse; renderer-owned scratch avoids stack growth. */
 static MdVertex md_clip_wave_source[2*MD_CUSTOM_POINTS-1];
 static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int thick) {
@@ -231,6 +233,7 @@ void md_stop(void) {
     md_wave_capture=0;
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    cave_destroy(cave_scene);cave_scene=NULL;
     md_images_clear();
     md_fade_clear();
     sceGuTerm();
@@ -254,7 +257,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     MdDecor frame_decor;
     unsigned int custom_color = 0;
     unsigned long long finished, cost;
-    if (!md_list || preset < 0 || preset > 4) return 0;
+    if (!md_list || preset < 0 || preset > 5) return 0;
     /* Once per activation, before starting any GU list. Never decode in the
      * shape loop. Failed assets use the existing preset-error UI. */
     if(preset==3 && !md_images_prepare()) return -1;
@@ -267,8 +270,8 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     if (tv != md_last_tv || md_high_resolution!=md_last_high_resolution) {
         md_fade_clear();
         free(md_raw_image);md_raw_image=NULL;
-        md_height=md_high_resolution?512:256;
-        if(tv && md_high_resolution) {
+        md_height=preset==5?256:md_high_resolution?512:256;
+        if(tv && md_high_resolution && preset!=5) {
             md_raw_image=memalign(64,MD_WIDTH*MD_HEIGHT*2);
             if(!md_raw_image)md_height=256; /* Proven two-surface fallback. */
             else {
@@ -277,7 +280,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
             }
         }
         md_texture_base = tv ? 768*480*4 : 512*272*4;
-        md_pixel_format = (!tv && !md_high_resolution)?GU_PSM_8888:GU_PSM_5650;
+        md_pixel_format = (preset!=5 && !tv && !md_high_resolution)?GU_PSM_8888:GU_PSM_5650;
         md_texture_bytes = MD_WIDTH*MD_HEIGHT*(md_pixel_format==GU_PSM_8888?4:2);
         int surfaces=md_raw_image?1:2;
         if ((unsigned int)(MD_TEXTURE_BASE + surfaces*MD_TEXTURE_BYTES + MD_TEXTURE_BYTES/8) > sceGeEdramGetSize()) return 0;
@@ -286,12 +289,19 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     }
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
-    if(preset==4) {
+    if(preset==4 || preset==5) {
+        if(preset==5) {
+            if(!cave_scene)cave_scene=cave_create();
+            if(!cave_scene)return 0;
+            CaveSlice *built=cave_prepare(cave_scene,bands,level,now);
+            if(built && built->count)sceKernelDcacheWritebackRange(built->vertices,built->count*sizeof(MdVertex));
+        }
         md_profile_mark(0);
         for(int i=1;i<5;i++)md_profile_sample[i]=0;
         if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
         md_trace("Tunnel geometry");
-        tunnel_draw(bands,level,now,width,height);
+        if(preset==5)cave_draw(width,height);
+        else tunnel_draw(bands,level,now,width,height);
         goto present_scene;
     }
     /* Render-thread scratch: extended EEL memories must not consume the PSP
@@ -483,6 +493,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     }
 present_scene:
     sceGuTexSync();
+    sceGuDisable(GU_DEPTH_TEST);sceGuDisable(GU_FOG);sceGuDepthMask(1);
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
     sceGuEnable(GU_TEXTURE_2D);
     sceGuTexMode(md_pixel_format,0,0,0);
@@ -500,7 +511,7 @@ present_scene:
     if(md_trace_frames<2)md_trace_frames++;
     md_profile_mark(6);
     md_profile_commit();
-    md_front = target;
+    md_front = preset==5?0:target;
     md_last_tv = tv; md_last_fullscreen = fullscreen;
     md_last_high_resolution=md_high_resolution;
     md_last_top = top;

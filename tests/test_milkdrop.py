@@ -128,6 +128,7 @@ class MilkDropTests(unittest.TestCase):
                             str(ROOT / "psp-client/milkdrop_decor.c"),
                             str(ROOT / "psp-client/milkdrop_texture.c"),
                             str(ROOT / "psp-client/tunnel_visual.c"),
+                            str(ROOT / "psp-client/cave_visual.c"),
                             "-lpng", "-ljpeg", "-lz", "-lm", "-o", str(binary)], check=True)
             subprocess.run([str(binary),str(ROOT / "psp-client/presets/branch-beat-demo.milk"),
                             str(ROOT / "psp-client/presets/init-orbit-demo.milk"),
@@ -171,7 +172,7 @@ class MilkDropTests(unittest.TestCase):
         source = (ROOT / "psp-client/main.c").read_text()
         music = source[source.index("static int play_audio_once("):source.index("static int play_audio(")]
         self.assertIn("fullscreen = music_saved_fullscreen", music)
-        self.assertIn("visual_preset = music_saved_visual_preset == 5 ? 5 : music_saved_visual_preset == 4 ? 4 : 0", music)
+        self.assertIn("visual_preset = music_saved_visual_preset == 6 ? 6 : music_saved_visual_preset == 5 ? 5 : music_saved_visual_preset == 4 ? 4 : 0", music)
         self.assertIn("music_saved_fullscreen = fullscreen;", music)
         self.assertIn("music_saved_visual_preset = visual_preset;", music)
         self.assertIn("visual_preset != 4 || preset_result == MD_FILE_OK", music)
