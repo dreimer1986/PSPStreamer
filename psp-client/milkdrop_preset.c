@@ -827,8 +827,6 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
                       MdPreset points[MD_GRID_POINTS], MdFileError *error) {
     MdPreset next[MD_GRID_POINTS];
     static PmRuntime runtime;pm_runtime_copy(&runtime,&state->pixel_runtime);
-    float users[PM_USER_COUNT],q[PM_Q_COUNT];
-    memcpy(users,state->pixel_user,sizeof(users));memcpy(q,state->frame_q,sizeof(q));
     memset(error,0,sizeof(*error));
     if(p->pixel_program.count<0 || p->pixel_program.count>PM_PIXEL_OPS)
         return md_file_error(error,MD_FILE_INVALID,0,"pixel budget");
@@ -874,10 +872,15 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         memcpy(v+PM_EFFECT_BASE,state->effects,sizeof(state->effects));
         v[PM_ENGINE_BASE+2]=fminf(1,fmaxf(0,seconds/(md_preset_duration>0?md_preset_duration:60)));
     }
+    /* q and named point variables persist across vertices. Keep their live
+     * values in the VM array instead of copying them out, overwriting them
+     * with base zeros, then copying them back for every mesh vertex. */
+    float v[PM_VALUES];
+    memcpy(v+PM_Q_BASE,state->frame_q,sizeof(state->frame_q));
+    memcpy(v+PM_USER_BASE,state->pixel_user,sizeof(state->pixel_user));
     for(int y=0;y<=grid;y++) for(int x=0;x<=grid;x++) {
-        float v[PM_VALUES];
-        memcpy(v,base,sizeof(v));
-        memcpy(v+PM_Q_BASE,q,sizeof(q));memcpy(v+PM_USER_BASE,users,sizeof(users));
+        memcpy(v,base,PM_Q_BASE*sizeof(float));
+        memcpy(v+PM_COORD_BASE,base+PM_COORD_BASE,(PM_VALUES-PM_COORD_BASE)*sizeof(float));
         memcpy(v+PM_COORD_BASE,coordinates[y*stride*(MD_GRID+1)+x*stride],4*sizeof(float));
         int line=0;
         if(!pm_execute_runtime(&p->pixel_program,v,&line,&runtime))
@@ -891,7 +894,6 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         }
         next[y*stride*(MD_GRID+1)+x*stride]=(MdPreset){v[0],v[1],v[2],v[3],v[4],v[5],
             v[23],v[24],v[25],v[26],v[27],v[28],v[29]};
-        memcpy(q,v+PM_Q_BASE,sizeof(q));memcpy(users,v+PM_USER_BASE,sizeof(users));
         /* Native inputs are seeded once per grid, then retain assignments
          * across vertices in the Desktop point VM. Coordinates reset above. */
         base[9]=v[9];memcpy(base+17,v+17,6*sizeof(float));
@@ -914,6 +916,7 @@ int md_eval_pixel_grid(const MdFilePreset *p, const MdPreset *frame, float secon
         memcpy(&next[y*(MD_GRID+1)+x],out,sizeof(out));
     }
     memcpy(points,next,sizeof(next));
-    pm_runtime_copy(&state->pixel_runtime,&runtime);memcpy(state->pixel_user,users,sizeof(users));
+    pm_runtime_copy(&state->pixel_runtime,&runtime);
+    memcpy(state->pixel_user,v+PM_USER_BASE,sizeof(state->pixel_user));
     return MD_FILE_OK;
 }
