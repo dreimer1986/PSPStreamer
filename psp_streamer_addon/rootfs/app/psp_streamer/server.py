@@ -282,7 +282,10 @@ def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, containe
                         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p")
         bitmap_filter = None
         if subtitle_track >= 0 and bitmap_subtitle:
-            bitmap_filter = f"[0:v:0][0:s:{subtitle_track}]overlay,{video_filter}[v]"
+            # Subtitle-to-video can end far beyond the last real video frame.
+            # Do not let that secondary timeline extend the main picture.
+            # shortest=1 would instead cut off episodes with short sub tracks.
+            bitmap_filter = f"[0:v:0][0:s:{subtitle_track}]overlay=eof_action=pass:repeatlast=0,{video_filter}[v]"
         elif subtitle_track >= 0:
             # ffmpeg's subtitles filter burns the chosen embedded subtitle
             # into the small PSP frame, avoiding any client-side renderer.

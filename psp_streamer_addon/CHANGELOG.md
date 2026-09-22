@@ -1,3 +1,9 @@
+# 0.1.45
+
+- Fix bitmap-subtitle burn-in extending video beyond its real end: the overlay no longer repeats the main picture while waiting for the PGS timeline.
+- Keep the video playing when subtitles finish early; do not use `shortest=1`.
+- Shared fix for file, Plex and Jellyfin sources, in Docker and the Home Assistant app. No PSP application update needed.
+
 # 0.1.44
 
 - Add authenticated, read-only playback telemetry for the new HACS custom integration.
