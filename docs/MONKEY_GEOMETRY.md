@@ -48,17 +48,48 @@ interpolates gradients along cube edges before normalization and lighting.
 This replaces per-triangle lighting; it is not a claim that Monkey's entire
 normal/color/texture routine has been reproduced exactly.
 
-`0x10004050..0x10004b12` updates 16 contributors using multiple weighted
-oscillators, evolving phases, alternative paths and random perturbations.
-`0x10004b20` invokes this before advancing the cached field slice. The parameter
-and timing semantics of that controller and the original camera trajectory
-remain to be reconstructed. The existing three-path PSP scene is unchanged.
+### Recovered base path controller
+
+The three invented sinusoidal contributors have been replaced with the **base
+16-contributor oscillator branch** of `0x10004050..0x10004b12`, invoked by
+`0x10004b20` before advancing the field slice. `cave_paths.c` independently
+implements:
+
+- Initialization at `0x10003dd7..0x10003e13`: scene seed `rand()%997 +
+  (rand()%100)*.01`; `0x10003ec4..0x10003ef2`: base radii
+  `.1 + (rand()&1023)*.0001640625`. Main radius becomes `.189 + .1*radius`
+  at `0x10003ff7..0x1000401a`. Phase seeds are `(rand()%628)*.01`.
+- Envelopes at `0x1000405c..0x100041a1`: two slow sine mixtures raised to
+  `.05`, plus a narrow pulse raised to `18` controlling radius/extent.
+- Four weighted oscillator terms per contributor at `0x1000448f..0x100046b1`.
+  Weights are `(.52+.48*sin(angle))^3.8` for the main path, exponent `1.8`
+  for other paths. Integer phase residues and path-dependent coefficients are
+  retained; phase increments are normalized by the weight sum.
+- `0x100046b7..0x10004739`: nonnegative phase steps limited to `.06` for the
+  main path and `.12` for others. `0x10004769..0x100047d4`: distinct phase
+  offsets `11.7*i-.351*i*i` and `14.7*i+.755*i*i` for X and Y.
+- `0x10004964..0x10004973`: base radius plus twice the narrow pulse;
+  field-generation radius limits `.05.. .5` from `0x10001b17..0x10001b41`.
+
+PSP adaptations are explicit: fixed movement multiplier 1, deterministic PRNG,
+one controller step per generated slab, normalized XY mapped to a 12-unit grid,
+linear profile interpolation, and a 19-profile ring cache. Bass still modulates
+the existing safe forward travel speed, not the decoder/audio clock. The camera
+follows contributor 0; this is **not yet Monkey's complete camera model**.
+Analytic Z gradients include the changing center and radius, without resampling
+the field several times per vertex.
+
+Still omitted: alternate trajectory blending at `0x100047db..0x1000495d`,
+odd-contributor random perturbations at `0x1000497a..0x10004afa`, the original
+camera orientation/controller, and original texture-coordinate/color behavior.
+Thus this is a reconstruction of the base oscillator branch, **not of the full
+scene routine**. The adapted field threshold/noise scale are unchanged.
 
 ## PSP implementation and differences
 
 - Same compact field kernel and noise interpolation/octave ratios, recovered
-  octave transforms; independently seeded noise, three adapted path contributors
-  and a PSP camera path. Threshold, base frequency and amplitude remain adapted.
+  octave transforms and base 16-path controller; independently seeded noise
+  and a PSP camera follower. Threshold, base frequency and amplitude remain adapted.
 - Independent face-connected Marching Cubes polygonizer. Its center-sign
   ambiguity rule is not identical to the original fixed triangulation table.
 - 12×12 cells per depth slab, 16 cached slabs. At most one slab is generated per
@@ -83,5 +114,8 @@ Checks cover all 256 cube sign cases in four variants, bounded slab generation,
 camera clearance, LCD/TV buffers, presentation, throttling and teardown. Rotation
 orthogonality/orientation and 2,100 analytic-gradient comparisons against central
 differences check the new math. Plane-count assertions verify actual cache reuse.
-The first cave version passed hardware testing without audio crackle or visible
-stutter; the octave/normal update still needs its hardware appearance check.
+Both the initial cave and octave/normal builds passed hardware testing without
+audio crackle or visible stutter. The 16-path build still needs its hardware
+appearance/performance check. Targeted tests also cover 4,000 path steps, phase
+limits, interpolation, camera clearance and the source's four-term oscillator
+reduced independently for the `seed=t=i=0` fixture.

@@ -2,7 +2,9 @@
 #ifndef PSPSTREAMER_CAVE_VISUAL_H
 #define PSPSTREAMER_CAVE_VISUAL_H
 #include "milkdrop_warp.h"
+#include "cave_paths.h"
 enum { CAVE_GRID=12,CAVE_SLICES=16,CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*30 };
+_Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
 typedef struct {float travel,bass;unsigned long long previous;} CaveMotion;
 typedef struct {
     float field[CAVE_GRID+1][CAVE_GRID+1];
@@ -21,12 +23,13 @@ typedef struct {
     float noise_matrix[3][9],noise_offset[3][3];
     CavePlane planes[2];
     int sampled_planes;
+    CavePaths paths;
 } CaveScene;
 void cave_texture(uint32_t *pixels);
 void cave_noise_rotation(float out[9],float a,float b);
 CaveScene *cave_create(void);
 void cave_destroy(CaveScene *scene);
-void cave_camera(float z,float *x,float *y);
+void cave_camera(const CaveScene *scene,float z,float *x,float *y);
 /* Builds no more than one new slab per tick. Returned slab needs DMA writeback. */
 CaveSlice *cave_prepare(CaveScene *scene,const unsigned char bands[12],int level,unsigned long long now);
 float cave_density(const CaveScene *scene,float x,float y,float z);

@@ -41,37 +41,35 @@ static float noise3(const CaveScene *s,float x,float y,float z,float gradient[3]
     gradient[2]=(mix(row[2],row[3],y)-mix(row[0],row[1],y))*dz;
     return mix(mix(row[0],row[1],y),mix(row[2],row[3],y),z);
 }
-void cave_camera(float z,float *x,float *y) {
-    *x=.9f*sinf(z*.10f);*y=.6f*cosf(z*.13f);
+void cave_camera(const CaveScene *s,float z,float *x,float *y) {
+    CavePathFrame p;
+    if(cave_paths_sample(&s->paths,z,&p,NULL)) {*x=(p.x[0]-.5f)*12;*y=(p.y[0]-.5f)*12;}
+    else {*x=0;*y=0;}
 }
-typedef struct {float x[3],y[3],dx[3],dy[3],inverse[3];} CaveField;
-static void prepare_field(CaveField *p,float z) {
-    float cx,cy;cave_camera(z,&cx,&cy);
-    float dx=.09f*cosf(z*.10f),dy=-.078f*sinf(z*.13f);
-    for(int i=0;i<3;i++) {
-        p->x[i]=cx;p->y[i]=cy;p->dx[i]=dx;p->dy[i]=dy;
-        float radius=5.6f;
-        if(i) {
-            float sign=i==1?1:-1;
-            p->x[i]+=sign*(3.2f+1.8f*sinf(z*.19f+i));
-            p->y[i]+=1.8f*sinf(z*.23f+i*2);
-            p->dx[i]+=sign*.342f*cosf(z*.19f+i);
-            p->dy[i]+=.414f*cosf(z*.23f+i*2);radius=3.5f;
-        }
-        p->inverse[i]=1/(radius*radius);
+typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],dx[CAVE_PATHS],dy[CAVE_PATHS],inverse[CAVE_PATHS],dr[CAVE_PATHS];} CaveField;
+static int prepare_field(const CaveScene *s,CaveField *p,float z) {
+    CavePathFrame frame,derivative;
+    if(!cave_paths_sample(&s->paths,z,&frame,&derivative))return 0;
+    for(int i=0;i<CAVE_PATHS;i++) {
+        p->x[i]=(frame.x[i]-.5f)*12;p->y[i]=(frame.y[i]-.5f)*12;
+        p->dx[i]=derivative.x[i]*12;p->dy[i]=derivative.y[i]*12;
+        float radius=frame.radius[i]*12;
+        p->inverse[i]=1/(radius*radius);p->dr[i]=derivative.radius[i]/frame.radius[i];
     }
+    return 1;
 }
 static float sample_field(const CaveScene *s,const CaveField *p,float x,float y,float z,float gradient[3]) {
     float field=0;gradient[0]=gradient[1]=gradient[2]=0;
     /* Compact radial contribution seen at 0x10001f62: q*q-q+0.25,
      * q=(dx*dx+dy*dy)/radius^2, contributing only for q<0.5. */
-    for(int i=0;i<3;i++) {
+    for(int i=0;i<CAVE_PATHS;i++) {
         float dx=x-p->x[i],dy=y-p->y[i],q=(dx*dx+dy*dy)*p->inverse[i];
         if(q<.5f) {
             field+=(q-.5f)*(q-.5f);
             float factor=4*(q-.5f)*p->inverse[i];
             gradient[0]+=factor*dx;gradient[1]+=factor*dy;
             gradient[2]-=factor*(dx*p->dx[i]+dy*p->dy[i]);
+            gradient[2]-=4*(q-.5f)*q*p->dr[i];
         }
     }
     float noise=0,amplitude=1,frequency=.35f;
@@ -91,7 +89,9 @@ static float sample_field(const CaveScene *s,const CaveField *p,float x,float y,
     return field+iso*(-.22f+(noise+1)*.5f*(.36f+.22f))-iso;
 }
 float cave_sample(const CaveScene *s,float x,float y,float z,float gradient[3]) {
-    CaveField p;prepare_field(&p,z);return sample_field(s,&p,x,y,z,gradient);
+    CaveField p;
+    if(!prepare_field(s,&p,z)){gradient[0]=gradient[1]=gradient[2]=0;return 0;}
+    return sample_field(s,&p,x,y,z,gradient);
 }
 float cave_density(const CaveScene *s,float x,float y,float z) {
     float gradient[3];return cave_sample(s,x,y,z,gradient);
@@ -193,6 +193,9 @@ CaveScene *cave_create(void) {
         float b=(random_step(&random)%731)*(6.28f/730);
         cave_noise_rotation(s->noise_matrix[i],a,b);
     }
+    cave_paths_init(&s->paths,0x7149823);
+    /* One extra future profile supplies the derivative of the upper plane. */
+    for(int i=0;i<3;i++)cave_paths_step(&s->paths);
     return s;
 }
 void cave_destroy(CaveScene *s){free(s);}
@@ -210,6 +213,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     int first=(int)floorf(s->motion.travel);
     if(s->next>=first+CAVE_SLICES)return NULL;
     int index=s->next;
+    while(s->paths.next<=index+2)cave_paths_step(&s->paths);
     CaveSlice *slice=&s->slices[index%CAVE_SLICES];
     float (*planes[2])[CAVE_GRID+1];
     float (*normals[2])[CAVE_GRID+1][3];
@@ -217,7 +221,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         int z=index+k;CavePlane *plane=&s->planes[z&1];
         planes[k]=plane->field;normals[k]=plane->gradient;
         if(plane->z!=z) {
-            CaveField p;prepare_field(&p,z);
+            CaveField p;if(!prepare_field(s,&p,z))return NULL;
             for(int y=0;y<=CAVE_GRID;y++)for(int x=0;x<=CAVE_GRID;x++)
                 planes[k][y][x]=sample_field(s,&p,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,z,normals[k][y][x]);
             plane->z=z;s->sampled_planes++;

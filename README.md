@@ -884,8 +884,10 @@ implemented Marching Cubes surface over compact radial fields and three-octave
 noise, following the algorithm identified in the DLL. It adds branching walls,
 depth testing, procedural rock texture and distance fog. Octave rotations and
 offset ranges now follow the recovered generator, and interpolated field-gradient
-normals give the walls smooth lighting. This is **not yet a
-complete reproduction of Monkey**: camera motion, contributor paths and ambiguous
+normals give the walls smooth lighting. Sixteen contributors now use the
+reconstructed base oscillator controller, with changing radii and cached profiles.
+This is **not yet a complete reproduction of Monkey**: original camera motion,
+alternate path blending, random perturbations, texture mapping and ambiguous
 cube triangulation differ. See [verified observations and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
 Adjacent slabs reuse their shared field/gradient plane, and trigonometric path

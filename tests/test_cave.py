@@ -14,6 +14,7 @@ class CaveTests(unittest.TestCase):
             subprocess.run(['cc','-std=c11','-O3','-Wall','-Wextra','-Werror',
                 '-fsanitize=undefined,float-cast-overflow','-I',str(ROOT/'psp-client'),
                 str(ROOT/'tests/cave_harness.c'),str(ROOT/'psp-client/cave_visual.c'),
+                str(ROOT/'psp-client/cave_paths.c'),
                 '-lm','-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True,timeout=10)
 
@@ -25,7 +26,7 @@ class CaveTests(unittest.TestCase):
             source=Path(directory)/'gu.c';binary=Path(directory)/'gu'
             source.write_text(harness)
             sources=['milkdrop_warp','milkdrop_preset','preset_math','milkdrop_signal',
-                     'milkdrop_wave','milkdrop_wave_extra','milkdrop_decor','milkdrop_texture','cave_visual']
+                     'milkdrop_wave','milkdrop_wave_extra','milkdrop_decor','milkdrop_texture','cave_visual','cave_paths']
             subprocess.run(['cc','-std=c11','-O1','-Wall','-Wextra','-Werror','-fsanitize=undefined',
                 '-I',str(ROOT/'psp-client'),str(source),
                 *[str(ROOT/'psp-client'/(s+'.c')) for s in sources],

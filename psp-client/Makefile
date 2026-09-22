@@ -1,7 +1,7 @@
 TARGET = PSPStreamer
 OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o milkdrop_warp.o milkdrop_gu.o milkdrop_preset.o preset_math.o milkdrop_signal.o milkdrop_wave.o milkdrop_wave_extra.o milkdrop_decor.o tls_transport.o milkdrop_texture.o
 PSP_FW_VERSION = 661
-OBJS += cave_visual.o
+OBJS += cave_visual.o cave_paths.o
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
@@ -56,7 +56,9 @@ milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o: milkdrop_profile.h
 milkdrop_gu.o: preset_fpu.h
 milkdrop_gu.o: cave_gu.h cave_visual.h
-cave_visual.o: cave_visual.h milkdrop_warp.h
+cave_visual.o: cave_visual.h cave_paths.h milkdrop_warp.h
+cave_paths.o: cave_paths.h
+milkdrop_gu.o: cave_paths.h
 milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h
 
 # menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.
