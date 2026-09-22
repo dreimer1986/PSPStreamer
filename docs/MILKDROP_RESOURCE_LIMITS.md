@@ -90,6 +90,14 @@ append formula, wave and GPU phase breadcrumbs plus free stack to
 watchdog stage, without ongoing per-frame file writes. This follow-up build
 needs a new hardware test; the shutdown issue remains open until confirmed.
 
+The next hardware log still stops at `MilkDrop frame/shape formulas`, with
+226848 bytes of free stack, before custom waves or GPU submission. Thus the
+wave-stack reduction did not resolve or establish the cause. Additional
+bounded startup breadcrumbs now separate VM initialization, native local fill,
+shared clear, main-frame evaluation and entry/return of the PSP scheduling
+yield. At most 16 extra records per initial frame are written, for two frames;
+no execution limits or clock settings are changed by this diagnostic build.
+
 The complete 1715-file import check now loads **1713** (previously 1705).
 The two rejected `suksma - Hexcollie - Julian Carnival - shimmy dumb grid
 dogmaklyasm nz+5/nz+6` files omit a separator between `gamma=1 + bass*bass_att`

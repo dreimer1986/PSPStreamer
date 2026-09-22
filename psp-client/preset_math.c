@@ -237,6 +237,7 @@ int pm_compile_wave(PmProgram *program, const char *source, int line, PmSymbols 
 }
 static float global_memory[PM_GLOBAL_MEMORY], registers[100];
 static unsigned int resource_limits;
+void (*pm_diagnostic_hook)(const char *event,int line,int detail);
 unsigned int pm_resource_limits(void) {return resource_limits;}
 /* Desktop gmegabuf addresses need not be dense. Map the bounded 64-KiB data
  * pool into 256-value pages anywhere in its 1-Mi-value address space.
@@ -358,7 +359,11 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
 #ifdef __PSP__
         /* Larger finite setup/frame work must still yield to DAC/network
          * workers. Point programs retain their original small hard cap. */
-        if(allowance>PM_FUEL && fuel<allowance && !(fuel&4095))sceKernelDelayThread(1);
+        if(allowance>PM_FUEL && fuel<allowance && !(fuel&4095)) {
+            if(pm_diagnostic_hook)pm_diagnostic_hook("VM yield begin",op->line,allowance-fuel);
+            sceKernelDelayThread(1);
+            if(pm_diagnostic_hook)pm_diagnostic_hook("VM yield end",op->line,allowance-fuel);
+        }
 #endif
         if(--fuel<0) {PM_REASON("invocation fuel");return 0;}
         if(frame_fuel==0) {PM_REASON("aggregate frame fuel");return 0;}
@@ -554,7 +559,9 @@ static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int 
      * or starve all geometry after an expensive one-time initialization. */
     int saved_frame=frame_fuel,separate=allowance>PM_FUEL;
     if(separate)frame_fuel=-1;
+    if(separate && pm_diagnostic_hook)pm_diagnostic_hook(init?"VM init begin":"VM frame begin",program->code && program->count>0?program->code[0].line:0,program->count);
     int success=execute(program,values,error_line,runtime,&journal,&variables,allowance,init);
+    if(separate && pm_diagnostic_hook)pm_diagnostic_hook(init?"VM init end":"VM frame end",*error_line,success);
     if(separate)frame_fuel=saved_frame;
     if(success) return 1;
     while(variables.count) {

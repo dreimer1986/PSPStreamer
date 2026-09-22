@@ -7,12 +7,21 @@ static PmRuntime runtime,baseline;
 static float values[PM_VALUES],saved[PM_VALUES];
 static PmProgram program;
 static PmSymbols symbols;
+static unsigned int diagnostic_seen;
+static void diagnostic(const char *event,int line,int detail) {
+    assert(event && line>=0 && detail>=0);
+    if(!strcmp(event,"VM init begin"))diagnostic_seen|=1;
+    if(!strcmp(event,"VM local fill end"))diagnostic_seen|=2;
+    if(!strcmp(event,"VM shared clear end"))diagnostic_seen|=4;
+    if(!strcmp(event,"VM init end"))diagnostic_seen|=8;
+}
 static void compile(const char *source) {
     pm_program_free(&program);memset(&symbols,0,sizeof(symbols));
     assert(pm_compile_symbols(&program,source,42,&symbols)==PM_OK);
 }
 int main(void) {
     int line;
+    pm_diagnostic_hook=diagnostic;
     /* The native pattern preserves final loop expression/index and resident
      * memory exactly for small loops accepted by the original scalar VM. */
     for(int count=1;count<140;count+=7) {
@@ -142,6 +151,8 @@ int main(void) {
     compile("q1=gmegabuf(1048575);");
     assert(pm_execute_runtime(&program,values,&line,&runtime));
     assert(values[PM_Q_BASE]==15);
+    assert(diagnostic_seen==15);
+    pm_diagnostic_hook=NULL;
     pm_program_free(&program);
     return 0;
 }

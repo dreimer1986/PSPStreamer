@@ -1750,7 +1750,20 @@ static int music_saved_fullscreen;
 static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
+static int music_formula_trace_remaining;
+static void music_formula_trace(const char *event,int line,int detail) {
+    if(!debug_enabled || music_formula_trace_remaining<=0)return;
+    music_formula_trace_remaining--;
+    char text[192];
+    snprintf(text,sizeof(text),"formula=%s source_line=%d detail=%d stack_free=%d\n",
+        event,line,detail,sceKernelGetThreadStackFreeSize(0));
+    video_watch_write(text,0);
+}
 static void music_visual_trace(const char *stage,int persist) {
+    if(!strcmp(stage,"MilkDrop frame/shape formulas")) {
+        music_formula_trace_remaining=persist?16:0;
+        pm_diagnostic_hook=debug_enabled && persist?music_formula_trace:NULL;
+    }
     video_watch_ping(stage);
     if(debug_enabled && persist) {
         char text[640];

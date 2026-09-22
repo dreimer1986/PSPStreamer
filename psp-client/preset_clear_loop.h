@@ -53,7 +53,9 @@ static int clear_loop(const PmProgram *p,int start,float repeats,float *local,
     }
     if(work>*fuel || (frame_fuel>=0 && work>frame_fuel))return -1;
     *fuel-=work;if(frame_fuel>=0)frame_fuel-=work;
+    if(pm_diagnostic_hook)pm_diagnostic_hook("VM native fill begin",p->code[start].line,count);
     for(int type=0;type<2;type++)if(mask&(1<<type)) {
+        if(pm_diagnostic_hook)pm_diagnostic_hook(type?"VM shared clear begin":"VM local fill begin",p->code[start].line,count);
         if(type) {
             for(int page=0;page<global_page_count;page++) {
                 int base=global_page_keys[page]*PM_GLOBAL_PAGE_SIZE;
@@ -64,7 +66,9 @@ static int clear_loop(const PmProgram *p,int start,float repeats,float *local,
         } else {
             if(!local_fill(runtime,lo,hi,fill,journal))return -1;
         }
+        if(pm_diagnostic_hook)pm_diagnostic_hook(type?"VM shared clear end":"VM local fill end",p->code[start].line,count);
     }
     *result=(float)hi;variable_store(variables,local,id,*result);
+    if(pm_diagnostic_hook)pm_diagnostic_hook("VM native fill end",p->code[start].line,count);
     return 1;
 }

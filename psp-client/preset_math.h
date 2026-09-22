@@ -65,5 +65,7 @@ void pm_reset_globals(void);
 /* Quiet hardware approximations, distinct from malformed formula failures. */
 enum { PM_LIMIT_LOCAL_PAGES=1, PM_LIMIT_GLOBAL_PAGES=2 };
 unsigned int pm_resource_limits(void);
+/* Optional bounded startup diagnosis, owned by the sole renderer thread. */
+extern void (*pm_diagnostic_hook)(const char *event,int line,int detail);
 int pm_assignment_line(const PmProgram *program, int variable);
 #endif
