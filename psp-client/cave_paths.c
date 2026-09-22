@@ -1,11 +1,46 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Independent reconstruction of Monkey's base 16-path oscillator controller.
- * See docs/MONKEY_GEOMETRY.md for addresses and intentionally omitted branches. */
+ * Independent reconstruction of Monkey's oscillator/spline path controller.
+ * See docs/MONKEY_GEOMETRY.md for verified behavior and PSP adaptations. */
 #include "cave_paths.h"
 #include <math.h>
 #include <string.h>
 static unsigned rng(unsigned *s){unsigned n=*s;n^=n<<13;n^=n>>17;n^=n<<5;return *s=n;}
 static float clamp(float x,float low,float high){return x<low?low:x>high?high:x;}
+/* 0x10012340: repeat cosine easing, interpolate the fractional iteration.
+ * Only the nonnegative branch is used by the recovered scene parameters. */
+float cave_path_shape(float value,float amount) {
+    value=clamp(value,0,1);amount=clamp(amount,0,4);
+    int count=(int)amount;
+    for(int i=0;i<count;i++)value=.5f-.5f*cosf(value*3.141592654f);
+    float next=.5f-.5f*cosf(value*3.141592654f);
+    return value+(next-value)*(amount-count);
+}
+static float spline_interval(unsigned *random,float interval,float spread) {
+    /* 0x1000a440/0x1000a600: interval * 2^((2*r/3996-1)*spread). */
+    return interval*exp2f(((rng(random)%3997)/1998.f-1)*spread);
+}
+static float spline_value(unsigned *random,float shape) {
+    return 2*cave_path_shape((rng(random)%3997)/3996.f,shape)-1;
+}
+float cave_spline_sample(CaveSpline *s,unsigned *random,float t,float interval,float spread,float shape) {
+    if(!s->ready || t<s->time[1] || t>s->time[3]) {
+        s->time[1]=t;s->time[0]=t-spline_interval(random,interval,spread);
+        s->time[2]=t+spline_interval(random,interval,spread);
+        s->time[3]=s->time[2]+spline_interval(random,interval,spread);
+        for(int i=0;i<4;i++)s->value[i]=spline_value(random,shape);
+        s->ready=1;
+    } else if(t>s->time[2]) {
+        for(int i=0;i<3;i++){s->time[i]=s->time[i+1];s->value[i]=s->value[i+1];}
+        s->time[3]=s->time[2]+spline_interval(random,interval,spread);
+        s->value[3]=spline_value(random,shape);
+    }
+    /* Nonuniform four-knot Hermite cubic (0x1000a380). */
+    float h=s->time[2]-s->time[1],u=(t-s->time[1])/h;
+    float m0=(s->value[2]-s->value[0])/(s->time[2]-s->time[0])*h;
+    float m1=(s->value[3]-s->value[1])/(s->time[3]-s->time[1])*h;
+    return ((2*s->value[1]-2*s->value[2]+m0+m1)*u+
+            (-3*s->value[1]+3*s->value[2]-2*m0-m1))*u*u+m0*u+s->value[1];
+}
 void cave_paths_init(CavePaths *p,unsigned seed) {
     memset(p,0,sizeof(*p));if(!seed)seed=1;
     p->seed=rng(&seed)%997;
@@ -44,6 +79,8 @@ void cave_paths_step(CavePaths *p) {
     float ex=.2f+.8f*powf(clamp(.5f+.2f*sinf(seed*3.4f+t*.0069f)+.3f*sinf(seed*1.3f+t*.0131f),0,1),.05f);
     float ey=.2f+.8f*powf(clamp(.5f+.2f*sinf(seed*2.1f+t*.0087f)+.3f*sinf(seed*1.6f+t*.0117f),0,1),.05f);
     float narrow=.075f*powf(clamp(.5f+.2f*sinf(t*.00159f+seed*.397f)+.3f*sinf(t*.00101f+seed*.117f),0,1),18);
+    float shape=.45f+.6f*powf(clamp(.5f+.2f*sinf(t*.00573f+seed*.93f)+.3f*sinf(t*.00411f+seed*.382f),0,1),.4f);
+    float blend=cave_path_shape(.25f+.35f*sinf(t*.00972f+seed*.345f)+.45f*sinf(t*.01313f+seed*.623f),2);
     int shift[4]={(int)(seed*-.71f),(int)(seed*-.99f),(int)(seed*-.62f),(int)(seed*-.83f)};
     for(int i=0;i<CAVE_PATHS;i++) {
         int a=(221*i+763)*i,b=(423*i+323)*i,c=(569*i+561)*i;
@@ -66,6 +103,17 @@ void cave_paths_step(CavePaths *p) {
         for(int j=0;j<2;j++)if(p->phase[i][j]>=6.283185307f)p->phase[i][j]-=6.283185307f;
         frame->x[i]=.5f+(.335f-narrow)*ex*sinf(p->phase[i][0]+i*11.7f-i*i*.351f);
         frame->y[i]=.5f+(.335f-narrow)*ey*sinf(p->phase[i][1]+i*14.7f+i*i*.755f);
+        if(blend>0) {
+            float interval=i?26:fminf(100,26*1.7f*(1+100*narrow));
+            float alt[3];
+            for(int axis=0;axis<3;axis++)alt[axis]=cave_spline_sample(&p->alternate[i][axis],&p->random,t,interval,i?.5f:.3f,shape);
+            frame->x[i]+=blend*(.5f+(.335f-narrow)*ex*alt[0]-frame->x[i]);
+            frame->y[i]+=blend*(.5f+(.335f-narrow)*ey*alt[1]-frame->y[i]);
+            /* The DLL advances the third generator but discards its result. */
+        }
+        /* Cubics can overshoot their random knots; field bounds, not knot
+         * bounds, are the source's final safeguard. */
+        frame->x[i]=clamp(frame->x[i],0,1);frame->y[i]=clamp(frame->y[i],0,1);
         frame->radius[i]=clamp(p->radius[i]+2*narrow,.05f,.5f);
     }
     cave_paths_perturb(frame,&p->random,p->roughness);

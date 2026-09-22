@@ -24,7 +24,10 @@ static void sceGuSendCommandi(int command,int argument) {
 static void sceGuSetMatrix(int kind,const ScePspFMatrix4 *m) {
     assert(kind==GU_PROJECTION || kind==GU_VIEW || kind==GU_MODEL);
     if(kind==GU_PROJECTION)assert(m->x.x>0 && m->y.y>0 && m->z.w==-1 && m->w.z<0);
-    else assert(m->x.x==1 && m->y.y==1 && m->z.z==1 && m->w.w==1);
+    else if(kind==GU_VIEW) {
+        assert(m->w.w==1 && isfinite(m->w.x) && isfinite(m->w.y) && isfinite(m->w.z));
+        assert(fabsf(m->x.x*m->x.x+m->y.x*m->y.x+m->z.x*m->z.x-1)<1e-5f);
+    } else assert(m->x.x==1 && m->y.y==1 && m->z.z==1 && m->w.w==1);
     matrix_calls++;
 }
 static void sceGuDepthRange(int near,int far){assert(near==65535 && far==0);}

@@ -30,6 +30,8 @@ void cave_noise_rotation(float out[9],float a,float b);
 CaveScene *cave_create(void);
 void cave_destroy(CaveScene *scene);
 void cave_camera(const CaveScene *scene,float z,float *x,float *y);
+/* Column-major OpenGL/GE view matrix, six-profile path look-ahead. */
+void cave_view(const CaveScene *scene,float z,float matrix[16]);
 /* Builds no more than one new slab per tick. Returned slab needs DMA writeback. */
 CaveSlice *cave_prepare(CaveScene *scene,const unsigned char bands[12],int level,unsigned long long now);
 float cave_density(const CaveScene *scene,float x,float y,float z);

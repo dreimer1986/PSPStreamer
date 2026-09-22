@@ -46,6 +46,24 @@ void cave_camera(const CaveScene *s,float z,float *x,float *y) {
     if(cave_paths_sample(&s->paths,z,&p,NULL)) {*x=(p.x[0]-.5f)*12;*y=(p.y[0]-.5f)*12;}
     else {*x=0;*y=0;}
 }
+void cave_view(const CaveScene *s,float z,float matrix[16]) {
+    float x,y;cave_camera(s,z,&x,&y);
+    CavePathFrame ahead;
+    float dx=0,dy=0;
+    /* 0x1000704e..0x10007152: interpolate current and +6/+7 profiles.
+     * Keep a level up vector; source roll/sway effects are not assumed here. */
+    if(cave_paths_sample(&s->paths,z+6,&ahead,NULL)) {
+        dx=(ahead.x[0]-.5f)*12-x;dy=(ahead.y[0]-.5f)*12-y;
+    }
+    float inverse=1/sqrtf(dx*dx+dy*dy+36);
+    float fx=dx*inverse,fy=dy*inverse,fz=-6*inverse;
+    inverse=1/sqrtf(fz*fz+fx*fx);
+    float rx=-fz*inverse,rz=fx*inverse;
+    float ux=-rz*fy,uy=rz*fx-rx*fz,uz=rx*fy;
+    float view[16]={rx,ux,-fx,0, 0,uy,-fy,0, rz,uz,-fz,0,
+        -(rx*x-rz*z),-(ux*x+uy*y-uz*z),fx*x+fy*y-fz*z,1};
+    memcpy(matrix,view,sizeof(view));
+}
 typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],dx[CAVE_PATHS],dy[CAVE_PATHS],inverse[CAVE_PATHS],dr[CAVE_PATHS];} CaveField;
 static int prepare_field(const CaveScene *s,CaveField *p,float z) {
     CavePathFrame frame,derivative;
@@ -161,10 +179,11 @@ static int polygonize(const float f[8],const float gradients[8][3],MdVertex *out
             MdVertex triangle[3]={a,b,c};
             for(int j=0;j<3;j++) {
                 MdVertex p=triangle[j];if(!gradients)p.color=color;
-                /* Planar projection chosen per triangle: rock on vertical and
-                 * horizontal walls, no polar seam through branching chambers. */
-                p.u=(fabsf(nx)>fabsf(ny)?p.y:p.x)*.3f;p.v=p.z*.3f;
-                if(fabsf(nz)>fabsf(nx) && fabsf(nz)>fabsf(ny)) {p.u=p.x*.3f;p.v=p.y*.3f;}
+                /* 0x10005afc..0x10005b13: base UV = normalized X plus
+                 * longitudinal 1/96 offset, normalized Y. Reverse depth to
+                 * match our forward-growing slabs. Do not modulo individual
+                 * vertices: GE repeat wraps after interpolation, without seams. */
+                p.u=.5f+p.x/12-p.z/96;p.v=.5f+p.y/12;
                 p.z=-p.z;out[count++]=p;
             }
         }

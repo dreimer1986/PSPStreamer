@@ -31,10 +31,10 @@ static void cave_draw(int width,int height) {
     sceGuTexImage(0,CAVE_TEXTURE,CAVE_TEXTURE,CAVE_TEXTURE,cave_pixels);
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);sceGuTexFilter(GU_LINEAR,GU_LINEAR);
     sceGuTexWrap(GU_REPEAT,GU_REPEAT);sceGuTexScale(1,1);sceGuTexOffset(0,0);sceGuTexFlush();
-    float x,y;cave_camera(cave_scene,cave_scene->motion.travel,&x,&y);
     ScePspFMatrix4 identity={.x={1,0,0,0},.y={0,1,0,0},.z={0,0,1,0},.w={0,0,0,1}};
-    ScePspFMatrix4 view=identity;
-    view.w.x=-x;view.w.y=-y;view.w.z=cave_scene->motion.travel;
+    ScePspFMatrix4 view;
+    float view_values[16];cave_view(cave_scene,cave_scene->motion.travel,view_values);
+    memcpy(&view,view_values,sizeof(view));
     ScePspFMatrix4 projection={.x={1.25f*height/width,0,0,0},.y={0,1.25f,0,0},
         .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
     sceGuSetMatrix(GU_PROJECTION,&projection);sceGuSetMatrix(GU_VIEW,&view);sceGuSetMatrix(GU_MODEL,&identity);

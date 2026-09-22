@@ -95,10 +95,42 @@ default** (the original value is a configurable field at object offset `0x129e4`
 Perturbations are generated once per cached path profile, never each display
 frame, so already-generated walls do not flicker or shift.
 
-Still omitted: alternate trajectory blending at `0x100047db..0x1000495d`, the original
-camera orientation/controller, and original texture-coordinate/color behavior.
-Thus this is a reconstruction of the base oscillator branch, **not of the full
-scene routine**. The adapted field threshold/noise scale are unchanged.
+### Alternate trajectories, look-ahead and base texture coordinates
+
+The alternate branch at `0x100047db..0x1000495d` now runs alongside the base
+oscillators. Its 48 independent generators use four random knots, nonuniform
+time intervals and cubic Hermite interpolation (`0x1000a380..0x1000a717`).
+Intervals are `period * 2^((2*r/3996-1)*spread)`, with `r=rand()%3997`;
+spread is `.3` for the primary path and `.5` for others. The fixed movement-1
+profile uses period 26, increased for the primary path and capped at 100.
+The third generator is advanced although its result is discarded by the DLL.
+Generators initialize when first used, shift knots when the current interval
+ends and restart after a gap beyond their available future interval.
+
+`0x10012340` is **not a power function**: it repeatedly applies
+`(1-cos(pi*x))/2`, then blends the next iteration for fractional amounts.
+The scene uses positive shaping `.45+.6*pow(sine_mixture,.4)` for random
+values, and two easing iterations for its slowly varying oscillator/spline
+blend. Negative shaping is unused by this branch and is not implemented.
+Cubic overshoot is retained; normalized field positions are bounded to 0..1.
+All this work happens per generated profile, not per vertex or display frame.
+
+The camera now uses the source's **six-profile look-ahead** observed at
+`0x1000704e..0x10007152`, interpolating both current and future primary-path
+positions. A level-up GE view matrix replaces translation-only viewing. This
+does not reproduce the subsequent source roll, sway or audio-dependent camera
+disturbances. Missing future profiles during startup fall back to looking forward.
+
+Base UV assignment at `0x10005afc..0x10005b13` uses normalized X plus the
+longitudinal 1/96 offset, and normalized Y. It replaces the per-triangle dominant
+axis projection. Our depth convention reverses the longitudinal sign; coordinates
+stay unwrapped across triangles/slabs and GE repeat handles wrapping after
+interpolation. This avoids independent projection seams. Original texture-stage
+animation, alternate passes and source lighting/color changes are still omitted;
+the procedural rock texture remains an original PSP asset.
+
+This is **not the full scene routine**. The adapted field threshold/noise scale,
+travel speed and bounded geometry remain unchanged.
 
 ## PSP implementation and differences
 
@@ -138,8 +170,8 @@ The cave renderer now emits a size-explicit color/depth clear sprite under GE
 clear mode, immediately restoring normal rendering. It neither changes display
 buffers nor bypasses the music GU owner. The host harness checks full 512×256
 coverage and restoration on all LCD/TV, window/fullscreen and resolution cases,
-including dirty right-edge color/depth sentinels on every frame. Hardware
-confirmation of the visible fix is still pending.
+including dirty right-edge color/depth sentinels on every frame. The user has
+confirmed the visible fix and side-path perturbations on hardware.
 
 Build the PSP binary first, then run only the geometry/GU/control tests:
 `python3 -m unittest tests.test_cave` and the two affected music-view tests.
@@ -149,9 +181,16 @@ orthogonality/orientation and 2,100 analytic-gradient comparisons against centra
 differences check the new math. Plane-count assertions verify actual cache reuse.
 The initial cave, octave/normal and 16-path builds passed hardware performance
 testing. The 16-path photo exposed the separate right-edge clear bug above.
-The corrected clear and perturbation update await hardware testing.
+The combined spline/look-ahead/base-UV update needs a hardware test.
 Targeted tests also cover 4,000 path steps, phase
 limits, interpolation, camera clearance and the source's four-term oscillator
 reduced independently for the `seed=t=i=0` fixture.
 Perturbation tests cover the source's X-only influence gate, unchanged main/even
 paths, disabled perturbations, displacement bounds and interpolation.
+Additional checks cover easing fixtures, nonuniform cubic linear reproduction,
+10,000 spline samples, path bounds including overshoot, view orthonormality and
+camera-origin transformation, plus source-style base UV consistency.
+The combined build passed these targeted checks: 696 generated slabs, peak 624
+vertices per slab in the test trajectory, 1,687,552 bytes scene allocation and
+1,136 bytes peak tested GU command-list usage. These are host-check results,
+not a PSP frame-rate measurement. No unrelated full preset sweep was run.

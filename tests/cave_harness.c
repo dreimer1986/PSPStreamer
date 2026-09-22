@@ -4,6 +4,21 @@
 #include <stdio.h>
 #include <stdint.h>
 int main(void) {
+    assert(cave_path_shape(-1,2)==0 && cave_path_shape(2,2)==1);
+    assert(fabsf(cave_path_shape(.5f,2)-.5f)<1e-6f);
+    assert(fabsf(cave_path_shape(.25f,1)-.1464466094f)<1e-6f);
+    assert(fabsf(cave_path_shape(.25f,.5f)-.1982233047f)<1e-6f);
+    /* Four-knot nonuniform straight line must remain exactly linear. */
+    CaveSpline line={.time={-2,0,3,7},.value={-.2f,0,.3f,.7f},.ready=1};
+    unsigned spline_random=123;
+    for(int i=0;i<=30;i++)assert(fabsf(cave_spline_sample(&line,&spline_random,i*.1f,26,.3f,1)-i*.01f)<1e-6f);
+    assert(spline_random==123); /* No random churn inside an existing segment. */
+    CaveSpline curve={0};
+    for(int i=0;i<10000;i++) {
+        float value=cave_spline_sample(&curve,&spline_random,i*.25f,26,.5f,1.05f);
+        assert(isfinite(value) && fabsf(value)<2);
+        for(int j=0;j<3;j++)assert(curve.time[j]<curve.time[j+1]);
+    }
     struct {MdVertex v[30];unsigned guard;} out;
     for(int variant=0;variant<4;variant++)for(int mask=0;mask<256;mask++) {
         float f[8];for(int i=0;i<8;i++)f[i]=(mask&(1<<i))?(1+i*.13f):variant==3?0:-(1+variant*i*.17f);
@@ -12,6 +27,8 @@ int main(void) {
         assert(n>=0 && n<=30 && n%3==0 && out.guard==0x12345678);
         for(int i=0;i<n;i++) {
             assert(isfinite(out.v[i].u) && isfinite(out.v[i].v));
+            assert(fabsf(out.v[i].u-(.5f+out.v[i].x/12+out.v[i].z/96))<1e-6f);
+            assert(fabsf(out.v[i].v-(.5f+out.v[i].y/12))<1e-6f);
             assert(out.v[i].x>=0 && out.v[i].x<=1 && out.v[i].y>=0 && out.v[i].y<=1);
             assert(out.v[i].z>=-1 && out.v[i].z<=0);
         }
@@ -50,9 +67,8 @@ int main(void) {
         cave_paths_step(&paths);
         const CavePathFrame *frame=&paths.frames[n%CAVE_PATH_CACHE];
         for(int i=0;i<CAVE_PATHS;i++) {
-            float margin=(i&1)?paths.roughness:0;
-            assert(frame->x[i]>=.165f-margin && frame->x[i]<=.835f+margin);
-            assert(frame->y[i]>=.165f-margin && frame->y[i]<=.835f+margin);
+            assert(frame->x[i]>=0 && frame->x[i]<=1);
+            assert(frame->y[i]>=0 && frame->y[i]<=1);
             assert(frame->radius[i]>=.05f && frame->radius[i]<=.5f);
             for(int j=0;j<2;j++) {
                 float delta=paths.phase[i][j]-before[i][j];if(delta<-.1f)delta+=6.283185307f;
@@ -116,6 +132,12 @@ int main(void) {
         if(s->ready>=8)assert(s->motion.travel<s->next-5);
         float x,y;cave_camera(s,s->motion.travel,&x,&y);
         assert(cave_density(s,x,y,s->motion.travel)>0);
+        float view[16];cave_view(s,s->motion.travel,view);
+        for(int i=0;i<3;i++)for(int j=0;j<3;j++) {
+            float dot=0;for(int k=0;k<3;k++)dot+=view[k*4+i]*view[k*4+j];
+            assert(fabsf(dot-(i==j?1:0))<1e-5f);
+        }
+        for(int i=0;i<3;i++)assert(fabsf(view[i]*x+view[4+i]*y-view[8+i]*s->motion.travel+view[12+i])<.0001f);
     }
     assert(s->motion.travel>500 && s->ready==CAVE_SLICES);
     printf("Cave: source oscillator fixture, 4000 path steps, 2100 gradient comparisons, 1024 cube cases, 1800 ticks; %d slabs, peak %d vertices/slab, allocation %zu bytes\n",s->built,peak,sizeof(*s));
