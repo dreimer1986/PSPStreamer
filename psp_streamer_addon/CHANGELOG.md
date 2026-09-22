@@ -135,3 +135,13 @@
 - Series/album covers and backdrops are resized server-side with FFmpeg; no
   new Python dependencies, playback changes or PSP decoder initialization.
 - Requires the matching PSP application; older clients keep working.
+
+# 0.1.48
+
+- Canonical series/album artwork identities let the matching PSP client reuse
+  its last image with a 68-byte response; v1 clients remain compatible.
+- Coalesce concurrent artwork preparation, cache converted image planes and
+  bound FFmpeg conversion concurrency; isolate account/source identities.
+- Reuse successful local ffprobe results with file-change detection, bounded
+  caches and in-flight deduplication; remote/live sources remain uncached.
+- Docker and Home Assistant ship the same server implementation.

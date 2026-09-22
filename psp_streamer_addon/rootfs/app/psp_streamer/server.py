@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from .pgs import PgsCue, parse_pgs
 from .subtitle_pages import display_timeline, subtitle_page
 from .track_labels import subtitle_labels
+from .probe_cache import probe as cached_probe, file_identity
 from .settings import PasswordSettings
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
@@ -442,7 +443,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 folder = re.fullmatch(r':(plex|jellyfin):m([0-9a-f]+)', selector)
                 token = provider.token(folder[2]) if folder else selector
                 try:
-                    data = provider.artwork.psp(token)
+                    if query.get('v') == ['2']:
+                        known = query.get('known', [''])[0]
+                        if known and not re.fullmatch('[0-9a-f]{64}', known):
+                            return self.send_error_json(400, 'Invalid artwork identity')
+                        data = provider.artwork.psp(token, known)
+                    else:
+                        data = provider.artwork.psp(token)
                 except ValueError:
                     return self.send_error_json(404, 'Artwork unavailable')
                 self.send_response(200)
@@ -883,18 +890,19 @@ class AppHandler(BaseHTTPRequestHandler):
         if token.startswith('radio.'):
             station = self.server.radio.get(token)
             return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
-        cached = self.server.metadata_cache.get(token)
+        _, source = self.server.library.decode(token)
+        identity = file_identity(source)
+        cache_key = (token, identity)
+        cached = self.server.metadata_cache.get(cache_key) if identity is not None else None
         if cached is not None and not token.startswith(('plex.', 'jellyfin.')):
             self.server.player_status.remember(token, cached, cached.get('kind', 'video'))
             return self.send_json(cached)
-        _, source = self.server.library.decode(token)
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json", str(source)],
-            capture_output=True, text=True, timeout=20, check=False,
-        )
+        result = cached_probe(source,
+            ["-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json"])
         if result.returncode:
             raise ValueError("Could not inspect media file")
-        streams = json.loads(result.stdout).get("streams", [])
+        probe_data = json.loads(result.stdout)
+        streams = probe_data.get("streams", [])
         audio, subtitles = [], subtitle_labels(streams)
         for stream in streams:
             tags = stream.get("tags", {})
@@ -902,31 +910,31 @@ class AppHandler(BaseHTTPRequestHandler):
             title = track_label(tags.get("title"))
             if stream.get("codec_type") == "audio":
                 audio.append({"n": str(len(audio)), "l": language, "t": title})
-        duration = json.loads(result.stdout).get("format", {}).get("duration", "0")
+        duration = probe_data.get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
         payload['kind'] = 'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video'
         payload['name'] = display_text(source.name, 126)
         if source.suffix.lower() in AUDIO_EXTENSIONS:
-            probe = json.loads(result.stdout)
             tags = {}
             for stream in streams:
                 if stream.get('codec_type') == 'audio':
                     tags = {k.lower(): v for k, v in stream.get('tags', {}).items()}
                     break
-            tags.update({k.lower(): v for k, v in probe.get('format', {}).get('tags', {}).items() if v})
+            tags.update({k.lower(): v for k, v in probe_data.get('format', {}).get('tags', {}).items() if v})
             title = display_text(tags.get('title') or source.name)
             artist = display_text(tags.get('artist') or tags.get('album_artist'))
             payload.update(title=title, artist=artist, album=display_text(tags.get('album')),
                            name=display_text(f'{artist} - {title}' if artist else title, 126))
         # ffprobe can take a few seconds when an SMB share or its disk has
-        # just spun up.  Track layouts do not change while a PSP session is
-        # active, so retain this tiny response for subsequent openings.
+        # just spun up. Reuse local responses only while file identity matches.
         if token.startswith('plex.'):
             payload.update(self.server.plex.details(token))
         elif token.startswith('jellyfin.'):
             payload.update(self.server.jellyfin.details(token))
-        else:
-            self.server.metadata_cache[token] = payload
+        elif identity is not None:
+            if len(self.server.metadata_cache) >= 128:
+                self.server.metadata_cache.clear()
+            self.server.metadata_cache[cache_key] = payload
         self.server.player_status.remember(token, payload, payload['kind'])
         self.send_json(payload if self.headers.get('X-PSP-Web') else
                        {k:v for k,v in payload.items() if k != 'artwork'})
@@ -959,11 +967,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.server.subtitle_cache[cache_key] = payload
                 return respond(payload)
         _, source = self.server.library.decode(token)
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", f"s:{track}",
-             "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)],
-            capture_output=True, text=True, timeout=20, check=False,
-        )
+        probe = cached_probe(source, ["-select_streams", f"s:{track}",
+             "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
         codec = probe.stdout.strip()
         if codec in BITMAP_SUBTITLE_CODECS:
             payload = {"t": "bitmap", "c": []}
@@ -1076,7 +1081,7 @@ class AppHandler(BaseHTTPRequestHandler):
             subtitle_source = None
             bitmap_subtitle = False
             if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
-                probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(source)], capture_output=True, text=True, check=False)
+                probe = cached_probe(source, ["-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
                 bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
                 if not isinstance(source, RemoteSource):
                     alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
@@ -1190,7 +1195,7 @@ class AppServer(ThreadingHTTPServer):
         self.jellyfin.additional_source = lambda: any(self.plex.config[k] for k in ('enabled','files','radio'))
         self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
             os.environ.get('PSP_STREAMER_SETTINGS_DIR') or str(Path.home() / '.cache/psp-streamer'))
-        self.metadata_cache: dict[str, object] = {}
+        self.metadata_cache: dict[tuple, object] = {}
         self.subtitle_cache: dict[tuple[str, int], object] = {}
         self.subtitle_cache_lock = threading.Lock()
         # PGS tracks contain every decoded bitmap of an episode.  Retaining

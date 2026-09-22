@@ -76,7 +76,7 @@ assert.equal(select.value,'0');
             details = SimpleNamespace(details=Mock(return_value={}))
             server = SimpleNamespace(metadata_cache={}, player_status=Mock(), library=SimpleNamespace(decode=Mock(return_value=(None, movie))),
                                      plex=details, jellyfin=details)
-            handler = SimpleNamespace(server=server, send_json=Mock())
+            handler = SimpleNamespace(server=server, send_json=Mock(), headers={})
             for token in ('file', 'plex.item', 'jellyfin.item'):
                 AppHandler.metadata(handler, token)
                 rows = handler.send_json.call_args.args[0]['s']

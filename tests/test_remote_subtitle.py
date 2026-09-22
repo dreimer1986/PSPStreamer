@@ -23,6 +23,7 @@ const document={querySelectorAll:()=>[]};
 const button={classList:{add:()=>{}}};
 async function api(){return {a:[],s:[],d:60}}
 function option(){}
+function stopTheme(){} function setArtwork(){}
 function setView(){} function message(){} function restoreTrack(){return true} function t(s){return s}
 function timeLabel(s){return String(s)}
 """+choose+"""
@@ -47,6 +48,7 @@ function timeLabel(s){return String(s)}
         script = """
 const assert=require('assert');
 let selected={id:'example'}, sent,media={},remotePlaying=false;
+const themeAudio={pause(){}};
 const elements={'#subtitle':{value:'0'},'#audio':{value:'0'},'#seek':{value:'0'},'#status':{},'#audio_quality':{value:'v5'},'#video_fps':{value:'24000/1001'}};
 function $(id){return elements[id]}
 async function post(path,options){sent=options}

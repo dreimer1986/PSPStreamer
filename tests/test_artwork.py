@@ -1,5 +1,6 @@
 """Artwork is optional, authenticated and independent of playback."""
 import http.client
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import tempfile
@@ -28,7 +29,7 @@ class ArtworkTests(unittest.TestCase):
         token=self.plex.token('42');parent=self.plex.token('1')
         row={'ratingKey':'1','thumb':'/library/metadata/1/thumb/1','art':'/library/metadata/1/art/1'}
         logo=(Path(__file__).resolve().parents[1]/'static/logo.png').read_bytes()
-        with patch.object(self.plex,'metadata',side_effect=[{'type':'episode','grandparentRatingKey':'1'},row]) as metadata, \
+        with patch.object(self.plex,'metadata',side_effect=lambda t: row if t==parent else {'type':'episode','grandparentRatingKey':'1'}) as metadata, \
                 patch.object(self.plex.artwork,'get',return_value=(logo,'image/png')) as get:
             packet=self.plex.artwork.psp(token)
             self.assertEqual(struct.unpack('<4sHHHHII',packet[:20]),(b'PSPA',320,180,80,112,115200,17920))
@@ -37,6 +38,13 @@ class ArtworkTests(unittest.TestCase):
             self.assertEqual(get.call_count,2)
             self.assertEqual(self.plex.artwork.psp(token),packet)
             self.assertEqual(get.call_count,2)
+            v2=self.plex.artwork.psp(token,'')
+            self.assertEqual(v2[:4],b'PSPI');self.assertEqual(v2[68:],packet)
+            sibling=self.plex.token('43')
+            self.assertEqual(self.plex.artwork.psp(sibling,v2[4:68].decode()),b'PSPK'+v2[4:68])
+            self.assertEqual(get.call_count,2)
+            self.plex.config['enabled']=False
+            with self.assertRaises(ValueError):self.plex.artwork.psp(sibling,v2[4:68].decode())
 
     def test_psp_missing_art_is_small_and_disabled_source_cannot_use_cache(self):
         token=self.jf.token('a'*32)
@@ -44,6 +52,38 @@ class ArtworkTests(unittest.TestCase):
             self.assertEqual(len(self.jf.artwork.psp(token)),20)
             self.jf.config['enabled']=False
             with self.assertRaises(ValueError):self.jf.artwork.psp(token)
+
+    def test_psp_concurrent_preparation_partial_retry_and_account_scope(self):
+        token=self.plex.token('42');a=self.plex.artwork
+        row={'thumb':'/library/metadata/1/thumb/1','art':'/library/metadata/1/art/1'}
+        entered,release=threading.Event(),threading.Event()
+        def convert(*args,**kwargs):
+            entered.set();self.assertTrue(release.wait(2))
+            size=115200 if '320:180' in args[0][args[0].index('-vf')+1] else 17920
+            return subprocess.CompletedProcess([],0,b'x'*size)
+        with patch.object(self.plex,'metadata',return_value=row), \
+                patch.object(a,'get',return_value=(b'image','image/png')) as get, \
+                patch('psp_streamer.artwork.subprocess.run',side_effect=convert):
+            with ThreadPoolExecutor(3) as pool:
+                first=pool.submit(a.psp,token,'')
+                self.assertTrue(entered.wait(2))
+                others=[pool.submit(a.psp,token,'') for _ in range(2)]
+                release.set();packet=first.result()
+                for f in others:self.assertEqual(f.result(),packet)
+            self.assertEqual(get.call_count,2)
+            # Rotated account credentials cannot reuse the old client identity.
+            self.plex.config['token']='other-account'
+            updated=a.psp(token,packet[4:68].decode())
+            self.assertEqual(updated[:4],b'PSPI');self.assertNotEqual(updated[4:68],packet[4:68])
+            self.assertEqual(get.call_count,4)
+            # New image paths invalidate both converted-plane and packet caches.
+            row['thumb']='/library/metadata/1/thumb/2'
+            with patch.object(a,'get',side_effect=ValueError('temporary')):
+                partial=a.psp(token,'')
+                self.assertEqual(partial[4:68],b'0'*64)
+            repaired=a.psp(token,'')
+            self.assertNotEqual(repaired[4:68],b'0'*64)
+            self.assertEqual(get.call_count,5)  # Good background plane was reused.
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -116,6 +156,10 @@ class ArtworkTests(unittest.TestCase):
                 reply=connection.getresponse(); self.assertEqual(reply.status,200)
                 self.assertEqual(reply.read(),b'PSPA-packet')
                 packet.assert_called_once_with(server.plex.token('42'))
+                connection.request('GET','/api/psp-artwork?item=:plex:m42&v=2&known='+'a'*64,
+                    headers={'Authorization':'Basic cHNwOnRlc3Q='})
+                reply=connection.getresponse();reply.read();self.assertEqual(reply.status,200)
+                packet.assert_called_with(server.plex.token('42'),'a'*64)
             with patch.object(server.plex.artwork, 'get', return_value=(b'JPEG', 'image/jpeg')):
                 connection.request('GET', path, headers={'Authorization': 'Basic cHNwOnRlc3Q='})
                 reply = connection.getresponse(); self.assertEqual(reply.read(), b'JPEG')

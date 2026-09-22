@@ -5,6 +5,12 @@ static unsigned char *menu_art_active,*menu_art_pending;
 static char menu_art_wanted[ID_SIZE],menu_art_job[ID_SIZE];
 static unsigned long long menu_art_since,menu_art_retry_at;
 static int menu_art_changed;
+static int menu_art_visible,menu_art_pending_reuse;
+static char menu_art_tag[65],menu_art_job_tag[65],menu_art_pending_tag[65];
+static int menu_art_tag_valid(const unsigned char *p) {
+    for(int i=0;i<64;i++)if(!((p[i]>='0' && p[i]<='9') || (p[i]>='a' && p[i]<='f')))return 0;
+    return 1;
+}
 static unsigned int menu_art_u32(const unsigned char *p) {
     return p[0]|((unsigned int)p[1]<<8)|((unsigned int)p[2]<<16)|((unsigned int)p[3]<<24);
 }
@@ -19,24 +25,42 @@ static void menu_art_select(const char *value) {
     if(!strcmp(value,menu_art_wanted))return;
     snprintf(menu_art_wanted,sizeof(menu_art_wanted),"%s",value);
     menu_art_retry_at=0;menu_art_since=sceKernelGetSystemTimeWide();
-    free(menu_art_active);menu_art_active=NULL;menu_art_changed=1;
+    menu_art_visible=0;menu_art_changed=1;
+    /* Retain at most one image while browsing, hidden until the server confirms
+     * identity. Playback/non-provider selections still release the allocation. */
+    if(!value[0]){free(menu_art_active);menu_art_active=NULL;menu_art_tag[0]=0;}
 }
 static int menu_art_schedule(void) {
-    if(!menu_art_wanted[0] || menu_art_active || (unsigned long long)sceKernelGetSystemTimeWide()<menu_art_retry_at ||
+    if(!menu_art_wanted[0] || menu_art_visible || (unsigned long long)sceKernelGetSystemTimeWide()<menu_art_retry_at ||
        sceKernelGetSystemTimeWide()-menu_art_since<500000ULL)return 0;
     snprintf(menu_art_job,sizeof(menu_art_job),"%s",menu_art_wanted);
+    memcpy(menu_art_job_tag,menu_art_tag,sizeof(menu_art_job_tag));
     menu_art_retry_at=sceKernelGetSystemTimeWide()+15000000ULL;
     return 1;
 }
 static void menu_art_download(volatile int *running) {
     /* Identifiers contain only provider prefixes, digits, dots and hex. */
-    char path[ID_SIZE+48];
+    char path[ID_SIZE+128];
+    menu_art_pending_reuse=0;menu_art_pending_tag[0]=0;
     menu_art_pending=malloc(MENU_ART_BYTES+4096);
     if(!menu_art_pending)return;
-    snprintf(path,sizeof(path),"/api/psp-artwork?item=%s",menu_art_job);
+    snprintf(path,sizeof(path),"/api/psp-artwork?item=%s&v=2&known=%s",menu_art_job,menu_art_job_tag);
     /* Includes TLS plus a 130-KiB packet, not a small control JSON reply.
      * Local actions still cancel; media/stream timeouts are unaffected. */
     int size=remote_http_get_budget(path,(char *)menu_art_pending,MENU_ART_BYTES+4096,running,10000);
+    if(*running && size>=68 && menu_art_tag_valid(menu_art_pending+4)) {
+        if(size==68 && !memcmp(menu_art_pending,"PSPK",4) && menu_art_job_tag[0] &&
+           !memcmp(menu_art_pending+4,menu_art_job_tag,64)) {
+            memcpy(menu_art_pending_tag,menu_art_job_tag,65);menu_art_pending_reuse=1;
+            free(menu_art_pending);menu_art_pending=NULL;return;
+        }
+        if(!memcmp(menu_art_pending,"PSPI",4)) {
+            memcpy(menu_art_pending_tag,menu_art_pending+4,64);menu_art_pending_tag[64]=0;
+            if(!strcmp(menu_art_pending_tag,"0000000000000000000000000000000000000000000000000000000000000000"))
+                menu_art_pending_tag[0]=0;
+            size-=68;memmove(menu_art_pending,menu_art_pending+68,(size_t)size);
+        }
+    }
     if(!*running || !menu_art_valid(menu_art_pending,size)) {
         free(menu_art_pending);menu_art_pending=NULL;
     } else {
@@ -46,6 +70,11 @@ static void menu_art_download(volatile int *running) {
 }
 /* Called only after the worker has joined. Never publish a stale selection. */
 static void menu_art_complete(int deliver) {
+    if(deliver && menu_art_pending_reuse && menu_art_active &&
+       !strcmp(menu_art_job,menu_art_wanted) && !strcmp(menu_art_tag,menu_art_pending_tag)) {
+        menu_art_visible=1;menu_art_changed=1;
+    }
+    menu_art_pending_reuse=0;
     /* Do not turn temporary provider/conversion failure into a permanent
      * invisible success. Empty packets retry slowly while selected. */
     if(menu_art_pending && !menu_art_u32(menu_art_pending+12) && !menu_art_u32(menu_art_pending+16)) {
@@ -54,15 +83,16 @@ static void menu_art_complete(int deliver) {
     }
     if(deliver && menu_art_pending && !strcmp(menu_art_job,menu_art_wanted)) {
         free(menu_art_active);menu_art_active=menu_art_pending;menu_art_pending=NULL;
-        menu_art_changed=1;
+        memcpy(menu_art_tag,menu_art_pending_tag,sizeof(menu_art_tag));
+        menu_art_visible=1;menu_art_changed=1;
     }
     free(menu_art_pending);menu_art_pending=NULL;
 }
 static int menu_art_has_cover(void) {
-    return menu_art_active && menu_art_u32(menu_art_active+16)!=0;
+    return menu_art_visible && menu_art_active && menu_art_u32(menu_art_active+16)!=0;
 }
 static void menu_art_draw(u32 *pixels,int stride,int x,int y,int width,int height,int cover) {
-    if(!menu_art_active || width<=0 || height<=0)return;
+    if(!menu_art_visible || !menu_art_active || width<=0 || height<=0)return;
     unsigned int bg=menu_art_u32(menu_art_active+12);
     if(cover?!menu_art_has_cover():!bg)return;
     const unsigned char *source=menu_art_active+20+(cover?bg:0);

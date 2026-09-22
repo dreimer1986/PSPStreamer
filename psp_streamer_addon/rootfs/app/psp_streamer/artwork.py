@@ -9,6 +9,7 @@ import subprocess
 from urllib.parse import urlencode
 from urllib.request import Request, build_opener
 from urllib.error import URLError
+from .work_cache import WorkCache
 
 
 class Artwork:
@@ -22,24 +23,23 @@ class Artwork:
         self.cache = OrderedDict()
         self.cache_bytes = 0
         self.slots = threading.BoundedSemaphore(4)
-        self.psp_cache = OrderedDict()
+        self.psp_cache = WorkCache(entries=8, jobs=4)
+        self.psp_planes = WorkCache(entries=16, jobs=4)
+        self.conversions = threading.BoundedSemaphore(2)
 
-    def psp(self, token):
-        """Bounded RGB565 menu packet; no image decoder/modules needed on PSP."""
-        self.provider.split(token)
+    def _psp_scope(self, token):
         with self.provider.lock:
-            key = (token, self.provider.config['url'], self.provider.config['token'])
-        with self.lock:
-            cached = self.psp_cache.get(key)
-            if cached and cached[0] > time.monotonic():
-                self.psp_cache.move_to_end(key)
-                return cached[1]
+            self.provider.split(token)
+            return (self.provider.art_provider, self.provider.config['url'], self.provider.config['token'],
+                    self.provider.namespace())
+
+    def psp_identity(self, token):
+        """Canonical series/album artwork, scoped to source/account and image tags."""
+        scope = self._psp_scope(token)
         row = self.provider.metadata(token)
-        # Episodes share series artwork; tracks share album artwork. This also
-        # keeps season/episode menus visually consistent with their parent.
         parent = (row.get('grandparentRatingKey') if row.get('type') == 'episode' else
                   row.get('parentRatingKey') if row.get('type') == 'track' else None) if self.provider.art_provider == 'plex' else (
-                  row.get('SeriesId') if row.get('Type') == 'Episode' else row.get('AlbumId') if row.get('Type') == 'Audio' else None)
+                  row.get('SeriesId') if row.get('Type') in ('Episode','Season') else row.get('AlbumId') if row.get('Type') == 'Audio' else None)
         if parent:
             try:
                 parent_token = self.provider.token(str(parent))
@@ -47,32 +47,63 @@ class Artwork:
                 token = parent_token
             except ValueError:
                 pass
-        links = self.links(row, token)
-        planes = []
-        for kind, width, height in [('backdrop',320,180), ('cover',80,112)]:
-            data = b''
-            if kind in links:
-                try:
-                    image, _ = self.get(token, kind)
-                    mode = 'increase' if kind == 'backdrop' else 'decrease'
-                    fit = f'crop={width}:{height}' if kind == 'backdrop' else f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black'
-                    result = subprocess.run(['ffmpeg','-v','error','-max_alloc','16777216','-threads','1',
-                        '-i','pipe:0','-an','-vf',f'scale={width}:{height}:force_original_aspect_ratio={mode},{fit}',
-                        '-threads','1','-frames:v','1','-pix_fmt','rgb565le','-f','rawvideo','pipe:1'],
-                        input=image, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
-                    if result.returncode == 0 and len(result.stdout) == width*height*2:
-                        data = result.stdout
-                except (ValueError, OSError, subprocess.TimeoutExpired):
-                    pass  # Decorative data must never prevent media selection.
-            planes.append(data)
-        background, cover = planes
-        packet = struct.pack('<4sHHHHII', b'PSPA',320,180,80,112,len(background),len(cover))+background+cover
-        with self.lock:
-            self.psp_cache[key] = (time.monotonic()+(600 if background or cover else 30), packet)
-            self.psp_cache.move_to_end(key)
-            while len(self.psp_cache)>8:
-                self.psp_cache.popitem(last=False)
-        return packet
+        self.links(row, token)
+        paths = self.paths(row)
+        if self._psp_scope(token) != scope:
+            raise ValueError('Artwork source changed; retry')
+        tag = hashlib.sha256(repr((scope, sorted(paths.items()))).encode()).hexdigest()
+        return token, scope, paths, tag
+
+    def _psp_plane(self, token, scope, kind, path, width, height):
+        def convert():
+            if not self.conversions.acquire(timeout=10):
+                raise ValueError('Image conversion busy')
+            try:
+                image, _ = self.get(token, kind)
+                mode = 'increase' if kind == 'backdrop' else 'decrease'
+                fit = f'crop={width}:{height}' if kind == 'backdrop' else f'pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black'
+                result = subprocess.run(['ffmpeg','-v','error','-max_alloc','16777216','-threads','1',
+                    '-i','pipe:0','-an','-vf',f'scale={width}:{height}:force_original_aspect_ratio={mode},{fit}',
+                    '-threads','1','-frames:v','1','-pix_fmt','rgb565le','-f','rawvideo','pipe:1'],
+                    input=image, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+                if result.returncode or len(result.stdout) != width*height*2:
+                    raise ValueError('Image conversion failed')
+                if self._psp_scope(token) != scope:
+                    raise ValueError('Artwork source changed; retry')
+                return result.stdout
+            finally:
+                self.conversions.release()
+        return self.psp_planes.get((scope, kind, path, width, height), convert, ttl=600)
+
+    def psp(self, token, known=None):
+        """v1 raw packets; v2 identifies/reuses the client's one retained image."""
+        token, scope, paths, tag = self.psp_identity(token)
+        if known == tag:
+            return b'PSPK'+tag.encode('ascii')
+        def prepare():
+            planes = []
+            for kind, width, height in [('backdrop',320,180), ('cover',80,112)]:
+                data = b''
+                if paths.get(kind):
+                    try:
+                        data = self._psp_plane(token,scope,kind,paths[kind],width,height)
+                    except (ValueError, OSError, subprocess.TimeoutExpired):
+                        pass
+                planes.append(data)
+            background, cover = planes
+            return struct.pack('<4sHHHHII',b'PSPA',320,180,80,112,len(background),len(cover))+background+cover
+        # Incomplete packets retry rather than retaining a transient failure.
+        packet = self.psp_cache.get((scope,tag),prepare,ttl=600,
+            cache_if=lambda p: all(not paths.get(k) or struct.unpack_from('<I',p,offset)[0]
+                                   for k,offset in [('backdrop',12),('cover',16)]))
+        if self._psp_scope(token) != scope:
+            raise ValueError('Artwork source changed; retry')
+        if known is None:
+            return packet
+        complete = all(not paths.get(k) or struct.unpack_from('<I',packet,offset)[0]
+                       for k,offset in [('backdrop',12),('cover',16)])
+        # Do not give partial failures a reusable identity.
+        return b'PSPI'+(tag if complete else '0'*64).encode('ascii')+packet
 
     def paths(self, row):
         if self.provider.art_provider == 'plex':

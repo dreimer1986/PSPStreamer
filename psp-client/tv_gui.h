@@ -195,7 +195,7 @@ static void tv_present(void) {
                          PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
 }
 
-static void tv_draw_view(int view, int selected, int row, int audio_only,
+static void tv_compose_view(int view, int selected, int row, int audio_only,
                          const char *title, int fullscreen) {
     int i;
     const char *section = tr(view == TV_VIEW_LIBRARY ? TXT_MEDIA_LIBRARY :
@@ -298,7 +298,22 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         }
         tv_help(tr(TXT_MUSIC_CONTROLS));
     }
+}
+static void tv_draw_view(int view,int selected,int row,int audio_only,const char *title,int fullscreen) {
+    tv_compose_view(view,selected,row,audio_only,title,fullscreen);
     tv_present();
+}
+/* Idle library animation owns only the receiver strip. Keep the completed
+ * menu, artwork and glyphs intact; never touch decoder-owned framebuffers. */
+static void tv_library_receiver_refresh(void) {
+    if(!tv_ui_active || !display_output.tv || tvout_video_active || !tv_canvas.pixels)return;
+    if(receiver_tv_skin_end-receiver_tv_skin!=TV_GUI_WIDTH*TV_GUI_HEIGHT*4)return;
+    for(int y=360;y<470;y++)
+        memcpy(tv_canvas.pixels+y*TV_GUI_STRIDE+24,receiver_tv_skin+(y*TV_GUI_WIDTH+24)*4,672*4);
+    tv_receiver();
+    sceDisplayWaitVblankStart();
+    for(int y=360;y<470;y++)
+        memcpy((u32 *)0x44000000+y*TV_GUI_STRIDE+24,tv_canvas.pixels+y*TV_GUI_STRIDE+24,672*4);
 }
 
 /* Music is an incremental scene. No second full-frame cache is required:

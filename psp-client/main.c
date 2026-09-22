@@ -2982,7 +2982,7 @@ static void show(int selected) {
     if (selected < 0 || selected >= item_count) selected = 0;
     menu_art_select(item_count?items[selected].value:"");
     if (tv_ui_active) {
-        tv_draw_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
+        tv_compose_view(TV_VIEW_LIBRARY, selected, 0, 0, NULL, 0);
         if(tls_notice())tv_text(34,302,48,1,TV_AMBER,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
         else if(!network_ready)tv_text(34,302,48,1,TV_AMBER,"%s",status);
         tv_present();return;
@@ -3241,13 +3241,6 @@ int main(void) {
             sceKernelDelayThread(20000);
             continue;
         }
-        /* Keep the already presented TV frame while its image downloads.
-         * Copying/redrawing 1.5 MiB every 150 ms competes with TLS on PSP.
-         * Real input/status changes still set dirty and redraw immediately. */
-        if (tv_ui_active && !browser_art_busy() && now >= next_tv_redraw_tick) {
-            dirty = 1;
-            next_tv_redraw_tick = now + 150000ULL;
-        }
         if(menu_art_changed){dirty=1;menu_art_changed=0;}
         /* Stop before anything that can change network settings, use the
          * library buffer, or launch another remote worker. Navigation can
@@ -3487,7 +3480,12 @@ int main(void) {
             dirty = 1;
         }
         old_buttons = pad.Buttons;
-        if (dirty) { show(selected); dirty = 0; }
+        if (dirty) { show(selected); dirty = 0;next_tv_redraw_tick=now+150000ULL; }
+        /* Idle animations update only their strip, and pause during artwork
+         * downloads. Real input/status changes still redraw immediately. */
+        else if(tv_ui_active && !browser_art_busy() && now>=next_tv_redraw_tick) {
+            tv_library_receiver_refresh();next_tv_redraw_tick=now+150000ULL;
+        }
         sceKernelDelayThread(20000);
     }
     int browser_stopped=exit_join_worker(stop_browser_requests);

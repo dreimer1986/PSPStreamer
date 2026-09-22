@@ -125,6 +125,7 @@ int main(int argc, char **argv) {
     tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
     u32 plain=tv_canvas.pixels[290*TV_GUI_STRIDE+520];
     menu_art_active=calloc(1,MENU_ART_BYTES);assert(menu_art_active);
+    menu_art_visible=1;
     memcpy(menu_art_active,"PSPA\x40\x01\xb4\x00\x50\x00\x70\x00",12);
     unsigned int art_sizes[]={320*180*2,80*112*2};
     for(int k=0;k<2;k++)for(int b=0;b<4;b++)menu_art_active[12+k*4+b]=(unsigned char)(art_sizes[k]>>(8*b));
@@ -151,6 +152,17 @@ int main(int argc, char **argv) {
     tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
     assert(tv_canvas.pixels[290*TV_GUI_STRIDE+520]!=plain);
     assert(((u32 *)0x44000000)[180*TV_GUI_STRIDE+620]==0xff0000);
+    int presentations=framebuffer_calls;
+    tv_compose_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
+    assert(framebuffer_calls==presentations);
+    tv_present();assert(framebuffer_calls==presentations+1);
+    static u32 before_refresh[TV_GUI_STRIDE*TV_GUI_HEIGHT];
+    memcpy(before_refresh,(void *)0x44000000,TV_GUI_BYTES);
+    clock_tick+=600000;tv_library_receiver_refresh();
+    assert(framebuffer_calls==presentations+1);
+    for(int y=0;y<TV_GUI_HEIGHT;y++)for(int x=0;x<TV_GUI_STRIDE;x++)
+        if(y<360 || y>=470 || x<24 || x>=696)
+            assert(((u32 *)0x44000000)[y*TV_GUI_STRIDE+x]==before_refresh[y*TV_GUI_STRIDE+x]);
     tv_draw_view(TV_VIEW_OPTIONS,0,0,0,NULL,0);
     assert(((u32 *)0x44000000)[245*TV_GUI_STRIDE+620]==0xff0000);
     menu_art_select("");
@@ -170,6 +182,7 @@ int main(int argc, char **argv) {
         tvout_video_active = 1;
         int calls = framebuffer_calls;
         tv_draw_view(TV_VIEW_LIBRARY, 0, 0, 0, NULL, 0);
+        tv_library_receiver_refresh();
         assert(calls == framebuffer_calls); /* GUI cannot steal video scanout. */
         tvout_video_active = 0;
         assert(display_output_select(&display_output, tv_ui_active) == 0);

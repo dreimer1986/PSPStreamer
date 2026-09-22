@@ -50,6 +50,21 @@ responses after 60 seconds; it no longer permanently gives up after two tries.
 Changing selection cancels the obsolete image request. Streaming timeouts are
 unchanged.
 
+With **server 0.1.48 and the matching PSP build**, selecting another episode of
+the same series (or song from the same album) reuses the last image after a
+68-byte server confirmation. The previous image stays hidden until confirmed;
+only one image is retained, and playback releases it. Different accounts and
+changed image tags do not share identities. Older server/client versions still
+use full image packets. Cold requests share bounded image-conversion jobs.
+
+Idle TV library updates redraw only the receiver controls, not the complete
+menu/background. Full redraws present once, including connection notices.
+The server also reuses successful local-file metadata/subtitle-codec probes with
+file-change detection and bounded caches; remote/live probes are not retained.
+Docker and the Home Assistant app include the same changes. No configuration
+changes are required. See [optimization status](docs/OPTIMIZATION_NEXT_STEPS.md)
+for the implementation review and remaining measurement-dependent work.
+
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
 ### Plex library and playlists (server 0.1.37)
