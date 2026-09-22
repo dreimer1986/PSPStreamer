@@ -187,7 +187,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         view == TV_VIEW_OPTIONS ? TXT_STREAM_OPTIONS : TXT_NOW_PLAYING);
     if (!tv_ui_active || tvout_video_active || !tv_canvas.pixels) return;
     tv_shell(section);
-    if(view!=TV_VIEW_MUSIC)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,32,60,498,244,0);
+    if(view!=TV_VIEW_MUSIC)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,32,52,498,244,0);
     if (view == TV_VIEW_LIBRARY) {
         int first = item_count ? selected / TV_GUI_ROWS * TV_GUI_ROWS : 0;
         tv_text(34, 65, 38, 2, TV_MUTED, "%s", current_path[0] ? current_path : "/");

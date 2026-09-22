@@ -4,7 +4,6 @@
 static unsigned char *menu_art_active,*menu_art_pending;
 static char menu_art_wanted[ID_SIZE],menu_art_job[ID_SIZE];
 static unsigned long long menu_art_since,menu_art_retry_at;
-static int menu_art_attempts;
 static int menu_art_changed;
 static unsigned int menu_art_u32(const unsigned char *p) {
     return p[0]|((unsigned int)p[1]<<8)|((unsigned int)p[2]<<16)|((unsigned int)p[3]<<24);
@@ -19,14 +18,14 @@ static void menu_art_select(const char *value) {
        strncmp(value,":plex:m",7) && strncmp(value,":jellyfin:m",11))value="";
     if(!strcmp(value,menu_art_wanted))return;
     snprintf(menu_art_wanted,sizeof(menu_art_wanted),"%s",value);
-    menu_art_attempts=0;menu_art_retry_at=0;menu_art_since=sceKernelGetSystemTimeWide();
+    menu_art_retry_at=0;menu_art_since=sceKernelGetSystemTimeWide();
     free(menu_art_active);menu_art_active=NULL;menu_art_changed=1;
 }
 static int menu_art_schedule(void) {
-    if(!menu_art_wanted[0] || menu_art_active || menu_art_attempts>=2 || (unsigned long long)sceKernelGetSystemTimeWide()<menu_art_retry_at ||
+    if(!menu_art_wanted[0] || menu_art_active || (unsigned long long)sceKernelGetSystemTimeWide()<menu_art_retry_at ||
        sceKernelGetSystemTimeWide()-menu_art_since<500000ULL)return 0;
     snprintf(menu_art_job,sizeof(menu_art_job),"%s",menu_art_wanted);
-    menu_art_attempts++;menu_art_retry_at=sceKernelGetSystemTimeWide()+15000000ULL;
+    menu_art_retry_at=sceKernelGetSystemTimeWide()+15000000ULL;
     return 1;
 }
 static void menu_art_download(volatile int *running) {
@@ -35,7 +34,9 @@ static void menu_art_download(volatile int *running) {
     menu_art_pending=malloc(MENU_ART_BYTES+4096);
     if(!menu_art_pending)return;
     snprintf(path,sizeof(path),"/api/psp-artwork?item=%s",menu_art_job);
-    int size=remote_http_get_budget(path,(char *)menu_art_pending,MENU_ART_BYTES+4096,running,4000);
+    /* Includes TLS plus a 130-KiB packet, not a small control JSON reply.
+     * Local actions still cancel; media/stream timeouts are unaffected. */
+    int size=remote_http_get_budget(path,(char *)menu_art_pending,MENU_ART_BYTES+4096,running,10000);
     if(!*running || !menu_art_valid(menu_art_pending,size)) {
         free(menu_art_pending);menu_art_pending=NULL;
     } else {
@@ -45,6 +46,12 @@ static void menu_art_download(volatile int *running) {
 }
 /* Called only after the worker has joined. Never publish a stale selection. */
 static void menu_art_complete(int deliver) {
+    /* Do not turn temporary provider/conversion failure into a permanent
+     * invisible success. Empty packets retry slowly while selected. */
+    if(menu_art_pending && !menu_art_u32(menu_art_pending+12) && !menu_art_u32(menu_art_pending+16)) {
+        free(menu_art_pending);menu_art_pending=NULL;
+        menu_art_retry_at=sceKernelGetSystemTimeWide()+60000000ULL;
+    }
     if(deliver && menu_art_pending && !strcmp(menu_art_job,menu_art_wanted)) {
         free(menu_art_active);menu_art_active=menu_art_pending;menu_art_pending=NULL;
         menu_art_changed=1;

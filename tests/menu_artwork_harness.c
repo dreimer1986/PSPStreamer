@@ -7,7 +7,7 @@ typedef unsigned int u32;
 static unsigned long long now;
 static unsigned long long sceKernelGetSystemTimeWide(void){return now;}
 static int remote_http_get_budget(const char *path,char *out,int cap,volatile int *running,int budget) {
-    assert(strstr(path,"/api/psp-artwork?item=plex."));assert(cap>=133140 && budget==4000);
+    assert(strstr(path,"/api/psp-artwork?item=plex."));assert(cap>=133140 && budget==10000);
     if(!*running)return -1;
     unsigned char *p=(unsigned char *)out;
     memcpy(p,"PSPA\x40\x01\xb4\x00\x50\x00\x70\x00",12);
@@ -25,8 +25,8 @@ int main(void) {
     assert(menu_art_pending && !menu_art_active);menu_art_complete(1);
     assert(menu_art_has_cover() && menu_art_changed && !menu_art_schedule());
     static u32 pixels[768*480];
-    menu_art_draw(pixels,768,32,60,498,244,0);
-    assert(pixels[60*768+32]==63 && pixels[59*768+32]==0 && pixels[304*768+32]==0);
+    menu_art_draw(pixels,768,32,52,498,244,0);
+    assert(pixels[52*768+32]==63 && pixels[51*768+32]==0 && pixels[296*768+32]==0);
     menu_art_draw(pixels,768,562,128,116,113,1);
     assert(pixels[180*768+620]==0xff0000 && pixels[127*768+620]==0 && pixels[241*768+620]==0);
     memset(pixels,0,sizeof(pixels));
@@ -40,7 +40,12 @@ int main(void) {
     menu_art_select("plex.44.abc");menu_art_complete(1);assert(!menu_art_active && !menu_art_pending);
     now+=600000;assert(menu_art_schedule());menu_art_download(&running);menu_art_complete(0);
     assert(!menu_art_active && !menu_art_schedule());now+=16000000;assert(menu_art_schedule());
-    running=0;menu_art_download(&running);menu_art_complete(0);now+=16000000;assert(!menu_art_schedule());
+    running=0;menu_art_download(&running);menu_art_complete(0);now+=16000000;assert(menu_art_schedule());
     menu_art_select("");assert(!menu_art_active);
+    menu_art_select("plex.45.abc");now+=600000;assert(menu_art_schedule());
+    menu_art_pending=calloc(1,20);assert(menu_art_pending);
+    memcpy(menu_art_pending,"PSPA\x40\x01\xb4\x00\x50\x00\x70\x00",12);
+    menu_art_complete(1);assert(!menu_art_active && !menu_art_schedule());
+    now+=61000000;assert(menu_art_schedule());
     puts("LCD/TV crop, opacity, cover bounds, stale selection and cancellation OK");
 }

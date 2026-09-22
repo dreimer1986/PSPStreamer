@@ -8,6 +8,9 @@ static char browser_remote_path[64], browser_remote_reply[2048];
 static unsigned long long browser_remote_next;
 static int browser_art_task;
 static int browser_art_turn;
+static int browser_art_busy(void) {
+    return browser_art_task && browser_remote_thread_id>=0 && !browser_remote_done;
+}
 
 static int browser_remote_worker(SceSize args, void *argp) {
     (void)args; (void)argp;
@@ -41,6 +44,7 @@ static int browser_remote_stop(void) {
 static const char *browser_remote_poll(int sequence) {
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (browser_remote_thread_id >= 0) {
+        if(browser_art_task && strcmp(menu_art_job,menu_art_wanted))browser_remote_running=0;
         if (!browser_remote_done) return NULL;
         int deliver=browser_remote_running && !browser_art_task;
         if(!browser_remote_reap())return NULL;

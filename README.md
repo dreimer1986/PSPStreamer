@@ -42,6 +42,12 @@ load. There is no artwork for ordinary SMB/local-file entries yet.
 Image requests get a dedicated turn after a control reply, even if a slow TV
 redraw overruns the usual idle polling interval. LCD backdrop bounds are
 `x=36, y=29, width=312, height=123`; the cover remains separate from status text.
+TV backdrops start at `y=52`. While an image is downloading, automatic full-TV
+redraws pause (navigation still redraws). Artwork alone has a cancellable
+10-second request budget, retries failures after 15 seconds and empty image
+responses after 60 seconds; it no longer permanently gives up after two tries.
+Changing selection cancels the obsolete image request. Streaming timeouts are
+unchanged.
 
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 

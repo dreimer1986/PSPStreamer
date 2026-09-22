@@ -3241,7 +3241,10 @@ int main(void) {
             sceKernelDelayThread(20000);
             continue;
         }
-        if (tv_ui_active && now >= next_tv_redraw_tick) {
+        /* Keep the already presented TV frame while its image downloads.
+         * Copying/redrawing 1.5 MiB every 150 ms competes with TLS on PSP.
+         * Real input/status changes still set dirty and redraw immediately. */
+        if (tv_ui_active && !browser_art_busy() && now >= next_tv_redraw_tick) {
             dirty = 1;
             next_tv_redraw_tick = now + 150000ULL;
         }

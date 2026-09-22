@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
     assert(menu_art_schedule());volatile int running=1;
     menu_art_download(&running);menu_art_complete(1);assert(!menu_art_active);
     tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
-    u32 plain=tv_canvas.pixels[300*TV_GUI_STRIDE+520];
+    u32 plain=tv_canvas.pixels[290*TV_GUI_STRIDE+520];
     menu_art_active=calloc(1,MENU_ART_BYTES);assert(menu_art_active);
     memcpy(menu_art_active,"PSPA\x40\x01\xb4\x00\x50\x00\x70\x00",12);
     unsigned int art_sizes[]={320*180*2,80*112*2};
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
     for(int k=0;k<80*112;k++)menu_art_active[20+art_sizes[0]+2*k]=31;
     assert(menu_art_valid(menu_art_active,MENU_ART_BYTES));
     tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
-    assert(tv_canvas.pixels[300*TV_GUI_STRIDE+520]!=plain);
+    assert(tv_canvas.pixels[290*TV_GUI_STRIDE+520]!=plain);
     assert(((u32 *)0x44000000)[180*TV_GUI_STRIDE+620]==0xff0000);
     tv_draw_view(TV_VIEW_OPTIONS,0,0,0,NULL,0);
     assert(((u32 *)0x44000000)[245*TV_GUI_STRIDE+620]==0xff0000);

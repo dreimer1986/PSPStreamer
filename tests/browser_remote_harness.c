@@ -41,6 +41,7 @@ static int remote_http_get(const char *path,char *reply,int capacity,volatile in
     strcpy(reply,"{\"seq\":8,\"action\":\"play\",\"id\":\"example\"}");return strlen(reply);
 }
 static int art_requested,art_delivered,art_completed;
+static char menu_art_job[32],menu_art_wanted[32];
 static int menu_art_schedule(void){int result=art_requested;art_requested=0;return result;}
 static void menu_art_download(volatile int *running){
     entered=1;
@@ -137,6 +138,10 @@ int main(void) {
     fake_now+=2000000;art_requested=1;entered=0;release_reply=0;
     assert(!browser_remote_poll(7));while(!entered)pause_ms();
     assert(browser_art_task);
+    assert(browser_art_busy());
+    strcpy(menu_art_wanted,"new selection");
+    assert(!browser_remote_poll(7));
+    assert(!browser_remote_running); /* Cancel old art without waiting 10 s. */
     while(!browser_remote_stop())pause_ms();
     return 0;
 }
