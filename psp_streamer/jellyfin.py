@@ -41,6 +41,7 @@ class JellyfinBridge(PlexMediaBridge):
 
 
 class Jellyfin(Plex):
+    art_provider = 'jellyfin'
     def __init__(self, directory, roots):
         # Reuse bounded cache, parent navigation, atomic credential storage,
         # background report lifecycle and authenticated range bridge.
@@ -238,10 +239,11 @@ class Jellyfin(Plex):
             if row.get('Type') in ('Movie', 'Episode', 'Audio', 'MusicVideo', 'Video'):
                 if row['Type'] == 'Episode':
                     name = f"S{int(row.get('ParentIndexNumber') or 0):02}E{int(row.get('IndexNumber') or 0):02} {name}"
-                result['videos'].append(dict(id=self.token(row['Id'], kind, key, offset+index),
+                result['videos'].append(dict(artwork=self.artwork.links(row, self.token(row['Id'])), id=self.token(row['Id'], kind, key, offset+index),
                     name=name, kind='audio' if row['Type']=='Audio' else 'video', bytes=0))
             elif row.get('IsFolder'):
-                result['folders'].append(dict(name=name, path=':jellyfin:m'+identifier(row['Id'])))
+                result['folders'].append(dict(name=name, path=':jellyfin:m'+identifier(row['Id']),
+                    artwork=self.artwork.links(row, self.token(row['Id']))))
         for label, page in [('Previous page', max(0, offset-100)), ('Next page', offset+len(rows))]:
             if (label=='Previous page' and offset) or (label=='Next page' and rows and page<int(data.get('TotalRecordCount', page))):
                 result['folders'].append(dict(name=label, path=f':jellyfin:{kind}{key}@{page}'))
@@ -278,7 +280,11 @@ class Jellyfin(Plex):
             artist=display_text(', '.join(row.get('Artists') or [])), album=display_text(row.get('Album')),
             summary=display_text(row.get('Overview'),1200), year=row.get('ProductionYear'),
             resume=int(user.get('PlaybackPositionTicks') or 0)//10000000,
-            watched=bool(user.get('Played')), provider='jellyfin')
+            watched=bool(user.get('Played')), provider='jellyfin', artwork=self.artwork.links(row, self.token(row['Id'])))
+
+    def art_headers(self):
+        return {'Authorization': authorization(self.config['client'], self.config['token']),
+                'Accept': 'image/jpeg,image/png,image/webp'}
 
     def report(self, token, state, position, duration):
         key = self.split(token)[0]

@@ -26,7 +26,10 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class Plex:
+    art_provider = 'plex'
     def __init__(self, directory, roots):
+        from .artwork import Artwork
+        self.artwork = Artwork(self)
         self.path = Path(directory) / 'plex.json'
         self.roots = roots
         self.lock = threading.RLock()
@@ -280,10 +283,11 @@ class Plex:
             if row.get('type') in ('movie', 'episode', 'track'):
                 if row.get('type') == 'episode':
                     title = display_text(f"S{int(row.get('parentIndex', 0)):02}E{int(row.get('index', 0)):02} {title}")
-                result['videos'].append({'id': self.token(f'{rating}.{kind}{key}.{offset + index}'),
+                result['videos'].append({'artwork': self.artwork.links(row, self.token(rating)), 'id': self.token(f'{rating}.{kind}{key}.{offset + index}'),
                     'name': title, 'kind': 'audio' if row['type'] == 'track' else 'video', 'bytes': 0})
             else:
-                result['folders'].append({'name': title, 'path': ':plex:m' + rating})
+                result['folders'].append({'name': title, 'path': ':plex:m' + rating,
+                                          'artwork': self.artwork.links(row, self.token(rating))})
         if offset:
             result['folders'].append({'name': 'Previous page', 'path': f':plex:{kind}{key}@{max(0, offset - 100)}'})
         if offset + len(rows) < int(data.get('totalSize', offset + len(rows))):
@@ -336,7 +340,11 @@ class Plex:
         return {'name': display_text(name, 126), 'title': display_text(row.get('title')), 'artist': display_text(row.get('grandparentTitle')),
                 'album': display_text(row.get('parentTitle')), 'summary': display_text(row.get('summary'), 1200),
                 'year': row.get('year'), 'resume': int(row.get('viewOffset', 0)) // 1000,
-                'watched': bool(row.get('viewCount')), 'provider': 'plex'}
+                'watched': bool(row.get('viewCount')), 'provider': 'plex',
+                'artwork': self.artwork.links(row, self.token(str(row.get('ratingKey') or self.split(token)[0])))}
+
+    def art_headers(self):
+        return {'X-Plex-Token': self.config['token'], 'Accept': 'image/jpeg,image/png,image/webp'}
 
     def report(self, token, state, position, duration):
         key = self.split(token)[0]

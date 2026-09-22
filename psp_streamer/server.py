@@ -45,7 +45,10 @@ AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".
 MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 TEXT_SUBTITLE_CODECS = {"ass", "mov_text", "srt", "ssa", "subrip", "text", "webvtt"}
 BITMAP_SUBTITLE_CODECS = {"dvb_subtitle", "dvd_subtitle", "hdmv_pgs_subtitle", "xsub"}
-PSP_SUBTITLE_FPS = 20.1
+# Wire-format compatibility only for old clients without timebase=ms.
+# Current LCD AND TV playback use container PTS and millisecond cues, not FPS.
+LEGACY_SUBTITLE_FPS_LCD = 20.1
+LEGACY_SUBTITLE_FPS_TV = 20.2
 MAX_SUBTITLE_CUES = 1800  # compatibility response for older, unpaged clients
 PGS_CACHE_TRACKS = max(1, int(os.environ.get("PGS_CACHE_TRACKS", "1")))
 
@@ -85,8 +88,8 @@ def psp_subtitle_text(value: str) -> str:
     return value[:180]
 
 
-def parse_srt_cues(value: str, fps: float = PSP_SUBTITLE_FPS) -> list[list[object]]:
-    """Convert FFmpeg's canonical SRT output into PSP presentation frames."""
+def parse_srt_cues(value: str, fps: float = LEGACY_SUBTITLE_FPS_LCD) -> list[list[object]]:
+    """Convert SRT timestamps to ticks (1000 = milliseconds; old clients use frames)."""
     cues: list[list[object]] = []
     blocks = re.split(r"\r?\n\r?\n+", value.strip())
     timing = re.compile(
@@ -404,7 +407,8 @@ class AppHandler(BaseHTTPRequestHandler):
         if getattr(self, 'session_cookie', None) is not None:
             self.send_header('Set-Cookie', self.session_cookie)
             self.session_cookie = None
-        if self.server.settings.protected or urlparse(self.path).path in ('/api/session', '/api/login', '/api/logout'):
+        if (self.server.settings.protected or urlparse(self.path).path in ('/api/session', '/api/login', '/api/logout')) and not any(
+                header.lower().startswith(b'cache-control:') for header in getattr(self, '_headers_buffer', [])):
             self.send_header("Cache-Control", "private, no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header('X-Frame-Options', 'DENY')
@@ -432,6 +436,37 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
+            if parsed.path.startswith('/api/theme/'):
+                token = parsed.path.rsplit('/', 1)[-1]
+                provider = self.server.plex if token.startswith('plex.') else self.server.jellyfin
+                try:
+                    data, mime = provider.artwork.theme(token)
+                except ValueError:
+                    return self.send_error_json(404, 'No theme song available')
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'private, no-store')
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if parsed.path.startswith('/api/artwork/'):
+                parts = parsed.path.split('/')
+                if len(parts) != 5:
+                    return self.send_error_json(404, 'Artwork unavailable')
+                token, kind = parts[3:]
+                provider = self.server.plex if token.startswith('plex.') else self.server.jellyfin
+                try:
+                    data, mime = provider.artwork.get(token, kind)
+                except ValueError:
+                    return self.send_error_json(404, 'Artwork unavailable')
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'private, no-store')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if parsed.path == '/api/session':
                 return self.send_json({'csrf': self.web_csrf or '', 'protected': self.server.settings.protected})
             if parsed.path == '/api/library/files':
@@ -510,7 +545,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/library":
                 root = int(query.get("root", ["0"])[0])
                 path = query.get("path", [""])[0]
-                return self.send_json(browse_catalogue(self.server, root, path))
+                listing = browse_catalogue(self.server, root, path)
+                if not self.headers.get('X-PSP-Web') and query.get('artwork', ['0'])[0] != '1':
+                    # Keep the PSP's bounded catalogue JSON exactly as small as
+                    # before. Web clients opt in; image bytes stay server-side.
+                    listing = {**listing, **{key: [{k:v for k,v in row.items() if k != 'artwork'}
+                               for row in listing[key]] for key in ('folders','videos')}}
+                return self.send_json(listing)
             if parsed.path.startswith("/api/media-next/"):
                 if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
                     self.server.radio.get(parsed.path.rsplit('/', 1)[-1])
@@ -871,7 +912,8 @@ class AppHandler(BaseHTTPRequestHandler):
         else:
             self.server.metadata_cache[token] = payload
         self.server.player_status.remember(token, payload, payload['kind'])
-        self.send_json(payload)
+        self.send_json(payload if self.headers.get('X-PSP-Web') else
+                       {k:v for k,v in payload.items() if k != 'artwork'})
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False,
                   paged: bool = False, offset: int | None = None, at_ms: int = 0) -> None:
@@ -883,7 +925,7 @@ class AppHandler(BaseHTTPRequestHandler):
         deliberately report their kind now; the PSP client can retain the
         proven burn-in fallback until its sprite overlay transport lands.
         """
-        fps = 1000 if milliseconds or paged else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
+        fps = 1000 if milliseconds or paged else (LEGACY_SUBTITLE_FPS_TV if tv_profile else LEGACY_SUBTITLE_FPS_LCD)
         cache_key = (token, track, fps)
         with self.server.subtitle_cache_lock:
             cached = self.server.subtitle_cache.get(cache_key)
@@ -973,7 +1015,7 @@ class AppHandler(BaseHTTPRequestHandler):
         cues = self.pgs_cues(token, track)
         # Frames share the video presentation clock; positions are scaled by
         # the client from the original PGS canvas into 480x272.
-        fps = 1000 if milliseconds else (20.2 if tv_profile else PSP_SUBTITLE_FPS)
+        fps = 1000 if milliseconds else (LEGACY_SUBTITLE_FPS_TV if tv_profile else LEGACY_SUBTITLE_FPS_LCD)
         payload = {"t": "pgs", "c": [[round(cue.start * fps), round(cue.end * fps),
                                          cue.x, cue.y, cue.width, cue.height, cue.canvas_width, cue.canvas_height]
                                        for cue in cues]}

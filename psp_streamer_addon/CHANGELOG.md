@@ -123,3 +123,9 @@
 - Test Main profile with CABAC, no B-frames and no weighted P prediction.
 - Keep audio, timestamps, frame-rate options and bitrates unchanged.
 - Requires real PSP LCD/TV validation; no PSP executable update needed.
+# 0.1.46
+
+- Plex/Jellyfin cover grid, episode artwork and series backgrounds in the web UI.
+- Authenticated current-media artwork for the separate HA integration 0.1.1.
+- Optional browser-only theme music preview; no PSP playback or artwork changes.
+- Bounded image caches and lazy thumbnails; no provider credentials in URLs.

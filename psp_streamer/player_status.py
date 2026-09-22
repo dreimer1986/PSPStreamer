@@ -23,7 +23,8 @@ class PlayerStatus:
 
     def remember(self, token, payload, kind):
         data = {'title': payload.get('name') or payload.get('title') or '',
-                'artist': payload.get('artist', ''), 'album': payload.get('album', ''), 'kind': kind}
+                'artist': payload.get('artist', ''), 'album': payload.get('album', ''), 'kind': kind,
+                'artwork': payload.get('artwork', {})}
         with self.lock:
             self.metadata[token] = data
             self.metadata.move_to_end(token)

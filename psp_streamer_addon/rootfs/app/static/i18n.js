@@ -1,5 +1,8 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Cover view':'Coveransicht',
+  'Preview theme song':'Serien-Thema anhören',
+  'No playable theme song available.':'Kein abspielbares Serien-Thema verfügbar.',
   'Connect with your Jellyfin server address and user account. Originals are transcoded only by PSPStreamer.':'Mit Jellyfin-Serveradresse und Benutzerkonto verbinden. Nur PSPStreamer wandelt die Originaldateien um.',
   'Server address':'Serveradresse','Username':'Benutzername','Connect Jellyfin':'Jellyfin verbinden',
   'Disconnect Jellyfin':'Jellyfin trennen','Connected as {user}':'Verbunden als {user}',

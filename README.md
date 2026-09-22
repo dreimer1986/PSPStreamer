@@ -1,5 +1,27 @@
 # PSP Streamer
 
+### Covers and backgrounds (server 0.1.46)
+
+The web library's **Cover view** button switches between the compact list and
+a poster grid; the choice is remembered in that browser. Plex and Jellyfin supply
+episode thumbnails, movie/series posters, album covers and series backgrounds.
+Selecting an item shows its image and background in the remote-control view.
+Missing images do not prevent browsing or playback. File shares and radio keep
+their text view unless artwork is supplied by a media-server source.
+
+**Preview theme song** requests the provider's theme music (including inherited
+series themes) and plays it in the browser only. This is optional: not every
+series has theme media. It does not extract an intro from the episode, transcode
+the preview or start playback on the PSP. Browser-supported audio formats up to
+16 MiB are accepted; theme videos are not implemented.
+
+With the separate **PSPStreamerHA integration 0.1.1**, current-media artwork also
+appears on Home Assistant's media-player entity. Update both server and
+integration, then reload the integration. Images remain password-protected;
+neither Plex/Jellyfin tokens nor the PSPStreamer password appear in browser URLs.
+The server keeps a bounded image cache (24 MiB per provider) and loads grid
+thumbnails lazily. No artwork is downloaded or rendered by the PSP.
+
 PSP Streamer makes a local or DynDNS-reachable media library available on a PSP-2000/3000 with custom firmware. The Python server browses allowed folders and transcodes with FFmpeg. Video is delivered in one FLV stream containing H.264 and MP3 audio, both decoded locally by the PSP.
 
 ### Plex library and playlists (server 0.1.37)
