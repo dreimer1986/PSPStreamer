@@ -402,6 +402,9 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             continue;
         }
 
+        /* The original scalar opcodes form a contiguous range. Keep their
+         * hot path out of the extended control/memory dispatch entirely. */
+        if(op->op>=IF) {
         if(op->op==LOOP || op->op==WHILE) {
             if(depth>=PM_DEPTH || op->arg<=i+1 || op->arg>program->count ||
                program->code[op->arg-1].op!=(op->op==LOOP?LOOPEND:WHILEEND) || program->code[op->arg-1].arg!=i) return 0;
@@ -487,6 +490,7 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
             a=stack[--used];
             if (eel_below(fabsf(a),.00001f)) i=op->arg-1;
             continue;
+        }
         }
         if (!used) return 0;
         a = stack[--used];
