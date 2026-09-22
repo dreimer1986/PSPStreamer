@@ -540,6 +540,14 @@ name with `server=…` and `port=8091`.
 
 ### Automatic continuation from the web remote
 
+After a remote seek, the PSP consumes both the seek request and its pending
+resume flag before restarting playback. Update the PSP application to include
+this fix: older clients could return to the browser at the later natural video
+end instead of advancing. This applies equally to the web and Home Assistant
+remotes; server 0.1.45's separate PGS end-of-stream fix remains necessary for TV
+bitmap burn-in. With debugging enabled, the video watchdog log now includes a
+final `playback outcome` line with EOF/seek/resume flags.
+
 After a remotely started episode ends naturally, the PSP requests the next video in the same folder, using natural filename order (episode 2 before episode 10). This does not depend on the folder currently open in the PSP browser or its visible page. Playback stops at the last video; it does not descend into other folders or switch to music. Stop, playback errors and seeking do not trigger next-episode playback.
 
 Music continues through audio files in the same folder. The PSP's saved shuffle option also applies to remotely started music; shuffle excludes the current track, while sequential playback stops at the folder end. Requested audio/subtitle track indices are reused for the next video and checked against its available tracks.

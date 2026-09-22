@@ -2113,6 +2113,7 @@ static int play_h264(const char *media_id) {
     video_file_direction=0;
     int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
     int prepared = 0, trace_start_seconds = stream_start_seconds;
+    int watch_started = 0;
     int video_only_origin = 0;
     int audio_thread_id = -1;
     TimedPacket current = {0}, next = {0};
@@ -2224,6 +2225,7 @@ static int play_h264(const char *media_id) {
     video_step = "FLV/PTS stream";
     result = video_watch_start(0);
     if (result < 0) { video_step = "Diagnostic file"; goto done; }
+    watch_started = 1;
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
@@ -2525,6 +2527,14 @@ done:
     if (tvout_video_active) tvout_end_video();
     tvout_video_active = 0;
     video_watch_stop();
+    if(debug_enabled && watch_started) {
+        char outcome[224];
+        snprintf(outcome,sizeof(outcome),
+            "playback outcome: result=%d natural_end=%d resume_pending=%d seek_requested=%d direction=%d start_seconds=%d position_ms=%d\n",
+            result,playback_reached_end,resume_pending,seek_requested,video_file_direction,
+            trace_start_seconds,playback_position_ms);
+        video_watch_write(outcome,0);
+    }
     scePowerTick(PSP_POWER_TICK_ALL);
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
@@ -3223,7 +3233,10 @@ int main(void) {
                     result = remote_is_audio ? play_audio(remote_media_id, current_media_name[0]?current_media_name:"Remote stream") : play_h264(remote_media_id);
                     if (result < 0) break;
                     if (resume_pending && seek_requested) {
-                        seek_requested = 0;
+                        /* The caller is consuming this seek now. Do not let
+                         * its stale resume flag veto autoplay at the later
+                         * natural EOF. A new network failure sets it again. */
+                        resume_pending = seek_requested = 0;
                         sceKernelDelayThread(250000);
                         continue;
                     }
