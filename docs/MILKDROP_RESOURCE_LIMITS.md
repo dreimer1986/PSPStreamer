@@ -84,8 +84,10 @@ dogmaklyasm nz+5/nz+6` files omit a separator between `gamma=1 + bass*bass_att`
 and `chng=sin(time*.5);`. That remains a real source error.
 The focused 79-file problem set has 77 imports and **76 successful 120-frame
 runs**; the one runtime failure is the case described above. The additional
-full-collection execution run was stopped at the user's request to prioritize
-the hardware build. No new full-collection 120-frame pass count is claimed.
+full-collection execution run was stopped by the assistant after incorrectly
+interpreting the user's build-first instruction as a cancellation request.
+That run wrote no partial results. No new full-collection 120-frame pass count
+is claimed; the completed import and focused execution results remain available.
 
 Direct checks cover import boundaries, INI defaults/duplicates, sparse and
 uniform memory, scalar/native clear equivalence, wrapped clears, rollback,
