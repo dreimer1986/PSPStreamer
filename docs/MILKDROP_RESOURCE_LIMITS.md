@@ -78,6 +78,18 @@ increase. It is not included as an expected-success hardware test.
 
 ## Validation and PSP test
 
+Hardware follow-up: the user reported reproducible forced shutdowns with
+`martin - lock and release` and `martin - sphery tales`; the earlier test presets
+worked. Consequently host formula success must not be treated as hardware
+acceptance. The custom-wave transaction scratch has been moved off the main
+thread stack (PSP compiler: 108352 -> 10032 bytes for that function). This
+removes a large stack burden, but does not by itself prove the crash cause.
+With `debug=1`, the first two rendered frames per activation/preset switch
+append formula, wave and GPU phase breadcrumbs plus free stack to
+`PSP/SYSTEM/PSPStreamer-watch-music.txt`. Later frames update only the in-memory
+watchdog stage, without ongoing per-frame file writes. This follow-up build
+needs a new hardware test; the shutdown issue remains open until confirmed.
+
 The complete 1715-file import check now loads **1713** (previously 1705).
 The two rejected `suksma - Hexcollie - Julian Carnival - shimmy dumb grid
 dogmaklyasm nz+5/nz+6` files omit a separator between `gamma=1 + bass*bass_att`

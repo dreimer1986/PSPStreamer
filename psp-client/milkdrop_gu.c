@@ -65,6 +65,11 @@ static short md_spectrum[MD_SPECTRUM_SAMPLES];
 static short md_spectrum_right[MD_SPECTRUM_SAMPLES];
 static float md_bins_left[512],md_bins_right[512];
 static MdWaveGeometry md_custom_geometry[MD_CUSTOM_WAVES];
+void (*md_trace_hook)(const char *stage,int persist);
+static unsigned int md_trace_frames;
+static void md_trace(const char *stage) {
+    if(md_trace_hook)md_trace_hook(stage,md_trace_frames<2);
+}
 static void *md_fade_image;
 static unsigned long long md_fade_start;
 static unsigned int md_fade_ms;
@@ -93,6 +98,7 @@ static int md_images_prepare(void) {
 }
 static void md_fade_clear(void) {free(md_fade_image);md_fade_image=NULL;md_fade_ms=0;}
 void md_begin_preset(unsigned int fade_ms) {
+    md_trace_frames=0;
     if(md_list) sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
     md_images_clear();
     md_fade_clear();
@@ -204,6 +210,7 @@ int md_start(void) {
         md_shader_seeded=1;
     }
     md_front = 0; md_origin = md_next = 0;
+    md_trace_frames=0;
     md_last_tv = md_last_fullscreen = -1;
     md_last_high_resolution=-1;
     md_signal_reset(&md_signal_state); md_signal_active = 0;
@@ -288,10 +295,12 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
         next_state=md_preset_state;
+        md_trace("MilkDrop frame/shape formulas");
         if (md_eval_preset_shapes(&md_custom_preset, seconds, &md_signal_state.signal,
                                   &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error,md_shape_frame) != MD_FILE_OK)
             return -1; /* No GU list was started; caller retains music playback. */
         md_profile_mark(1);
+        md_trace("MilkDrop pixel formulas");
         if(md_custom_preset.pixel_program.count &&
            md_eval_pixel_grid(&md_custom_preset,&evaluated,seconds,&md_signal_state.signal,
                              &next_state,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
@@ -325,11 +334,13 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
             memset(md_bins_left,0,sizeof(md_bins_left)); memset(md_bins_right,0,sizeof(md_bins_right)); }
     }
     md_profile_mark(3);
+    md_trace("MilkDrop custom waves");
     if(custom_waves && md_eval_custom_waves(&md_custom_preset,seconds,&md_signal_state.signal,
             md_right,md_left,md_bins_left,md_bins_right,&next_state,md_custom_geometry,&md_runtime_error)!=MD_FILE_OK) return -1;
     if(preset==3) md_preset_state=next_state;
     md_profile_mark(4);
     if (fullscreen) left = top = 0;
+    md_trace("MilkDrop GPU submit");
     if (sceGuStart(GU_DIRECT, md_list) < 0) { md_stop(); return 0; }
     sceGuDisable(GU_DEPTH_TEST); sceGuDisable(GU_CULL_FACE);
     sceGuDisable(GU_LIGHTING); sceGuDisable(GU_BLEND);
@@ -469,7 +480,10 @@ int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
     md_present(left,top,width,height,1,1,0,0,NULL);
     sceGuFinish();
     md_profile_mark(5);
+    md_trace("MilkDrop GPU wait");
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    md_trace("MilkDrop frame complete");
+    if(md_trace_frames<2)md_trace_frames++;
     md_profile_mark(6);
     md_profile_commit();
     md_front = target;

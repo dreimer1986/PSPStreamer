@@ -653,7 +653,9 @@ int md_eval_custom_waves(const MdFilePreset *p,float seconds,const MdSignal *sig
     const short *right,const short *left,const float *spectrum_left,const float *spectrum_right,MdPresetState *state,
     MdWaveGeometry output[MD_CUSTOM_WAVES],MdFileError *error) {
     static MdWaveState next[MD_CUSTOM_WAVES];
-    MdWaveGeometry geometry[MD_CUSTOM_WAVES];
+    /* Renderer-thread scratch, like next[] above. Keep the ~96 KiB wave
+     * transaction off the PSP stack while calling the formula VM/libm. */
+    static MdWaveGeometry geometry[MD_CUSTOM_WAVES];
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) geometry[slot].count=0;
     int line=0;
     for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {

@@ -1750,9 +1750,19 @@ static int music_saved_fullscreen;
 static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
+static void music_visual_trace(const char *stage,int persist) {
+    video_watch_ping(stage);
+    if(debug_enabled && persist) {
+        char text[640];
+        snprintf(text,sizeof(text),"preset=%.511s stage=%s stack_free=%d\n",
+            music_preset_file,stage,sceKernelGetThreadStackFreeSize(0));
+        video_watch_write(text,0);
+    }
+}
 static int play_audio_once(const char *media_id, const char *title) {
     plex_report_begin(media_id);
     md_profile_reset(debug_enabled);
+    md_trace_hook=debug_enabled?music_visual_trace:NULL;
     offline_music_eof=0;
     music_remote_action=MUSIC_REMOTE_NONE;
     int live=radio_is_live(media_id), last_radio_blocks=0;
