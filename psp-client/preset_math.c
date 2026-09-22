@@ -34,7 +34,13 @@ static int binary(int op) {
 void pm_runtime_copy(PmRuntime *destination,const PmRuntime *source) {
     if(destination==source)return;
     memcpy(destination->memory,source->memory,(size_t)source->page_count*PM_GLOBAL_PAGE_SIZE*sizeof(float));
-    memcpy(&destination->random,&source->random,sizeof(*source)-offsetof(PmRuntime,random));
+    /* Both runtimes are initialized sparse maps: absent pages are zero.
+     * Touch at most 32 old/new entries instead of copying all 4096 entries
+     * even for the usual formulas with no megabuf pages at all. */
+    for(int i=0;i<destination->page_count;i++)destination->pages[destination->keys[i]]=0;
+    for(int i=0;i<source->page_count;i++)destination->pages[source->keys[i]]=(unsigned char)(i+1);
+    destination->random=source->random;
+    memcpy(destination->keys,source->keys,sizeof(*source)-offsetof(PmRuntime,keys));
 }
 void pm_program_free(PmProgram *program) {
     free(program->code);memset(program,0,sizeof(*program));
@@ -572,7 +578,9 @@ static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int 
     unsigned int random=runtime->random;
     int old_pages=global_page_count;
     int old_local_pages=runtime->page_count,old_fills=runtime->fill_count;
-    PmFill fills[PM_LOCAL_FILLS];memcpy(fills,runtime->fills,sizeof(fills));
+    /* Only init's native clear-loop path can modify uniform fill defaults.
+     * Ordinary frame/point writes allocate pages but never change fills. */
+    PmFill fills[PM_LOCAL_FILLS];if(init)memcpy(fills,runtime->fills,sizeof(fills));
     /* Main-frame/setup phases are bounded separately from point geometry.
      * Their extra allowance must not increase old presets' mesh/wave density
      * or starve all geometry after an expensive one-time initialization. */
@@ -593,7 +601,7 @@ static int execute_runtime(const PmProgram *program,float values[PM_VALUES],int 
         runtime->pages[runtime->keys[page]]=0;runtime->keys[page]=0;
         memset(runtime->memory+page*PM_GLOBAL_PAGE_SIZE,0,PM_GLOBAL_PAGE_SIZE*sizeof(float));
     }
-    runtime->fill_count=old_fills;memcpy(runtime->fills,fills,sizeof(fills));
+    if(init){runtime->fill_count=old_fills;memcpy(runtime->fills,fills,sizeof(fills));}
     runtime->random=random;return 0;
 }
 int pm_execute_runtime(const PmProgram *p,float v[PM_VALUES],int *line,PmRuntime *r) {

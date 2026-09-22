@@ -56,3 +56,30 @@ Operand-pair dispatch, last-store caching, switch dispatch and local fuel
 bookkeeping were also measured but produced no reliable improvement in the
 host comparison; none are included in the release. Pure heavy wave programs
 still need a different approach for substantial additional speed.
+
+## Sparse runtime metadata (follow-up)
+
+Runtime copies now clear the destination's old page-map entries and insert
+the source's resident entries instead of copying 4,096 map bytes every time.
+There are at most 32 resident pages per runtime, and usually none. Both operands
+must be initialized runtimes, as all production call sites already require.
+Keys, fill descriptors, random state and resident memory remain unchanged.
+
+Only initialization can alter uniform fill descriptors (via the native clear
+loop). Ordinary frame/point invocations therefore no longer save and restore
+those eight descriptors unnecessarily. Init rollback keeps its full snapshot.
+
+Five alternating host comparisons against `38309f4`, 600 frames, median:
+
+| Preset | Before (ms) | After (ms) | Less CPU time |
+| --- | ---: | ---: | ---: |
+| wave-budget-demo | 413.410 | 414.299 | -0.2% (noise) |
+| dense-wave-demo | 77.371 | 75.884 | 1.9% |
+| fine-mesh-demo | 31.081 | 30.661 | 1.4% |
+| phase-memory-demo | 32.654 | 32.157 | 1.5% |
+| eel-memory-orbit-demo | 2.904 | 2.596 | 10.6% |
+
+Output/fuel hashes match. Five targeted tests passed, including 128 transitions
+between zero/one/32 resident pages compared byte-for-byte against the old copy,
+self-copy, native-fill rollback and shape/wave/pixel failure atomicity.
+Build completed before tests; these timings are not PSP FPS predictions.

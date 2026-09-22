@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stddef.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -8,6 +9,27 @@ static float values[PM_VALUES],saved[PM_VALUES];
 static PmProgram program;
 static PmSymbols symbols;
 static unsigned int diagnostic_seen;
+static void check_sparse_copy(void) {
+    static PmRuntime source,destination,expected;
+    for(int step=0;step<128;step++) {
+        memset(&source,0,sizeof(source));
+        source.page_count=step%3==0?0:step%3==1?1:PM_MEMORY/PM_GLOBAL_PAGE_SIZE;
+        source.random=(unsigned int)step+1;
+        source.fill_count=1;source.fills[0]=(PmFill){0,100000,.25f};
+        for(int i=0;i<source.page_count;i++) {
+            int key=(step*131+i*97)%4096;
+            source.keys[i]=(unsigned short)key;source.pages[key]=(unsigned char)(i+1);
+        }
+        for(int i=0;i<source.page_count*PM_GLOBAL_PAGE_SIZE;i++)source.memory[i]=(float)(step+i);
+        expected=destination;
+        memcpy(expected.memory,source.memory,source.page_count*PM_GLOBAL_PAGE_SIZE*sizeof(float));
+        memcpy(&expected.random,&source.random,sizeof(source)-offsetof(PmRuntime,random));
+        pm_runtime_copy(&destination,&source);
+        assert(!memcmp(&destination,&expected,sizeof(destination)));
+        pm_runtime_copy(&destination,&destination);
+        assert(!memcmp(&destination,&expected,sizeof(destination)));
+    }
+}
 static void diagnostic(const char *event,int line,int detail) {
     assert(event && line>=0 && detail>=0);
     if(!strcmp(event,"VM init begin"))diagnostic_seen|=1;
@@ -21,6 +43,7 @@ static void compile(const char *source) {
 }
 int main(void) {
     int line;
+    check_sparse_copy();
     pm_diagnostic_hook=diagnostic;
     /* The native pattern preserves final loop expression/index and resident
      * memory exactly for small loops accepted by the original scalar VM. */
