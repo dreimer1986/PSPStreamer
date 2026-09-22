@@ -502,7 +502,29 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
 int md_frame(int tv,int fullscreen,const unsigned char bands[12],int level,
              unsigned long long now,int preset) {
     MdFpuState previous=md_fpu_enter();
+#ifdef __PSP__
+    unsigned int trace_before=md_trace_frames;
+#endif
     int result=md_frame_inner(tv,fullscreen,bands,level,now,preset);
+#ifdef __PSP__
+    int trace=md_trace_hook && trace_before<2 && md_trace_frames!=trace_before;
+    /* Static storage: the watchdog retains its last stage pointer. */
+    static char restore_begin[112],restore_end[112];
+    if(trace) {
+        unsigned int current;
+        __asm__ volatile("cfc1 %0, $31" : "=r"(current));
+        snprintf(restore_begin,sizeof(restore_begin),"MilkDrop FPU restore begin saved=%08X current=%08X",previous,current);
+        md_trace_hook(restore_begin,1);
+    }
+#endif
     md_fpu_leave(&previous);
+#ifdef __PSP__
+    if(trace) {
+        unsigned int current;
+        __asm__ volatile("cfc1 %0, $31" : "=r"(current));
+        snprintf(restore_end,sizeof(restore_end),"MilkDrop FPU restore end current=%08X",current);
+        md_trace_hook(restore_end,1);
+    }
+#endif
     return result;
 }

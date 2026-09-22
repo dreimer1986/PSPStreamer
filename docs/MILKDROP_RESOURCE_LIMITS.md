@@ -107,7 +107,7 @@ intermediates. [PSPSDK documents FPU exception controls](https://pspdev.github.i
 and [PPSSPP records PSP-default FPU traps as a hardware/emulator difference](https://github.com/hrydgard/ppsspp/issues/22098).
 
 The renderer now saves FCR31, masks IEEE trap enables/clears pending status for
-the visualization call, and restores the exact saved state on every return.
+the visualization call, and restores the saved control policy on every return.
 Rounding and flush mode stay unchanged. The change is renderer-thread-local;
 it does not change audio worker state, clocks, formula budgets or memory limits.
 The host counterpart uses `feholdexcept`/`fesetenv`. A focused test explicitly
@@ -115,6 +115,16 @@ enables invalid/divide-by-zero/overflow traps: the unguarded renderer raises
 SIGFPE on the Martin fixture, while the guarded renderer completes both Martin
 fixtures in LCD/TV paths and restores the caller's enabled traps. This is a
 reproduced defect, but successful playback on the real PSP remains to be verified.
+
+The next PSP run completed init, frame/shape formulas, pixel formulas, custom
+waves and GPU synchronization, and displayed one frame before hanging. The
+remaining failure is therefore after the first render's completion breadcrumb,
+not the previously blocked initial formula evaluation. The PSP return path now
+clears exception status while traps are still masked, then restores caller
+controls/sticky flags without replaying transient cause bits. Explicit instruction
+ordering separates these writes. Bounded startup diagnostics log saved/current
+FCR31 before and after restoration. This return-path mitigation still requires
+hardware confirmation; the log does not yet prove the precise fault location.
 
 The complete 1715-file import check now loads **1713** (previously 1705).
 The two rejected `suksma - Hexcollie - Julian Carnival - shimmy dumb grid
