@@ -74,7 +74,7 @@ assert.equal(select.value,'0');
                 '-metadata:s:s:1', 'NUMBER_OF_BYTES=1000', '-disposition:s:0', 'forced',
                 '-disposition:s:1', 'hearing_impaired', str(movie)], check=True, timeout=15)
             details = SimpleNamespace(details=Mock(return_value={}))
-            server = SimpleNamespace(metadata_cache={}, library=SimpleNamespace(decode=Mock(return_value=(None, movie))),
+            server = SimpleNamespace(metadata_cache={}, player_status=Mock(), library=SimpleNamespace(decode=Mock(return_value=(None, movie))),
                                      plex=details, jellyfin=details)
             handler = SimpleNamespace(server=server, send_json=Mock())
             for token in ('file', 'plex.item', 'jellyfin.item'):

@@ -1,3 +1,10 @@
+# 0.1.44
+
+- Add authenticated, read-only playback telemetry for the new HACS custom integration.
+- Expose confirmed PSP state independently of queued commands; stale clients become unavailable.
+- Add the matching PSP update for file/music position, buffering and stop reports. Playback clocks and decoding are unchanged.
+- Docker and Home Assistant use identical server code. Integration installation is separate from the app/add-on.
+
 # 0.1.43
 
 - Automatically enable the Plex source after successfully selecting and verifying a server, matching Jellyfin setup.

@@ -1,0 +1,41 @@
+{
+  "title": "PSP Streamer",
+  "config": {
+    "step": {
+      "user": {
+        "title": "PSP Streamer verbinden",
+        "description": "Die Serveradresse eingeben, nicht die Adresse der PSP. Die PSP darf bei der Einrichtung offline sein.",
+        "data": {
+          "url": "Serveradresse",
+          "password": "Serverpasswort (optional)"
+        }
+      },
+      "reconfigure": {
+        "title": "Verbindung ändern",
+        "description": "Das aktuelle Passwort erneut eingeben. Nur ohne Serverpasswort leer lassen.",
+        "data": {
+          "url": "Serveradresse",
+          "password": "Serverpasswort"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Passwort aktualisieren",
+        "description": "Aktuelle Serveradresse und Passwort eingeben.",
+        "data": {
+          "url": "Serveradresse",
+          "password": "Serverpasswort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen oder Server-API zu alt. Server auf 0.1.44 oder neuer aktualisieren und Adresse sowie TLS-Zertifikat prüfen.",
+      "invalid_auth": "Der Server hat das Passwort abgelehnt."
+    },
+    "abort": {
+      "already_configured": "Dieser Server ist bereits eingerichtet.",
+      "unique_id_mismatch": "Diese Adresse gehört zu einem anderen PSP-Streamer-Server.",
+      "reauth_successful": "Anmeldung aktualisiert.",
+      "reconfigure_successful": "Verbindung aktualisiert."
+    }
+  }
+}

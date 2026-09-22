@@ -1,0 +1,41 @@
+{
+  "title": "PSP Streamer",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect PSP Streamer",
+        "description": "Enter the server URL (not the PSP address). The PSP may be offline during setup.",
+        "data": {
+          "url": "Server URL",
+          "password": "Server password (optional)"
+        }
+      },
+      "reconfigure": {
+        "title": "Update connection",
+        "description": "Enter the current password again, or leave it empty only if the server has no password.",
+        "data": {
+          "url": "Server URL",
+          "password": "Server password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update password",
+        "description": "Enter the current server URL and password.",
+        "data": {
+          "url": "Server URL",
+          "password": "Server password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect or server API is too old. Update the server to 0.1.44 or later and check the URL and TLS certificate.",
+      "invalid_auth": "The server rejected the password."
+    },
+    "abort": {
+      "already_configured": "This server is already configured.",
+      "unique_id_mismatch": "This address belongs to a different PSP Streamer server.",
+      "reauth_successful": "Authentication updated.",
+      "reconfigure_successful": "Connection updated."
+    }
+  }
+}

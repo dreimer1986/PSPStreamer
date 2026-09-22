@@ -1712,12 +1712,15 @@ static void plex_report_path(char *path, size_t capacity, int sequence, int stop
         snprintf(path, capacity, "/api/remote/next?after=%d&plex=%s&state=%s&position=%d&duration=%d",
             sequence, plex_playing_id, stopped?"stopped":plex_paused?"paused":"playing",
             plex_position_ms, (int)(current_duration_seconds*1000.0f));
-    else snprintf(path, capacity, "/api/remote/next?after=%d&state=%s", sequence,
-        stopped?"stopped":plex_paused?"paused":"playing");
+    else snprintf(path, capacity, "/api/remote/next?after=%d&state=%s&position=%d&duration=%d", sequence,
+        stopped?"stopped":plex_paused?"paused":"playing",plex_position_ms,
+        (int)(current_duration_seconds*1000.0f));
     if(playback_report_id[0] && !(plex_playing_id[0] && plex_started)) {
         size_t used=strlen(path);
         snprintf(path+used,capacity-used,"&media=%s",playback_report_id);
     }
+    size_t used=strlen(path);
+    snprintf(path+used,capacity-used,"&started=%d",plex_started);
 }
 static void plex_report_begin(const char *id) {
     snprintf(playback_report_id,sizeof(playback_report_id),"%s",id);
@@ -1726,7 +1729,7 @@ static void plex_report_begin(const char *id) {
     plex_position_ms=stream_start_seconds*1000;plex_paused=plex_started=0;
 }
 static void plex_report_stop(int sequence) {
-    if(plex_playing_id[0] && plex_started) {
+    if(playback_report_id[0]) {
         char path[ID_SIZE+192],reply[2048];volatile int running=1;
         plex_report_path(path,sizeof(path),sequence,1);
         remote_http_get_budget(path,reply,sizeof(reply),&running,1500);
@@ -1838,7 +1841,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     while (audio_running && remote_result >= 0) {
         playback_clock(music_visual_active?milkdrop_cpu_mhz:music_cpu_mhz);
         plex_paused=paused;
-        if(plex_playing_id[0]) {
+        if(playback_report_id[0]) {
             plex_position_ms=stream_start_seconds*1000+(int)((unsigned long long)audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
             plex_started=audio_played_blocks>0;
         }
@@ -2064,6 +2067,9 @@ static int play_audio(const char *media_id,const char *title) {
         power_music=0;scePowerTick(PSP_POWER_TICK_ALL);
         if(!radio_is_live(media_id) || !radio_next_action)return result;
         int paused=radio_next_action==2;
+        /* Radio pause releases the decoder. Report the waiting screen, not
+         * the last playing state, through the existing remote worker. */
+        plex_paused=paused;plex_started=paused;
         unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
         unsigned int old=~0U;
         lcd_music_reset();tv_music_reset();
@@ -2078,6 +2084,7 @@ static int play_audio(const char *media_id,const char *title) {
                 music_remote_stop();return 0;
             }
             if(action==MUSIC_REMOTE_PAUSE && !paused) {
+                plex_paused=plex_started=1;
                 paused=1;lcd_music_reset();tv_music_reset();
                 if(tv_ui_active)tv_draw_music(tr(TXT_RADIO_PAUSED),0);else lcd_draw_music(tr(TXT_RADIO_PAUSED),0);
             }

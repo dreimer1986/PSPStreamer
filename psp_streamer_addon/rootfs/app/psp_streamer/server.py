@@ -472,7 +472,10 @@ class AppHandler(BaseHTTPRequestHandler):
                                        "password_set": self.server.settings.protected})
             if parsed.path == "/api/health":
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
+            if parsed.path == '/api/player':
+                return self.send_json(self.server.player_status.snapshot())
             if parsed.path == "/api/remote/next":
+                self.server.player_status.report(query)
                 media = query.get('media') or query.get('plex')
                 if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
                     self.server.stream_pauses.report(self.client_address[0], media[0],
@@ -496,6 +499,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 if query.get('radio'):
                     try:
                         reply.update(self.server.radio.status(query['radio'][0]))
+                        self.server.player_status.remember(query['radio'][0],
+                            {'name': reply.get('radio_title') or reply.get('radio_station', '')}, 'audio')
                     except ValueError:
                         pass  # A removed sender must not block Stop/Play commands.
                 return self.send_json(reply)
@@ -820,6 +825,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
         cached = self.server.metadata_cache.get(token)
         if cached is not None and not token.startswith(('plex.', 'jellyfin.')):
+            self.server.player_status.remember(token, cached, cached.get('kind', 'video'))
             return self.send_json(cached)
         _, source = self.server.library.decode(token)
         result = subprocess.run(
@@ -838,6 +844,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 audio.append({"n": str(len(audio)), "l": language, "t": title})
         duration = json.loads(result.stdout).get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
+        payload['kind'] = 'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video'
+        payload['name'] = display_text(source.name, 126)
         if source.suffix.lower() in AUDIO_EXTENSIONS:
             probe = json.loads(result.stdout)
             tags = {}
@@ -859,6 +867,7 @@ class AppHandler(BaseHTTPRequestHandler):
             payload.update(self.server.jellyfin.details(token))
         else:
             self.server.metadata_cache[token] = payload
+        self.server.player_status.remember(token, payload, payload['kind'])
         self.send_json(payload)
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False,
@@ -1135,6 +1144,8 @@ class AppServer(ThreadingHTTPServer):
         self.remote_deadline = 0.0
         self.remote_session = os.urandom(16).hex()
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
+        from .player_status import PlayerStatus
+        self.player_status = PlayerStatus(self.plex.path.parent)
         from .offline import OfflineQueue
         cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(
             Path(os.environ.get('PSP_STREAMER_SETTINGS_DIR', str(Path.home() / '.cache/psp-streamer'))) / 'downloads')

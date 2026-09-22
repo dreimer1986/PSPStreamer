@@ -38,6 +38,7 @@ static int remote_http_get_budget(const char *path, char *reply, int capacity, v
 /* PLEX_REPORTING */
 #include "remote_state.h"
 #include "music_remote.h"
+static void subtitle_page_prefetch(unsigned long long *retry) {(void)retry;}
 /* VIDEO_REMOTE_WORKER */
 static int remote_http_get(const char *path, char *reply, int capacity, volatile int *running) {
     int after = -1;
@@ -78,15 +79,16 @@ int main(int argc,char **argv) {
     plex_paused=1;plex_report_path(report_path,sizeof(report_path),10,0);
     assert(strstr(report_path,"state=paused"));
     plex_report_stop(10);assert(stop_reports==1);
-    plex_report_begin("filesystem-id");plex_report_stop(10);assert(stop_reports==1);
+    plex_report_begin("filesystem-id");plex_report_stop(10);assert(stop_reports==2);
     plex_report_begin("jellyfin.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.0123456789ab");
     plex_started=1;plex_report_path(report_path,sizeof(report_path),10,0);
     assert(strstr(report_path,"&plex=jellyfin."));
     plex_report_begin("filesystem-id");
     plex_paused=1;plex_report_path(report_path,sizeof(report_path),10,0);
-    assert(strstr(report_path,"state=paused&media=filesystem-id"));
+    assert(strstr(report_path,"state=paused") && strstr(report_path,"&media=filesystem-id"));
+    assert(strstr(report_path,"position=15000&duration=240000") && strstr(report_path,"started=0"));
     plex_paused=0;plex_report_path(report_path,sizeof(report_path),10,0);
-    assert(strstr(report_path,"state=playing&media=filesystem-id"));
+    assert(strstr(report_path,"state=playing") && strstr(report_path,"&media=filesystem-id"));
     server_https=argc>1;
     reset();
     strcpy(remote_session,"old");

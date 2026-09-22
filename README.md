@@ -501,6 +501,23 @@ MEDIA_ROOT_PATH=/srv/media PSP_STREAMER_PORT=8091 docker compose up -d --build
 
 Do not put SMB credentials in `compose.yaml`.
 
+## Home Assistant integration (HACS)
+
+The **custom integration** adds a `media_player` entity, a media browser and
+playback controls to Home Assistant. It connects to an existing PSP Streamer
+server (Docker, the Home Assistant app/add-on, or standalone Python); it does
+not replace that server or run FFmpeg itself.
+
+In HACS, add `https://github.com/dreimer1986/PSPStreamer` as a **custom repository**
+of type **Integration**, download **PSP Streamer**, and restart Home Assistant.
+Then open **Settings → Devices & services → Add integration → PSP Streamer**
+and enter the server URL and its password. Requires Home Assistant **2026.3+**,
+server **0.1.44+**, and the matching updated PSP application for playback telemetry.
+
+See [Home Assistant integration setup, controls and limitations](docs/HOME_ASSISTANT.md).
+Adding this repository to the app/add-on store alone does **not** install the
+integration; these are two independent installation paths using the same repository.
+
 ## Home Assistant add-on
 
 PSP Streamer can run as a Home Assistant add-on, keeping FFmpeg and the media

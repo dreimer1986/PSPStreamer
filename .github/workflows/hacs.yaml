@@ -1,0 +1,21 @@
+name: Home Assistant integration
+on:
+  push:
+    paths: ['custom_components/**', 'hacs.json', '.github/workflows/hacs.yaml']
+  pull_request:
+    paths: ['custom_components/**', 'hacs.json', '.github/workflows/hacs.yaml']
+permissions:
+  contents: read
+jobs:
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
