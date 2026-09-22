@@ -42,7 +42,8 @@ load. There is no artwork for ordinary SMB/local-file entries yet.
 Image requests get a dedicated turn after a control reply, even if a slow TV
 redraw overruns the usual idle polling interval. LCD backdrop bounds are
 `x=36, y=29, width=312, height=123`; the cover remains separate from status text.
-TV backdrops start at `y=52`. While an image is downloading, automatic full-TV
+TV backdrops fit the inner glass at `x=27, y=61, width=506, height=231`, with
+the skin's rounded corners preserved. While an image is downloading, automatic full-TV
 redraws pause (navigation still redraws). Artwork alone has a cancellable
 10-second request budget, retries failures after 15 seconds and empty image
 responses after 60 seconds; it no longer permanently gives up after two tries.

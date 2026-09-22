@@ -8,6 +8,22 @@ enum { TV_VIEW_LIBRARY, TV_VIEW_LOADING, TV_VIEW_INFO, TV_VIEW_OPTIONS, TV_VIEW_
 #define TV_MUTED 0x00AEADA0
 #define TV_CYAN  0x00EAD080
 #define TV_AMBER 0x003CC9FF
+/* Inner glass of the production 720x480 skin, not the text/list rectangle.
+ * Exclusive right/bottom edges are 533/292. Preserve its rounded corners. */
+enum { TV_ART_X=27, TV_ART_Y=61, TV_ART_W=506, TV_ART_H=231 };
+static void tv_menu_backdrop(void) {
+    menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,TV_ART_X,TV_ART_Y,TV_ART_W,TV_ART_H,0);
+    if(receiver_tv_skin_end-receiver_tv_skin!=TV_GUI_WIDTH*TV_GUI_HEIGHT*4)return;
+    static const unsigned char inset[]={2,1};
+    for(int row=0;row<2;row++)for(int side=0;side<2;side++) {
+        int y=side?TV_ART_Y+TV_ART_H-1-row:TV_ART_Y+row;
+        int right=TV_ART_X+TV_ART_W-inset[row];
+        memcpy(tv_canvas.pixels+y*TV_GUI_STRIDE+TV_ART_X,
+               receiver_tv_skin+(y*TV_GUI_WIDTH+TV_ART_X)*4,inset[row]*4);
+        memcpy(tv_canvas.pixels+y*TV_GUI_STRIDE+right,
+               receiver_tv_skin+(y*TV_GUI_WIDTH+right)*4,inset[row]*4);
+    }
+}
 
 /* Menu only: playback/remote workers have joined before settings open.
  * Never change the decoder stride or clocks here. Keep the old canvas intact
@@ -187,7 +203,7 @@ static void tv_draw_view(int view, int selected, int row, int audio_only,
         view == TV_VIEW_OPTIONS ? TXT_STREAM_OPTIONS : TXT_NOW_PLAYING);
     if (!tv_ui_active || tvout_video_active || !tv_canvas.pixels) return;
     tv_shell(section);
-    if(view!=TV_VIEW_MUSIC)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,32,52,498,244,0);
+    if(view!=TV_VIEW_MUSIC)tv_menu_backdrop();
     if (view == TV_VIEW_LIBRARY) {
         int first = item_count ? selected / TV_GUI_ROWS * TV_GUI_ROWS : 0;
         tv_text(34, 65, 38, 2, TV_MUTED, "%s", current_path[0] ? current_path : "/");

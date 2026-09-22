@@ -131,6 +131,23 @@ int main(int argc, char **argv) {
     for(int k=0;k<320*180;k++)menu_art_active[21+2*k]=0xf8;
     for(int k=0;k<80*112;k++)menu_art_active[20+art_sizes[0]+2*k]=31;
     assert(menu_art_valid(menu_art_active,MENU_ART_BYTES));
+    /* Calibrated glass area must never tint the cyan bezel or its corners. */
+    tv_shell("artwork bounds");
+    static u32 before_art[TV_GUI_STRIDE*310];
+    memcpy(before_art,tv_canvas.pixels,sizeof(before_art));
+    tv_menu_backdrop();
+    for(int y=0;y<310;y++)for(int x=0;x<550;x++)
+        if(x<TV_ART_X || x>=TV_ART_X+TV_ART_W || y<TV_ART_Y || y>=TV_ART_Y+TV_ART_H)
+            assert(tv_canvas.pixels[y*TV_GUI_STRIDE+x]==before_art[y*TV_GUI_STRIDE+x]);
+    for(int side=0;side<2;side++)for(int bottom=0;bottom<2;bottom++) {
+        int x=side?TV_ART_X+TV_ART_W-1:TV_ART_X;
+        int y=bottom?TV_ART_Y+TV_ART_H-1:TV_ART_Y;
+        assert(tv_canvas.pixels[y*TV_GUI_STRIDE+x]==before_art[y*TV_GUI_STRIDE+x]);
+    }
+    assert(tv_canvas.pixels[TV_ART_Y*TV_GUI_STRIDE+300]!=before_art[TV_ART_Y*TV_GUI_STRIDE+300]);
+    assert(tv_canvas.pixels[(TV_ART_Y+TV_ART_H-1)*TV_GUI_STRIDE+300]!=before_art[(TV_ART_Y+TV_ART_H-1)*TV_GUI_STRIDE+300]);
+    assert(tv_canvas.pixels[170*TV_GUI_STRIDE+TV_ART_X]!=before_art[170*TV_GUI_STRIDE+TV_ART_X]);
+    assert(tv_canvas.pixels[170*TV_GUI_STRIDE+TV_ART_X+TV_ART_W-1]!=before_art[170*TV_GUI_STRIDE+TV_ART_X+TV_ART_W-1]);
     tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
     assert(tv_canvas.pixels[290*TV_GUI_STRIDE+520]!=plain);
     assert(((u32 *)0x44000000)[180*TV_GUI_STRIDE+620]==0xff0000);

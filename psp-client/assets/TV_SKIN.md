@@ -30,3 +30,8 @@ The actual UI labels, selection highlights, meter needles, colour indicators,
 volume marker and music spectrum are rendered by `tv_gui.h`, not baked text.
 Artwork anchors are native TV pixel coordinates. Physical TV/OSSC validation
 is still required before declaring their final calibration complete.
+
+Menu backdrop calibration (four corner photos, 2026-09-22): inner image
+rectangle is `(27,61)` through `(532,291)` inclusive, i.e. 506×231 pixels.
+The first/last two rows retain small corner insets from the original skin.
+This is independent of the inset text/highlight rectangle and the right cover.
