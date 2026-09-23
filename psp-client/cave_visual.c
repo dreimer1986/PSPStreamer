@@ -106,14 +106,22 @@ void cave_camera(const CaveScene *s,float z,float *x,float *y) {
 }
 void cave_world_point(const CaveScene *s,float x,float y,float z,float out[3]) {
     int index=(int)floorf(z);float fraction=z-index;
+    if(index<0){out[0]=x;out[1]=y;out[2]=-z;return;}
     const CavePose *a=&s->poses[index%CAVE_PATH_CACHE],*b=&s->poses[(index+1)%CAVE_PATH_CACHE];
-    if(a->index!=index || b->index!=index+1){out[0]=x;out[1]=y;out[2]=-z;return;}
+    /* At an exact profile boundary only that profile is needed. In
+     * particular the upper face of the newest slab already has its pose,
+     * while the following pose has deliberately not been generated yet.
+     * Falling back to straight geometry here tears EVERY curved slab. */
+    if(a->index!=index || (fraction!=0 && b->index!=index+1)){out[0]=x;out[1]=y;out[2]=-z;return;}
     /* Original vertex loft: linear blend of the two rotated cross sections;
      * the section axis is translated by one profile between their origins. */
     for(int k=0;k<3;k++) {
         float p=a->center[k]+a->rotation[k*3]*x/6+a->rotation[k*3+1]*y/6;
-        float q=b->center[k]+b->rotation[k*3]*x/6+b->rotation[k*3+1]*y/6;
-        out[k]=mix(p,q,fraction)*(k<2?6:1);
+        if(fraction!=0) {
+            float q=b->center[k]+b->rotation[k*3]*x/6+b->rotation[k*3+1]*y/6;
+            p=mix(p,q,fraction);
+        }
+        out[k]=p*(k<2?6:1);
     }
 }
 void cave_view(const CaveScene *s,float z,float matrix[16]) {

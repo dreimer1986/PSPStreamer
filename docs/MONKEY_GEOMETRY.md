@@ -71,10 +71,10 @@ validation of this combined material/settings/flight batch is still required.
 The PSP build precedes tests. Only `tests.test_cave` and
 `tests.test_visual_options` were run, not the complete MilkDrop collection.
 The 1,800-tick geometry run builds 1,686 slabs (peak 630 vertices/slab), checks
-210,047 visible clipped triangles, and passes reference-normal/quaternion,
+27,181 visible clipped triangles after the boundary correction below, and passes reference-normal/quaternion,
 path, topology, view-matrix and cache tests under undefined-behavior checking.
 Scene allocation is 3,984,320 bytes. LCD/TV/window/fullscreen GU tests include
-all styles and flight toggling; peak command-list use is 322,272 bytes in those
+all styles and flight toggling; peak command-list use is 325,376 bytes in those
 fixtures, below the existing list budget. These are not PSP performance numbers.
 
 The optional `tools/check_monkey_reference.py` regenerates the retained
@@ -82,6 +82,24 @@ quaternion fixture from the user's DLL using Unicorn, with a SHA-256 guard and
 bounded isolated execution. Neither the DLL nor Unicorn is needed for building
 or running PSPStreamer. Ship conversion is reproducible using the command in
 `psp-client/assets/cave_ship.CREDITS.md`.
+
+### Curved upper-edge regression (hardware report 2026-09-23)
+
+The first combined build showed stretched surfaces after entering Cave. At an
+integer profile position, `cave_world_point` unnecessarily required the next
+pose even though its interpolation weight was zero. The newest slab's upper
+pose existed, but the following pose did not yet exist: its upper vertices
+therefore used the straight fallback while its lower vertices used curvature.
+Their separation increased along the tunnel and produced screen-filling faces.
+
+Exact-boundary sampling now uses the existing pose alone. A regression fixture
+checks a deliberately bent upper face before and after adding its neighbor;
+the coordinates must be bit-identical. The long geometry test also limits every
+triangle edge to the physical bound of one transformed grid cell. The previous
+finite-coordinate/clipping tests did not test this geometric invariant and
+therefore missed the regression. LCD/TV GU and targeted geometry tests pass;
+the corrected build still needs confirmation on PSP. No effect, motion or
+audio setting was removed or changed to mask the problem.
 
 ## Previous hardware-confirmed comparison (before this batch)
 

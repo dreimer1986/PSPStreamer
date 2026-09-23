@@ -8,6 +8,20 @@
 #include <stdint.h>
 #include <string.h>
 int main(void) {
+    /* Newest slab's upper edge must use its curved pose even before the
+     * following profile exists. It must not move when that pose is added. */
+    CaveScene *boundary=cave_create();assert(boundary);
+    const float quarter_turn[9]={0,0,1,0,1,0,-1,0,0};
+    memcpy(boundary->poses[1].rotation,quarter_turn,sizeof(quarter_turn));
+    boundary->poses[1].center[0]=2;boundary->poses[1].center[1]=3;boundary->poses[1].center[2]=-4;
+    boundary->poses[1].index=1;boundary->poses[2].index=-1;
+    float edge_before[3],edge_after[3];
+    cave_world_point(boundary,3,1,1,edge_before);
+    assert(fabsf(edge_before[0]-12)<1e-6f && fabsf(edge_before[1]-19)<1e-6f && fabsf(edge_before[2]+4.5f)<1e-6f);
+    boundary->poses[2]=boundary->poses[1];boundary->poses[2].index=2;boundary->poses[2].center[2]-=1;
+    cave_world_point(boundary,3,1,1,edge_after);
+    assert(!memcmp(edge_before,edge_after,sizeof(edge_before)));
+    cave_destroy(boundary);
     /* Quaternion fixtures from the original 0x10005d87..0x1000617a block,
      * including retained direction state, not an independent sine guess. */
     CaveBendController bend={0};
@@ -213,6 +227,15 @@ int main(void) {
             assert(slice->count>0 && slice->count<=CAVE_MAX_VERTICES);
             if(slice->count>peak)peak=slice->count;
             for(int i=0;i<slice->count;i++)assert(isfinite(slice->vertices[i].z));
+            /* A triangle stays inside one lofted grid cell. With normalized
+             * XY mapped by six, a rigidly rotated cell plus the bounded bend
+             * cannot have a 6.5-unit edge. Mixed straight/curved endpoints
+             * produced arbitrarily long screen-filling triangles instead. */
+            for(int i=0;i<slice->count;i+=3)for(int k=0;k<3;k++) {
+                const MdVertex *a=slice->vertices+i+k,*b=slice->vertices+i+(k+1)%3;
+                float dx=a->x-b->x,dy=a->y-b->y,dz=a->z-b->z;
+                assert(dx*dx+dy*dy+dz*dz<6.5f*6.5f);
+            }
         }
         if(s->ready>=8)assert(s->motion.travel<s->next-5);
         /* Forward prebuilding must not overwrite still-visible rear slabs. */
