@@ -1325,7 +1325,7 @@ static int prepare_timed_video(TimedPacket *packet) {
     video_watch_ping("ME lock for video");
     if (!codec_enter()) return -1324;
     video_watch_ping("AVC decode/CSC");
-    result = h264_hw_decode_annexb(packet->data, packet->size, video_staging);
+    result = h264_hw_decode_avcc((const AvcPacket *)packet->data, packet->size, video_staging);
     codec_leave();
     if(debug_enabled) sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
     if (result < 0) { video_step = h264_hw_last_step(); return result; }
@@ -2413,7 +2413,7 @@ static int play_h264(const char *media_id) {
             video_watch_ping("ME lock for init");
             if (!codec_enter()) { result = -1324; break; }
             video_watch_ping("AVC init");
-            result = h264_hw_init_from_annexb(current.data, current.size);
+            result = h264_hw_init_avcc((const AvcPacket *)current.data, current.size);
             codec_leave();
             if (result < 0) { video_step = h264_hw_last_step(); break; }
             hardware_decoder_ready = 1;

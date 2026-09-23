@@ -61,22 +61,30 @@ The PSP build was produced before targeted validation. The affected artwork,
 cache, TV layout/ownership, metadata, subtitle and browser-worker checks pass.
 These are correctness checks, not PSP timing measurements. No preset sweep.
 
-### Packet-copy review (item 4)
+### Direct AVCC packet path (item 4, implemented; hardware test pending)
 
-- `timed_stream.h:timed_put()` allocates an aligned, owned compressed packet.
-  The reader reuses both `body` and `annexb` on the next tag, so storing pointers
-  to either buffer would corrupt queued packets. `timed_get()` already transfers
-  ownership without copying bytes and clears the queue slot before reuse.
-- Audio copies into the codec's fixed input buffer, then frees the queue packet.
-  Decoder/cache synchronization and PCM output buffer lifetimes remain unchanged.
-- Video currently goes FLV/AVCC → `flv_annexb()` → owned queue packet →
-  `h264_hw.c:make_avcc()` → aligned decoder workspace. The format round trip is
-  a genuine future candidate, but removing it requires explicit configuration
-  (SPS/PPS) ownership, access-unit validation and queue/decoder API changes.
-- First measure copy/allocation/format-conversion cost against AVC/CSC and GPU
-  waits. If worthwhile, design an owned AVCC access-unit path and validate both
-  LCD/TV, seeking, EOF, reconnect and stop. Do not remove DMA/cache barriers or
-  replace queue ownership with borrowed reader pointers.
+- Video now goes from FLV length-prefixed NAL units straight to an aligned,
+  owned `AvcPacket`, then to `sceMpegGetAvcNalAu`. `avcc_packet.h` validates the
+  complete sample before allocation, normalizes 1/2/4-byte lengths to four bytes
+  while copying once, and omits AUD. SPS/PPS (including in-band replacements)
+  are stored in each packet's configuration snapshot, not shared reader state.
+- `timed_put_video()` owns the packet until queue handoff. `timed_get()` transfers
+  ownership, and the video owner keeps it through decode/presentation before
+  freeing it. Reader buffers may be reused immediately. Queue cancellation,
+  codec locks, PTS scheduling, firmware modes and cache barriers are unchanged.
+- Removed both Annex-B conversion passes, two full payload copies, the 256 KiB
+  reader conversion buffer and the 768 KiB decoder conversion buffer. A packet
+  header occupies 576 bytes, including alignment and its configuration; the
+  queue still has a 128-packet bound. This is repackaging, never re-encoding.
+- Both streamed and local FLV, on LCD and TV, use the same path. No server,
+  configuration or existing downloaded-file changes are required. Audio still
+  uses the established compressed queue and codec buffer.
+- Targeted checks cover NAL lengths, malformed/maximum samples, parameter
+  ownership, actual queue wrap/cancel/teardown and mocked firmware pointer/cache
+  contracts. Short real FFmpeg files check container PTS, Main/CABAC payloads and
+  seeking on LCD/TV profiles. Actual Media Engine operation, reconnect, stop and
+  episode transitions remain hardware checks, not claims from host mocks.
+- General packet-allocation pooling remains a separate profiling candidate.
 
 ## Remaining candidates (not measured speed guarantees)
 

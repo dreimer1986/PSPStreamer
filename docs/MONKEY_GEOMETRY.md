@@ -73,7 +73,7 @@ implements:
 
 PSP adaptations are explicit: fixed movement multiplier 1, deterministic PRNG,
 one controller step per generated slab, normalized XY mapped to a 12-unit grid,
-linear profile interpolation, and a 19-profile ring cache. Bass still modulates
+linear profile interpolation, and a 22-profile ring cache including rear history. Bass still modulates
 the existing safe forward travel speed, not the decoder/audio clock. The camera
 follows contributor 0; this is **not yet Monkey's complete camera model**.
 Analytic Z gradients include the changing center and radius, without resampling
@@ -139,12 +139,12 @@ travel speed and bounded geometry remain unchanged.
   and a PSP camera follower. Threshold, base frequency and amplitude remain adapted.
 - Independent face-connected Marching Cubes polygonizer. Its center-sign
   ambiguity rule is not identical to the original fixed triangulation table.
-- 12×12 cells per depth slab, 16 cached slabs. At most one slab is generated per
+- 12×12 cells per depth slab, 16 forward and 3 retained rear slabs. At most one slab is generated per
   rendered tick; the camera cannot advance beyond prepared geometry.
 - Two reusable field/gradient planes: after initialization, only one new plane
   is evaluated per slab. Contributor trigonometry is prepared once per plane.
 - Maximum 4,320 vertices per slab; fixed aligned scene allocation of about
-  1.6 MiB, made only on mode activation and freed after GU completion.
+  1.91 MiB, made only on mode activation and freed after GU completion.
 - 512×256 RGB565 render target plus 16-bit depth buffer on both LCD and TV.
   With TV scanout these occupy 1,998,848 bytes of the 2 MiB EDRAM. This mode
   deliberately does not follow MilkDrop's higher-resolution setting.
@@ -154,6 +154,17 @@ travel speed and bounded geometry remain unchanged.
   The existing cost-aware visual frame pacing and FPU guard remain in effect.
 
 ## Validation
+
+### Side visibility after camera look-ahead
+
+The spline/look-ahead/base-UV build was confirmed visually, with intermittent
+empty patches at the sides. Inspection found that the renderer discarded every
+slab behind `floor(camera_z)`, even though a tilted view can still see those
+surfaces. The ring now retains and draws three rear slabs, while keeping the
+16-slab forward horizon unchanged (19 geometry slots, 22 path profiles).
+This uses 1,999,360 bytes of scene RAM; the EDRAM layout is unchanged. The host
+test verifies every retained slab survives forward prebuilding across 1,800
+ticks. Whether this removes the reported visible holes needs hardware confirmation.
 
 ### Right-edge depth-buffer regression
 
@@ -181,7 +192,8 @@ orthogonality/orientation and 2,100 analytic-gradient comparisons against centra
 differences check the new math. Plane-count assertions verify actual cache reuse.
 The initial cave, octave/normal and 16-path builds passed hardware performance
 testing. The 16-path photo exposed the separate right-edge clear bug above.
-The combined spline/look-ahead/base-UV update needs a hardware test.
+The combined spline/look-ahead/base-UV update passed the hardware test apart
+from the side visibility issue addressed above.
 Targeted tests also cover 4,000 path steps, phase
 limits, interpolation, camera clearance and the source's four-term oscillator
 reduced independently for the `seed=t=i=0` fixture.

@@ -23,6 +23,7 @@ include $(PSPSDK)/lib/build.mak
 # libmpegbase: moving it into OBJS makes PSP import stubs non-contiguous on
 # 6.61.  The explicit prerequisite still makes a clean checkout buildable.
 main.o: mpeg_extra.o timed_stream.h flv.h audio_lease.h sync_trace.h display_output.h tv_canvas.h music_ui.h music_remote.h tv_gui.h lcd_music.h language.h
+main.o h264_hw.o: h264_hw.h avcc_packet.h
 language.o: language.h lang_en.h lang_de.h
 main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h preset_math.h milkdrop_signal.h

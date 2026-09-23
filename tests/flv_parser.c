@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
     test_output_lifecycle();
     unsigned char header[13], tag[11], prev[4];
     unsigned char body[FLV_MAX_VIDEO], out[FLV_MAX_VIDEO];
-    FlvAvc avc = {{0}, 0, 0};
+    FlvAvc avc = {0};
     FILE *f, *video, *audio;
     int saw_end = 0;
     assert(pts_avsync(1000, 1200, 50) == 0);
@@ -68,13 +68,20 @@ int main(int argc, char **argv) {
         if (tag[0] == 9 && body[1] == 0) assert(!flv_config(&avc, body + 5, size - 5));
         if (tag[0] == 9 && body[1] == 2) saw_end = 1;
         if (tag[0] == 9 && body[1] == 1) {
-            n = flv_annexb(&avc, body + 5, size - 5, out, sizeof(out));
+            n = avcc_walk(&avc, body + 5, size - 5, NULL);
             assert(n > 0);
-            assert(flv_annexb(&avc, body + 5, size - 5, out, 1) < 0);
-            assert(flv_annexb(&avc, body + 5, size - 6, out, sizeof(out)) < 0);
-            assert(flv_annexb(&avc, body + 5, size - 5, out, sizeof(out)) == n);
+            assert(avcc_walk(&avc, body + 5, size - 6, NULL) < 0);
+            assert(avcc_walk(&avc, body + 5, size - 5, out) == n);
             printf("video %d\n", flv_pts(tag, body));
-            fwrite(out, 1, n, video);
+            /* Only the host FFmpeg oracle needs Annex B. Production passes
+             * the unchanged length-prefixed payload directly to sceMpeg. */
+            fwrite("\0\0\0\1",1,4,video);fwrite(avc.sps,1,avc.sps_size,video);
+            fwrite("\0\0\0\1",1,4,video);fwrite(avc.pps,1,avc.pps_size,video);
+            for(int at=0;at<n;) {
+                unsigned length=flv_u32(out+at);at+=4;
+                assert(length<=(unsigned)(n-at));
+                fwrite("\0\0\0\1",1,4,video);fwrite(out+at,1,length,video);at+=length;
+            }
         }
         if (tag[0] == 8) {
             static const int rates[] = {0,32,40,48,56,64,80,96,112,128,160,192,224,256,320};

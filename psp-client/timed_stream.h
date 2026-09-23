@@ -69,6 +69,31 @@ static int timed_get(TimedQueue *q, TimedPacket *out) {
     sceKernelSignalSema(q->free, 1);
     return 1;
 }
+static int timed_put_video(FlvAvc *config,const unsigned char *data,int size,int pts) {
+    AvcConfig snapshot=*config;
+    int length=avcc_walk(&snapshot,data,size,NULL);
+    if(length<0)return -1;
+    if(!length){*config=snapshot;return 0;} /* Parameter/AUD-only tag. */
+    while(timed_running && !timed_wait(timed_video.free))timed_video_blocked=1;
+    timed_video_blocked=0;
+    if(!timed_running)return -1;
+    int bytes=(int)sizeof(AvcPacket)+length;
+    AvcPacket *packet=memalign(64,(bytes+63)&~63);
+    if(!packet) {
+        DEBUG_DIAG(stream_diag.reason="AVCC packet allocation failed";);
+        sceKernelSignalSema(timed_video.free,1);return -1;
+    }
+    memset(packet,0,sizeof(*packet));
+    packet->config=snapshot;packet->data_size=length;
+    if(avcc_walk(&packet->config,data,size,packet->data)!=length) {
+        free(packet);sceKernelSignalSema(timed_video.free,1);return -1;
+    }
+    TimedPacket *slot=&timed_video.slots[timed_video.write%128];
+    slot->data=(unsigned char *)packet;slot->size=bytes;slot->pts=pts;
+    *config=packet->config;
+    timed_video.write++;sceKernelSignalSema(timed_video.ready,1);
+    return 0;
+}
 /* Exact reads tolerate TCP fragmentation. A timeout returns to this worker,
  * never blocks the UI; cancellation closes the socket before joining it.
  * Startup/subtitle preparation and intentional pause have separate budgets.
@@ -139,7 +164,7 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
 static int timed_reader(SceSize args, void *argp) {
     struct sockaddr_in server;
     unsigned char h[13], tag[11], previous[4];
-    unsigned char *body = NULL, *annexb = NULL;
+    unsigned char *body = NULL;
     char http[4096];
     FlvAvc avc;
     int n = 0, result = -1, fd=-1, got, saw_end = 0;
@@ -188,11 +213,10 @@ flv_header:
         flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || !(h[4] & 1)) goto end;
     timed_has_audio = !!(h[4] & 4);
     body = malloc(FLV_MAX_VIDEO);
-    annexb = malloc(FLV_MAX_VIDEO);
-    if (!body || !annexb) { DEBUG_DIAG(stream_diag.reason="reader allocation failed";); goto end; }
+    if (!body) { DEBUG_DIAG(stream_diag.reason="reader allocation failed";); goto end; }
     while (timed_running) {
         unsigned int size, type;
-        int pts, converted;
+        int pts;
         DEBUG_DIAG(stream_diag.stage="FLV tag header";);
         got = timed_read(tag, 11);
         if (!got) { result = saw_end ? 0 : -1; break; }
@@ -225,9 +249,7 @@ flv_header:
                 }
             } else if (body[1] == 1) {
                 if(offline_active && tag_position<video_start)continue;
-                converted = flv_annexb(&avc, body + 5, size - 5, annexb, FLV_MAX_VIDEO);
-                if (converted < 0) break;
-                if (timed_put(&timed_video, annexb, converted, flv_pts(tag, body)) < 0) break;
+                if (timed_put_video(&avc, body + 5, size - 5, flv_pts(tag, body)) < 0) break;
             } else if (body[1] == 2) saw_end = 1;
             else break;
         } else if (type != 18) break;
@@ -238,7 +260,7 @@ end:
         DEBUG_DIAG(stream_diag.failure_ms=(unsigned int)(sceKernelGetSystemTimeWide()/1000ULL););
         if(!offline_active)DEBUG_DIAG(stream_diag.ap_result=sceNetApctlGetState(&stream_diag.ap_state););
     }
-    free(body); free(annexb);
+    free(body);
     if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }
     if (result < 0 && timed_running && !timed_error) timed_error = -1320;
     __sync_synchronize();

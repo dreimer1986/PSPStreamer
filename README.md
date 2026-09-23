@@ -417,6 +417,7 @@ media and subtitle timeout budgets are unchanged.
 Both LCD and TV playback follow the audio-master approach in [PMPlayer Advance](https://github.com/DavisDev/pmplayer-advance/tree/9ce494d020d3c909ee312bda1932f8d806a2f05d/ppa/mod):
 
 - One FFmpeg process muxes both streams, including their timestamps. The PSP reads FLV tag timestamps and the signed H.264 composition offset to obtain video PTS.
+- H.264 stays length-prefixed (AVCC) from the FLV reader to the Media Engine. Each aligned queue packet owns its SPS/PPS configuration and payload; no Annex-B round trip or second video encoding is involved. This applies to streaming and downloaded FLV on LCD and TV; existing downloads remain compatible.
 - Decoded PCM buffers retain their first MP3 packet's PTS. The output worker publishes that timestamp immediately before its blocking DAC call, matching PPA's buffer-based audio clock.
 - Video is decoded and composited with its subtitles in a RAM staging frame. The finished picture is compared with fresh audio PTS, again at VBlank before copying to the established LCD/TV framebuffer. It waits when ahead and discards late pictures. As in PPA, the tolerance is two video-frame durations; here the duration comes from adjacent packet PTS.
 - Codec initialization, decoding and related cache operations share one Media Engine semaphore. Network reads, audio output and display waits remain independent. PCM ownership follows PPA: a successful submission releases the previous buffer; the last buffer is released after the DAC drains. Audio content is never repeated or skipped to synchronize video.
@@ -894,6 +895,7 @@ per-triangle projections. This is **not yet a complete reproduction of Monkey**:
 additional camera roll/sway, animated texture stages, lighting and ambiguous
 cube triangulation differ. See [verified observations and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
+Three rear slabs remain visible for camera turns without shortening the forward horizon.
 Adjacent slabs reuse their shared field/gradient plane, and trigonometric path
 parameters are prepared once per plane rather than once per sample.
 The render target is fixed at 512×256 RGB565, including on TV, to fit a real depth

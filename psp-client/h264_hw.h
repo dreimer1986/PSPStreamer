@@ -1,11 +1,11 @@
 #ifndef PSP_STREAMER_H264_HW_H
 #define PSP_STREAMER_H264_HW_H
 
-/* Hardware AVC probe and decoder.  This uses the PSP Media Engine through
- * sceMpeg; it is intentionally separate from the OpenH264 fallback. */
-int h264_hw_init_from_annexb(const unsigned char *access_unit, int size);
+#include "avcc_packet.h"
+/* Media Engine decoder. Caller owns the aligned packet through decode return. */
+int h264_hw_init_avcc(const AvcPacket *packet, int size);
 /* NULL framebuffer decodes references but discards the late picture. */
-int h264_hw_decode_annexb(const unsigned char *access_unit, int size, void *framebuffer);
+int h264_hw_decode_avcc(const AvcPacket *packet, int size, void *framebuffer);
 /* Configure before init: firmware AVC mode 5 is required for 720x480. */
 void h264_hw_set_output_layout(int stride, int height, int mpeg_mode);
 void h264_hw_shutdown(void);

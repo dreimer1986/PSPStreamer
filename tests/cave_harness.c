@@ -130,6 +130,14 @@ int main(void) {
             for(int i=0;i<slice->count;i++)assert(isfinite(slice->vertices[i].z));
         }
         if(s->ready>=8)assert(s->motion.travel<s->next-5);
+        /* Forward prebuilding must not overwrite still-visible rear slabs. */
+        int first=(int)floorf(s->motion.travel)-CAVE_HISTORY;
+        if(first<0)first=0;
+        for(int index=first;index<s->next;index++) {
+            assert(s->slices[index%CAVE_SLICES].index==index);
+            assert(s->slices[index%CAVE_SLICES].count>0);
+        }
+        assert(s->next<=(int)floorf(s->motion.travel)+CAVE_AHEAD);
         float x,y;cave_camera(s,s->motion.travel,&x,&y);
         assert(cave_density(s,x,y,s->motion.travel)>0);
         float view[16];cave_view(s,s->motion.travel,view);

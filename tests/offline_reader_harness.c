@@ -56,6 +56,19 @@ static int timed_put(int *q,const unsigned char *data,int size,int pts) {
     }
     return 0;
 }
+static int timed_put_video(FlvAvc *config,const unsigned char *data,int size,int pts) {
+    unsigned char out[FLV_MAX_VIDEO];
+    int n=avcc_walk(config,data,size,NULL);if(n<0)return -1;if(!n)return 0;
+    assert(avcc_walk(config,data,size,out)==n);
+    assert(pts>video_pts);video_pts=pts;frames++;
+    fwrite("\0\0\0\1",1,4,video);fwrite(config->sps,1,config->sps_size,video);
+    fwrite("\0\0\0\1",1,4,video);fwrite(config->pps,1,config->pps_size,video);
+    for(int at=0;at<n;) {
+        unsigned length=flv_u32(out+at);at+=4;assert(length<=(unsigned)(n-at));
+        fwrite("\0\0\0\1",1,4,video);fwrite(out+at,1,length,video);at+=length;
+    }
+    return 0;
+}
 /* TIMED_READ */
 #include "offline_preroll.h"
 /* TIMED_READER */

@@ -70,12 +70,18 @@ class FlvIntegrationTests(unittest.TestCase):
                 server.server_close()
 
     def test_container_pts_match_ffprobe_and_payloads_decode(self):
+        self._check_container_pts(((False, 2), (True, 2), (True, 300)))
+
+    def test_direct_avcc_short_lcd_tv_and_seek(self):
+        self._check_container_pts(((False, 2), (True, 2)))
+
+    def _check_container_pts(self, cases):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             parser = work / "parser"
             subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", "-fsanitize=undefined",
                             str(ROOT / "tests/flv_parser.c"), "-o", str(parser)], check=True)
-            for tv, duration in ((False, 2), (True, 2), (True, 300)):
+            for tv, duration in cases:
                 movie = work / "test.flv"
                 source = work / 'fixture.mkv'
                 subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'lavfi', '-i',

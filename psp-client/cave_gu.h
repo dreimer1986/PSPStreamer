@@ -38,7 +38,7 @@ static void cave_draw(int width,int height) {
     ScePspFMatrix4 projection={.x={1.25f*height/width,0,0,0},.y={0,1.25f,0,0},
         .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
     sceGuSetMatrix(GU_PROJECTION,&projection);sceGuSetMatrix(GU_VIEW,&view);sceGuSetMatrix(GU_MODEL,&identity);
-    int first=(int)floorf(cave_scene->motion.travel);
+    int first=(int)floorf(cave_scene->motion.travel)-CAVE_HISTORY;
     for(int i=0;i<CAVE_SLICES;i++) {
         CaveSlice *slice=&cave_scene->slices[i];
         if(slice->index<first || !slice->count)continue;

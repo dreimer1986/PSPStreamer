@@ -230,7 +230,9 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         if(proposed<s->next-6)s->motion.travel=proposed;
     }
     int first=(int)floorf(s->motion.travel);
-    if(s->next>=first+CAVE_SLICES)return NULL;
+    /* Keep the original forward horizon AND three rear slabs. A banked view
+     * can still see those at its edges; do not recycle them at camera Z. */
+    if(s->next>=first+CAVE_AHEAD)return NULL;
     int index=s->next;
     while(s->paths.next<=index+2)cave_paths_step(&s->paths);
     CaveSlice *slice=&s->slices[index%CAVE_SLICES];

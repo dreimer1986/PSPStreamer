@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef PSPSTREAMER_CAVE_PATHS_H
 #define PSPSTREAMER_CAVE_PATHS_H
-enum {CAVE_PATHS=16,CAVE_PATH_CACHE=19};
+enum {CAVE_PATHS=16,CAVE_PATH_CACHE=22};
 typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],radius[CAVE_PATHS];int index;} CavePathFrame;
 typedef struct {float time[4],value[4];int ready;} CaveSpline;
 typedef struct {
