@@ -7,7 +7,42 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "cave_ship_data.h"
+static void test_ship_wall(void) {
+    CaveScene *s=cave_create();assert(s);
+    s->ready=16;s->next=16;s->pose_next=18;s->paths.next=18;
+    for(int i=0;i<CAVE_PATH_CACHE;i++) {
+        CavePathFrame *p=&s->paths.frames[i];p->index=i;
+        s->poses[i].index=i;s->poses[i].center[2]=-i;
+        memset(s->poses[i].rotation,0,sizeof(s->poses[i].rotation));
+        s->poses[i].rotation[0]=s->poses[i].rotation[4]=s->poses[i].rotation[8]=1;
+        for(int j=0;j<CAVE_PATHS;j++){p->x[j]=p->y[j]=.5f;p->radius[j]=.7f;}
+    }
+    CaveSlice *sl=&s->slices[0];sl->index=0;sl->count=6;
+    const float yz[6][2]={{-10,-30},{10,-30},{10,5},{-10,-30},{10,5},{-10,5}};
+    for(int i=0;i<6;i++){sl->vertices[i].x=.5f;sl->vertices[i].y=yz[i][0];sl->vertices[i].z=yz[i][1];}
+    sl->minimum[0]=sl->maximum[0]=.5f;sl->minimum[1]=-10;sl->maximum[1]=10;sl->minimum[2]=-30;sl->maximum[2]=5;
+    float n[3];assert(!cave_ship_contact(s,0,0,0,n));
+    assert(cave_ship_contact(s,.2f,0,0,n) && n[0]<-.99f);
+    cave_flight_input(s,1,255,128,0,0);
+    s->flight_x=s->flight_y=s->flight_roll=0;s->flight_yaw=.85f;s->flight_initialized=1;
+    s->motion.previous=1000000;unsigned char bands[12]={0};
+    cave_options.flight_sensitivity=100;cave_options.flight_inertia=0;
+    for(int i=1;i<=15;i++) {
+        cave_prepare(s,bands,0,1000000+i*10000);
+        assert(s->flight_x<=.1001f);
+        assert(!cave_ship_contact(s,s->flight_x,s->flight_y,s->motion.travel,n));
+    }
+    assert(s->motion.travel>.5f); /* tangential progress, not a wall freeze */
+    s->flight_yaw=0;cave_options.flight_inertia=0;
+    cave_prepare(s,bands,0,1160000);float quick=s->flight_yaw;
+    s->flight_yaw=0;cave_options.flight_inertia=100;
+    cave_prepare(s,bands,0,1170000);assert(s->flight_yaw<quick*.2f);
+    cave_options.flight_sensitivity=50;cave_options.flight_inertia=65;
+    cave_destroy(s);
+}
 int main(void) {
+    test_ship_wall();
     /* Isolated DLL execution: 0x10006c9d and 0x1000759e. */
     const float scene_fixture[][5]={{0,0,1.419137120f,.005f,.195f},
         {313.45f,100,2.093897343f,.005565370f,.161976412f},
@@ -369,6 +404,11 @@ int main(void) {
     /* Wide connected passage: steer beyond the former +/-1.2 offset, keep
      * position on stick release, clamp speed, and never travel backwards. */
     CaveScene *flight=cave_create();assert(flight);
+    for(int i=0;i<CAVE_SHIP_VERTICES;i++) {
+        const MdVertex *v=&cave_ship_mesh[i];
+        assert(sqrtf(v->x*v->x+v->y*v->y+v->z*v->z)*CAVE_SHIP_SCALE<CAVE_SHIP_RADIUS-.08f);
+    }
+    cave_options.flight_sensitivity=100;cave_options.flight_inertia=0;
     cave_flight_input(flight,1,128,128,0,0); /* also safe before cache warmup */
     unsigned long long clock=1000000;
     for(int i=0;i<16;i++)cave_prepare(flight,bands,90,clock+=1000);
@@ -378,8 +418,13 @@ int main(void) {
         flight->paths.frames[i].x[j]=flight->paths.frames[i].y[j]=.5f;
         flight->paths.frames[i].radius[j]=.7f;
     }
+    /* This fixture replaces the field, so discard its old unrelated mesh. */
+    for(int i=0;i<CAVE_SLICES;i++)flight->slices[i].count=0;
     cave_flight_input(flight,0,255,128,0,0);
-    for(int i=0;i<40;i++)cave_prepare(flight,bands,90,clock+=10000);
+    for(int i=0;i<40;i++) {
+        cave_prepare(flight,bands,90,clock+=10000);
+        for(int j=0;j<CAVE_SLICES;j++)flight->slices[j].count=0;
+    }
     assert(flight->flight_x>1.2f && flight->motion.travel>0);
     /* With zero heading, XY is independent of the automatic path. */
     cave_flight_input(flight,0,128,128,0,0);flight->flight_yaw=0;

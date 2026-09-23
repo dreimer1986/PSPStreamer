@@ -12,7 +12,7 @@
 #include <math.h>
 
 static float mix(float a,float b,float t){return a+(b-a)*t;}
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65};
 static float flight_axis(int value) {
     float x=value-128;
     if(fabsf(x)<=20)return 0;
@@ -23,9 +23,10 @@ void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll
     if(toggle){
         s->flight=!s->flight;s->flight_x=s->flight_y=0;
         s->flight_yaw=s->flight_pitch=0;s->flight_speed=1;
+        s->flight_roll_velocity=0;
         s->flight_roll=s->motion.roll-s->motion.bank;
-        s->flight_initialized=s->ready>=12;
-        if(s->flight)cave_camera(s,s->motion.travel,&s->flight_x,&s->flight_y);
+        s->flight_initialized=0;
+        if(s->flight)cave_camera(s,s->motion.travel+2,&s->flight_x,&s->flight_y);
     }
     if(!s->flight)return;
     s->flight_axis_x=flight_axis(x);s->flight_axis_y=(cave_options.invert_y?1:-1)*flight_axis(y);
@@ -37,9 +38,71 @@ static void cave_flight_direction(const CaveScene *s,float *x,float *y) {
     float yaw=tanf(s->flight_yaw),pitch=tanf(s->flight_pitch);
     *x=cr*yaw-sr*pitch;*y=sr*yaw+cr*pitch;
 }
-static int cave_flight_clear(const CaveScene *s,float x,float y,float z) {
-    /* Stay inside the meshed cross section, including an edge margin. */
-    return fabsf(x)<5.7f && fabsf(y)<5.7f && cave_density(s,x,y,z)>.015f;
+static float dot3(const float *a,const float *b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+static void cross3(const float *a,const float *b,float *o) {
+    for(int i=0;i<3;i++)o[i]=a[(i+1)%3]*b[(i+2)%3]-a[(i+2)%3]*b[(i+1)%3];
+}
+static void unit3(float *a){float n=sqrtf(dot3(a,a));if(n>1e-8f)for(int i=0;i<3;i++)a[i]/=n;}
+/* Closest point includes triangle interiors AND edges/vertices. A plane-only
+ * test misses exactly the corners where the old point collider disappeared. */
+static void triangle_closest(const float p[3],const MdVertex *v,float out[3]) {
+    float a[3]={v[0].x,v[0].y,v[0].z},b[3]={v[1].x,v[1].y,v[1].z},c[3]={v[2].x,v[2].y,v[2].z};
+    float ab[3],ac[3],ap[3],bp[3],cp[3];
+    for(int k=0;k<3;k++){ab[k]=b[k]-a[k];ac[k]=c[k]-a[k];ap[k]=p[k]-a[k];bp[k]=p[k]-b[k];cp[k]=p[k]-c[k];}
+    float d1=dot3(ab,ap),d2=dot3(ac,ap),d3=dot3(ab,bp),d4=dot3(ac,bp),d5=dot3(ab,cp),d6=dot3(ac,cp);
+    float va=d3*d6-d5*d4,vb=d5*d2-d1*d6,vc=d1*d4-d3*d2;
+    float u=0,w=0;
+    if(d1<=0 && d2<=0){}
+    else if(d3>=0 && d4<=d3)u=1;
+    else if(vc<=0 && d1>=0 && d3<=0)u=d1/fmaxf(1e-12f,d1-d3);
+    else if(d6>=0 && d5<=d6)w=1;
+    else if(vb<=0 && d2>=0 && d6<=0)w=d2/fmaxf(1e-12f,d2-d6);
+    else if(va<=0 && d4>=d3 && d5>=d6){w=(d4-d3)/fmaxf(1e-12f,d4-d3+d5-d6);u=1-w;}
+    else {float sum=va+vb+vc;if(fabsf(sum)>1e-12f){u=vb/sum;w=vc/sum;}}
+    for(int k=0;k<3;k++)out[k]=a[k]+u*ab[k]+w*ac[k];
+}
+static int cave_mesh_contact(const CaveScene *s,const float p[3],float radius,float normal[3]) {
+    float best=radius*radius;int hit=0;
+    for(int i=0;i<CAVE_SLICES;i++) {
+        const CaveSlice *sl=&s->slices[i];
+        if(sl->index<0 || !sl->count)continue;
+        int outside=0;
+        for(int k=0;k<3;k++)if(p[k]+radius<sl->minimum[k] || p[k]-radius>sl->maximum[k])outside=1;
+        if(outside)continue;
+        for(int j=0;j<sl->count;j+=3) {
+            const MdVertex *v=sl->vertices+j;
+            /* Cheap world AABB rejection before closest-point arithmetic. */
+            if(p[0]+radius<fminf(v[0].x,fminf(v[1].x,v[2].x)) || p[0]-radius>fmaxf(v[0].x,fmaxf(v[1].x,v[2].x)) ||
+               p[1]+radius<fminf(v[0].y,fminf(v[1].y,v[2].y)) || p[1]-radius>fmaxf(v[0].y,fmaxf(v[1].y,v[2].y)) ||
+               p[2]+radius<fminf(v[0].z,fminf(v[1].z,v[2].z)) || p[2]-radius>fmaxf(v[0].z,fmaxf(v[1].z,v[2].z)))continue;
+            float near[3],n[3];triangle_closest(p,v,near);
+            for(int k=0;k<3;k++)n[k]=p[k]-near[k];
+            float distance=dot3(n,n);
+            if(distance<best){best=distance;memcpy(normal,n,sizeof n);hit=1;}
+        }
+    }
+    if(hit)unit3(normal);
+    return hit;
+}
+int cave_ship_contact(const CaveScene *s,float x,float y,float z,float normal[3]) {
+    float world[3],n[3]={0};cave_world_point(s,x,y,z+2,world);
+    int hit=cave_mesh_contact(s,world,CAVE_SHIP_RADIUS,n);
+    if(hit) {
+        /* Transform the contact normal into loft coordinates (J transpose). */
+        for(int k=0;k<3;k++) {
+            float q[3];cave_world_point(s,x+(k==0?.01f:0),y+(k==1?.01f:0),z+2+(k==2?.01f:0),q);
+            for(int j=0;j<3;j++)q[j]=(q[j]-world[j])*100;
+            normal[k]=dot3(q,n);
+        }
+        unit3(normal);return 1;
+    }
+    if(fabsf(x)>5.5f || fabsf(y)>5.5f) {
+        normal[0]=fabsf(x)>5.5f?-copysignf(1,x):0;
+        normal[1]=fabsf(y)>5.5f?-copysignf(1,y):0;normal[2]=0;unit3(normal);return 1;
+    }
+    /* Also reject the solid side of the surface, not only its boundary. */
+    if(cave_sample(s,x,y,z+2,normal)<=.015f){unit3(normal);return 1;}
+    return 0;
 }
 static void cave_flight_step(CaveScene *s,float distance) {
     float dx,dy;cave_flight_direction(s,&dx,&dy);
@@ -50,21 +113,16 @@ static void cave_flight_step(CaveScene *s,float distance) {
     if(count>40)count=40;
     float dz=distance/count;
     for(int i=0;i<count;i++) {
-        float x=s->flight_x+dx*dz,y=s->flight_y+dy*dz,z=s->motion.travel+dz;
-        if(!cave_flight_clear(s,x,y,z)) {
-            /* Slide along one axis, then along the forward rail. A blocked
-             * dead end stops progress; it never teleports to contributor 0. */
-            if(cave_flight_clear(s,x,s->flight_y,z))y=s->flight_y;
-            else if(cave_flight_clear(s,s->flight_x,y,z))x=s->flight_x;
-            else if(cave_flight_clear(s,s->flight_x,s->flight_y,z)){x=s->flight_x;y=s->flight_y;}
-            else {
-                /* Permit steering away from a wall even with forward travel
-                 * blocked, but still sweep in the current cross section. */
-                if(cave_flight_clear(s,x,y,s->motion.travel)){s->flight_x=x;s->flight_y=y;}
-                break;
-            }
+        float delta[3]={dx*dz,dy*dz,dz},n[3];int clear=0;
+        for(int attempt=0;attempt<4;attempt++) {
+            if(!cave_ship_contact(s,s->flight_x+delta[0],s->flight_y+delta[1],s->motion.travel+delta[2],n)){clear=1;break;}
+            float inward=dot3(delta,n);
+            if(inward<0)for(int k=0;k<3;k++)delta[k]-=n[k]*inward;
+            else for(int k=0;k<3;k++)delta[k]*=.5f;
+            delta[2]=fmaxf(0,delta[2]); /* rail shooter: never reverse */
         }
-        s->flight_x=x;s->flight_y=y;s->motion.travel=z;
+        if(!clear)break;
+        s->flight_x+=delta[0];s->flight_y+=delta[1];s->motion.travel+=delta[2];
     }
 }
 int cave_beat_response(CaveMotion *m,int amplitude,unsigned choice,float dt,int beat) {
@@ -152,6 +210,26 @@ void cave_world_point(const CaveScene *s,float x,float y,float z,float out[3]) {
     }
 }
 void cave_view(const CaveScene *s,float z,float matrix[16]) {
+    if(s->flight) {
+        float center[3],right[3],up[3],forward[3],eye[3];
+        cave_ship_pose(s,center,right,up,forward);
+        /* Follow the actual world-space ship. Shorten the chase arm before
+         * it enters a wall; never put the camera on the solid side. */
+        float arm[3];for(int k=0;k<3;k++)arm[k]=-forward[k]*2.4f+up[k]*.4f;
+        float fraction=0;
+        for(int i=1;i<=16;i++) {
+            float p[3],normal[3];for(int k=0;k<3;k++)p[k]=center[k]+arm[k]*(i/16.f);
+            if(cave_mesh_contact(s,p,.12f,normal))break;
+            fraction=i/16.f;
+        }
+        for(int k=0;k<3;k++)eye[k]=center[k]+arm[k]*fraction;
+        memset(matrix,0,16*sizeof(float));matrix[15]=1;
+        for(int k=0;k<3;k++) {
+            matrix[k*4]=right[k];matrix[k*4+1]=up[k];matrix[k*4+2]=-forward[k];
+            matrix[12]-=right[k]*eye[k];matrix[13]-=up[k]*eye[k];matrix[14]+=forward[k]*eye[k];
+        }
+        return;
+    }
     float x,y;cave_camera(s,z,&x,&y);
     CavePathFrame ahead;
     float dx=0,dy=0;
@@ -164,10 +242,6 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float gain=2.4f*fminf(1,cave_fov(seed,z)/.195f)/fmaxf(1,1.2f*cave_movement(seed,z));
     dx+=gain*(.21f*sinf(seed*1.2f+z*.0119f+11)+.16f*sinf(seed*3.1f+z*.0137f+46)+.19f*sinf(seed*1.4f+z*.0059f+38));
     dy+=gain*(.12f*sinf(seed*2.4f+z*.0103f+83)+.17f*sinf(seed*2.7f+z*.0122f+29)+.19f*sinf(seed*1.7f+z*.0069f+91));
-    if(s->flight){
-        x=s->flight_x;y=s->flight_y;
-        cave_flight_direction(s,&dx,&dy);dx*=6;dy*=6;
-    }
     float eye[3],target[3],up_point[3];
     cave_world_point(s,x,y,z,eye);cave_world_point(s,x+dx,y+dy,z+6,target);
     cave_world_point(s,x,y+1,z,up_point);
@@ -184,13 +258,25 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
         view[k*4]=right[k];view[k*4+1]=up[k];view[k*4+2]=-forward[k];
         view[12]-=right[k]*eye[k];view[13]-=up[k]*eye[k];view[14]+=forward[k]*eye[k];
     }
-    float roll=s->flight?s->flight_roll:s->motion.roll-s->motion.bank;
+    float roll=s->motion.roll-s->motion.bank;
     float cr=cosf(roll),sr=sinf(roll);
     for(int k=0;k<4;k++) {
         float right=view[k*4],up=view[k*4+1];
         view[k*4]=cr*right+sr*up;view[k*4+1]=cr*up-sr*right;
     }
     memcpy(matrix,view,sizeof(view));
+}
+void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]) {
+    float dx,dy,q[3];cave_flight_direction(s,&dx,&dy);
+    cave_world_point(s,s->flight_x,s->flight_y,s->motion.travel+2,center);
+    cave_world_point(s,s->flight_x+dx*.1f,s->flight_y+dy*.1f,s->motion.travel+2.1f,q);
+    for(int k=0;k<3;k++)forward[k]=q[k]-center[k];
+    unit3(forward);
+    cave_world_point(s,s->flight_x,s->flight_y+1,s->motion.travel+2,q);
+    for(int k=0;k<3;k++)up[k]=q[k]-center[k];
+    cross3(forward,up,right);unit3(right);cross3(right,forward,up);
+    float cr=cosf(s->flight_roll),sr=sinf(s->flight_roll);
+    for(int k=0;k<3;k++){float r=right[k],u=up[k];right[k]=cr*r+sr*u;up[k]=cr*u-sr*r;}
 }
 typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],dx[CAVE_PATHS],dy[CAVE_PATHS],inverse[CAVE_PATHS],dr[CAVE_PATHS];} CaveField;
 static int prepare_field(const CaveScene *s,CaveField *p,float z) {
@@ -373,6 +459,7 @@ static void cave_rebase(CaveScene *s) {
     for(int i=0;i<CAVE_PATH_CACHE;i++)for(int k=0;k<3;k++)s->poses[i].center[k]-=shift[k]/(k<2?6:1);
     for(int i=0;i<CAVE_SLICES;i++) {
         CaveSlice *slice=&s->slices[i];
+        for(int k=0;k<3;k++){slice->minimum[k]-=shift[k];slice->maximum[k]-=shift[k];}
         MdVertex *streams[4]={slice->vertices,slice->secondary,slice->wire,slice->hair};
         for(int j=0;j<4;j++)for(int k=0;k<(j==3?slice->hair_count:slice->count);k++) {
             MdVertex *v=streams[j]+k;v->x-=shift[0];v->y-=shift[1];v->z-=shift[2];
@@ -411,17 +498,30 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         cave_fov(s->paths.seed,s->motion.travel))*(cave_options.speed*.01f);
     if(s->flight) {
         s->flight_speed=fmaxf(.2f,fminf(2,s->flight_speed+s->flight_throttle*dt*.6f));
-        s->flight_roll=remainderf(s->flight_roll+s->flight_roll_input*dt*1.6f,6.283185307f);
-        float response=1-expf(-dt*8);
-        s->flight_yaw+=(s->flight_axis_x*.85f-s->flight_yaw)*response;
-        s->flight_pitch+=(s->flight_axis_y*.7f-s->flight_pitch)*response;
+        float response=1-expf(-dt/(.06f+cave_options.flight_inertia*.009f));
+        float sensitivity=cave_options.flight_sensitivity*.01f;
+        s->flight_roll_velocity+=(s->flight_roll_input*1.6f*sensitivity-s->flight_roll_velocity)*response;
+        s->flight_roll=remainderf(s->flight_roll+s->flight_roll_velocity*dt,6.283185307f);
+        s->flight_yaw+=(s->flight_axis_x*.85f*sensitivity-s->flight_yaw)*response;
+        s->flight_pitch+=(s->flight_axis_y*.7f*sensitivity-s->flight_pitch)*response;
         /* Player speed is independent of beat impulses and automatic sway. */
         step=fminf(1.2f,dt*6*s->flight_speed*cave_options.speed*.01f);
     }
     float previous_travel=s->motion.travel;
     if(s->ready>=12) {
         if(s->flight && !s->flight_initialized) {
-            cave_camera(s,s->motion.travel,&s->flight_x,&s->flight_y);
+            cave_camera(s,s->motion.travel+2,&s->flight_x,&s->flight_y);
+            /* The automatic eye was only point-safe. Prefer the nearest
+             * hull-safe entry point once, never snap back while flying. */
+            float origin_x=s->flight_x,origin_y=s->flight_y,n[3];
+            if(cave_ship_contact(s,origin_x,origin_y,s->motion.travel,n)) {
+                int found=0;
+                for(int ring=1;ring<=6 && !found;ring++)for(int side=0;side<8;side++) {
+                    float angle=side*.785398163f;
+                    float x=origin_x+cosf(angle)*ring*.15f,y=origin_y+sinf(angle)*ring*.15f;
+                    if(!cave_ship_contact(s,x,y,s->motion.travel,n)){s->flight_x=x;s->flight_y=y;found=1;break;}
+                }
+            }
             s->flight_initialized=1;
         }
         float proposed=s->motion.travel+step;
@@ -491,6 +591,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
      * effects and the mean normal, without lossy position hashing. */
     short first_vertex[CAVE_EDGE_SLOTS];for(int i=0;i<CAVE_EDGE_SLOTS;i++)first_vertex[i]=-1;
     float average=0;int unique=0;
+    for(int k=0;k<3;k++){slice->minimum[k]=1e30f;slice->maximum[k]=-1e30f;}
     for(int i=0;i<used;i++) {
         if(first_vertex[s->edge_id[i]]>=0)continue;
         first_vertex[s->edge_id[i]]=i;unique++;
@@ -577,6 +678,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         *b=*a;b->u=.5f+a->x/12;
         cave_world_point(s,a->x,a->y,-a->z,world);
         a->x=b->x=world[0];a->y=b->y=world[1];a->z=b->z=world[2];
+        for(int k=0;k<3;k++){slice->minimum[k]=fminf(slice->minimum[k],world[k]);slice->maximum[k]=fmaxf(slice->maximum[k],world[k]);}
     }
     for(int i=0;i<slice->hair_count;i+=2) {
         MdVertex *v=slice->hair+i;float world[3],delta[3]={v[1].x-v[0].x,v[1].y-v[0].y,v[1].z-v[0].z};

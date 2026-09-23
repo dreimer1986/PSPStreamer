@@ -433,7 +433,7 @@ int main(int argc,char **argv) {
             for(int i=0;i<7;i++)assert(!cave_external[i].pixels);
             assert(!cave_external_next && !cave_external_mask);
         }
-        assert(matrix_calls==(frames*3+16)*8 && clear_count==frames*8 && !clear_mode);
+        assert(matrix_calls==frames*3*8 && clear_count==frames*8 && !clear_mode);
         assert(cave_hairs && cave_wires && cave_layers && cave_colored_without_fog);
         if(!strcmp(argv[1],"--cave-textures"))assert(cave_external_binds>0);
         printf("Cave: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);

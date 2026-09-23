@@ -222,6 +222,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_CAVE_SPEED] = "Geschwindigkeit (%)",
     [TXT_CAVE_INVERT_Y] = "Flug-Y invertieren",
     [TXT_CAVE_NOISE] = "Wandrauheit",
+    [TXT_CAVE_FLIGHT_SENSITIVITY] = "Flugempfindlichkeit",
+    [TXT_CAVE_FLIGHT_INERTIA] = "Flugträgheit",
 
     [TXT_PRESET_RANDOM] = "Zusätzliche Zufallszeit (s)",
     [TXT_PRESET_HARD] = "Harte Beat-Wechsel",

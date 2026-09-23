@@ -3,34 +3,37 @@
 #include "cave_style.h"
 #include "cave_textures.h"
 static CaveScene *cave_scene;
+static CaveClip cave_frame_clip;
 #include "cave_ship_data.h"
 int md_cave_control(int toggle,int x,int y,int throttle,int roll) {
     cave_flight_input(cave_scene,toggle,x,y,throttle,roll);
     return cave_scene && cave_scene->flight;
 }
 static void cave_draw_ship(int width,int height) {
+    (void)width;(void)height;
     if(!cave_scene || !cave_scene->flight)return;
-    /* Draw the third-person ship in camera space, inside the renderer's
+    /* Draw the third-person ship in world space, inside the renderer's
      * reserved 64 KiB tail. No buffers, allocation or draw calls when off. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
-    MdVertex *ship=sceGuGetMemory(sizeof(cave_ship_mesh));
-    float roll=-cave_scene->flight_axis_x*.35f-cave_scene->flight_roll_input*.2f,pitch=cave_scene->flight_axis_y*.18f;
-    float cr=cosf(roll),sr=sinf(roll),cp=cosf(pitch),sp=sinf(pitch);
-    for(int i=0;i<CAVE_SHIP_VERTICES;i++) {
-        ship[i]=cave_ship_mesh[i];
-        float x=ship[i].x,y=ship[i].y*cp-ship[i].z*sp,z=ship[i].y*sp+ship[i].z*cp;
-        ship[i].x=x*cr-y*sr;ship[i].y=x*sr+y*cr-.4f;ship[i].z=z-2.4f;
+    enum {SHIP_CAPACITY=61440/sizeof(MdVertex)};
+    MdVertex *ship=sceGuGetMemory(SHIP_CAPACITY*sizeof(MdVertex));
+    float center[3],right[3],up[3],forward[3];
+    cave_ship_pose(cave_scene,center,right,up,forward);
+    int used=0;
+    for(int i=0;i<CAVE_SHIP_VERTICES;i+=3) {
+        MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
+        for(int j=0;j<3;j++) {
+            tri[j]=cave_ship_mesh[i+j];float p[3];
+            for(int k=0;k<3;k++)p[k]=center[k]+CAVE_SHIP_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
+            tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];
+        }
+        int count=cave_clip_triangle(&cave_frame_clip,tri,clipped);
+        if(used+count>SHIP_CAPACITY)break;
+        memcpy(ship+used,clipped,count*sizeof(MdVertex));used+=count;
     }
-    ScePspFMatrix4 identity={.x={1,0,0,0},.y={0,1,0,0},.z={0,0,1,0},.w={0,0,0,1}};
-    /* Easter-egg overlay stays readable as the original tunnel FOV breathes.
-     * Its model is in camera units, not source tunnel coordinates. */
-    ScePspFMatrix4 projection={.x={1.25f*height/width,0,0,0},.y={0,1.25f,0,0},
-        .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
-    sceGuSetMatrix(GU_PROJECTION,&projection);
-    sceGuSetMatrix(GU_VIEW,&identity);
     sceGuDisable(GU_TEXTURE_2D);sceGuDisable(GU_BLEND);sceGuDisable(GU_FOG);
     sceGuDepthMask(0);
-    sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,CAVE_SHIP_VERTICES,NULL,ship);
+    if(used)sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,used,NULL,ship);
 }
 static uint32_t cave_pixels[7][CAVE_TEXTURE*CAVE_TEXTURE] __attribute__((aligned(64)));
 static int cave_texture_ready;
@@ -141,6 +144,7 @@ static void cave_draw(int width,int height) {
     sceGuSetMatrix(GU_PROJECTION,&projection);sceGuSetMatrix(GU_VIEW,&view);sceGuSetMatrix(GU_MODEL,&identity);
     int first=(int)floorf(cave_scene->motion.travel)-CAVE_HISTORY;
     CaveClip clip;cave_clip_init(&clip,view_values,projection.x.x,projection.y.y);
+    cave_frame_clip=clip;
     unsigned budget=0;
     for(int i=0;i<CAVE_SLICES;i++) {
         CaveSlice *slice=&cave_scene->slices[i];

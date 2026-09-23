@@ -4,7 +4,7 @@
 #include <stdio.h>
 static int music_preset_seconds=60;
 #include "visual_options.h"
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65};
 int main(void) {
     assert(!visual_option_parse("unknown=1"));
     assert(visual_option_parse("cave_amplitude=999999999999999999999999"));

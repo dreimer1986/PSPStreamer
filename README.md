@@ -936,6 +936,8 @@ These settings are saved in the existing `pspstreamer.cfg`:
 | `cave_speed` | `100` | Travel speed, 10–200 percent; affects automatic and Easter-egg flight |
 | `cave_invert_y` | `0` | Invert the flight stick's vertical axis, 0/1; when enabled, pushing up dives |
 | `cave_noise` | `0` | Original wall-noise amount, 0–16; 0 disables it, matching the desktop default |
+| `cave_flight_sensitivity` | `50` | Flight steering strength, 10–100; lower gives gentler steering and rolling |
+| `cave_flight_inertia` | `65` | Flight response smoothing, 0–100; higher responds and settles more slowly |
 | `preset_random_seconds` | `10` | Additional random automatic-switch delay, 0–120 seconds |
 | `preset_hard_cuts` | `0` | Enable music-triggered immediate preset switches, 0/1 |
 | `preset_hard_threshold` | `250` | Hard-cut sensitivity threshold, 125–400 percent |
@@ -946,7 +948,9 @@ preset list. Automatic mode must be enabled for timed or hard-cut switches.
 Existing interval/fade controls remain; ordinary transitions still use a snapshot
 fade, not two simultaneously running presets. No new resolution options were added.
 
-Use Up/Down to reach the second page of Cave settings (speed and inverted flight).
+Use Up/Down to reach the second page of Cave settings (speed, inverted flight,
+flight sensitivity and inertia). The flight defaults are deliberately gentle;
+sensitivity changes steering strength, whereas inertia changes response time.
 That page also offers wall noise: higher values add geometric wall detail and
 cost more computation. This is separate from textures and from animated path jitter.
 Try 30–50 percent for a calmer tunnel ride; the default 100 keeps the existing
@@ -1006,10 +1010,14 @@ setting also applies, but automatic beat-driven acceleration does not.
 
 The camera follows the player across the generated cross section, without pulling
 back to the automatic centerline. Connected, forward-going branches can be entered;
-this does not create new branches or permit backward flight. Bounded swept density
-checks slide against walls or stop forward progress at a blocked passage. Steer
-away or leave flight to return to the automatic route. These checks approximate
-the wall field, not exact ship/triangle collisions; there is no damage or combat.
+this does not create new branches or permit backward flight. A swept safety sphere
+encloses the visible hull and wings and checks the generated wall triangles,
+including edges and corners. The ship now uses the tunnel's world coordinates,
+projection and depth buffer rather than a separate camera-space projection.
+Contacts remove the inward movement component, allowing tangential sliding;
+genuinely blocked passages can still stop forward progress. The following camera
+shortens its chase distance before entering walls. This is a conservative sphere,
+not an exact hull collision model; there is no damage or combat.
 Triangle still switches fullscreen and Start stops playback.
 
 Flight starts disabled, is not saved, and is reset when the renderer is closed

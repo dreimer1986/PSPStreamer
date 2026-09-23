@@ -47,17 +47,32 @@ The optional, deliberately non-original flight Easter egg is off by default.
 L+R toggles it, analog steers the forward heading, L/R roll, and Up/Down change
 speed instead of volume while flying. The player retains an independent XY
 position in the lofted cross sections; there is no automatic pull to contributor
-zero. The whole meshed cross section is available, with a 0.3-unit boundary
-margin. Steering is bounded to forward headings (yaw +/-0.85 radians, pitch
-+/-0.7), smoothed over time; releasing the stick aligns with the local forward
+zero. The whole meshed cross section is available, with a 0.5-unit boundary
+margin. At sensitivity 100, steering is bounded to forward headings (yaw +/-0.85
+radians, pitch +/-0.7); default sensitivity 50 halves these angles and roll speed.
+Inertia 0–100 sets the exponential response time from 0.06 to 0.96 seconds
+(default 65: 0.645 seconds). Releasing the stick aligns with the local forward
 axis without recentering position. Roll rotates the steering axes. Speed is
 20–200 percent of the flight base rate, multiplied by the existing speed setting;
 automatic beat acceleration and automatic camera roll do not control the player.
 
-Swept density checks at intervals of at most 0.08 loft units (bounded to 40 per
-update) prevent crossing solid walls. Axis sliding and forward-only sliding are
-tried first, then forward movement stops; lateral steering can free the player.
-This is a point/field safety model, not a hull/triangle collision simulation.
+The visible ship and collision sphere share their world-space center, two
+profiles ahead of the generation cursor. The model uses scale 0.45; a radius-0.40
+sphere encloses every vertex with at least 0.08 margin (host assertion). Both ship
+and tunnel use the same projection/depth buffer, replacing the separate overlay
+projection that previously disagreed with collision position.
+
+Forward movement is subdivided into at most 40 small steps. Sphere/triangle
+closest-point checks include face interiors, edges and corners; cached per-slab
+world bounds reject distant geometry before per-triangle work. A field check also
+rejects the solid side. Contact normals are mapped back through the loft Jacobian;
+the inward component is removed, with up to four bounded slide attempts. Reverse
+progress is prohibited. A fully blocked passage may still stop the player.
+This is a conservative enclosing sphere, not an exact ship-hull collision model.
+On entry only, a bounded nearby search prefers a hull-safe starting point over
+the old point-safe automatic camera location. The chase camera checks its arm
+against wall geometry and shortens it if necessary. Ship triangles use the same
+CPU clipping planes as the tunnel, within the reserved 64 KiB GU tail.
 Only connected forward branches are reachable: there is no backward world cache
 or invented branch generation. Disabling flight returns to the original route.
 Position remains in loft coordinates, so world-origin rebasing needs no extra

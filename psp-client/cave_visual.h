@@ -9,7 +9,7 @@ enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HIS
        CAVE_EDGE_SLOTS=6*(CAVE_GRID+1)*(CAVE_GRID+1),
        CAVE_HAIR_VERTICES=2*CAVE_EDGE_SLOTS };
 _Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
-typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style,speed,invert_y,noise;} CaveOptions;
+typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style,speed,invert_y,noise,flight_sensitivity,flight_inertia;} CaveOptions;
 extern CaveOptions cave_options;
 typedef struct {float travel,bass,phase,pulse,bank,roll,spin,forward;unsigned long long previous,last_beat;int direction;} CaveMotion;
 typedef struct {
@@ -22,7 +22,9 @@ typedef struct {
     MdVertex secondary[CAVE_MAX_VERTICES];
     MdVertex wire[CAVE_MAX_VERTICES];
     MdVertex hair[CAVE_HAIR_VERTICES];
-    int index,count,hair_count,texture_a,texture_b,padding[19]; /* 64-byte DMA alignment. */
+    int index,count,hair_count,texture_a,texture_b;
+    float minimum[3],maximum[3];
+    int padding[13]; /* 64-byte DMA alignment. */
 } CaveSlice __attribute__((aligned(64)));
 typedef struct {
     CaveSlice slices[CAVE_SLICES];
@@ -53,7 +55,13 @@ typedef struct {
     int flight,flight_throttle,flight_roll_input,flight_initialized;
     float flight_x,flight_y,flight_axis_x,flight_axis_y;
     float flight_yaw,flight_pitch,flight_roll,flight_speed;
+    float flight_roll_velocity;
 } CaveScene;
+/* Shared world-space ship pose. Sphere includes every scaled mesh vertex. */
+#define CAVE_SHIP_SCALE .45f
+#define CAVE_SHIP_RADIUS .40f
+void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]);
+int cave_ship_contact(const CaveScene *s,float x,float y,float z,float normal[3]);
 void cave_flight_input(CaveScene *scene,int toggle,int analog_x,int analog_y,int throttle,int roll);
 void cave_world_point(const CaveScene *scene,float x,float y,float z,float out[3]);
 void cave_material_sample(const CaveScene *scene,int profile,float x,float y,float fraction,float rgba[4],float normal[3]);
