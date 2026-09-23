@@ -77,8 +77,8 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_text="Spektrum / MilkDrop / Höhle.",
         .step2_title="DREIECK: Vollbild ein / aus",
         .step2_text="X + DREIECK geht weiterhin auch.",
-        .step3_title="O: Liste der MilkDrop-Presets",
-        .step3_text="Nicht in Höhle; Musik läuft weiter."
+        .step3_title="O: Visualisierungsoptionen",
+        .step3_text="Höhle: Effekte. MilkDrop: Presets."
     },
     [HELP_PAGE_PRESETS]={
         .title="In der Preset-Auswahl",
@@ -87,7 +87,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="QUADRAT: automatischer Wechsel",
         .step2_text="Aus, Reihe, Zufall oder bewertet.",
         .step3_title="DREIECK: Wechselintervall ändern",
-        .step3_text="30, 60 oder 120 Sekunden."
+        .step3_text="SELECT: weitere Wechseloptionen."
     },
     [HELP_PAGE_DOWNLOAD]={
         .title="Direkt auf die PSP herunterladen",

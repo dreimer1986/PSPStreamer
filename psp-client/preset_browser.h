@@ -49,6 +49,9 @@ static int preset_choose(char selection[256],int music) {
         sceCtrlPeekBufferPositive(&pad,1);
         unsigned int buttons=pad.Buttons;
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if(music && (buttons&PSP_CTRL_SELECT) && !(old&PSP_CTRL_SELECT)) {
+            music_visual_options(0);dirty=1;sceCtrlPeekBufferPositive(&pad,1);old=pad.Buttons;continue;
+        }
         if(music && (buttons&PSP_CTRL_SQUARE) && !(old&PSP_CTRL_SQUARE)) {music_preset_auto=(music_preset_auto+1)%4;dirty=1;}
         if(music && (buttons&PSP_CTRL_TRIANGLE) && !(old&PSP_CTRL_TRIANGLE)) {music_preset_seconds=music_preset_seconds==30?60:music_preset_seconds==60?120:30;dirty=1;}
         if((buttons&PSP_CTRL_CIRCLE) && !(old&PSP_CTRL_CIRCLE)) break;

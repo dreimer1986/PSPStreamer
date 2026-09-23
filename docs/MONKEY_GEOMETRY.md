@@ -7,12 +7,88 @@ No original executable instructions, textures or random assets are distributed.
 The classic mathematical Marching Cubes connectivity is now included, verified
 against the 256 cases used by the inspected DLL.
 
-## Current comparison audit (2026-09-23)
+## Current reconstruction batch (2026-09-23)
+
+This batch replaces the old constant material with per-contributor RGBA fields
+weighted by the recovered radial kernel. It uses the original material-normal
+formula, including its unusual longitudinal term rather than a noise gradient.
+Spatial RGB/alpha waves, brightness lifts and normal-effect decisions feed the
+two directional lights. Shared MC edges use canonical IDs, so duplicates do not
+consume extra random samples or bias the mean used by Hair.
+
+The curvature controller uses the original five power envelopes and retained
+direction state. Neighboring profiles are joined with linearly lofted rotated
+cross sections, and both camera and mesh follow the accumulated transforms.
+An isolated x86 execution of the local DLL supplied material-normal and retained
+quaternion fixtures. The original resets that state only at its initial frame;
+the fixture must not repeat that initialization for every sample.
+
+Nine render styles now include flat color, displaced wireframe, black material,
+normal inversions and Hair. Wire/Hair factor colors are animated at render time,
+as in `0x10008080..0x100083b3`; transparent Hair uses source alpha 0x58 or 0x80.
+The old invented texture scroll/detail blend was removed. Two replacement
+texture banks use separate UV coordinates, standard alpha interpolation and
+profile-length transition envelopes. Single-texture mode is supported.
+
+Forward movement uses the recovered frame-rate/impulse law with the selected
+neutral movement/projection profile, instead of the previous direct bass-speed
+multiplier. Banking includes its distance-dependent retention and asymmetric
+look-ahead samples. Prepared-geometry bounds still take precedence over speed:
+no more than one new slab is generated per visual update. Global coordinates
+are periodically rebased together to retain float precision during long runs.
+Nearly parallel clipping intersections have their small residual projected back
+to the clipping plane instead of leaking outside it.
+
+Circle now opens the Cave effect controls. MilkDrop's preset browser has Select
+for random delay and hard-cut controls; normal fades remain snapshot fades.
+See the README for all persisted keys and defaults.
+
+The optional, deliberately non-original flight Easter egg is off by default.
+L+R toggles it, analog steers, and the two shoulders individually control speed.
+Its ship is independently licensed CC BY 4.0 and baked into the application.
+Disabling it restores the ordinary view at the current tunnel position; it does
+not restart music or regenerate the tunnel. No game/enemy mechanics were added.
+
+### Limits: full original parity is not claimed
+
+- Procedural replacement textures, deterministic PSP RNG and initialization
+  differ from the original assets/shared random call sequence.
+- The grid, contributor selection, noise scale, 16-profile forward horizon,
+  projection and per-frame work budget remain PSP-specific.
+- Only the selected neutral movement/FOV profile is reconstructed; not every
+  desktop configuration/scene transition branch is implemented.
+- Field lighting is cached by profile, not recomputed over the whole tunnel
+  every display frame. Existing cached material geometry updates progressively.
+- Beat *response* formulas are recovered, but detection uses PSP PCM bands,
+  not the original Winamp analysis callback, as explicitly requested.
+- Float arithmetic and two GE passes are not a pixel-identical Direct3D renderer.
+
+These are open fidelity differences, not hidden by the flight mode. Hardware
+validation of this combined material/settings/flight batch is still required.
+
+### Validation of this batch
+
+The PSP build precedes tests. Only `tests.test_cave` and
+`tests.test_visual_options` were run, not the complete MilkDrop collection.
+The 1,800-tick geometry run builds 1,686 slabs (peak 630 vertices/slab), checks
+210,047 visible clipped triangles, and passes reference-normal/quaternion,
+path, topology, view-matrix and cache tests under undefined-behavior checking.
+Scene allocation is 3,984,320 bytes. LCD/TV/window/fullscreen GU tests include
+all styles and flight toggling; peak command-list use is 322,272 bytes in those
+fixtures, below the existing list budget. These are not PSP performance numbers.
+
+The optional `tools/check_monkey_reference.py` regenerates the retained
+quaternion fixture from the user's DLL using Unicorn, with a SHA-256 guard and
+bounded isolated execution. Neither the DLL nor Unicorn is needed for building
+or running PSPStreamer. Ship conversion is reproducible using the command in
+`psp-client/assets/cave_ship.CREDITS.md`.
+
+## Previous hardware-confirmed comparison (before this batch)
 
 The user confirmed the CPU clipping fix: edge holes are gone, and both animated
 texture layers work. The subsequent topology, lighting and camera-response
 build (`62bd1d8`) was also confirmed working perfectly on hardware.
-The current PSP feature batch is complete and tested.
+That earlier PSP feature batch was complete and tested.
 **It is still not a frame-identical Monkey port.**
 
 | Area | Current correspondence and remaining differences |
@@ -74,8 +150,8 @@ visible clipped triangles in sampled frames. LCD/TV, both window sizes,
 two-pass lifetime/depth behavior and teardown pass; peak fixture scratch is
 28,224 bytes. These are host results, not PSP FPS measurements.
 
-The sections below preserve the earlier reconstruction history; where an older
-stage differs, this current audit is authoritative.
+The sections below preserve the earlier reconstruction history. The current
+batch summary above supersedes implementation details and memory counts here.
 
 ## Observations from the DLL
 

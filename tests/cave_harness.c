@@ -6,7 +6,30 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 int main(void) {
+    /* Quaternion fixtures from the original 0x10005d87..0x1000617a block,
+     * including retained direction state, not an independent sine guess. */
+    CaveBendController bend={0};
+    const float bend_time[5]={0,1,2,3,100};
+    const float source_q[5][4]={{0,-.000203953314f,0,1},
+        {-.000108400593f,-.000426777522f,0,.999999881f},
+        {-.000125311970f,-.000394137925f,0,.999999940f},
+        {-.000130937959f,-.000365165120f,0,.999999940f},
+        {.000078666082f,-.000120637247f,0,1}};
+    for(int i=0;i<5;i++) {
+        float r[9];cave_bend_rotation(&bend,i?313.45f:0,bend_time[i],r);
+        float x=-source_q[i][0],y=-source_q[i][1],w=source_q[i][3];
+        float expected[9]={1-2*y*y,2*x*y,2*y*w,2*x*y,1-2*x*x,-2*x*w,-2*y*w,2*x*w,1-2*(x*x+y*y)};
+        for(int k=0;k<9;k++)assert(fabsf(r[k]-expected[k])<.000002f);
+    }
+    CaveMotion motion={.direction=1};
+    assert(cave_beat_response(&motion,8,0,.1f,1)==1);
+    assert(cave_beat_response(&motion,8,9,.1f,1)==0 && fabsf(motion.spin+.056f)<1e-6f);
+    cave_beat_response(&motion,8,60,.1f,1);assert(fabsf(motion.spin-.056f)<1e-6f);
+    cave_beat_response(&motion,8,61,.1f,1);assert(motion.forward==2);
+    cave_beat_response(&motion,8,0,1.f/30,0);
+    assert(fabsf(motion.forward-2*.988f)<1e-6f && fabsf(motion.spin-.056f*.989f)<1e-6f);
     float identity[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
     CaveClip clip;cave_clip_init(&clip,identity,1,1);
     MdVertex triangle[3]={{0,0,0xff000000,-.5f,-.5f,-1},
@@ -72,6 +95,25 @@ int main(void) {
         }
         assert((cave_shade(light,light+1,.4f,1,2,3)>>24)==255);
     }
+    CaveScene *fixture=cave_create();assert(fixture);
+    for(int f=0;f<2;f++) {
+        memset(&fixture->paths.frames[f],0,sizeof(CavePathFrame));fixture->paths.frames[f].index=f;
+        for(int i=0;i<CAVE_PATHS;i++)fixture->paths.frames[f].radius[i]=.05f;
+        fixture->paths.frames[f].x[0]=f?.5f:.49f;fixture->paths.frames[f].y[0]=f?.5f:.52f;
+        fixture->paths.frames[f].radius[0]=.3f;
+    }
+    float material[4]={50,100,200,1};memcpy(fixture->material[0],material,sizeof(material));
+    /* Outputs captured from isolated original routine 0x10002300 in Unicorn,
+     * source Z reflected to our forward fraction. No plugin code is shipped. */
+    const float source_normals[3][3]={{.706753492f,.706753492f,.031607587f},
+        {.769213438f,.638592601f,.022587663f},{.894427001f,.447213948f,0}};
+    const float fraction[3]={1,.7f,0};
+    for(int i=0;i<3;i++) {
+        float rgba[4],normal[3];cave_material_sample(fixture,0,.55f,.55f,fraction[i],rgba,normal);
+        for(int k=0;k<4;k++)assert(fabsf(rgba[k]-material[k])<.00003f);
+        for(int k=0;k<3;k++)assert(fabsf(normal[k]-source_normals[i][k])<.000003f);
+    }
+    cave_destroy(fixture);
     CaveScene *s=cave_create();assert(s && !((uintptr_t)s&63));
     while(s->paths.next<15)cave_paths_step(&s->paths);
     CavePaths paths;cave_paths_init(&paths,12345);
@@ -161,7 +203,8 @@ int main(void) {
         float old_bank=s->motion.bank,old_bass=s->motion.bass;
         CaveSlice *slice=cave_prepare(s,bands,90,1000000ULL+tick*100000ULL);
         assert(isfinite(s->motion.bank) && fabsf(s->motion.bank)<1.571f);
-        assert(fabsf(s->motion.bank-old_bank)<=3.142f*(1-powf(.86f,1.4f))+.00001f);
+        float bank_retention=powf(.43f+.5f*powf(.86f,cave_forward_step(.1f,s->motion.forward)),1.4f);
+        assert(fabsf(s->motion.bank-old_bank)<=3.142f*(1-bank_retention)+.00001f);
         if(tick)assert(fabsf(s->motion.bass-(.9f+(old_bass-.9f)*expf(-.2f)))<1e-6f);
         assert(s->built-before<=1);
         assert(s->sampled_planes==s->built+1);
@@ -194,8 +237,11 @@ int main(void) {
                     int count=cave_clip_triangle(&clip,v,clipped);
                     assert(count>=0 && count<=CAVE_CLIP_VERTICES && count%3==0);
                     if(count)clipped_visible++;
-                    for(int j=0;j<count;j++)for(int p=0;p<CAVE_CLIP_PLANES;p++)
-                        assert(cave_clip_distance(clip.plane[p],clipped+j)>-.0002f);
+                    for(int j=0;j<count;j++)for(int p=0;p<CAVE_CLIP_PLANES;p++) {
+                        float distance=cave_clip_distance(clip.plane[p],clipped+j);
+                        if(distance<=-.0002f)fprintf(stderr,"clip failure tick=%d travel=%g plane=%d d=%g xyz=%g,%g,%g\n",tick,s->motion.travel,p,distance,clipped[j].x,clipped[j].y,clipped[j].z);
+                        assert(distance>-.0002f);
+                    }
                 }
             }
         }
@@ -203,9 +249,25 @@ int main(void) {
             float dot=0;for(int k=0;k<3;k++)dot+=view[k*4+i]*view[k*4+j];
             assert(fabsf(dot-(i==j?1:0))<1e-5f);
         }
-        for(int i=0;i<3;i++)assert(fabsf(view[i]*x+view[4+i]*y-view[8+i]*s->motion.travel+view[12+i])<.0001f);
+        float eye[3];cave_world_point(s,x,y,s->motion.travel,eye);
+        for(int i=0;i<3;i++)assert(fabsf(view[i]*eye[0]+view[4+i]*eye[1]+view[8+i]*eye[2]+view[12+i])<.0001f);
     }
     assert(s->motion.travel>500 && s->ready==CAVE_SLICES);
+    /* Inactive controls do not change ordinary motion or view; activating
+     * adds a bounded camera offset, and disabling restores the same view. */
+    float normal_view[16],restored[16];cave_view(s,s->motion.travel,normal_view);
+    unsigned rng=s->random;float travel=s->motion.travel;
+    cave_flight_input(s,0,255,0,1);assert(!s->flight && s->flight_x==0);
+    cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
+    cave_flight_input(s,1,255,0,1);assert(s->flight && s->flight_throttle==1);
+    s->flight_x=.2f;s->flight_y=.1f;cave_view(s,s->motion.travel,restored);
+    assert(memcmp(normal_view,restored,sizeof(restored)));
+    cave_flight_input(s,1,128,128,0);assert(!s->flight && s->flight_x==0 && s->flight_y==0);
+    cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
+    assert(s->random==rng && s->motion.travel==travel);
+    assert((cave_effect_color(0,0,0,1,1)>>24)==0x58);
+    assert((cave_effect_color(0,0,1,1,1)>>24)==0x80);
+    assert((cave_effect_color(0,0,0,1,0)>>24)==0xff);
     assert(clipped_visible>0);printf("Visible clipped triangles: %d\n",clipped_visible);
     printf("Cave: source oscillator fixture, 4000 path steps, 2100 gradient comparisons, 1024 cube cases, 1800 ticks; %d slabs, peak %d vertices/slab, allocation %zu bytes\n",s->built,peak,sizeof(*s));
     cave_destroy(s);

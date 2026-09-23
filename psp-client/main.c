@@ -353,6 +353,7 @@ static int selected_audio_quality = 2;
 static int selected_video_fps;
 static char music_preset_file[256]="active.milk";
 static int music_preset_auto=0,music_preset_seconds=60,music_preset_fade_ms=1500;
+#include "visual_options.h"
 #include "preset_catalog.h"
 #include "preset_sequence.h"
 static int audio_shuffle;
@@ -445,6 +446,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line,"preset_auto=",12)) music_preset_auto=atoi(line+12);
             else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
             else if (!strncmp(line,"preset_fade_ms=",15)) music_preset_fade_ms=atoi(line+15);
+            else if (visual_option_parse(line)) {}
             else if (!strncmp(line,"milkdrop_high_resolution=",25)) md_high_resolution=atoi(line+25)!=0;
             else if (!strncmp(line, "video_fps=", 10)) selected_video_fps = !strcmp(line + 10, "24000/1001");
             else if (!strncmp(line, "play_mode=", 10)) download_before_play = !strcmp(line + 10, "download");
@@ -491,6 +493,10 @@ static int save_playback_settings(void) {
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_cpu_mhz=%d\nidle_cpu_mhz=%d\n",milkdrop_cpu_mhz,idle_cpu_mhz);
+    for(int i=0;i<VISUAL_OPTION_COUNT;i++) {
+        if(length<0 || length>=(int)sizeof(data))return -1;
+        length+=snprintf(data+length,sizeof(data)-length,"%s=%d\n",visual_options[i].key,*visual_options[i].value);
+    }
     if(length<0 || length>=(int)sizeof(data))return -1;
     file = sceIoOpen(SETTINGS_PATH ".tmp", PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0600);
     if(file<0)return file;
@@ -1740,6 +1746,7 @@ static void plex_report_stop(int sequence) {
 #include "milkdrop_warp.h"
 #include "milkdrop_preset.h"
 #include "music_preset_ui.h"
+#include "visual_options_ui.h"
 #include "preset_browser.h"
 
 /* Music-only session preferences, not GU/decoder state. Keep them across
@@ -1811,7 +1818,8 @@ static int play_audio_once(const char *media_id, const char *title) {
     unsigned long long next_volume_repeat_tick = 0;
     PresetSequence *sequence=music_preset_auto?malloc(sizeof(*sequence)):NULL;
     if(sequence) preset_sequence_load_selected(sequence,"presets",music_preset_file,(unsigned int)sceKernelGetSystemTimeWide());
-    unsigned long long next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+    unsigned long long next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();
+    PresetCuts preset_cuts={0};
     md_preset_duration=(float)music_preset_seconds;
     strncpy(audio_media_id, media_id, sizeof(audio_media_id) - 1);
     audio_media_id[sizeof(audio_media_id) - 1] = '\0';
@@ -1923,11 +1931,16 @@ static int play_audio_once(const char *media_id, const char *title) {
         if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
         if(live)music_caption(radio_station,radio_song,fullscreen);
         else if(current_media_title[0])music_caption(current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title,fullscreen);
-        if(!audio_start) next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+        if(!audio_start) {next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();memset(&preset_cuts,0,sizeof(preset_cuts));}
+        int hard_cut=0;
+        if(audio_start && visual_preset==4 && music_preset_auto && preset_hard_cuts) {
+            unsigned char bands[12];for(int i=0;i<12;i++)bands[i]=spectrum_levels[i];
+            hard_cut=preset_cut_due(&preset_cuts,bands,sceKernelGetSystemTimeWide());
+        }
         if(sequence && music_preset_auto && visual_preset==4 && (music_visual_active || preset_result!=MD_FILE_OK) && audio_start &&
-           (unsigned long long)sceKernelGetSystemTimeWide()>=next_preset_tick) {
+           (hard_cut || (unsigned long long)sceKernelGetSystemTimeWide()>=next_preset_tick)) {
             int index=preset_sequence_next(sequence,music_preset_file,music_preset_auto);
-            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();
             if(index>=0) {
                 char path[272];MdFileError error;
                 snprintf(path,sizeof(path),"presets/%s",sequence->catalog.names[index]);
@@ -1935,7 +1948,7 @@ static int play_audio_once(const char *media_id, const char *title) {
                 int result=md_load_preset(path,&md_custom_preset,&error);
                 if(result==MD_FILE_OK) {
                     strcpy(music_preset_file,sequence->catalog.names[index]);
-                    md_preset_duration=(float)music_preset_seconds;md_begin_preset(music_preset_fade_ms);
+                    md_preset_duration=(float)music_preset_seconds;md_begin_preset(hard_cut?0:music_preset_fade_ms);
                     preset_result=MD_FILE_OK;
                     if(!music_visual_active) music_visual_active=md_start();
                 } else {sequence->rating[index]=-1;next_preset_tick=sceKernelGetSystemTimeWide()+250000;}
@@ -1974,9 +1987,11 @@ static int play_audio_once(const char *media_id, const char *title) {
             }
         }
         sceCtrlPeekBufferPositive(&pad, 1);
-        if (visual_preset != 6 && (pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
+        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
             md_stop(); music_visual_active=0;
-            int preset_changed=music_choose_preset();
+            int preset_changed=0;
+            if(visual_preset==6)music_visual_options(1);
+            else preset_changed=music_choose_preset();
             if(preset_changed) {
                 preset_result=music_load_selected(&preset_error);
                 visual_preset=4; music_saved_visual_preset=4;
@@ -1987,7 +2002,8 @@ static int play_audio_once(const char *media_id, const char *title) {
                 if(!sequence)sequence=malloc(sizeof(*sequence));
                 if(sequence) {video_watch_ping("preset playlist load");preset_sequence_load_selected(sequence,"presets",music_preset_file,(unsigned int)sceKernelGetSystemTimeWide());}
             }
-            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();
+            memset(&preset_cuts,0,sizeof(preset_cuts));
             save_playback_settings();
             if(visual_preset && (visual_preset!=4 || preset_result==MD_FILE_OK) && md_start()) music_visual_active=1;
             preset_notice_tick=~0ULL;
@@ -1995,6 +2011,13 @@ static int play_audio_once(const char *media_id, const char *title) {
             lcd_music_reset(); tv_music_reset(); spectrum_fullscreen_reset();
             sceCtrlPeekBufferPositive(&pad,1); old=pad.Buttons;
             continue;
+        }
+        if(visual_preset==6 && music_visual_active) {
+            unsigned int shoulders=PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER;
+            int both=(pad.Buttons&shoulders)==shoulders;
+            int toggle=both && (old&shoulders)!=shoulders && !(pad.Buttons&PSP_CTRL_SELECT);
+            int throttle=both?0:(pad.Buttons&PSP_CTRL_RTRIGGER)?1:(pad.Buttons&PSP_CTRL_LTRIGGER)?-1:0;
+            md_cave_control(toggle,pad.Lx,pad.Ly,throttle);
         }
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -2032,7 +2055,7 @@ static int play_audio_once(const char *media_id, const char *title) {
                 } else music_visual_active = 0; /* Show the existing preset error. */
             }
             music_saved_visual_preset = visual_preset;
-            next_preset_tick=sceKernelGetSystemTimeWide()+music_preset_seconds*1000000ULL;
+            next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();
             if(visual_preset==4 && music_visual_active) md_begin_preset(0);
             preset_notice_tick = ~0ULL;
             lcd_music_reset(); tv_music_reset();
@@ -3171,6 +3194,7 @@ static int playback_options(int audio_only) {
 #include "offline_ui.h"
 
 int main(void) {
+    sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
     SceCtrlData pad;
     unsigned int old_buttons = 0;
     unsigned int browser_deferred_buttons=0;

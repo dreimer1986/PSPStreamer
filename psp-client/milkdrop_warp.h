@@ -26,6 +26,7 @@ extern int md_high_resolution;
 void md_begin_preset(unsigned int fade_ms);
 void md_stop(void);
 void md_set_tv_title_bottom(int bottom);
+void md_cave_control(int toggle,int analog_x,int analog_y,int throttle);
 void md_profile_reset(int enabled);
 void md_profile_select(const char *name,int tv,int fullscreen,int preset);
 int md_profile_report(int index,char *text,int size);

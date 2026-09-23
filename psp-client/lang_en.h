@@ -106,7 +106,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_PRESET_CONTROLS] = "UP/DN SELECT  L/R PAGE  X APPLY  O BACK",
     [TXT_PRESET_LIMIT] = "128 files max",
     [TXT_PRESET_AUTO_STATUS] = "Auto: %s | %ds",
-    [TXT_PRESET_AUTO_HELP] = "SQUARE: MODE   TRIANGLE: INTERVAL",
+    [TXT_PRESET_AUTO_HELP] = "[]: MODE  /\\: TIME  SELECT: OPTIONS",
     [TXT_PRESET_AUTO_OFF] = "Off",
     [TXT_PRESET_AUTO_ORDER] = "Order",
     [TXT_PRESET_AUTO_RANDOM] = "Random",
@@ -203,6 +203,23 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_VIDEO_ENDED] = "Video ended: %d frames",
     [TXT_NEXT_EPISODE] = "Next episode: %.58s",
     [TXT_NEXT_TRACK] = "Next track: %.58s",
+
+    [TXT_CAVE_FOG] = "Fog",
+    [TXT_CAVE_TEXTURE] = "Multitexture",
+    [TXT_CAVE_HAIR] = "Hair effect",
+    [TXT_CAVE_ALPHA] = "Transparent hair",
+    [TXT_CAVE_BEAT] = "Beat response",
+    [TXT_CAVE_SENSITIVITY] = "Beat sensitivity (0-16)",
+    [TXT_CAVE_AMPLITUDE] = "Beat strength (0-16)",
+    [TXT_CAVE_STYLE] = "Style (-1: automatic)",
+
+    [TXT_PRESET_RANDOM] = "Extra random time (s)",
+    [TXT_PRESET_HARD] = "Beat hard cuts",
+    [TXT_PRESET_THRESHOLD] = "Hard-cut threshold (%)",
+    [TXT_PRESET_HALFLIFE] = "Hard-cut recovery (s)",
+
+    [TXT_VISUAL_OPTIONS] = "Visualization options",
+    [TXT_VISUAL_OPTIONS_HELP] = "UP/DOWN: row  LEFT/RIGHT: change  O: save",
 
     [TXT_RADIO] = "Internet radio",
     [TXT_RADIO_PAUSED] = "Radio paused - SELECT: live START: stop",

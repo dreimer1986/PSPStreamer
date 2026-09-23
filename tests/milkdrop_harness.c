@@ -15,10 +15,9 @@ typedef struct {float x,y,z,w;} ScePspFVector4;
 typedef struct {ScePspFVector4 x,y,z,w;} ScePspFMatrix4;
 enum {GU_TRANSFORM_3D=0,GU_PROJECTION=200,GU_VIEW,GU_MODEL,GU_CLIP_PLANES,GU_FOG,GU_COLOR_BUFFER_BIT};
 enum {GU_GEQUAL=300,GU_DEPTH_BUFFER_BIT=512};
-static int cave_test,cave_draws,matrix_calls,clear_mode,clear_count;
+static int cave_test,cave_draws,matrix_calls,clear_mode,clear_count,cave_hairs,cave_wires,cave_layers,cave_test_style;
 static float cave_test_view[16],cave_px,cave_py;
-static int cave_depth_mask,cave_detail_pending,cave_previous_count;
-static const void *cave_previous_vertices;
+static int cave_depth_mask,cave_detail_pending;
 static void sceGuSendCommandi(int command,int argument) {
     assert(command==0xd3 && cave_test);
     if(argument)assert(!clear_mode && argument==(((GU_COLOR_BUFFER_BIT|GU_DEPTH_BUFFER_BIT)<<8)|1));
@@ -226,16 +225,17 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             const uint16_t *color=(void *)(uintptr_t)(0x44000000+target_offset);
             const uint16_t *depth=color+512*256;
             assert(color[511]==0 && color[512*256-1]==0 && depth[511]==0 && depth[512*256-1]==0);
-            assert(!indices && type==GU_TRIANGLES && count>0 && count<=CAVE_MAX_VERTICES && count%3==0);
+            assert(!indices && (type==GU_TRIANGLES || type==GU_LINES) && count>0 && count<=CAVE_MAX_VERTICES*2);
+            assert(count%(type==GU_TRIANGLES?3:2)==0);
             assert(!((uintptr_t)data&3)); /* Cached triangle runs need float alignment. */
             CaveClip clip;cave_clip_init(&clip,cave_test_view,cave_px,cave_py);
             for(int i=0;i<count;i++) {
                 assert(isfinite(v[i].x) && isfinite(v[i].y) && isfinite(v[i].z));
                 for(int p=0;p<CAVE_CLIP_PLANES;p++)assert(cave_clip_distance(clip.plane[p],v+i)>-.0002f);
             }
-            assert(cave_depth_mask==cave_detail_pending);
-            if(cave_detail_pending)assert(data==cave_previous_vertices && count==cave_previous_count);
-            cave_previous_vertices=data;cave_previous_count=count;cave_detail_pending=!cave_detail_pending;
+            assert(cave_depth_mask==0 || cave_depth_mask==1);
+            if(type==GU_LINES){if(cave_test_style==7)cave_hairs++;else cave_wires++;}
+            else if(cave_depth_mask)cave_layers++;
             cave_draws++;return;
         }
         assert(!indices && (const unsigned char *)data>=list_base &&
@@ -393,12 +393,19 @@ int main(int argc,char **argv) {
         cave_test=1;memset(bands,75,sizeof(bands));
         int frames=32,mode=5;
         for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
+            cave_options.fog=tv;cave_options.multitexture=full;cave_options.transparent_hair=resolution;
             md_high_resolution=resolution;assert(md_start());
             expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
             expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
             expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
             int previous=cave_draws;
             for(int f=0;f<frames;f++) {
+                if(cave_scene) {
+                    cave_scene->style=cave_test_style=(f/3)%9;
+                    cave_scene->black=(f%7)==0;
+                    cave_scene->texture_style=(f%3)!=0;
+                    md_cave_control(f==16 || f==24,200,70,0);
+                }
                 test_time+=100000;assert(md_frame(tv,full,bands,75,test_time,mode)==1);
                 assert(covered_width==expected_width);
                 int before=starts;assert(md_frame(tv,full,bands,75,test_time,mode)==1 && starts==before);
@@ -406,7 +413,8 @@ int main(int argc,char **argv) {
             assert(cave_draws>previous && !cave_detail_pending);
             md_stop();assert(!gu_live && !md_list && !cave_scene);
         }
-        assert(matrix_calls==frames*8*3 && clear_count==frames*8 && !clear_mode);
+        assert(matrix_calls==(frames*3+8)*8 && clear_count==frames*8 && !clear_mode);
+        assert(cave_hairs && cave_wires && cave_layers);
         printf("Cave: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);
         return 0;
     }

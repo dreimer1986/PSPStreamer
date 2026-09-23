@@ -296,6 +296,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
         md_trace("Cave geometry");
         cave_draw(width,height);
+        cave_draw_ship();
         goto present_scene;
     }
     /* Render-thread scratch: extended EEL memories must not consume the PSP

@@ -7,6 +7,29 @@
 #include "cave_paths.h"
 typedef struct {float color[2][3],direction[2][3],ambient;} CaveLight;
 static inline float cave_unit(float x){return fmaxf(0,fminf(1,x));}
+/* 0x100065a0..0x100066e3, selected movement=1 and neutral projection gate.
+ * The caller still bounds advancement to geometry actually in the cache. */
+static inline float cave_forward_step(float dt,float impulse) {
+    if(dt<=0)return 0;
+    float fps=1/dt,rate=fmaxf(8,fminf(50,fps))*.04f;
+    if(fps>25)rate=powf(rate,1.2f);
+    return fminf(4,(12.2f*dt*(1+impulse)+.1f*impulse)*(.6f+.4f*rate));
+}
+/* Original texture-factor colors, evaluated at render time (0x10008080..
+ * 0x100083b3). They replace, rather than modulate, vertex diffuse colors. */
+static inline unsigned cave_effect_color(float seed,float t,int black,int hair,int transparent) {
+    float base,amplitude,shape;
+    const float wire_seed[3]={.42f,.17f,.79f},wire_rate[3]={.00312f,.00279f,.00253f};
+    const float hair_seed[3]={.32f,.57f,.39f},hair_rate[3]={.00275f,.00252f,.00214f};
+    unsigned result=hair&&transparent?(black?0x80000000U:0x58000000U):0xff000000U;
+    if(hair){base=.05f+.5f*sinf(seed*.63f+t*.00229f);amplitude=.02f;shape=3;}
+    else {base=(black?.9f:.1f)+(black?.2f:.5f)*sinf(seed*.13f+t*.00232f);amplitude=black?.4f:.08f;shape=4;}
+    for(int k=0;k<3;k++) {
+        float x=base+amplitude*sinf(seed*(hair?hair_seed[k]:wire_seed[k])+t*(hair?hair_rate[k]:wire_rate[k]));
+        result|=(unsigned)(255*cave_path_shape(x,shape))<<(8*k);
+    }
+    return result;
+}
 static inline void cave_lighting(CaveLight *light,float seed,float t) {
     /* 0x10004cef..0x10004fa3: channel envelopes, 6% gray mixing,
      * limit sum of deviations to .35, then complementary second light. */
@@ -44,7 +67,7 @@ static inline void cave_lighting(CaveLight *light,float seed,float t) {
         +.12f*sinf(seed*.334f+t*.00981f)+.13f*sinf(seed*.531f+t*.01303f);
     light->ambient=.4f+.3f*(2*cave_path_shape(ambient,-1.8f)-1);
 }
-static inline unsigned cave_shade(const CaveLight *a,const CaveLight *b,float t,float nx,float ny,float nz) {
+static inline unsigned cave_shade_material(const CaveLight *a,const CaveLight *b,float t,float nx,float ny,float nz,const float material[3]) {
     float length=sqrtf(nx*nx+ny*ny+nz*nz);
     float normal[3]={0,0,0};
     if(length>1e-6f){normal[0]=nx/length;normal[1]=ny/length;normal[2]=nz/length;}
@@ -57,6 +80,9 @@ static inline unsigned cave_shade(const CaveLight *a,const CaveLight *b,float t,
         float strength=fmaxf(.17f,fminf(1,dot*1.04f+a->ambient+t*(b->ambient-a->ambient)));
         for(int j=0;j<3;j++)color[j]+=strength*(a->color[l][j]+t*(b->color[l][j]-a->color[l][j]));
     }
-    return 0xff000000U|(unsigned)(255*cave_unit(color[0]))|((unsigned)(255*cave_unit(color[1]))<<8)|((unsigned)(255*cave_unit(color[2]))<<16);
+    return 0xff000000U|(unsigned)(255*cave_unit(color[0]*material[0]))|((unsigned)(255*cave_unit(color[1]*material[1]))<<8)|((unsigned)(255*cave_unit(color[2]*material[2]))<<16);
+}
+static inline unsigned cave_shade(const CaveLight *a,const CaveLight *b,float t,float nx,float ny,float nz) {
+    const float material[3]={1,1,1};return cave_shade_material(a,b,t,nx,ny,nz,material);
 }
 #endif

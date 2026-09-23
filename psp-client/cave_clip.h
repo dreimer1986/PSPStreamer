@@ -38,6 +38,27 @@ static inline MdVertex cave_clip_mix(const MdVertex *a,const MdVertex *b,float t
     }
     return v;
 }
+static inline void cave_clip_snap(const float p[4],MdVertex *v) {
+    /* Cancellation on nearly parallel edges can leave the float intersection
+     * outside its plane. Project the small residual back, not the whole edge. */
+    float norm=p[0]*p[0]+p[1]*p[1]+p[2]*p[2];
+    if(norm>1e-12f) {
+        float correction=(cave_clip_distance(p,v)-.00001f)/norm;
+        v->x-=p[0]*correction;v->y-=p[1]*correction;v->z-=p[2]*correction;
+    }
+}
+static inline int cave_clip_line(const CaveClip *c,MdVertex *a,MdVertex *b) {
+    for(int p=0;p<CAVE_CLIP_PLANES;p++) {
+        float da=cave_clip_distance(c->plane[p],a),db=cave_clip_distance(c->plane[p],b);
+        if(da<0 && db<0)return 0;
+        if((da<0)!=(db<0)) {
+            MdVertex v=cave_clip_mix(a,b,da/(da-db));
+            cave_clip_snap(c->plane[p],&v);
+            if(da<0)*a=v;else *b=v;
+        }
+    }
+    return 1;
+}
 /* A triangle intersected with five half-spaces has at most eight corners.
  * Caller supplies 18 vertices for its triangle fan; input stays untouched. */
 static inline int cave_clip_triangle(const CaveClip *c,const MdVertex input[3],MdVertex output[CAVE_CLIP_VERTICES]) {
@@ -51,7 +72,8 @@ static inline int cave_clip_triangle(const CaveClip *c,const MdVertex input[3],M
             if((dp<0)!=(dn<0)) {
                 if(used>=8)return -1;
                 float t=dp/(dp-dn);if(t<0)t=0;if(t>1)t=1;
-                out[used++]=cave_clip_mix(&prev,&next,t);
+                out[used]=cave_clip_mix(&prev,&next,t);
+                cave_clip_snap(c->plane[plane],out+used++);
             }
             if(dn>=0){if(used>=8)return -1;out[used++]=next;}
             prev=next;dp=dn;

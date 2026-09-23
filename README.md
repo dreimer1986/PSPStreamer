@@ -892,10 +892,13 @@ moving the main camera path; values are cached rather than regenerated each fram
 The recovered alternate cubic paths now blend with the oscillators; the camera
 looks six profiles ahead, and continuous base texture coordinates replace
 per-triangle projections. This is **not yet a complete reproduction of Monkey**:
-the camera now uses source sway and smoothed banking, classic cube topology
-matches the original cases, and color envelopes/two-light shading follow the
-recovered formulas. Original material modes, exact texture-stage choreography,
-audio analysis and some camera modes still differ. See the
+the camera now uses chained profile curvature, source sway, roll impulses and
+distance-dependent banking. Classic cube topology, weighted material fields,
+source material normals, spatial RGB/alpha envelopes and two-light shading follow
+the recovered formulas. Nine styles include displaced wireframe and Hair;
+the two texture banks blend with separate UV coordinates. PSP geometry budgets,
+procedural replacement textures, random sequence, audio analysis and some
+camera/projection configuration branches still differ. See the
 [comparison audit and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
 Three rear slabs remain visible for camera turns without shortening the forward horizon.
@@ -906,9 +909,55 @@ buffer alongside the scanout. MilkDrop's resolution setting remains unchanged
 for MilkDrop. No new assets or server update are needed.
 Triangle toggles fullscreen; the selected mode survives song changes. From
 spectrum, press Square twice for Cave, once more to return to spectrum.
-Circle selects a MilkDrop preset; Start stops normally. Audio clocks and queues
+Circle opens Cave's effects settings while Cave is selected; in MilkDrop it
+opens the preset list. Select inside that list opens additional automatic-switch
+options. Start stops normally. Audio clocks and queues
 are untouched. The original tube prototype was removed after the cave renderer
 passed the LCD/TV hardware test. Its source remains available in Git history.
+
+### Visualization settings
+
+While music plays, press Circle in Cave. Use Up/Down to select a row,
+Left/Right to change it, and Circle to save and return. The music keeps playing.
+These settings are saved in the existing `pspstreamer.cfg`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `cave_fog` | `1` | Distance fog, 0/1 |
+| `cave_multitexture` | `1` | Two texture banks, 0/1 |
+| `cave_hair` | `1` | Hair in the corresponding style, 0/1 |
+| `cave_transparent_hair` | `1` | Hair transparency, 0/1 |
+| `cave_beat` | `1` | Music-triggered responses, 0/1 |
+| `cave_sensitivity` | `8` | Beat detection sensitivity, 0–16 |
+| `cave_amplitude` | `8` | Beat response strength, 0–16 |
+| `cave_style` | `-1` | Automatic styles; 0–8 fixes a style (7 = Hair) |
+| `preset_random_seconds` | `10` | Additional random automatic-switch delay, 0–120 seconds |
+| `preset_hard_cuts` | `0` | Enable music-triggered immediate preset switches, 0/1 |
+| `preset_hard_threshold` | `250` | Hard-cut sensitivity threshold, 125–400 percent |
+| `preset_hard_seconds` | `60` | Hard-cut threshold recovery parameter, 5–180 seconds |
+
+MilkDrop's four new options are available with Select inside the playing-music
+preset list. Automatic mode must be enabled for timed or hard-cut switches.
+Existing interval/fade controls remain; ordinary transitions still use a snapshot
+fade, not two simultaneously running presets. No new resolution options were added.
+
+<details>
+<summary>Cave Easter egg</summary>
+
+During Cave playback, press **L+R together** to enable or disable flight.
+The analog stick steers, L alone slows down and R alone accelerates. The tunnel
+still follows its generated path; a bounded density check restricts lateral
+camera movement. This is not a game with enemies or mesh-accurate collisions.
+Triangle still switches fullscreen and Start stops playback.
+
+Flight starts disabled, is not saved, and is reset when the renderer is closed
+(including opening its options). When disabled, flight performs no field checks
+or mesh draw calls and does not alter the normal camera, timing or random state.
+The ship mesh is embedded; no extra file needs copying to the memory stick.
+“Low Poly Spaceships” is by Samuel Metters, CC BY 4.0; see
+[asset attribution and conversion details](psp-client/assets/cave_ship.CREDITS.md).
+
+</details>
 
 Legacy `fShader` hue shading now uses fixed-function corner colors; compare
 `legacy-shading-demo.milk` and `legacy-shading-off-demo.milk`. Both also exercise

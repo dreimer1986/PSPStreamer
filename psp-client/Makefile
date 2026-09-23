@@ -32,6 +32,7 @@ preset_math.o: preset_math.h preset_expression.h
 preset_math.o: preset_trig.h preset_math_cache.h
 preset_math.o: preset_clear_loop.h preset_local_memory.h
 main.o: music_preset_ui.h remote_http.h browser_remote.h library_request.h media_request.h remote_state.h video_watchdog.h stream_diagnostic.h spectrum_fullscreen.h
+main.o: visual_options.h visual_options_ui.h cave_visual.h
 main.o: server_auth.h video_controls.h
 main.o: menu_artwork.h
 main.o: preset_catalog.h preset_browser.h
@@ -57,8 +58,10 @@ milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o: milkdrop_profile.h
 milkdrop_gu.o: preset_fpu.h
 milkdrop_gu.o: cave_gu.h cave_visual.h
-milkdrop_gu.o: cave_clip.h
-cave_visual.o: cave_visual.h cave_paths.h milkdrop_warp.h
+milkdrop_gu.o: cave_clip.h cave_style.h cave_bend.h
+milkdrop_gu.o: cave_ship_data.h
+main.o: cave_bend.h
+cave_visual.o: cave_visual.h cave_paths.h cave_bend.h milkdrop_warp.h
 cave_visual.o: cave_style.h cave_topology.h
 cave_paths.o: cave_paths.h
 milkdrop_gu.o: cave_paths.h

@@ -107,7 +107,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_PRESET_CONTROLS] = "HOCH/RUNTER  L/R SEITE  X WAHL  O ZURÜCK",
     [TXT_PRESET_LIMIT] = "Max. 128",
     [TXT_PRESET_AUTO_STATUS] = "Auto: %s | %ds",
-    [TXT_PRESET_AUTO_HELP] = "QUADRAT: MODUS   DREIECK: ZEIT",
+    [TXT_PRESET_AUTO_HELP] = "[]: MODUS /\\: ZEIT SELECT: OPTIONEN",
     [TXT_PRESET_AUTO_OFF] = "Aus",
     [TXT_PRESET_AUTO_ORDER] = "Reihe",
     [TXT_PRESET_AUTO_RANDOM] = "Zufall",
@@ -210,6 +210,23 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_VIDEO_ENDED] = "Video beendet: %d Frames",
     [TXT_NEXT_EPISODE] = "Nächste Episode: %.58s",
     [TXT_NEXT_TRACK] = "Nächster Titel: %.58s",
+
+    [TXT_CAVE_FOG] = "Nebel",
+    [TXT_CAVE_TEXTURE] = "Multitextur",
+    [TXT_CAVE_HAIR] = "Haareffekt",
+    [TXT_CAVE_ALPHA] = "Transparente Haare",
+    [TXT_CAVE_BEAT] = "Beat-Reaktion",
+    [TXT_CAVE_SENSITIVITY] = "Beat-Empfindlichkeit (0-16)",
+    [TXT_CAVE_AMPLITUDE] = "Beat-Stärke (0-16)",
+    [TXT_CAVE_STYLE] = "Stil (-1: automatisch)",
+
+    [TXT_PRESET_RANDOM] = "Zusätzliche Zufallszeit (s)",
+    [TXT_PRESET_HARD] = "Harte Beat-Wechsel",
+    [TXT_PRESET_THRESHOLD] = "Wechselschwelle (%)",
+    [TXT_PRESET_HALFLIFE] = "Schwellen-Erholung (s)",
+
+    [TXT_VISUAL_OPTIONS] = "Visualisierungsoptionen",
+    [TXT_VISUAL_OPTIONS_HELP] = "HOCH/RUNTER: Zeile LINKS/RECHTS: Wert O: OK",
 
     [TXT_RADIO] = "Internetradio",
     [TXT_RADIO_PAUSED] = "Radiopause SELECT: live START: Stopp",

@@ -77,8 +77,8 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step1_text="Spectrum / MilkDrop / Cave.",
         .step2_title="TRIANGLE: fullscreen on / off",
         .step2_text="The old X + TRIANGLE works too.",
-        .step3_title="O: open MilkDrop preset list",
-        .step3_text="Not in Cave; music keeps playing."
+        .step3_title="O: visualization options",
+        .step3_text="Cave: effects. MilkDrop: presets."
     },
     [HELP_PAGE_PRESETS]={
         .title="Inside the preset list",
@@ -87,7 +87,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="SQUARE: automatic preset mode",
         .step2_text="Off, sequential, random or rated.",
         .step3_title="TRIANGLE: change the interval",
-        .step3_text="30, 60 or 120 seconds."
+        .step3_text="SELECT: extra switch options."
     },
     [HELP_PAGE_DOWNLOAD]={
         .title="Download straight from the PSP",
