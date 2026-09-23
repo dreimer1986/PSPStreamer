@@ -2,9 +2,10 @@
  * Independent reconstruction of Monkey's oscillator/spline path controller.
  * See docs/MONKEY_GEOMETRY.md for verified behavior and PSP adaptations. */
 #include "cave_paths.h"
+#include "cave_control.h"
 #include <math.h>
 #include <string.h>
-static unsigned rng(unsigned *s){unsigned n=*s;n^=n<<13;n^=n>>17;n^=n<<5;return *s=n;}
+static unsigned rng(unsigned *s){return cave_random(s);}
 static float clamp(float x,float low,float high){return x<low?low:x>high?high:x;}
 /* 0x10012340: repeat cosine easing, interpolate the fractional iteration.
  * Negative amounts use inverse cosine easing (source ambient-light branch). */
@@ -41,23 +42,32 @@ float cave_spline_sample(CaveSpline *s,unsigned *random,float t,float interval,f
     return ((2*s->value[1]-2*s->value[2]+m0+m1)*u+
             (-3*s->value[1]+3*s->value[2]-2*m0-m1))*u*u+m0*u+s->value[1];
 }
-void cave_paths_init(CavePaths *p,unsigned seed) {
-    memset(p,0,sizeof(*p));if(!seed)seed=1;
+void cave_paths_init_material(CavePaths *p,unsigned seed,float material[CAVE_PATHS][4],float phase[3],int textures[2]) {
+    memset(p,0,sizeof(*p));
     p->seed=rng(&seed)%997;
     p->seed+=(rng(&seed)%100)*.01f;
+    textures[0]=rng(&seed)%5;textures[1]=rng(&seed)&1;
+    for(int k=0;k<3;k++)phase[k]=(rng(&seed)%917)*.6855895519f;
     for(int i=0;i<CAVE_PATHS;i++) {
         p->radius[i]=.1f+(rng(&seed)&1023)*.0001640625f;
+        material[i][3]=rng(&seed)&1;
+        do {
+            for(int k=0;k<3;k++)material[i][k]=(rng(&seed)%471)*.5425531864f;
+        } while(material[i][0]+material[i][1]+material[i][2]<1.3f);
         p->phase[i][0]=(rng(&seed)%628)*.01f;
         p->phase[i][1]=(rng(&seed)%628)*.01f;
     }
     p->radius[0]=.189f+.1f*p->radius[0];
     p->random=seed;
-    p->roughness=.015f; /* PSP profile selection, not the desktop default. */
+    p->roughness=cave_roughness(p->seed,0);
     for(int i=0;i<CAVE_PATH_CACHE;i++)p->frames[i].index=-1;
 }
-void cave_paths_perturb(CavePathFrame *frame,unsigned *random,float amount) {
+void cave_paths_init(CavePaths *p,unsigned seed) {
+    float material[CAVE_PATHS][4],phase[3];int textures[2];
+    cave_paths_init_material(p,seed,material,phase,textures);
+}
+static void perturb_path(CavePathFrame *frame,unsigned *random,float amount,int i) {
     amount=clamp(amount,0,1);
-    for(int i=1;i<CAVE_PATHS;i+=2) {
         /* The inspected 0x10004994..0x100049b3 actually uses dx twice,
          * not dx*dx+dy*dy. Preserve this source behavior deliberately. */
         float dx=frame->x[i]-frame->x[0];
@@ -71,10 +81,14 @@ void cave_paths_perturb(CavePathFrame *frame,unsigned *random,float amount) {
         }
         float radial=((rng(random)%173)/86.f-1)*amount*gain;
         frame->radius[i]=clamp(frame->radius[i]*(1+radial),.05f,.5f);
-    }
+}
+void cave_paths_perturb(CavePathFrame *frame,unsigned *random,float amount) {
+    for(int i=1;i<CAVE_PATHS;i+=2)perturb_path(frame,random,amount,i);
 }
 void cave_paths_step(CavePaths *p) {
     int index=p->next;float t=(float)index,seed=p->seed;
+    float movement=cave_movement(seed,t);
+    p->roughness=cave_roughness(seed,t);
     CavePathFrame *frame=&p->frames[index%CAVE_PATH_CACHE];
     float ex=.2f+.8f*powf(clamp(.5f+.2f*sinf(seed*3.4f+t*.0069f)+.3f*sinf(seed*1.3f+t*.0131f),0,1),.05f);
     float ey=.2f+.8f*powf(clamp(.5f+.2f*sinf(seed*2.1f+t*.0087f)+.3f*sinf(seed*1.6f+t*.0117f),0,1),.05f);
@@ -89,22 +103,22 @@ void cave_paths_step(CavePaths *p) {
         for(int k=0;k<4;k++) {
             float dx=((a-shift[0]+k*272+41)%50)*.002f-.01f+((b-shift[1]+k*553+69)%50)*.002f;
             float dy=((c-shift[2]+k*368+82)%50)*.002f-.01f+((d-shift[3]+k*543+36)%50)*.002f;
-            float angle=(((e+k*615+94)%50)*.02f+1)*.17f*t+((f+k*473+31)%50)*.02f*6.28f;
+            float angle=(((e+k*615+94)%50)*.02f+1)*.013f*t+((f+k*473+31)%50)*.02f*6.28f;
             float weight=powf(.52f+.48f*sinf(angle),i?1.8f:3.8f);
             sx+=weight*dx;sy+=weight*dy;total+=weight;
             a+=131*i;b+=93*i;c+=117*i;d+=171*i;e+=313*i;f+=241*i;
         }
-        /* Source movement multiplier fixed at 1 for this PSP profile. */
         if(total>0) {
-            p->phase[i][0]+=clamp(sx/total,0,i?.12f:.06f);
-            p->phase[i][1]+=clamp(sy/total,0,i?.12f:.06f);
+            p->phase[i][0]+=clamp(movement*sx/total,0,i?.12f:.06f);
+            p->phase[i][1]+=clamp(movement*sy/total,0,i?.12f:.06f);
         }
         /* Equivalent phase reduction avoids losing motion precision over hours. */
         for(int j=0;j<2;j++)if(p->phase[i][j]>=6.283185307f)p->phase[i][j]-=6.283185307f;
         frame->x[i]=.5f+(.335f-narrow)*ex*sinf(p->phase[i][0]+i*11.7f-i*i*.351f);
         frame->y[i]=.5f+(.335f-narrow)*ey*sinf(p->phase[i][1]+i*14.7f+i*i*.755f);
         if(blend>0) {
-            float interval=i?26:fminf(100,26*1.7f*(1+100*narrow));
+            float interval=26/sqrtf(movement);
+            if(!i)interval=fminf(100,interval*fminf(1.7f,1+2.5f/movement)*(1+100*narrow));
             float alt[3];
             for(int axis=0;axis<3;axis++)alt[axis]=cave_spline_sample(&p->alternate[i][axis],&p->random,t,interval,i?.5f:.3f,shape);
             frame->x[i]+=blend*(.5f+(.335f-narrow)*ex*alt[0]-frame->x[i]);
@@ -115,8 +129,10 @@ void cave_paths_step(CavePaths *p) {
          * bounds, are the source's final safeguard. */
         frame->x[i]=clamp(frame->x[i],0,1);frame->y[i]=clamp(frame->y[i],0,1);
         frame->radius[i]=clamp(p->radius[i]+2*narrow,.05f,.5f);
+        /* The source consumes this path's jitter before initializing the
+         * next path's splines; postponing all jitter changes every sequence. */
+        if(i&1)perturb_path(frame,&p->random,p->roughness,i);
     }
-    cave_paths_perturb(frame,&p->random,p->roughness);
     frame->index=index;p->next++;
 }
 int cave_paths_sample(const CavePaths *p,float z,CavePathFrame *out,CavePathFrame *derivative) {

@@ -5,6 +5,7 @@
 #define PSPSTREAMER_CAVE_STYLE_H
 #include <math.h>
 #include "cave_paths.h"
+#include "cave_control.h"
 typedef struct {float color[2][3],direction[2][3],ambient;} CaveLight;
 static inline float cave_unit(float x){return fmaxf(0,fminf(1,x));}
 /* Background/fog palette, NOT Hair color: 0x10003a10, 0x10005b62.
@@ -36,11 +37,16 @@ static inline float cave_fog_end(float seed,float t,float horizon) {
 }
 /* 0x100065a0..0x100066e3, selected movement=1 and neutral projection gate.
  * The caller still bounds advancement to geometry actually in the cache. */
-static inline float cave_forward_step(float dt,float impulse) {
+static inline float cave_forward_profile(float dt,float impulse,float movement,float fov) {
     if(dt<=0)return 0;
     float fps=1/dt,rate=fmaxf(8,fminf(50,fps))*.04f;
     if(fps>25)rate=powf(rate,1.2f);
-    return fminf(4,(12.2f*dt*(1+impulse)+.1f*impulse)*(.6f+.4f*rate));
+    float step=(12.2f*dt*(1+impulse)+.1f*impulse)*(.6f+.4f*rate);
+    if(movement>2)step*=powf(2/movement,.8f);
+    return fminf(4,step*(.2f+.8f*.195f/fov));
+}
+static inline float cave_forward_step(float dt,float impulse) {
+    return cave_forward_profile(dt,impulse,1,.195f);
 }
 /* Original texture-factor colors, evaluated at render time (0x10008080..
  * 0x100083b3). They replace, rather than modulate, vertex diffuse colors. */

@@ -65,6 +65,7 @@ main.o: cave_bend.h
 cave_visual.o: cave_visual.h cave_paths.h cave_bend.h milkdrop_warp.h
 cave_visual.o: cave_style.h cave_topology.h
 cave_paths.o: cave_paths.h
+cave_paths.o cave_visual.o milkdrop_gu.o: cave_control.h
 milkdrop_gu.o: cave_paths.h
 milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h
 

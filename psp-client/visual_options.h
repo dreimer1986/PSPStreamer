@@ -18,13 +18,14 @@ static VisualOption visual_options[]={
     {"cave_style",TXT_CAVE_STYLE,&cave_options.style,-1,8,1},
     {"cave_speed",TXT_CAVE_SPEED,&cave_options.speed,10,200,10},
     {"cave_invert_y",TXT_CAVE_INVERT_Y,&cave_options.invert_y,0,1,1},
+    {"cave_noise",TXT_CAVE_NOISE,&cave_options.noise,0,16,1},
     {"preset_random_seconds",TXT_PRESET_RANDOM,&preset_random_seconds,0,120,5},
     {"preset_hard_cuts",TXT_PRESET_HARD,&preset_hard_cuts,0,1,1},
     {"preset_hard_threshold",TXT_PRESET_THRESHOLD,&preset_hard_threshold,125,400,10},
     {"preset_hard_seconds",TXT_PRESET_HALFLIFE,&preset_hard_seconds,5,180,5}
 };
 #define VISUAL_OPTION_COUNT ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
-#define VISUAL_CAVE_OPTIONS 10
+#define VISUAL_CAVE_OPTIONS 11
 static int visual_option_parse(const char *line) {
     for(int i=0;i<VISUAL_OPTION_COUNT;i++) {
         VisualOption *o=&visual_options[i];size_t n=strlen(o->key);

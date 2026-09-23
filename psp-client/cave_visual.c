@@ -5,13 +5,14 @@
 #include "cave_visual.h"
 #include "cave_topology.h"
 #include "cave_style.h"
+#include "cave_control.h"
 #include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
 static float mix(float a,float b,float t){return a+(b-a)*t;}
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0};
 static float flight_axis(int value) {
     float x=value-128;
     if(fabsf(x)<=20)return 0;
@@ -98,7 +99,7 @@ void cave_camera(const CaveScene *s,float z,float *x,float *y) {
      * Keep the original three-sine eye sway; reject excursions into a wall. */
     float sx=6*(.0227f*sinf(z*.0139f+41)+.0216f*sinf(z*.0197f+98)+.023f*sinf(z*.0179f+28));
     float sy=6*(.0226f*sinf(z*.0173f+73)+.0207f*sinf(z*.0152f+23)+.024f*sinf(z*.0129f+11));
-    float gain=1;
+    float gain=fminf(1,cave_fov(s->paths.seed,z)/.195f)/fmaxf(1,.9f*cave_movement(s->paths.seed,z));
     for(int i=0;i<4;i++) {
         if(cave_density(s,*x+gain*sx,*y+gain*sy,z)>.015f){*x+=gain*sx;*y+=gain*sy;break;}
         gain*=.5f;
@@ -133,10 +134,10 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
         dx=(ahead.x[0]-.5f)*12-x;dy=(ahead.y[0]-.5f)*12-y;
     }
     float seed=s->paths.seed;
-    /* 0x10007300..0x1000747e: .4 normalized sway, XY world scale=6.
-     * Fixed movement/FOV profile keeps the source gain gates at unity. */
-    dx+=2.4f*(.21f*sinf(seed*1.2f+z*.0119f+11)+.16f*sinf(seed*3.1f+z*.0137f+46)+.19f*sinf(seed*1.4f+z*.0059f+38));
-    dy+=2.4f*(.12f*sinf(seed*2.4f+z*.0103f+83)+.17f*sinf(seed*2.7f+z*.0122f+29)+.19f*sinf(seed*1.7f+z*.0069f+91));
+    /* 0x10007408: source movement/FOV gates, XY world scale=6. */
+    float gain=2.4f*fminf(1,cave_fov(seed,z)/.195f)/fmaxf(1,1.2f*cave_movement(seed,z));
+    dx+=gain*(.21f*sinf(seed*1.2f+z*.0119f+11)+.16f*sinf(seed*3.1f+z*.0137f+46)+.19f*sinf(seed*1.4f+z*.0059f+38));
+    dy+=gain*(.12f*sinf(seed*2.4f+z*.0103f+83)+.17f*sinf(seed*2.7f+z*.0122f+29)+.19f*sinf(seed*1.7f+z*.0069f+91));
     if(s->flight){x+=s->flight_x;y+=s->flight_y;}
     float eye[3],target[3],up_point[3];
     cave_world_point(s,x,y,z,eye);cave_world_point(s,x+dx,y+dy,z+6,target);
@@ -188,17 +189,20 @@ static float sample_field(const CaveScene *s,const CaveField *p,float x,float y,
             gradient[2]-=4*(q-.5f)*q*p->dr[i];
         }
     }
-    float noise=0,amplitude=1,frequency=.35f;
+    /* Original noise coordinates: normalized cross-section, depth / 40,
+     * base frequency 9; desktop noise option 0..16 maps to amount / 16. */
+    float noise=0,amplitude=.57f*cave_options.noise/16,frequency=9;
     float ng[3]={0};
-    for(int octave=0;octave<3;octave++) {
+    for(int octave=0;octave<3 && amplitude>=.03f;octave++) {
         const float *m=s->noise_matrix[octave],*offset=s->noise_offset[octave];
         float v[3],g[3];
-        for(int j=0;j<3;j++)v[j]=(m[j*3]*x+m[j*3+1]*y+m[j*3+2]*z)*frequency+offset[j];
+        for(int j=0;j<3;j++)v[j]=(m[j*3]*(.5f+x/12)+m[j*3+1]*(.5f+y/12)+m[j*3+2]*(z+1)*.025f)*frequency+offset[j];
         noise+=amplitude*noise3(s,v[0],v[1],v[2],g);
-        for(int j=0;j<3;j++)ng[j]+=amplitude*frequency*(m[j]*g[0]+m[3+j]*g[1]+m[6+j]*g[2]);
+        for(int j=0;j<3;j++)ng[j]+=amplitude*frequency*(j==2?.025f:1.f/12)*(m[j]*g[0]+m[3+j]*g[1]+m[6+j]*g[2]);
         amplitude*=.51626223f;frequency*=1.937f;
     }
-    const float iso=.08f;
+    const float iso=.15f;
+    if(cave_options.noise==0)return field-iso;
     if(noise>-1 && noise<1)for(int j=0;j<3;j++)gradient[j]+=iso*.29f*ng[j];
     if(noise<-1)noise=-1;
     if(noise>1)noise=1;
@@ -293,15 +297,17 @@ int cave_polygonize(const float f[8],MdVertex *out,int capacity,float x,float y,
     return polygonize(f,NULL,NULL,out,NULL,NULL,capacity,x,y,z);
 }
 static unsigned random_step(unsigned *state) {
-    unsigned n=*state;n^=n<<13;n^=n>>17;n^=n<<5;return *state=n;
+    return cave_random(state);
 }
 
-CaveScene *cave_create(void) {
+CaveScene *cave_create_seed(unsigned random) {
     CaveScene *s=memalign(64,sizeof(*s));if(!s)return NULL;
     memset(s,0,sizeof(*s));
     s->planes[0].z=s->planes[1].z=-1;
     for(int i=0;i<CAVE_SLICES;i++)s->slices[i].index=-1;
-    unsigned random=0x45319a7;
+    /* Original field initialization seeds sixteen temporary XYZ contributors
+     * before the periodic noise table. Scene initialization replaces them. */
+    for(int i=0;i<48;i++)random_step(&random);
     for(int i=0;i<4096;i++) {
         s->noise[i]=2*(random_step(&random)%731)/730.f-1;
     }
@@ -311,26 +317,22 @@ CaveScene *cave_create(void) {
         float b=(random_step(&random)%731)*(6.28f/730);
         cave_noise_rotation(s->noise_matrix[i],a,b);
     }
-    cave_paths_init(&s->paths,0x7149823);
-    s->random=0x7291ba5;s->motion.direction=1;
+    cave_paths_init_material(&s->paths,random,s->material,s->material_phase,s->texture_index);
+    s->random=s->paths.random;s->motion.direction=1;
     s->texture_style=1;
     for(int i=0;i<CAVE_PATH_CACHE;i++)s->poses[i].index=-1;
     s->poses[0]=(CavePose){.rotation={1,0,0,0,1,0,0,0,1},.index=0};s->pose_next=1;
     s->texture_transition[0]=s->texture_transition[1]=-1;
-    for(int i=0;i<3;i++)s->material_phase[i]=(random_step(&s->random)%917)*.68558955f;
     memcpy(s->background_phase,s->material_phase,sizeof(s->background_phase));
     cave_background_update(s->background_rgb,s->paths.seed,s->background_phase);
-    for(int i=0;i<CAVE_PATHS;i++) {
-        s->material[i][3]=random_step(&s->random)&1;
-        do {
-            for(int k=0;k<3;k++)s->material[i][k]=(random_step(&s->random)%471)*.5425531864f;
-        } while(s->material[i][0]+s->material[i][1]+s->material[i][2]<1.3f);
-    }
     for(int i=0;i<2048;i++)s->random_values[i]=(random_step(&s->random)%1573)*.00063572789f;
     /* One extra future profile supplies the derivative of the upper plane. */
+    s->paths.random=s->random;
     for(int i=0;i<3;i++)cave_paths_step(&s->paths);
+    s->random=s->paths.random;
     return s;
 }
+CaveScene *cave_create(void){return cave_create_seed(0x45319a7);}
 void cave_destroy(CaveScene *s){free(s);}
 static void cave_rebase(CaveScene *s) {
     const CavePose *p=&s->poses[(int)s->motion.travel%CAVE_PATH_CACHE];
@@ -373,13 +375,20 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     s->motion.phase+=dt*.07f;
     if(s->motion.phase>=6.283185307f)s->motion.phase-=6.283185307f;
     s->motion.bass+=(bass-s->motion.bass)*(1-expf(-dt*2));
-    float step=cave_forward_step(dt,s->motion.forward)*(cave_options.speed*.01f);
+    float movement=cave_movement(s->paths.seed,s->motion.travel);
+    /* 0x100065de, 0x10006694: reduce speed for rapid path changes and
+     * compensate the animated field of view before the source cap. */
+    float step=cave_forward_profile(dt,s->motion.forward,movement,
+        cave_fov(s->paths.seed,s->motion.travel))*(cave_options.speed*.01f);
     if(s->flight)step*=s->flight_throttle>0?1.5f:s->flight_throttle<0?.5f:1;
+    float previous_travel=s->motion.travel;
     if(s->ready>=12) {
         float proposed=s->motion.travel+step;
         /* Never travel into an unprepared slab; audio is never stalled. */
         if(proposed<s->next-6)s->motion.travel=proposed;
     }
+    cave_texture_advance(&s->random,s->texture_index,s->texture_transition,
+        s->texture_changed,s->motion.travel-previous_travel,cave_options.multitexture);
     CavePathFrame bank_near,bank_far,bank_next,bank_next_far;
     int profile=(int)floorf(s->motion.travel);float fraction=s->motion.travel-profile;
     if(cave_paths_sample(&s->paths,profile+4,&bank_near,NULL) &&
@@ -405,49 +414,36 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         cave_pose_next(&s->poses[(s->pose_next-1)%CAVE_PATH_CACHE],rotation,&s->poses[s->pose_next%CAVE_PATH_CACHE]);
         s->pose_next++;
     }
+    s->paths.random=s->random;
     while(s->paths.next<=index+2)cave_paths_step(&s->paths);
+    s->random=s->paths.random;
     CaveSlice *slice=&s->slices[index%CAVE_SLICES];
     float (*planes[2])[CAVE_GRID+1];
-    float (*normals[2])[CAVE_GRID+1][3];
     for(int k=0;k<2;k++) {
         int z=index+k;CavePlane *plane=&s->planes[z&1];
-        planes[k]=plane->field;normals[k]=plane->gradient;
+        planes[k]=plane->field;
         if(plane->z!=z) {
             CaveField p;if(!prepare_field(s,&p,z))return NULL;
             for(int y=0;y<=CAVE_GRID;y++)for(int x=0;x<=CAVE_GRID;x++)
-                planes[k][y][x]=sample_field(s,&p,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,z,normals[k][y][x]);
+                planes[k][y][x]=sample_field(s,&p,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,z,plane->gradient[y][x]);
             plane->z=z;s->sampled_planes++;
         }
     }
     int used=0;
-    CaveLight light[2];cave_lighting(light,s->paths.seed,index);cave_lighting(light+1,s->paths.seed,index+1);
+    /* The DLL prepares one light pair per generated profile, not an
+     * interpolated second pair and not a whole-scene per-frame relight. */
+    CaveLight light[2];cave_lighting(light,s->paths.seed,index);light[1]=light[0];
     /* 0x10005392..0x100053bf: the extra ambient term is guarded by
      * 0x129a4, confirmed by its INI key "multitex", NOT the black flag. */
     if(cave_options.multitexture){light[0].ambient+=.07f;light[1].ambient+=.07f;}
     for(int y=0;y<CAVE_GRID;y++)for(int x=0;x<CAVE_GRID;x++) {
         float f[8]={planes[0][y][x],planes[0][y][x+1],planes[0][y+1][x+1],planes[0][y+1][x],
                     planes[1][y][x],planes[1][y][x+1],planes[1][y+1][x+1],planes[1][y+1][x]};
-        float gradients[8][3];
-        static const unsigned char corner[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}};
-        for(int i=0;i<8;i++)memcpy(gradients[i],normals[corner[i][2]][y+corner[i][1]][x+corner[i][0]],sizeof(gradients[i]));
-        int n=polygonize(f,gradients,light,slice->vertices+used,s->normals+used,s->edge_id+used,CAVE_MAX_VERTICES-used,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,index);
+        int n=polygonize(f,NULL,NULL,slice->vertices+used,NULL,s->edge_id+used,CAVE_MAX_VERTICES-used,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,index);
         if(n<0){slice->count=0;return NULL;} /* Mathematically unreachable capacity guard. */
         used+=n;
     }
     slice->hair_count=0;
-    /* Source texture banks: five A, two B images; replace a bank only while
-     * its weight is faded out. Progress is in generated world profiles. */
-    if(!cave_options.multitexture) {
-        if(random_step(&s->random)%400==0)s->texture_index[0]=random_step(&s->random)%5;
-    } else {
-        for(int k=0;k<2;k++) {
-            if(s->texture_transition[0]<0 && s->texture_transition[1]<0 && random_step(&s->random)%650==0)
-                s->texture_transition[k]=.01f;
-            float p=s->texture_transition[k];
-            if(p>=34 && p<35)s->texture_index[k]=random_step(&s->random)%(k?2:5);
-            if(p>=0)s->texture_transition[k]=p>=68?-1:p+1;
-        }
-    }
     /* Exact grid-edge identity: shared vertices contribute once to material
      * effects and the mean normal, without lossy position hashing. */
     short first_vertex[CAVE_EDGE_SLOTS];for(int i=0;i<CAVE_EDGE_SLOTS;i++)first_vertex[i]=-1;

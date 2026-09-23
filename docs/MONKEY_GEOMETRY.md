@@ -30,8 +30,8 @@ The old invented texture scroll/detail blend was removed. Two replacement
 texture banks use separate UV coordinates, standard alpha interpolation and
 profile-length transition envelopes. Single-texture mode is supported.
 
-Forward movement uses the recovered frame-rate/impulse law with the selected
-neutral movement/projection profile, instead of the previous direct bass-speed
+Forward movement uses the recovered frame-rate/impulse law with the original
+animated movement/projection controller, instead of the previous direct bass-speed
 multiplier. Banking includes its distance-dependent retention and asymmetric
 look-ahead samples. Prepared-geometry bounds still take precedence over speed:
 no more than one new slab is generated per visual update. Global coordinates
@@ -49,33 +49,62 @@ Its ship is independently licensed CC BY 4.0 and baked into the application.
 Disabling it restores the ordinary view at the current tunnel position; it does
 not restart music or regenerate the tunnel. No game/enemy mechanics were added.
 
-### Limits: full original parity is not claimed
+### Final controller/field comparison batch
 
-- Procedural replacement textures, deterministic PSP RNG and initialization
-  differ from the original assets/shared random call sequence.
-- The grid, contributor selection, noise scale, 16-profile forward horizon,
-  projection and per-frame work budget remain PSP-specific.
-- Only the selected neutral movement/FOV profile is reconstructed; not every
-  desktop configuration/scene transition branch is implemented.
-- Field lighting is cached by profile, not recomputed over the whole tunnel
-  every display frame. Existing cached material geometry updates progressively.
+The prior list incorrectly described cached profile lighting as a PSP-only
+shortcut. The original render loop at `0x10006e33..0x10006e4e` calls `0x10004b20`
+only to generate missing profiles. That function also computes their lighting
+and stores material colors and texture-bank choices. Whole-tunnel per-frame
+relighting would depart from the reference. The PSP now uses a single light
+pair per profile, removing the invented interpolation between two light pairs.
+Redundant preliminary gradient shading, overwritten by material shading, is removed.
+
+Other concrete differences from that list were corrected in this batch:
+
+- Original 32-bit CRT random recurrence (`214013*s + 2531011`, high 15 bits),
+  scene initialization draw order, and a shared sequence for paths/materials/
+  effects. Actual playback seeds each scene from the PSP timer; fixtures use an
+  explicit seed. A live Winamp session is not expected to choose the same seed
+  or receive identical audio events.
+- The continuously animated movement envelope `0x10006c9d..0x10006d8c`,
+  path jitter `0x10006d92..0x10006e16`, movement-dependent oscillator/spline
+  periods, camera sway gates, FOV compensation and tangent projection.
+- Oscillator rate `.013` at `0x10004581`, previously mistranscribed as `.17`.
+  Jitter is consumed between individual contributors, as in the original, not
+  after all spline generators. A 128-profile reference run covers both main
+  and side paths, including changing spline intervals.
+- Field threshold `.15`, normalized XY and `(profile+1)/40` noise coordinates,
+  base frequency 9, and the original octave amplitude cutoff `.03`.
+  `cave_noise=0..16` supplies the original selectable noise amount (default 0).
+- Texture replacement probability scales with distance advanced; the one-shot
+  midpoint flag prevents repeated or missed replacements across large steps.
+  Texture choices remain cached per profile, as at `0x10005d6f`.
+
+### Platform adaptations, not pending behavior placeholders
+
+- Grid resolution, 16-profile forward horizon, one-new-profile work budget,
+  startup guard, clipping and camera-wall safety remain bounded for the PSP.
+- Optional original JPEGs are reduced to 256×256; absent assets have generated
+  replacements. The output target remains 512×256 RGB565.
 - Beat *response* formulas are recovered, but detection uses PSP PCM bands,
   not the original Winamp analysis callback, as explicitly requested.
 - Float arithmetic and two GE passes are not a pixel-identical Direct3D renderer.
 
-These are open fidelity differences, not hidden by the flight mode. Hardware
-validation of this combined material/settings/flight batch is still required.
+The previously delivered palette/textures/flight-options batch is hardware
+confirmed. The new controller/field batch still needs LCD/TV hardware validation.
+This audit does not claim a proof of equivalence of the entire DLL. Historical
+sections below describe intermediate implementations, not additional open tasks.
 
 ### Validation of this batch
 
 The PSP build precedes tests. Only `tests.test_cave` and
 `tests.test_visual_options` were run, not the complete MilkDrop collection.
-The 1,800-tick geometry run builds 1,686 slabs (peak 630 vertices/slab), checks
-27,181 visible clipped triangles after the boundary correction below, and passes reference-normal/quaternion,
+The 1,800-tick geometry run builds 1,489 slabs (peak 570 vertices/slab), checks
+23,596 visible clipped triangles, and passes reference-normal/quaternion,
 path, topology, view-matrix and cache tests under undefined-behavior checking.
 Scene allocation is 3,984,384 bytes with the recovered background palette. LCD/TV/window/fullscreen GU tests include
-all styles and flight toggling; peak command-list use is 325,376 bytes in those
-fixtures, below the existing list budget. These are not PSP performance numbers.
+all styles, wall-noise extremes and flight toggling, with the existing command-list
+budget enforced (peak 411,968 bytes). These are not PSP performance numbers.
 
 The optional `tools/check_monkey_reference.py` regenerates the retained
 quaternion fixture from the user's DLL using Unicorn, with a SHA-256 guard and

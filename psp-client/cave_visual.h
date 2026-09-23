@@ -9,7 +9,7 @@ enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HIS
        CAVE_EDGE_SLOTS=6*(CAVE_GRID+1)*(CAVE_GRID+1),
        CAVE_HAIR_VERTICES=2*CAVE_EDGE_SLOTS };
 _Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
-typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style,speed,invert_y;} CaveOptions;
+typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style,speed,invert_y,noise;} CaveOptions;
 extern CaveOptions cave_options;
 typedef struct {float travel,bass,phase,pulse,bank,roll,spin,forward;unsigned long long previous,last_beat;int direction;} CaveMotion;
 typedef struct {
@@ -44,6 +44,7 @@ typedef struct {
     unsigned random_cursor;
     int texture_index[2];
     float texture_transition[2];
+    int texture_changed[2];
     float material[CAVE_PATHS][4]; /* Original per-contributor RGBA fields. */
     CavePose poses[CAVE_PATH_CACHE];
     CaveBendController bend;
@@ -60,6 +61,7 @@ int cave_beat_response(CaveMotion *motion,int amplitude,unsigned choice,float dt
 void cave_texture(uint32_t *pixels);
 void cave_noise_rotation(float out[9],float a,float b);
 CaveScene *cave_create(void);
+CaveScene *cave_create_seed(unsigned seed);
 void cave_destroy(CaveScene *scene);
 void cave_camera(const CaveScene *scene,float z,float *x,float *y);
 /* Column-major OpenGL/GE view: six-profile look-ahead, bounded roll/sway. */

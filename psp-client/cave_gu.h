@@ -7,7 +7,7 @@ static CaveScene *cave_scene;
 void md_cave_control(int toggle,int x,int y,int throttle) {
     cave_flight_input(cave_scene,toggle,x,y,throttle);
 }
-static void cave_draw_ship(void) {
+static void cave_draw_ship(int width,int height) {
     if(!cave_scene || !cave_scene->flight)return;
     /* Draw the third-person ship in camera space, inside the renderer's
      * reserved 64 KiB tail. No buffers, allocation or draw calls when off. */
@@ -21,6 +21,11 @@ static void cave_draw_ship(void) {
         ship[i].x=x*cr-y*sr;ship[i].y=x*sr+y*cr-.4f;ship[i].z=z-2.4f;
     }
     ScePspFMatrix4 identity={.x={1,0,0,0},.y={0,1,0,0},.z={0,0,1,0},.w={0,0,0,1}};
+    /* Easter-egg overlay stays readable as the original tunnel FOV breathes.
+     * Its model is in camera units, not source tunnel coordinates. */
+    ScePspFMatrix4 projection={.x={1.25f*height/width,0,0,0},.y={0,1.25f,0,0},
+        .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
+    sceGuSetMatrix(GU_PROJECTION,&projection);
     sceGuSetMatrix(GU_VIEW,&identity);
     sceGuDisable(GU_TEXTURE_2D);sceGuDisable(GU_BLEND);sceGuDisable(GU_FOG);
     sceGuDepthMask(0);
@@ -128,7 +133,9 @@ static void cave_draw(int width,int height) {
     ScePspFMatrix4 view;
     float view_values[16];cave_view(cave_scene,cave_scene->motion.travel,view_values);
     memcpy(&view,view_values,sizeof(view));
-    ScePspFMatrix4 projection={.x={1.25f*height/width,0,0,0},.y={0,1.25f,0,0},
+    float focal_x,focal_y;
+    cave_projection(cave_scene->paths.seed,cave_scene->motion.travel,width,height,&focal_x,&focal_y);
+    ScePspFMatrix4 projection={.x={focal_x,0,0,0},.y={0,focal_y,0,0},
         .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
     sceGuSetMatrix(GU_PROJECTION,&projection);sceGuSetMatrix(GU_VIEW,&view);sceGuSetMatrix(GU_MODEL,&identity);
     int first=(int)floorf(cave_scene->motion.travel)-CAVE_HISTORY;

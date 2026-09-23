@@ -13,6 +13,7 @@ typedef struct {
     CavePathFrame frames[CAVE_PATH_CACHE];
 } CavePaths;
 void cave_paths_init(CavePaths *paths,unsigned seed);
+void cave_paths_init_material(CavePaths *paths,unsigned seed,float material[CAVE_PATHS][4],float phase[3],int textures[2]);
 /* Recovered oscillator/spline blend and odd-path jitter. */
 void cave_paths_step(CavePaths *paths);
 float cave_path_shape(float value,float amount);

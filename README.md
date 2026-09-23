@@ -884,21 +884,23 @@ test effects are no longer part of the user-facing selection.
 implemented Marching Cubes surface over compact radial fields and three-octave
 noise, following the algorithm identified in the DLL. It adds branching walls,
 depth testing, procedural rock texture and distance fog. Octave rotations and
-offset ranges now follow the recovered generator, and interpolated field-gradient
+offset ranges now follow the recovered generator, and original material-field
 normals give the walls smooth lighting. Sixteen contributors now use the
 reconstructed base oscillator controller, with changing radii and cached profiles.
 Small, distance-weighted random variations now affect odd side paths, without
 moving the main camera path; values are cached rather than regenerated each frame.
 The recovered alternate cubic paths now blend with the oscillators; the camera
 looks six profiles ahead, and continuous base texture coordinates replace
-per-triangle projections. This is **not yet a complete reproduction of Monkey**:
+per-triangle projections. This is a PSP adaptation, not a pixel-identical port:
 the camera now uses chained profile curvature, source sway, roll impulses and
 distance-dependent banking. Classic cube topology, weighted material fields,
 source material normals, spatial RGB/alpha envelopes and two-light shading follow
 the recovered formulas. Nine styles include displaced wireframe and Hair;
-the two texture banks blend with separate UV coordinates. PSP geometry budgets,
-fallback replacement textures, random sequence, audio analysis and some
-camera/projection configuration branches still differ. See the
+the two texture banks blend with separate UV coordinates. The original RNG,
+scene initialization, animated movement/FOV/sway gates, wall-noise coordinates
+and distance-based texture transitions are now used. PSP geometry budgets,
+fallback replacement textures, PCM-based beat detection and the fixed-function
+display still differ. See the
 [comparison audit and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
 Three rear slabs remain visible for camera turns without shortening the forward horizon.
@@ -933,6 +935,7 @@ These settings are saved in the existing `pspstreamer.cfg`:
 | `cave_style` | `-1` | Automatic styles; 0–8 fixes a style (7 = Hair) |
 | `cave_speed` | `100` | Travel speed, 10–200 percent; affects automatic and Easter-egg flight |
 | `cave_invert_y` | `0` | Invert the flight stick's vertical axis, 0/1; when enabled, pushing up dives |
+| `cave_noise` | `0` | Original wall-noise amount, 0–16; 0 disables it, matching the desktop default |
 | `preset_random_seconds` | `10` | Additional random automatic-switch delay, 0–120 seconds |
 | `preset_hard_cuts` | `0` | Enable music-triggered immediate preset switches, 0/1 |
 | `preset_hard_threshold` | `250` | Hard-cut sensitivity threshold, 125–400 percent |
@@ -944,6 +947,8 @@ Existing interval/fade controls remain; ordinary transitions still use a snapsho
 fade, not two simultaneously running presets. No new resolution options were added.
 
 Use Up/Down to reach the second page of Cave settings (speed and inverted flight).
+That page also offers wall noise: higher values add geometric wall detail and
+cost more computation. This is separate from textures and from animated path jitter.
 Try 30–50 percent for a calmer tunnel ride; the default 100 keeps the existing
 speed. The shoulders still temporarily slow/accelerate Easter-egg flight on top
 of this setting. Geometry preparation continues to bound the maximum speed.

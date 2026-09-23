@@ -288,7 +288,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     if (!md_origin) md_origin = now;
     seconds = (float)(now-md_origin)/1000000;
     if(preset==5) {
-        if(!cave_scene)cave_scene=cave_create();
+        if(!cave_scene)cave_scene=cave_create_seed((unsigned)now);
         if(!cave_scene)return 0;
         cave_textures_step();
         CaveSlice *built=cave_prepare(cave_scene,bands,level,now);
@@ -298,7 +298,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
         md_trace("Cave geometry");
         cave_draw(width,height);
-        cave_draw_ship();
+        cave_draw_ship(width,height);
         goto present_scene;
     }
     /* Render-thread scratch: extended EEL memories must not consume the PSP

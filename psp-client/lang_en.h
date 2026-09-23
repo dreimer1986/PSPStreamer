@@ -214,6 +214,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_CAVE_STYLE] = "Style (-1: automatic)",
     [TXT_CAVE_SPEED] = "Travel speed (%)",
     [TXT_CAVE_INVERT_Y] = "Invert flight Y",
+    [TXT_CAVE_NOISE] = "Wall noise",
 
     [TXT_PRESET_RANDOM] = "Extra random time (s)",
     [TXT_PRESET_HARD] = "Beat hard cuts",

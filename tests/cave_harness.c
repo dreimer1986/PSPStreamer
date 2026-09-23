@@ -8,6 +8,33 @@
 #include <stdint.h>
 #include <string.h>
 int main(void) {
+    /* Isolated DLL execution: 0x10006c9d and 0x1000759e. */
+    const float scene_fixture[][5]={{0,0,1.419137120f,.005f,.195f},
+        {313.45f,100,2.093897343f,.005565370f,.161976412f},
+        {10,2000,4,.005544009f,.172347113f},
+        {996.99f,10000,.676751614f,.006741541f,.155567393f}};
+    for(unsigned i=0;i<sizeof(scene_fixture)/sizeof(scene_fixture[0]);i++) {
+        const float *f=scene_fixture[i];
+        assert(fabsf(cave_movement(f[0],f[1])-f[2])<.00005f);
+        assert(fabsf(cave_roughness(f[0],f[1])-f[3])<.000001f);
+        assert(fabsf(cave_fov(f[0],f[1])-f[4])<.000001f);
+        float x,y;cave_projection(f[0],f[1],480,272,&x,&y);
+        assert(isfinite(x)&&isfinite(y)&&x>0&&y>x);
+    }
+    unsigned rng_state=1;
+    const unsigned random_fixture[]={41,18467,6334,26500,19169};
+    for(unsigned i=0;i<5;i++)assert(cave_random(&rng_state)==random_fixture[i]);
+    int texture[2]={0,0},changed_texture[2]={0,0};float transition[2]={33.5f,-1};
+    cave_texture_advance(&rng_state,texture,transition,changed_texture,2,1);
+    assert(!changed_texture[0] && transition[0]==35.5f);
+    cave_texture_advance(&rng_state,texture,transition,changed_texture,2,1);
+    assert(changed_texture[0] && transition[0]==37.5f && texture[0]<5);
+    unsigned retained=rng_state;
+    cave_texture_advance(&rng_state,texture,transition,changed_texture,2,1);
+    assert(rng_state==retained); /* Exactly one midpoint replacement. */
+    transition[0]=69;
+    cave_texture_advance(&rng_state,texture,transition,changed_texture,2,1);
+    assert(transition[0]<0);
     /* Isolated original x86 palette/brightness routines, not guessed colors. */
     const float seeds[3]={0,313.45f,10};
     const float phases[3][3]={{0,0,0},{100,200,300},{20,30,40}};
@@ -145,6 +172,28 @@ int main(void) {
     CaveScene *s=cave_create();assert(s && !((uintptr_t)s&63));
     while(s->paths.next<15)cave_paths_step(&s->paths);
     CavePaths paths;cave_paths_init(&paths,12345);
+    /* Original scene initialization consumes the Hair random pool before
+     * the first path update. Full-path fixture includes spline and jitter. */
+    CavePaths reference;cave_paths_init(&reference,12345);
+    for(int i=0;i<2048;i++)cave_random(&reference.random);
+    const float path_reference[6][7]={
+        {0,.367188334f,.244918227f,.339185476f,.705218792f,.274849981f,.285253465f},
+        {1,.366480261f,.244485527f,.338972628f,.704932630f,.278604418f,.285040617f},
+        {2,.365912884f,.244245291f,.338758141f,.701364458f,.285134673f,.284826100f},
+        {32,.366929650f,.274650574f,.331602097f,.343273133f,.758047462f,.278256238f},
+        {64,.358497292f,.330519795f,.322636455f,.611044586f,.247718543f,.268704414f},
+        {127,.301414162f,.441051245f,.302317441f,.696015179f,.496240735f,.248385429f}};
+    for(int i=0,next=0;i<128;i++) {
+        cave_paths_step(&reference);const CavePathFrame *p=&reference.frames[i%CAVE_PATH_CACHE];
+        if(i!=(int)path_reference[next][0])continue;
+        for(int k=0;k<2;k++) {
+            int at=k?3:0;const float *f=path_reference[next]+1+k*3;
+            assert(fabsf(p->x[at]-f[0])<.00005f);
+            assert(fabsf(p->y[at]-f[1])<.00005f);
+            assert(fabsf(p->radius[at]-f[2])<.00005f);
+        }
+        next++;
+    }
     CavePaths oracle;cave_paths_init(&oracle,1);oracle.seed=0;
     for(int i=0;i<CAVE_PATHS;i++)oracle.phase[i][0]=oracle.phase[i][1]=0;
     cave_paths_step(&oracle);
@@ -152,7 +201,7 @@ int main(void) {
      * X={.11,.06,.11,.06}; Y={.126,.048,.070,.092}; phase residues={31,4,27,0}.
      * Weighted X=.0636455146 is clamped; Y=.0579236505 is not. */
     assert(fabsf(oracle.phase[0][0]-.06f)<1e-6f);
-    assert(fabsf(oracle.phase[0][1]-.0579236505f)<1e-6f);
+    assert(fabsf(oracle.phase[0][1]-fminf(.06f,.0579236505f*cave_movement(0,0)))<1e-6f);
     /* Jitter affects odd paths only, protects the primary camera path and
      * deliberately uses the DLL's X-only distance gate. */
     CavePathFrame original={0};
@@ -208,6 +257,7 @@ int main(void) {
     }
     /* Independent central difference oracle checks radial Z derivatives,
      * rotated noise chain rule, clamp behavior and negative lattice positions. */
+    cave_options.noise=16;
     for(int i=0;i<700;i++) {
         float p[3]={-5.8f+(i%29)*.4f,-5.6f+(i%23)*.5f,.125f+(i%12)+(i%11)*.01f},g[3];
         cave_sample(s,p[0],p[1],p[2],g);
@@ -222,6 +272,7 @@ int main(void) {
             assert(isfinite(g[axis]) && fabsf(numerical-g[axis])<.003f);
         }
     }
+    cave_options.noise=0;
     uint32_t pixels[CAVE_TEXTURE*CAVE_TEXTURE];cave_texture(pixels);
     assert(pixels[0]!=pixels[25] && (pixels[0]>>24)==255);
     unsigned char bands[12];for(int i=0;i<12;i++)bands[i]=90;
@@ -231,7 +282,9 @@ int main(void) {
         float old_bank=s->motion.bank,old_bass=s->motion.bass;
         CaveSlice *slice=cave_prepare(s,bands,90,1000000ULL+tick*100000ULL);
         assert(isfinite(s->motion.bank) && fabsf(s->motion.bank)<1.571f);
-        float bank_retention=powf(.43f+.5f*powf(.86f,cave_forward_step(.1f,s->motion.forward)),1.4f);
+        /* The source step is now movement/FOV-dependent; a four-profile
+         * source cap gives the conservative retention bound for every frame. */
+        float bank_retention=powf(.43f+.5f*powf(.86f,4),1.4f);
         assert(fabsf(s->motion.bank-old_bank)<=3.142f*(1-bank_retention)+.00001f);
         if(tick)assert(fabsf(s->motion.bass-(.9f+(old_bass-.9f)*expf(-.2f)))<1e-6f);
         assert(s->built-before<=1);

@@ -409,6 +409,7 @@ int main(int argc,char **argv) {
         int frames=32,mode=5;
         for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
             cave_options.fog=tv;cave_options.multitexture=full;cave_options.transparent_hair=resolution;
+            cave_options.noise=resolution?16:0;
             md_high_resolution=resolution;assert(md_start());
             expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
             expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
@@ -432,7 +433,7 @@ int main(int argc,char **argv) {
             for(int i=0;i<7;i++)assert(!cave_external[i].pixels);
             assert(!cave_external_next && !cave_external_mask);
         }
-        assert(matrix_calls==(frames*3+8)*8 && clear_count==frames*8 && !clear_mode);
+        assert(matrix_calls==(frames*3+16)*8 && clear_count==frames*8 && !clear_mode);
         assert(cave_hairs && cave_wires && cave_layers && cave_colored_without_fog);
         if(!strcmp(argv[1],"--cave-textures"))assert(cave_external_binds>0);
         printf("Cave: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);
