@@ -10,8 +10,10 @@ against the 256 cases used by the inspected DLL.
 ## Current comparison audit (2026-09-23)
 
 The user confirmed the CPU clipping fix: edge holes are gone, and both animated
-texture layers work. The next combined build changes topology, lighting and
-camera response. **It is still not a frame-identical Monkey port.**
+texture layers work. The subsequent topology, lighting and camera-response
+build (`62bd1d8`) was also confirmed working perfectly on hardware.
+The current PSP feature batch is complete and tested.
+**It is still not a frame-identical Monkey port.**
 
 | Area | Current correspondence and remaining differences |
 | --- | --- |
@@ -41,8 +43,8 @@ Normalized XY is mapped to the PSP grid by a factor of six. Fixed gain gates
 replace configurable speed/FOV gates. Eye sway is reduced if it would enter a
 wall, a PSP safety adaptation. Bass attack/release and forward-speed response
 are smoothed; these envelopes are not claimed as original Winamp audio analysis.
-These changes address concrete abrupt-response paths, but visual smoothness
-still needs hardware confirmation and is constrained by visual frame pacing.
+These changes address concrete abrupt-response paths and the combined result
+is now hardware-confirmed. Visual smoothness remains constrained by frame pacing.
 
 ### Recovered lighting details
 

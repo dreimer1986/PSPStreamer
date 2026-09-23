@@ -1,5 +1,16 @@
 # Optimization status and remaining work
 
+## Hardware feedback and closed test items
+
+The user confirmed the former ToDo items 4–7 as tested: raster-variable
+optimization, sparse state copies, the server 0.1.48 artwork/TV/UI batch and
+the direct AVCC path. They remain functional, without a major additional
+perceived speed increase. Those test reminders are closed and removed from
+the active ToDo; no numerical PSP speedup is inferred from this feedback.
+The latest Cave topology/lighting/camera build is also hardware-confirmed.
+The candidates below are optional further work, not unfinished validation of
+these implemented changes.
+
 ## Previously implemented: prepared execution
 
 - Import-time preparation of PUSH/LOAD followed by ADD/SUB/MUL. The original
@@ -63,8 +74,8 @@ These are correctness checks, not PSP timing measurements. No preset sweep.
 
 ### Direct AVCC packet path (item 4, playback confirmed on hardware)
 
-The user confirmed film playback on 2026-09-23. This is not a claim that every
-seek/reconnect/output-mode combination was individually retested.
+The user confirmed film playback on 2026-09-23 and subsequently closed the
+associated ToDo test item. No per-scenario timing measurements were supplied.
 
 - Video now goes from FLV length-prefixed NAL units straight to an aligned,
   owned `AvcPacket`, then to `sceMpegGetAvcNalAu`. `avcc_packet.h` validates the
@@ -112,7 +123,6 @@ memory-heavy preset. Separate formula, geometry, GPU wait, UI and network costs.
 Use these observations to choose among the candidates above. Live dual-preset
 transitions remain deferred until sufficient CPU/RAM headroom is demonstrated.
 
-Before measuring, verify on PSP: TV idle animation and navigation with artwork;
-successive episodes of one Plex/Jellyfin series versus a different series; image
-request cancellation; and normal LCD/TV music/video start/stop. Install both
-EBOOT.PBP and PSPStreamer.prx and update the server for v2 artwork reuse.
+The previous artwork/navigation and normal playback validation checklist has
+been closed by the user's test confirmation. Further profiling is optional;
+there is no outstanding request to repeat that checklist.
