@@ -344,18 +344,18 @@ int main(void) {
     }
     assert(s->motion.travel>500 && s->ready==CAVE_SLICES);
     /* Inactive controls do not change ordinary motion or view; activating
-     * adds a bounded camera offset, and disabling restores the same view. */
+     * takes independent position/orientation, disabling restores normal view. */
     float normal_view[16],restored[16];cave_view(s,s->motion.travel,normal_view);
     unsigned rng=s->random;float travel=s->motion.travel;
-    cave_flight_input(s,0,255,0,1);assert(!s->flight && s->flight_x==0);
+    cave_flight_input(s,0,255,0,1,0);assert(!s->flight && s->flight_x==0);
     cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
-    cave_flight_input(s,1,255,0,1);assert(s->flight && s->flight_throttle==1);
+    cave_flight_input(s,1,255,0,1,0);assert(s->flight && s->flight_throttle==1);
     assert(s->flight_axis_y>0);
-    cave_options.invert_y=1;cave_flight_input(s,0,255,0,0);assert(s->flight_axis_y<0);
+    cave_options.invert_y=1;cave_flight_input(s,0,255,0,0,0);assert(s->flight_axis_y<0);
     cave_options.invert_y=0;
     s->flight_x=.2f;s->flight_y=.1f;cave_view(s,s->motion.travel,restored);
     assert(memcmp(normal_view,restored,sizeof(restored)));
-    cave_flight_input(s,1,128,128,0);assert(!s->flight && s->flight_x==0 && s->flight_y==0);
+    cave_flight_input(s,1,128,128,0,0);assert(!s->flight && s->flight_x==0 && s->flight_y==0);
     cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
     assert(s->random==rng && s->motion.travel==travel);
     CaveScene *speed_test=cave_create();assert(speed_test);
@@ -366,6 +366,58 @@ int main(void) {
     cave_prepare(speed_test,bands,90,s->motion.previous+10000);
     assert(fabsf((speed_test->motion.travel-s->motion.travel)-full_step*.5f)<.001f);
     cave_options.speed=100;cave_destroy(speed_test);
+    /* Wide connected passage: steer beyond the former +/-1.2 offset, keep
+     * position on stick release, clamp speed, and never travel backwards. */
+    CaveScene *flight=cave_create();assert(flight);
+    cave_flight_input(flight,1,128,128,0,0); /* also safe before cache warmup */
+    unsigned long long clock=1000000;
+    for(int i=0;i<16;i++)cave_prepare(flight,bands,90,clock+=1000);
+    flight->motion.travel=0;flight->flight_x=flight->flight_y=0;
+    flight->flight_roll=0;flight->flight_initialized=1;
+    for(int i=0;i<CAVE_PATH_CACHE;i++)for(int j=0;j<CAVE_PATHS;j++) {
+        flight->paths.frames[i].x[j]=flight->paths.frames[i].y[j]=.5f;
+        flight->paths.frames[i].radius[j]=.7f;
+    }
+    cave_flight_input(flight,0,255,128,0,0);
+    for(int i=0;i<40;i++)cave_prepare(flight,bands,90,clock+=10000);
+    assert(flight->flight_x>1.2f && flight->motion.travel>0);
+    /* With zero heading, XY is independent of the automatic path. */
+    cave_flight_input(flight,0,128,128,0,0);flight->flight_yaw=0;
+    float position=flight->flight_x;
+    cave_prepare(flight,bands,90,clock+=10000);
+    assert(flight->flight_x==position);
+    cave_flight_input(flight,0,255,0,1,1);
+    for(int i=0;i<250;i++) {
+        float before=flight->motion.travel;
+        cave_prepare(flight,bands,90,clock+=10000);
+        assert(flight->motion.travel>=before);
+        assert(fabsf(flight->flight_x)<5.7f && fabsf(flight->flight_y)<5.7f);
+        cave_view(flight,flight->motion.travel,restored);
+        for(int k=0;k<16;k++)assert(isfinite(restored[k]));
+    }
+    assert(flight->flight_speed==2);
+    cave_flight_input(flight,0,0,255,-1,-1);
+    for(int i=0;i<350;i++)cave_prepare(flight,bands,90,clock+=10000);
+    assert(flight->flight_speed==.2f);
+    cave_destroy(flight);
+    /* Two disconnected forward passages: steering must not jump through
+     * the intervening solid region, even at maximum player speed. */
+    flight=cave_create();assert(flight);
+    for(int i=0;i<16;i++)cave_prepare(flight,bands,90,clock+=1000);
+    cave_flight_input(flight,1,255,128,0,0);
+    flight->flight_x=flight->flight_y=flight->flight_roll=0;
+    flight->flight_speed=2;
+    for(int tick=0;tick<100;tick++) {
+        for(int i=0;i<CAVE_PATH_CACHE;i++)for(int j=0;j<CAVE_PATHS;j++) {
+            flight->paths.frames[i].x[j]=j<8?.5f:.75f;
+            flight->paths.frames[i].y[j]=.5f;
+            flight->paths.frames[i].radius[j]=.1f;
+        }
+        cave_prepare(flight,bands,90,clock+=10000);
+        assert(flight->flight_x<1.5f);
+        assert(cave_density(flight,flight->flight_x,flight->flight_y,flight->motion.travel)>.015f);
+    }
+    cave_destroy(flight);
     assert((cave_effect_color(0,0,0,1,1)>>24)==0x58);
     assert((cave_effect_color(0,0,1,1,1)>>24)==0x80);
     assert((cave_effect_color(0,0,0,1,0)>>24)==0xff);

@@ -18,28 +18,54 @@ static float flight_axis(int value) {
     if(fabsf(x)<=20)return 0;
     return fmaxf(-1,fminf(1,(x-copysignf(20,x))/107));
 }
-void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle) {
+void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll) {
     if(!s)return;
-    if(toggle){s->flight=!s->flight;s->flight_x=s->flight_y=0;}
+    if(toggle){
+        s->flight=!s->flight;s->flight_x=s->flight_y=0;
+        s->flight_yaw=s->flight_pitch=0;s->flight_speed=1;
+        s->flight_roll=s->motion.roll-s->motion.bank;
+        s->flight_initialized=s->ready>=12;
+        if(s->flight)cave_camera(s,s->motion.travel,&s->flight_x,&s->flight_y);
+    }
     if(!s->flight)return;
     s->flight_axis_x=flight_axis(x);s->flight_axis_y=(cave_options.invert_y?1:-1)*flight_axis(y);
     s->flight_throttle=throttle>0?1:throttle<0?-1:0;
+    s->flight_roll_input=roll>0?1:roll<0?-1:0;
 }
-static void cave_flight_step(CaveScene *s,float dt) {
-    if(!s->flight)return;
-    float x,y;cave_camera(s,s->motion.travel,&x,&y);
-    float roll=s->motion.roll-s->motion.bank,cr=cosf(roll),sr=sinf(roll);
-    float ax=cr*s->flight_axis_x-sr*s->flight_axis_y,ay=sr*s->flight_axis_x+cr*s->flight_axis_y;
-    float dx=fmaxf(-1.2f,fminf(1.2f,s->flight_x+ax*dt*1.7f));
-    float dy=fmaxf(-1.2f,fminf(1.2f,s->flight_y+ay*dt*1.7f));
-    /* A bounded field test, not triangle collision. Retract towards the
-     * automatic safe path when the tunnel narrows; never change its RNG. */
-    for(int i=0;i<8;i++) {
-        if(cave_density(s,x+dx,y+dy,s->motion.travel)>.025f)break;
-        dx*=.5f;dy*=.5f;
+static void cave_flight_direction(const CaveScene *s,float *x,float *y) {
+    float cr=cosf(s->flight_roll),sr=sinf(s->flight_roll);
+    float yaw=tanf(s->flight_yaw),pitch=tanf(s->flight_pitch);
+    *x=cr*yaw-sr*pitch;*y=sr*yaw+cr*pitch;
+}
+static int cave_flight_clear(const CaveScene *s,float x,float y,float z) {
+    /* Stay inside the meshed cross section, including an edge margin. */
+    return fabsf(x)<5.7f && fabsf(y)<5.7f && cave_density(s,x,y,z)>.015f;
+}
+static void cave_flight_step(CaveScene *s,float distance) {
+    float dx,dy;cave_flight_direction(s,&dx,&dy);
+    /* Sweep rather than testing only the destination: never jump across a
+     * thin wall into a disconnected branch. Work is bounded to 40 steps. */
+    int count=(int)ceilf(distance*sqrtf(1+dx*dx+dy*dy)/.08f);
+    if(count<1)count=1;
+    if(count>40)count=40;
+    float dz=distance/count;
+    for(int i=0;i<count;i++) {
+        float x=s->flight_x+dx*dz,y=s->flight_y+dy*dz,z=s->motion.travel+dz;
+        if(!cave_flight_clear(s,x,y,z)) {
+            /* Slide along one axis, then along the forward rail. A blocked
+             * dead end stops progress; it never teleports to contributor 0. */
+            if(cave_flight_clear(s,x,s->flight_y,z))y=s->flight_y;
+            else if(cave_flight_clear(s,s->flight_x,y,z))x=s->flight_x;
+            else if(cave_flight_clear(s,s->flight_x,s->flight_y,z)){x=s->flight_x;y=s->flight_y;}
+            else {
+                /* Permit steering away from a wall even with forward travel
+                 * blocked, but still sweep in the current cross section. */
+                if(cave_flight_clear(s,x,y,s->motion.travel)){s->flight_x=x;s->flight_y=y;}
+                break;
+            }
+        }
+        s->flight_x=x;s->flight_y=y;s->motion.travel=z;
     }
-    if(cave_density(s,x+dx,y+dy,s->motion.travel)<=.025f)dx=dy=0;
-    s->flight_x=dx;s->flight_y=dy;
 }
 int cave_beat_response(CaveMotion *m,int amplitude,unsigned choice,float dt,int beat) {
     if(amplitude<0)amplitude=0;
@@ -138,7 +164,10 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float gain=2.4f*fminf(1,cave_fov(seed,z)/.195f)/fmaxf(1,1.2f*cave_movement(seed,z));
     dx+=gain*(.21f*sinf(seed*1.2f+z*.0119f+11)+.16f*sinf(seed*3.1f+z*.0137f+46)+.19f*sinf(seed*1.4f+z*.0059f+38));
     dy+=gain*(.12f*sinf(seed*2.4f+z*.0103f+83)+.17f*sinf(seed*2.7f+z*.0122f+29)+.19f*sinf(seed*1.7f+z*.0069f+91));
-    if(s->flight){x+=s->flight_x;y+=s->flight_y;}
+    if(s->flight){
+        x=s->flight_x;y=s->flight_y;
+        cave_flight_direction(s,&dx,&dy);dx*=6;dy*=6;
+    }
     float eye[3],target[3],up_point[3];
     cave_world_point(s,x,y,z,eye);cave_world_point(s,x+dx,y+dy,z+6,target);
     cave_world_point(s,x,y+1,z,up_point);
@@ -155,7 +184,7 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
         view[k*4]=right[k];view[k*4+1]=up[k];view[k*4+2]=-forward[k];
         view[12]-=right[k]*eye[k];view[13]-=up[k]*eye[k];view[14]+=forward[k]*eye[k];
     }
-    float roll=s->motion.roll-s->motion.bank;
+    float roll=s->flight?s->flight_roll:s->motion.roll-s->motion.bank;
     float cr=cosf(roll),sr=sinf(roll);
     for(int k=0;k<4;k++) {
         float right=view[k*4],up=view[k*4+1];
@@ -380,12 +409,27 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
      * compensate the animated field of view before the source cap. */
     float step=cave_forward_profile(dt,s->motion.forward,movement,
         cave_fov(s->paths.seed,s->motion.travel))*(cave_options.speed*.01f);
-    if(s->flight)step*=s->flight_throttle>0?1.5f:s->flight_throttle<0?.5f:1;
+    if(s->flight) {
+        s->flight_speed=fmaxf(.2f,fminf(2,s->flight_speed+s->flight_throttle*dt*.6f));
+        s->flight_roll=remainderf(s->flight_roll+s->flight_roll_input*dt*1.6f,6.283185307f);
+        float response=1-expf(-dt*8);
+        s->flight_yaw+=(s->flight_axis_x*.85f-s->flight_yaw)*response;
+        s->flight_pitch+=(s->flight_axis_y*.7f-s->flight_pitch)*response;
+        /* Player speed is independent of beat impulses and automatic sway. */
+        step=fminf(1.2f,dt*6*s->flight_speed*cave_options.speed*.01f);
+    }
     float previous_travel=s->motion.travel;
     if(s->ready>=12) {
+        if(s->flight && !s->flight_initialized) {
+            cave_camera(s,s->motion.travel,&s->flight_x,&s->flight_y);
+            s->flight_initialized=1;
+        }
         float proposed=s->motion.travel+step;
         /* Never travel into an unprepared slab; audio is never stalled. */
-        if(proposed<s->next-6)s->motion.travel=proposed;
+        if(proposed<s->next-6) {
+            if(s->flight)cave_flight_step(s,step);
+            else s->motion.travel=proposed;
+        }
     }
     cave_texture_advance(&s->random,s->texture_index,s->texture_transition,
         s->texture_changed,s->motion.travel-previous_travel,cave_options.multitexture);
@@ -403,7 +447,6 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         s->motion.bank+=(target-s->motion.bank)*(1-powf(.43f+.5f*powf(.86f,step),14*dt));
     }
     cave_rebase(s);
-    cave_flight_step(s,dt);
     int first=(int)floorf(s->motion.travel);
     /* Keep the original forward horizon AND three rear slabs. A banked view
      * can still see those at its edges; do not recycle them at camera Z. */

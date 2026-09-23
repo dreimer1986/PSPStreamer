@@ -50,10 +50,11 @@ typedef struct {
     CaveBendController bend;
     int pose_next;
     /* Easter egg: zero-initialized and never consulted by normal motion. */
-    int flight,flight_throttle;
+    int flight,flight_throttle,flight_roll_input,flight_initialized;
     float flight_x,flight_y,flight_axis_x,flight_axis_y;
+    float flight_yaw,flight_pitch,flight_roll,flight_speed;
 } CaveScene;
-void cave_flight_input(CaveScene *scene,int toggle,int analog_x,int analog_y,int throttle);
+void cave_flight_input(CaveScene *scene,int toggle,int analog_x,int analog_y,int throttle,int roll);
 void cave_world_point(const CaveScene *scene,float x,float y,float z,float out[3]);
 void cave_material_sample(const CaveScene *scene,int profile,float x,float y,float fraction,float rgba[4],float normal[3]);
 /* Original beat choice and damping, independent of the PSP audio detector. */

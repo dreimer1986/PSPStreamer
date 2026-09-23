@@ -4,8 +4,9 @@
 #include "cave_textures.h"
 static CaveScene *cave_scene;
 #include "cave_ship_data.h"
-void md_cave_control(int toggle,int x,int y,int throttle) {
-    cave_flight_input(cave_scene,toggle,x,y,throttle);
+int md_cave_control(int toggle,int x,int y,int throttle,int roll) {
+    cave_flight_input(cave_scene,toggle,x,y,throttle,roll);
+    return cave_scene && cave_scene->flight;
 }
 static void cave_draw_ship(int width,int height) {
     if(!cave_scene || !cave_scene->flight)return;
@@ -13,7 +14,7 @@ static void cave_draw_ship(int width,int height) {
      * reserved 64 KiB tail. No buffers, allocation or draw calls when off. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
     MdVertex *ship=sceGuGetMemory(sizeof(cave_ship_mesh));
-    float roll=-cave_scene->flight_axis_x*.35f,pitch=cave_scene->flight_axis_y*.18f;
+    float roll=-cave_scene->flight_axis_x*.35f-cave_scene->flight_roll_input*.2f,pitch=cave_scene->flight_axis_y*.18f;
     float cr=cosf(roll),sr=sinf(roll),cp=cosf(pitch),sp=sinf(pitch);
     for(int i=0;i<CAVE_SHIP_VERTICES;i++) {
         ship[i]=cave_ship_mesh[i];

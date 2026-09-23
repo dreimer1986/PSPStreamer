@@ -89,6 +89,15 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step3_title="TRIANGLE: change the interval",
         .step3_text="SELECT: extra switch options."
     },
+    [HELP_PAGE_FLIGHT]={
+        .title="Cave: take the controls",
+        .step1_title="L + R together: flight on / off",
+        .step1_text="Analog stick steers into branches.",
+        .step2_title="L / R: roll   UP / DOWN: speed",
+        .step2_text="Forward only; walls block the ship.",
+        .step3_title="TRIANGLE: fullscreen   START: stop",
+        .step3_text="Invert Y in Cave options if wanted."
+    },
     [HELP_PAGE_DOWNLOAD]={
         .title="Download straight from the PSP",
         .step1_title="1. Choose a music or video file",

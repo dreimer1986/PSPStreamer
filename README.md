@@ -950,8 +950,8 @@ Use Up/Down to reach the second page of Cave settings (speed and inverted flight
 That page also offers wall noise: higher values add geometric wall detail and
 cost more computation. This is separate from textures and from animated path jitter.
 Try 30–50 percent for a calmer tunnel ride; the default 100 keeps the existing
-speed. The shoulders still temporarily slow/accelerate Easter-egg flight on top
-of this setting. Geometry preparation continues to bound the maximum speed.
+speed. In Easter-egg flight, Up/Down adjust a separate 20–200 percent throttle
+on top of this setting. Geometry preparation continues to bound maximum speed.
 
 Cave's background now follows the recovered animated, brightness-limited palette
 even with fog disabled. When enabled, fog blends distant walls into that same
@@ -998,9 +998,18 @@ additional memory, released when leaving the renderer. With diagnostics enabled,
 <summary>Cave Easter egg</summary>
 
 During Cave playback, press **L+R together** to enable or disable flight.
-The analog stick steers, L alone slows down and R alone accelerates. The tunnel
-still follows its generated path; a bounded density check restricts lateral
-camera movement. This is not a game with enemies or mesh-accurate collisions.
+The analog stick steers the forward flight direction; release it to fly parallel
+to the local tunnel axis. L/R roll the ship and its steering axes. Hold Up/Down
+to increase/decrease speed (20–200 percent, retained until leaving flight).
+These two buttons do not change volume while flying. The existing Cave speed
+setting also applies, but automatic beat-driven acceleration does not.
+
+The camera follows the player across the generated cross section, without pulling
+back to the automatic centerline. Connected, forward-going branches can be entered;
+this does not create new branches or permit backward flight. Bounded swept density
+checks slide against walls or stop forward progress at a blocked passage. Steer
+away or leave flight to return to the automatic route. These checks approximate
+the wall field, not exact ship/triangle collisions; there is no damage or combat.
 Triangle still switches fullscreen and Start stops playback.
 
 Flight starts disabled, is not saved, and is reset when the renderer is closed

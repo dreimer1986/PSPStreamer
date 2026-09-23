@@ -44,7 +44,24 @@ for random delay and hard-cut controls; normal fades remain snapshot fades.
 See the README for all persisted keys and defaults.
 
 The optional, deliberately non-original flight Easter egg is off by default.
-L+R toggles it, analog steers, and the two shoulders individually control speed.
+L+R toggles it, analog steers the forward heading, L/R roll, and Up/Down change
+speed instead of volume while flying. The player retains an independent XY
+position in the lofted cross sections; there is no automatic pull to contributor
+zero. The whole meshed cross section is available, with a 0.3-unit boundary
+margin. Steering is bounded to forward headings (yaw +/-0.85 radians, pitch
++/-0.7), smoothed over time; releasing the stick aligns with the local forward
+axis without recentering position. Roll rotates the steering axes. Speed is
+20–200 percent of the flight base rate, multiplied by the existing speed setting;
+automatic beat acceleration and automatic camera roll do not control the player.
+
+Swept density checks at intervals of at most 0.08 loft units (bounded to 40 per
+update) prevent crossing solid walls. Axis sliding and forward-only sliding are
+tried first, then forward movement stops; lateral steering can free the player.
+This is a point/field safety model, not a hull/triangle collision simulation.
+Only connected forward branches are reachable: there is no backward world cache
+or invented branch generation. Disabling flight returns to the original route.
+Position remains in loft coordinates, so world-origin rebasing needs no extra
+player transformation. Cache warmup is handled before initializing flight position.
 Its ship is independently licensed CC BY 4.0 and baked into the application.
 Disabling it restores the ordinary view at the current tunnel position; it does
 not restart music or regenerate the tunnel. No game/enemy mechanics were added.

@@ -89,6 +89,15 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step3_title="DREIECK: Wechselintervall ändern",
         .step3_text="SELECT: weitere Wechseloptionen."
     },
+    [HELP_PAGE_FLIGHT]={
+        .title="Höhle: selbst fliegen",
+        .step1_title="L + R zusammen: Flug ein / aus",
+        .step1_text="Analogstick: in Abzweige lenken.",
+        .step2_title="L / R: rollen   HOCH/RUNTER: Tempo",
+        .step2_text="Nur vorwärts; Wände bremsen ab.",
+        .step3_title="DREIECK: Vollbild   START: Stopp",
+        .step3_text="Flug-Y bei Bedarf in Optionen umkehren."
+    },
     [HELP_PAGE_DOWNLOAD]={
         .title="Direkt auf die PSP herunterladen",
         .step1_title="1. Musik- oder Videodatei wählen",

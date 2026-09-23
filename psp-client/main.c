@@ -2012,12 +2012,14 @@ static int play_audio_once(const char *media_id, const char *title) {
             sceCtrlPeekBufferPositive(&pad,1); old=pad.Buttons;
             continue;
         }
+        int cave_flying=0;
         if(visual_preset==6 && music_visual_active) {
             unsigned int shoulders=PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER;
             int both=(pad.Buttons&shoulders)==shoulders;
             int toggle=both && (old&shoulders)!=shoulders && !(pad.Buttons&PSP_CTRL_SELECT);
-            int throttle=both?0:(pad.Buttons&PSP_CTRL_RTRIGGER)?1:(pad.Buttons&PSP_CTRL_LTRIGGER)?-1:0;
-            md_cave_control(toggle,pad.Lx,pad.Ly,throttle);
+            int roll=both?0:!!(pad.Buttons&PSP_CTRL_RTRIGGER)-!!(pad.Buttons&PSP_CTRL_LTRIGGER);
+            int throttle=!!(pad.Buttons&PSP_CTRL_UP)-!!(pad.Buttons&PSP_CTRL_DOWN);
+            cave_flying=md_cave_control(toggle,pad.Lx,pad.Ly,throttle,roll);
         }
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -2027,7 +2029,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             if(live) {radio_next_action=2;stopped_by_user=1;break;}
             paused = !paused; audio_start = !paused;
         }
-        if (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN)) {
+        if (!cave_flying && (pad.Buttons & (PSP_CTRL_UP | PSP_CTRL_DOWN))) {
             unsigned int direction = (pad.Buttons & PSP_CTRL_UP) ? PSP_CTRL_UP : PSP_CTRL_DOWN;
             unsigned long long now = sceKernelGetSystemTimeWide();
             if (!(old & direction) || now >= next_volume_repeat_tick) {

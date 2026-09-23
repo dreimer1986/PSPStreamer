@@ -420,7 +420,7 @@ int main(int argc,char **argv) {
                     cave_scene->style=cave_test_style=(f/3)%9;
                     cave_scene->black=(f%7)==0;
                     cave_scene->texture_style=(f%3)!=0;
-                    md_cave_control(f==16 || f==24,200,70,0);
+                    md_cave_control(f==16 || f==24,200,70,1,1);
                 }
                 test_time+=100000;assert(md_frame(tv,full,bands,75,test_time,mode)==1);
                 assert(covered_width==expected_width);
