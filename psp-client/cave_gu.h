@@ -1,7 +1,24 @@
 /* Native cached isosurface geometry; shares the music renderer's GU owner. */
+#include "cave_clip.h"
 static CaveScene *cave_scene;
 static uint32_t cave_pixels[CAVE_TEXTURE*CAVE_TEXTURE] __attribute__((aligned(64)));
 static int cave_texture_ready;
+typedef struct {float sx,sy,u,v,detail_v;unsigned gain;} CaveTextureMotion;
+/* Reuse each clipped/cached batch for both fixed-function texture stages.
+ * No second mesh, texture allocation, field evaluation or audio work. */
+static void cave_draw_batch(int count,const MdVertex *vertices,const CaveTextureMotion *t) {
+    sceGuDisable(GU_BLEND);sceGuDepthMask(0);
+    sceGuTexScale(t->sx,t->sy);sceGuTexOffset(t->u,t->v);
+    sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,NULL,vertices);
+    /* A dim, counter-moving detail layer; equal-depth test, no depth writes.
+     * Fog remains active, so the extra layer also fades into the distance. */
+    sceGuDepthMask(1);sceGuEnable(GU_BLEND);
+    sceGuBlendFunc(GU_ADD,GU_FIX,GU_FIX,t->gain*0x010101,0xffffff);
+    sceGuTexScale(2,2);sceGuTexOffset(-2*t->u,t->detail_v);
+    sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,NULL,vertices);
+    sceGuDisable(GU_BLEND);sceGuDepthMask(0);
+    sceGuTexScale(1,1);sceGuTexOffset(0,0);
+}
 static void cave_clear_target(void) {
     /* sceGuClear uses gu_draw_buffer.width/height (480x272 after GU init),
      * NOT the offscreen viewport set by sceGuDrawBufferList. Clear the full
@@ -39,10 +56,43 @@ static void cave_draw(int width,int height) {
         .z={0,0,-1.006689f,-1},.w={0,0,-.200669f,0}};
     sceGuSetMatrix(GU_PROJECTION,&projection);sceGuSetMatrix(GU_VIEW,&view);sceGuSetMatrix(GU_MODEL,&identity);
     int first=(int)floorf(cave_scene->motion.travel)-CAVE_HISTORY;
+    CaveClip clip;cave_clip_init(&clip,view_values,projection.x.x,projection.y.y);
+    float phase=cave_scene->motion.phase;
+    CaveTextureMotion texture={1+.035f*sinf(phase*2),1+.035f*cosf(phase*2),
+        phase/6.283185307f,.06f*sinf(phase*3),.12f*sinf(phase*2),
+        12+(unsigned)(16*cave_scene->motion.bass+8*cave_scene->motion.pulse)};
+    unsigned budget=0;
     for(int i=0;i<CAVE_SLICES;i++) {
         CaveSlice *slice=&cave_scene->slices[i];
         if(slice->index<first || !slice->count)continue;
-        sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,
-                       slice->count,NULL,slice->vertices);
+        int begin=0;
+        for(int at=0;at<=slice->count;at+=3) {
+            unsigned a=0,b=0,c=0;
+            if(at<slice->count) {
+                a=cave_clip_mask(&clip,&slice->vertices[at]);
+                b=cave_clip_mask(&clip,&slice->vertices[at+1]);
+                c=cave_clip_mask(&clip,&slice->vertices[at+2]);
+                if(!(a|b|c))continue; /* Keep cached, contiguous safe geometry. */
+            }
+            if(at>begin) {
+                if(budget+384>MD_LIST_BYTES-65536)return;
+                budget+=384;
+                cave_draw_batch(at-begin,slice->vertices+begin,&texture);
+            }
+            begin=at+3;
+            if(at==slice->count || (a&b&c))continue;
+            MdVertex clipped[CAVE_CLIP_VERTICES];
+            int count=cave_clip_triangle(&clip,slice->vertices+at,clipped);
+            if(count<=0)continue;
+            unsigned bytes=count*sizeof(MdVertex);
+            /* Reserve command/presentation headroom even at pathological
+             * geometry density. Scratch belongs to this GU list until sync. */
+            if(budget+bytes+464>MD_LIST_BYTES-65536)return;
+            budget+=bytes+464;
+            unsigned char *memory=sceGuGetMemory(bytes+63);
+            MdVertex *vertices=(MdVertex *)(((uintptr_t)memory+63)&~(uintptr_t)63);
+            memcpy(vertices,clipped,bytes);
+            cave_draw_batch(count,vertices,&texture);
+        }
     }
 }

@@ -118,16 +118,34 @@ All this work happens per generated profile, not per vertex or display frame.
 The camera now uses the source's **six-profile look-ahead** observed at
 `0x1000704e..0x10007152`, interpolating both current and future primary-path
 positions. A level-up GE view matrix replaces translation-only viewing. This
-does not reproduce the subsequent source roll, sway or audio-dependent camera
-disturbances. Missing future profiles during startup fall back to looking forward.
+now adds bounded PSP roll, angular sway and bass-attack disturbances (see below),
+without claiming the source's exact motion coefficients. Missing future profiles
+during startup fall back to looking forward.
 
 Base UV assignment at `0x10005afc..0x10005b13` uses normalized X plus the
 longitudinal 1/96 offset, and normalized Y. It replaces the per-triangle dominant
 axis projection. Our depth convention reverses the longitudinal sign; coordinates
 stay unwrapped across triangles/slabs and GE repeat handles wrapping after
-interpolation. This avoids independent projection seams. Original texture-stage
-animation, alternate passes and source lighting/color changes are still omitted;
-the procedural rock texture remains an original PSP asset.
+interpolation. This avoids independent projection seams. Animated PSP texture
+stages are described below; exact source lighting/color changes remain omitted.
+The procedural rock texture remains an original PSP asset.
+
+### Bounded camera and texture animation (2026-09-23)
+
+The camera adds smooth roll (at most about 12 degrees), angular sway and a
+decaying bass-attack response. The eye stays on the tested clear center path;
+only its orientation changes. A wrapped phase and capped delta prevent large
+jumps after inactivity. These are explicit PSP adaptations, not recovered
+Monkey camera constants. The decoder clock is never involved.
+
+The base rock layer slowly scrolls and breathes in scale. A second, finer layer
+scrolls oppositely and adds a small bass-dependent contribution. Both passes
+reuse the same clipped vertices and texture; no second scene or render target
+is allocated. The detail pass tests depth without writing it, keeps distance
+fog, and restores blending, depth writes and texture transforms afterward.
+Trigonometry is evaluated once per visual frame, not once per triangle. Exact
+original texture-stage choreography and source color/light control are not
+claimed. Performance and appearance of this combined update need PSP testing.
 
 This is **not the full scene routine**. The adapted field threshold/noise scale,
 travel speed and bounded geometry remain unchanged.
@@ -162,9 +180,27 @@ empty patches at the sides. Inspection found that the renderer discarded every
 slab behind `floor(camera_z)`, even though a tilted view can still see those
 surfaces. The ring now retains and draws three rear slabs, while keeping the
 16-slab forward horizon unchanged (19 geometry slots, 22 path profiles).
-This uses 1,999,360 bytes of scene RAM; the EDRAM layout is unchanged. The host
+This used 1,999,360 bytes of scene RAM; the EDRAM layout is unchanged. The host
 test verifies every retained slab survives forward prebuilding across 1,800
-ticks. Whether this removes the reported visible holes needs hardware confirmation.
+ticks. The user reported little improvement: retained history alone was not enough.
+
+The recording `PXL_20260923_162012871.mp4` shows triangular missing patches at
+the viewport edges. This suggests projected-vertex rejection, not just missing
+slabs. The [PPSSPP software clipper](https://github.com/hrydgard/ppsspp/blob/master/GPU/Software/Clipper.cpp)
+models the GE dropping a triangle if a vertex is outside its allowed screen
+range. Enabling GU_CLIP_PLANES alone does not guarantee desktop-style clipping.
+An independent CPU clipper now intersects triangles with the near and four
+side planes before submission. UVs and vertex colors interpolate at new edges.
+Fully visible cached runs are submitted directly; only intersecting triangles
+use bounded scratch in the existing GU list. Both texture passes share it until
+GU completion. Command/scratch use reserves 64 KiB for presentation, with a hard
+budget guard. No persistent geometry cache is rewritten by clipping.
+
+Targeted checks exercise 29,065 visible clipped triangles along 1,800 ticks,
+finite interpolated attributes, camera orthonormality, projected bounds, paired
+depth-write/detail passes, and LCD/TV window/fullscreen teardown. The scene now
+occupies 1,999,424 bytes, with 26,688 bytes peak scratch in the short GU fixture.
+Those are host checks, not proof of the visible fix or a hardware speed result.
 
 ### Right-edge depth-buffer regression
 
@@ -202,7 +238,7 @@ paths, disabled perturbations, displacement bounds and interpolation.
 Additional checks cover easing fixtures, nonuniform cubic linear reproduction,
 10,000 spline samples, path bounds including overshoot, view orthonormality and
 camera-origin transformation, plus source-style base UV consistency.
-The combined build passed these targeted checks: 696 generated slabs, peak 624
+The earlier spline build passed these targeted checks: 696 generated slabs, peak 624
 vertices per slab in the test trajectory, 1,687,552 bytes scene allocation and
 1,136 bytes peak tested GU command-list usage. These are host-check results,
 not a PSP frame-rate measurement. No unrelated full preset sweep was run.

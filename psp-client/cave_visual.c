@@ -50,11 +50,15 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float x,y;cave_camera(s,z,&x,&y);
     CavePathFrame ahead;
     float dx=0,dy=0;
-    /* 0x1000704e..0x10007152: interpolate current and +6/+7 profiles.
-     * Keep a level up vector; source roll/sway effects are not assumed here. */
+    /* Recovered six-profile look-ahead; bounded PSP camera effects below
+     * are adaptations, not claimed as recovered original coefficients. */
     if(cave_paths_sample(&s->paths,z+6,&ahead,NULL)) {
         dx=(ahead.x[0]-.5f)*12-x;dy=(ahead.y[0]-.5f)*12-y;
     }
+    float phase=s->motion.phase,energy=s->motion.bass,pulse=s->motion.pulse;
+    /* Angular sway keeps the eye on the known-clear center path. */
+    dx+=sinf(phase*3)*(.16f+.20f*energy)+sinf(phase*11)*pulse*.12f;
+    dy+=sinf(phase*2)*(.12f+.14f*energy)+cosf(phase*7)*pulse*.09f;
     float inverse=1/sqrtf(dx*dx+dy*dy+36);
     float fx=dx*inverse,fy=dy*inverse,fz=-6*inverse;
     inverse=1/sqrtf(fz*fz+fx*fx);
@@ -62,6 +66,12 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float ux=-rz*fy,uy=rz*fx-rx*fz,uz=rx*fy;
     float view[16]={rx,ux,-fx,0, 0,uy,-fy,0, rz,uz,-fz,0,
         -(rx*x-rz*z),-(ux*x+uy*y-uz*z),fx*x+fy*y-fz*z,1};
+    float roll=sinf(phase)*(.08f+.10f*energy)+sinf(phase*5)*pulse*.035f;
+    float cr=cosf(roll),sr=sinf(roll);
+    for(int k=0;k<4;k++) {
+        float right=view[k*4],up=view[k*4+1];
+        view[k*4]=cr*right+sr*up;view[k*4+1]=cr*up-sr*right;
+    }
     memcpy(matrix,view,sizeof(view));
 }
 typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],dx[CAVE_PATHS],dy[CAVE_PATHS],inverse[CAVE_PATHS],dr[CAVE_PATHS];} CaveField;
@@ -223,6 +233,10 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     float dt=s->motion.previous && now>=s->motion.previous?(now-s->motion.previous)*.000001f:0;
     s->motion.previous=now;if(dt>.1f)dt=.1f;
     float bass=(bands[0]+bands[1]+bands[2])/300.f;if(bass>1)bass=1;
+    float attack=fmaxf(0,bass-s->motion.bass);
+    s->motion.pulse=fmaxf(attack,s->motion.pulse*(1-dt*4));
+    s->motion.phase+=dt*.07f;
+    if(s->motion.phase>=6.283185307f)s->motion.phase-=6.283185307f;
     s->motion.bass+=(bass-s->motion.bass)*(dt*8);
     if(s->ready>=8) {
         float proposed=s->motion.travel+dt*(2+2*s->motion.bass);

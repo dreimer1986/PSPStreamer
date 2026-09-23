@@ -6,7 +6,7 @@
 enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HISTORY,
        CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*30 };
 _Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
-typedef struct {float travel,bass;unsigned long long previous;} CaveMotion;
+typedef struct {float travel,bass,phase,pulse;unsigned long long previous;} CaveMotion;
 typedef struct {
     float field[CAVE_GRID+1][CAVE_GRID+1];
     float gradient[CAVE_GRID+1][CAVE_GRID+1][3];
@@ -31,7 +31,7 @@ void cave_noise_rotation(float out[9],float a,float b);
 CaveScene *cave_create(void);
 void cave_destroy(CaveScene *scene);
 void cave_camera(const CaveScene *scene,float z,float *x,float *y);
-/* Column-major OpenGL/GE view matrix, six-profile path look-ahead. */
+/* Column-major OpenGL/GE view: six-profile look-ahead, bounded roll/sway. */
 void cave_view(const CaveScene *scene,float z,float matrix[16]);
 /* Builds no more than one new slab per tick. Returned slab needs DMA writeback. */
 CaveSlice *cave_prepare(CaveScene *scene,const unsigned char bands[12],int level,unsigned long long now);

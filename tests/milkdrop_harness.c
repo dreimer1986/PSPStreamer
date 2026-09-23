@@ -10,11 +10,15 @@
 #include "milkdrop_decor.h"
 #include "milkdrop_preset.h"
 #include "cave_visual.h"
+#include "cave_clip.h"
 typedef struct {float x,y,z,w;} ScePspFVector4;
 typedef struct {ScePspFVector4 x,y,z,w;} ScePspFMatrix4;
 enum {GU_TRANSFORM_3D=0,GU_PROJECTION=200,GU_VIEW,GU_MODEL,GU_CLIP_PLANES,GU_FOG,GU_COLOR_BUFFER_BIT};
 enum {GU_GEQUAL=300,GU_DEPTH_BUFFER_BIT=512};
 static int cave_test,cave_draws,matrix_calls,clear_mode,clear_count;
+static float cave_test_view[16],cave_px,cave_py;
+static int cave_depth_mask,cave_detail_pending,cave_previous_count;
+static const void *cave_previous_vertices;
 static void sceGuSendCommandi(int command,int argument) {
     assert(command==0xd3 && cave_test);
     if(argument)assert(!clear_mode && argument==(((GU_COLOR_BUFFER_BIT|GU_DEPTH_BUFFER_BIT)<<8)|1));
@@ -23,15 +27,19 @@ static void sceGuSendCommandi(int command,int argument) {
 }
 static void sceGuSetMatrix(int kind,const ScePspFMatrix4 *m) {
     assert(kind==GU_PROJECTION || kind==GU_VIEW || kind==GU_MODEL);
-    if(kind==GU_PROJECTION)assert(m->x.x>0 && m->y.y>0 && m->z.w==-1 && m->w.z<0);
+    if(kind==GU_PROJECTION) {
+        assert(m->x.x>0 && m->y.y>0 && m->z.w==-1 && m->w.z<0);
+        cave_px=m->x.x;cave_py=m->y.y;
+    }
     else if(kind==GU_VIEW) {
         assert(m->w.w==1 && isfinite(m->w.x) && isfinite(m->w.y) && isfinite(m->w.z));
         assert(fabsf(m->x.x*m->x.x+m->y.x*m->y.x+m->z.x*m->z.x-1)<1e-5f);
+        memcpy(cave_test_view,m,sizeof(cave_test_view));
     } else assert(m->x.x==1 && m->y.y==1 && m->z.z==1 && m->w.w==1);
     matrix_calls++;
 }
 static void sceGuDepthRange(int near,int far){assert(near==65535 && far==0);}
-static void sceGuDepthMask(int disabled){assert(disabled==1 || (cave_test && disabled==0));}
+static void sceGuDepthMask(int disabled){assert(disabled==1 || (cave_test && disabled==0));cave_depth_mask=disabled;}
 static void sceGuDepthFunc(int func){assert(func==GU_GEQUAL);}
 static void sceGuFog(float near,float far,unsigned int color){assert(near==4 && far==14 && color==0xff000000);}
 enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D=8,
@@ -128,7 +136,7 @@ static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b)
     assert(op==GU_ADD);
     assert((src==GU_SRC_ALPHA && dst==GU_ONE_MINUS_SRC_ALPHA && !a && !b) ||
            (src==GU_SRC_ALPHA && dst==GU_FIX && !a && b==0xffffff) ||
-           (src==GU_FIX && dst==GU_FIX && a==0xffffff && b==0xffffff) ||
+           (src==GU_FIX && dst==GU_FIX && (a==0xffffff || (cave_test && a<=0x242424)) && b==0xffffff) ||
            (src==GU_OTHER_COLOR && dst==GU_FIX && !a && !b) ||
            (src==GU_ONE_MINUS_OTHER_COLOR && (dst==GU_FIX || dst==GU_ONE_MINUS_OTHER_COLOR)));
     filter_src=src; filter_dst=dst;filter_fix=b;
@@ -219,8 +227,15 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             const uint16_t *depth=color+512*256;
             assert(color[511]==0 && color[512*256-1]==0 && depth[511]==0 && depth[512*256-1]==0);
             assert(!indices && type==GU_TRIANGLES && count>0 && count<=CAVE_MAX_VERTICES && count%3==0);
-            assert(!((uintptr_t)data&63));
-            for(int i=0;i<count;i++)assert(isfinite(v[i].x) && isfinite(v[i].y) && isfinite(v[i].z));
+            assert(!((uintptr_t)data&3)); /* Cached triangle runs need float alignment. */
+            CaveClip clip;cave_clip_init(&clip,cave_test_view,cave_px,cave_py);
+            for(int i=0;i<count;i++) {
+                assert(isfinite(v[i].x) && isfinite(v[i].y) && isfinite(v[i].z));
+                for(int p=0;p<CAVE_CLIP_PLANES;p++)assert(cave_clip_distance(clip.plane[p],v+i)>-.0002f);
+            }
+            assert(cave_depth_mask==cave_detail_pending);
+            if(cave_detail_pending)assert(data==cave_previous_vertices && count==cave_previous_count);
+            cave_previous_vertices=data;cave_previous_count=count;cave_detail_pending=!cave_detail_pending;
             cave_draws++;return;
         }
         assert(!indices && (const unsigned char *)data>=list_base &&
@@ -388,7 +403,7 @@ int main(int argc,char **argv) {
                 assert(covered_width==expected_width);
                 int before=starts;assert(md_frame(tv,full,bands,75,test_time,mode)==1 && starts==before);
             }
-            assert(cave_draws>previous);
+            assert(cave_draws>previous && !cave_detail_pending);
             md_stop();assert(!gu_live && !md_list && !cave_scene);
         }
         assert(matrix_calls==frames*8*3 && clear_count==frames*8 && !clear_mode);

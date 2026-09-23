@@ -1,9 +1,24 @@
 #include "cave_visual.h"
+#include "cave_clip.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 int main(void) {
+    float identity[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    CaveClip clip;cave_clip_init(&clip,identity,1,1);
+    MdVertex triangle[3]={{0,0,0xff000000,-.5f,-.5f,-1},
+        {1,0,0xffffffff,.5f,-.5f,-1},{.5f,1,0xff808080,20,1,.1f}};
+    MdVertex clipped[CAVE_CLIP_VERTICES];
+    int n=cave_clip_triangle(&clip,triangle,clipped);
+    assert(n>=3 && n<=CAVE_CLIP_VERTICES && n%3==0);
+    for(int i=0;i<n;i++) {
+        for(int p=0;p<CAVE_CLIP_PLANES;p++)assert(cave_clip_distance(clip.plane[p],clipped+i)>-.00001f);
+        assert(clipped[i].u>=0 && clipped[i].u<=1 && clipped[i].v>=0 && clipped[i].v<=1);
+        assert((clipped[i].color>>24)==255);
+    }
+    for(int i=0;i<3;i++)triangle[i].z=1;
+    assert(cave_clip_triangle(&clip,triangle,clipped)==0);
     assert(cave_path_shape(-1,2)==0 && cave_path_shape(2,2)==1);
     assert(fabsf(cave_path_shape(.5f,2)-.5f)<1e-6f);
     assert(fabsf(cave_path_shape(.25f,1)-.1464466094f)<1e-6f);
@@ -117,7 +132,7 @@ int main(void) {
     uint32_t pixels[CAVE_TEXTURE*CAVE_TEXTURE];cave_texture(pixels);
     assert(pixels[0]!=pixels[25] && (pixels[0]>>24)==255);
     unsigned char bands[12];for(int i=0;i<12;i++)bands[i]=90;
-    int peak=0;
+    int peak=0,clipped_visible=0;
     for(int tick=0;tick<1800;tick++) {
         int before=s->built;
         CaveSlice *slice=cave_prepare(s,bands,90,1000000ULL+tick*100000ULL);
@@ -141,6 +156,22 @@ int main(void) {
         float x,y;cave_camera(s,s->motion.travel,&x,&y);
         assert(cave_density(s,x,y,s->motion.travel)>0);
         float view[16];cave_view(s,s->motion.travel,view);
+        assert(s->motion.phase>=0 && s->motion.phase<6.284f && s->motion.pulse>=0 && s->motion.pulse<=1);
+        if(tick%10==0) {
+            cave_clip_init(&clip,view,.7f,1.25f);
+            for(int slab=0;slab<CAVE_SLICES;slab++) {
+                const CaveSlice *section=&s->slices[slab];
+                for(int at=0;at<section->count;at+=3) {
+                    const MdVertex *v=section->vertices+at;
+                    if(!(cave_clip_mask(&clip,v)|cave_clip_mask(&clip,v+1)|cave_clip_mask(&clip,v+2)))continue;
+                    int count=cave_clip_triangle(&clip,v,clipped);
+                    assert(count>=0 && count<=CAVE_CLIP_VERTICES && count%3==0);
+                    if(count)clipped_visible++;
+                    for(int j=0;j<count;j++)for(int p=0;p<CAVE_CLIP_PLANES;p++)
+                        assert(cave_clip_distance(clip.plane[p],clipped+j)>-.0002f);
+                }
+            }
+        }
         for(int i=0;i<3;i++)for(int j=0;j<3;j++) {
             float dot=0;for(int k=0;k<3;k++)dot+=view[k*4+i]*view[k*4+j];
             assert(fabsf(dot-(i==j?1:0))<1e-5f);
@@ -148,6 +179,7 @@ int main(void) {
         for(int i=0;i<3;i++)assert(fabsf(view[i]*x+view[4+i]*y-view[8+i]*s->motion.travel+view[12+i])<.0001f);
     }
     assert(s->motion.travel>500 && s->ready==CAVE_SLICES);
+    assert(clipped_visible>0);printf("Visible clipped triangles: %d\n",clipped_visible);
     printf("Cave: source oscillator fixture, 4000 path steps, 2100 gradient comparisons, 1024 cube cases, 1800 ticks; %d slabs, peak %d vertices/slab, allocation %zu bytes\n",s->built,peak,sizeof(*s));
     cave_destroy(s);
     return 0;

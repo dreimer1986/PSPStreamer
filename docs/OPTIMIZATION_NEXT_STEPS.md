@@ -61,7 +61,10 @@ The PSP build was produced before targeted validation. The affected artwork,
 cache, TV layout/ownership, metadata, subtitle and browser-worker checks pass.
 These are correctness checks, not PSP timing measurements. No preset sweep.
 
-### Direct AVCC packet path (item 4, implemented; hardware test pending)
+### Direct AVCC packet path (item 4, playback confirmed on hardware)
+
+The user confirmed film playback on 2026-09-23. This is not a claim that every
+seek/reconnect/output-mode combination was individually retested.
 
 - Video now goes from FLV length-prefixed NAL units straight to an aligned,
   owned `AvcPacket`, then to `sceMpegGetAvcNalAu`. `avcc_packet.h` validates the
