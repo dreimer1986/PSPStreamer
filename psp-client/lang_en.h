@@ -212,6 +212,8 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_CAVE_SENSITIVITY] = "Beat sensitivity (0-16)",
     [TXT_CAVE_AMPLITUDE] = "Beat strength (0-16)",
     [TXT_CAVE_STYLE] = "Style (-1: automatic)",
+    [TXT_CAVE_SPEED] = "Travel speed (%)",
+    [TXT_CAVE_INVERT_Y] = "Invert flight Y",
 
     [TXT_PRESET_RANDOM] = "Extra random time (s)",
     [TXT_PRESET_HARD] = "Beat hard cuts",

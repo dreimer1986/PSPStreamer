@@ -11,7 +11,7 @@
 #include <math.h>
 
 static float mix(float a,float b,float t){return a+(b-a)*t;}
-CaveOptions cave_options={1,1,1,1,1,8,8,-1};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0};
 static float flight_axis(int value) {
     float x=value-128;
     if(fabsf(x)<=20)return 0;
@@ -21,7 +21,7 @@ void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle) {
     if(!s)return;
     if(toggle){s->flight=!s->flight;s->flight_x=s->flight_y=0;}
     if(!s->flight)return;
-    s->flight_axis_x=flight_axis(x);s->flight_axis_y=-flight_axis(y);
+    s->flight_axis_x=flight_axis(x);s->flight_axis_y=(cave_options.invert_y?1:-1)*flight_axis(y);
     s->flight_throttle=throttle>0?1:throttle<0?-1:0;
 }
 static void cave_flight_step(CaveScene *s,float dt) {
@@ -318,6 +318,8 @@ CaveScene *cave_create(void) {
     s->poses[0]=(CavePose){.rotation={1,0,0,0,1,0,0,0,1},.index=0};s->pose_next=1;
     s->texture_transition[0]=s->texture_transition[1]=-1;
     for(int i=0;i<3;i++)s->material_phase[i]=(random_step(&s->random)%917)*.68558955f;
+    memcpy(s->background_phase,s->material_phase,sizeof(s->background_phase));
+    cave_background_update(s->background_rgb,s->paths.seed,s->background_phase);
     for(int i=0;i<CAVE_PATHS;i++) {
         s->material[i][3]=random_step(&s->random)&1;
         do {
@@ -371,7 +373,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     s->motion.phase+=dt*.07f;
     if(s->motion.phase>=6.283185307f)s->motion.phase-=6.283185307f;
     s->motion.bass+=(bass-s->motion.bass)*(1-expf(-dt*2));
-    float step=cave_forward_step(dt,s->motion.forward);
+    float step=cave_forward_step(dt,s->motion.forward)*(cave_options.speed*.01f);
     if(s->flight)step*=s->flight_throttle>0?1.5f:s->flight_throttle<0?.5f:1;
     if(s->ready>=12) {
         float proposed=s->motion.travel+step;
@@ -419,6 +421,9 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     }
     int used=0;
     CaveLight light[2];cave_lighting(light,s->paths.seed,index);cave_lighting(light+1,s->paths.seed,index+1);
+    /* 0x10005392..0x100053bf: the extra ambient term is guarded by
+     * 0x129a4, confirmed by its INI key "multitex", NOT the black flag. */
+    if(cave_options.multitexture){light[0].ambient+=.07f;light[1].ambient+=.07f;}
     for(int y=0;y<CAVE_GRID;y++)for(int x=0;x<CAVE_GRID;x++) {
         float f[8]={planes[0][y][x],planes[0][y][x+1],planes[0][y+1][x+1],planes[0][y+1][x],
                     planes[1][y][x],planes[1][y][x+1],planes[1][y+1][x+1],planes[1][y+1][x]};
@@ -507,7 +512,13 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         to.z+=(n[2]+(random[4]-.5f)*.25f)*distance;
         slice->hair[slice->hair_count++]=from;slice->hair[slice->hair_count++]=to;
     }
-    for(int k=0;k<3;k++)s->material_phase[k]=remainderf(s->material_phase[k]+frequency[k],6.283185307f);
+    cave_background_update(s->background_rgb,seed,s->background_phase);
+    for(int k=0;k<3;k++) {
+        s->material_phase[k]=remainderf(s->material_phase[k]+frequency[k],6.283185307f);
+        /* Background uses .013 times the accumulated material phase; using
+         * the already 2*pi-wrapped material phase destroys its slow cycle. */
+        s->background_phase[k]=remainderf(s->background_phase[k]+frequency[k],6.283185307f/.013f);
+    }
     for(int i=0;i<used;i++) {
         MdVertex *a=slice->vertices+i,*b=slice->secondary+i;float world[3];
         /* Separate displaced wire geometry; don't alter surface/depth/UVs.

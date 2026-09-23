@@ -1,6 +1,7 @@
 /* Native cached isosurface geometry; shares the music renderer's GU owner. */
 #include "cave_clip.h"
 #include "cave_style.h"
+#include "cave_textures.h"
 static CaveScene *cave_scene;
 #include "cave_ship_data.h"
 void md_cave_control(int toggle,int x,int y,int throttle) {
@@ -27,9 +28,39 @@ static void cave_draw_ship(void) {
 }
 static uint32_t cave_pixels[7][CAVE_TEXTURE*CAVE_TEXTURE] __attribute__((aligned(64)));
 static int cave_texture_ready;
+static MdImage cave_external[CAVE_TEXTURE_BANKS];
+static int cave_external_next;
+static unsigned cave_external_mask;
+static void cave_textures_clear(void) {
+    for(int i=0;i<CAVE_TEXTURE_BANKS;i++)md_image_free(cave_external+i);
+    cave_external_next=0;cave_external_mask=0;
+}
+static void cave_textures_step(void) {
+    if(cave_external_next>=CAVE_TEXTURE_BANKS)return;
+    int bank=cave_external_next++;
+    /* One bounded decode per visual update, before starting the GU list.
+     * Existing music UI priority is below the audio workers. */
+    if(cave_texture_load("monkey",bank,cave_external+bank)) {
+        MdImage *image=cave_external+bank;
+        sceKernelDcacheWritebackRange(image->pixels,image->width*image->height*4);
+        cave_external_mask|=1U<<bank;
+    }
+    if(cave_external_next==CAVE_TEXTURE_BANKS) {
+        char message[80];snprintf(message,sizeof(message),"Cave external textures: %02X (missing/invalid use fallback)",cave_external_mask);
+        md_trace(message);
+    }
+}
 static void cave_bind(int bank) {
     sceGuEnable(GU_TEXTURE_2D);
-    sceGuTexImage(0,CAVE_TEXTURE,CAVE_TEXTURE,CAVE_TEXTURE,cave_pixels[bank]);sceGuTexFlush();
+    MdImage *image=cave_external+bank;
+    if(image->pixels) {
+        sceGuTexMode(GU_PSM_8888,0,0,1);
+        sceGuTexImage(0,image->width,image->height,image->width,image->pixels);
+    } else {
+        sceGuTexMode(GU_PSM_8888,0,0,0);
+        sceGuTexImage(0,CAVE_TEXTURE,CAVE_TEXTURE,CAVE_TEXTURE,cave_pixels[bank]);
+    }
+    sceGuTexFlush();
 }
 /* Two passes implement T_B*alpha + T_A*(1-alpha), with the same lighting.
  * The original second UV pair has no longitudinal color-dependent offset. */
@@ -53,14 +84,14 @@ static void cave_draw_batch(int count,const MdVertex *vertices,const MdVertex *s
     sceGuDisable(GU_BLEND);sceGuDepthMask(0);
     sceGuTexScale(1,1);sceGuTexOffset(0,0);
 }
-static void cave_clear_target(void) {
+static void cave_clear_target(unsigned color) {
     /* sceGuClear uses gu_draw_buffer.width/height (480x272 after GU init),
      * NOT the offscreen viewport set by sceGuDrawBufferList. Clear the full
      * 512x256 color/Z target explicitly, without changing display ownership.
      * GE CLEAR_MODE = 0xd3; normal rendering is restored immediately. */
     MdPlainVertex *v=sceGuGetMemory(2*sizeof(*v));
-    v[0]=(MdPlainVertex){0xff000000,0,0,0};
-    v[1]=(MdPlainVertex){0xff000000,MD_WIDTH,MD_HEIGHT,0};
+    v[0]=(MdPlainVertex){color,0,0,0};
+    v[1]=(MdPlainVertex){color,MD_WIDTH,MD_HEIGHT,0};
     sceGuSendCommandi(0xd3,((GU_COLOR_BUFFER_BIT|GU_DEPTH_BUFFER_BIT)<<8)|1);
     sceGuDrawArray(GU_SPRITES,GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D,2,NULL,v);
     sceGuSendCommandi(0xd3,0);
@@ -83,8 +114,12 @@ static void cave_draw(int width,int height) {
     sceGuEnable(GU_DEPTH_TEST);sceGuDisable(GU_CULL_FACE);sceGuDisable(GU_LIGHTING);
     sceGuDisable(GU_BLEND);sceGuDisable(GU_ALPHA_TEST);sceGuDisable(GU_STENCIL_TEST);
     sceGuEnable(GU_SCISSOR_TEST);sceGuEnable(GU_CLIP_PLANES);
-    if(cave_options.fog){sceGuEnable(GU_FOG);sceGuFog(4,14,0xff000000);}else sceGuDisable(GU_FOG);
-    cave_clear_target();
+    unsigned background=cave_background_color(cave_scene->background_rgb,cave_options.fog,cave_scene->black);
+    if(cave_options.fog){
+        float horizon=fmaxf(1,fminf(CAVE_AHEAD-2,cave_scene->next-cave_scene->motion.travel-2));
+        sceGuEnable(GU_FOG);sceGuFog(0,cave_fog_end(cave_scene->paths.seed,cave_scene->motion.travel,horizon),background);
+    }else sceGuDisable(GU_FOG);
+    cave_clear_target(background);
     sceGuEnable(GU_TEXTURE_2D);sceGuTexMode(GU_PSM_8888,0,0,0);
     sceGuTexImage(0,CAVE_TEXTURE,CAVE_TEXTURE,CAVE_TEXTURE,cave_pixels[0]);
     sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);sceGuTexFilter(GU_LINEAR,GU_LINEAR);

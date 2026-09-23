@@ -8,14 +8,19 @@ static void music_visual_options(int cave) {
             audio_start=music_remote_action==MUSIC_REMOTE_RESUME;music_remote_action=MUSIC_REMOTE_NONE;
         }
         if(dirty) {
+            int top=row/8*8;
             if(tv_ui_active)tv_shell(tr(TXT_VISUAL_OPTIONS));else gui_library_shell(tr(TXT_VISUAL_OPTIONS));
-            for(int i=0;i<count;i++) {
+            for(int i=top;i<count && i<top+8;i++) {
                 VisualOption *o=&visual_options[first+i];char line[96],value[20];
                 if(o->maximum==1)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_SETTINGS_ON:TXT_OFF));
                 else snprintf(value,sizeof(value),"%d",*o->value);
                 snprintf(line,sizeof(line),"%s: %s",tr(o->label),value);
-                if(tv_ui_active)tv_text(34,72+i*22,48,1,i==row?TV_AMBER:TV_WHITE,"%s",line);
-                else gui_text(38,48+i*14,i==row?0x0000D8FF:0x00FFFFFF,"%.45s",line);
+                if(tv_ui_active)tv_text(34,72+(i-top)*22,48,1,i==row?TV_AMBER:TV_WHITE,"%s",line);
+                else gui_text(38,48+(i-top)*14,i==row?0x0000D8FF:0x00FFFFFF,"%.45s",line);
+            }
+            if(count>8) {
+                if(tv_ui_active)tv_text(560,80,10,1,TV_WHITE,"%d/%d",row+1,count);
+                else gui_text(380,70,0x00FFFFFF,"%d/%d",row+1,count);
             }
             if(tv_ui_active){tv_help(tr(TXT_VISUAL_OPTIONS_HELP));tv_present();}
             else gui_text(38,177,0x00FFFFFF,"%s",tr(TXT_VISUAL_OPTIONS_HELP));

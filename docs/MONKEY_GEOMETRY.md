@@ -73,7 +73,7 @@ The PSP build precedes tests. Only `tests.test_cave` and
 The 1,800-tick geometry run builds 1,686 slabs (peak 630 vertices/slab), checks
 27,181 visible clipped triangles after the boundary correction below, and passes reference-normal/quaternion,
 path, topology, view-matrix and cache tests under undefined-behavior checking.
-Scene allocation is 3,984,320 bytes. LCD/TV/window/fullscreen GU tests include
+Scene allocation is 3,984,384 bytes with the recovered background palette. LCD/TV/window/fullscreen GU tests include
 all styles and flight toggling; peak command-list use is 325,376 bytes in those
 fixtures, below the existing list budget. These are not PSP performance numbers.
 
@@ -100,6 +100,52 @@ finite-coordinate/clipping tests did not test this geometric invariant and
 therefore missed the regression. LCD/TV GU and targeted geometry tests pass;
 the corrected build still needs confirmation on PSP. No effect, motion or
 audio setting was removed or changed to mask the problem.
+
+### Background brightness and optional flight controls
+
+The paired desktop/PSP recordings revealed another missing source component:
+the frame clear was always black, independently of fog. `0x10006e50..0x10006ec5`
+packs the animated RGB background and clears with it, except when fog is off
+and the black-material flag is on. `0x10006f3c` sets that same color as fog color.
+This is not a light source at the tunnel exit. With fog on, its color is blended
+into distant geometry; with fog off, it still fills uncovered background pixels.
+
+`cave_background_update` reproduces `0x10003a10` (0.96/0.04 smoothing) and
+`0x10005b62..0x10005d31` (weighted brightness floor 440, overflow redistribution
+and channel clamps). Three fixtures from isolated DLL execution cover ordinary
+values and the saturated-red branch. Both background and wall RGB waves use the
+three accumulated material phases; background uses .013 times those phases, so
+its phase must not be wrapped at the wall wave's 2*pi period. It is kept separately
+with the corresponding larger period. Light directions/colors remain separate.
+The source's ARGB color is explicitly converted to GE's ABGR order.
+
+Original linear vertex fog starts at zero and ends at
+`31.02 + .99*(sin(.29*seed+.01513*t)+sin(.66*seed+.0219*t))`.
+The depth envelope is scaled to prepared PSP geometry (at most 14 profiles),
+not copied as an unreachable 29–33-profile distance. No additional per-vertex
+lighting work or larger geometry cache is required. GU fixtures now simulate
+the colored RGB565 clear and check colored background with fog disabled, fog
+and clear color agreement, and untouched depth-buffer clearing.
+
+Saved options `cave_speed` (10–200%, default 100) and `cave_invert_y` (default off)
+add user-requested departures from automatic behavior only when changed. Speed
+scales longitudinal travel in both modes; inversion only affects flight input.
+The menu pages eight rows at a time. Targeted tests cover configuration bounds,
+half-speed motion, inverted input, source palette fixtures and LCD/TV rendering.
+
+The multitexture branch at `0x10005392..0x100053bf` adds `.07` to ambient
+lighting. This term is now applied to both prepared profile-light endpoints when
+multitexture is enabled; it is separate from background and fog color.
+
+Optional external `monkey/supertex_a1..a5` and `supertex_b1..b2` images now replace
+the seven generated texture slots. The existing bounded JPEG/PNG decoder creates
+aligned, swizzled RGBA textures (maximum 256×256). One slot is attempted per
+visual update before GU list construction. Missing or invalid images fall back
+per slot; all allocated images are released on renderer shutdown. No original
+images are bundled. See README for copying instructions. Targeted GU fixtures
+cover all seven slots, JPEG resizing, invalid-JPEG-to-PNG fallback, texture
+binding and cleanup. This does not remove the documented geometry, random
+sequence, lighting-cache and projection differences from the desktop renderer.
 
 ## Previous hardware-confirmed comparison (before this batch)
 

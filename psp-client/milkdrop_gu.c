@@ -231,6 +231,7 @@ void md_stop(void) {
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     cave_destroy(cave_scene);cave_scene=NULL;
+    cave_textures_clear();
     md_images_clear();
     md_fade_clear();
     sceGuTerm();
@@ -289,6 +290,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     if(preset==5) {
         if(!cave_scene)cave_scene=cave_create();
         if(!cave_scene)return 0;
+        cave_textures_step();
         CaveSlice *built=cave_prepare(cave_scene,bands,level,now);
         if(built && built->count)sceKernelDcacheWritebackRange(built->vertices,built->count*sizeof(MdVertex));
         md_profile_mark(0);

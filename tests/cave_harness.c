@@ -8,6 +8,20 @@
 #include <stdint.h>
 #include <string.h>
 int main(void) {
+    /* Isolated original x86 palette/brightness routines, not guessed colors. */
+    const float seeds[3]={0,313.45f,10};
+    const float phases[3][3]={{0,0,0},{100,200,300},{20,30,40}};
+    float palette[3][3]={{0,0,0},{120,150,180},{250,40,20}};
+    const float expected_palette[3][3]={{171.689987f,151.955505f,132.221024f},
+        {122.145760f,153.143890f,187.170853f},{255,111.933472f,76.921654f}};
+    for(int i=0;i<3;i++) {
+        cave_background_update(palette[i],seeds[i],phases[i]);
+        for(int k=0;k<3;k++)assert(fabsf(palette[i][k]-expected_palette[i][k])<.001f);
+        assert(cave_background_color(palette[i],0,0)!=0xff000000);
+        assert(cave_background_color(palette[i],0,1)==0xff000000);
+        assert(cave_background_color(palette[i],1,1)==cave_background_color(palette[i],1,0));
+    }
+    assert(fabsf(cave_fog_end(0,0,33)-31.02f)<1e-5f);
     /* Newest slab's upper edge must use its curved pose even before the
      * following profile exists. It must not move when that pose is added. */
     CaveScene *boundary=cave_create();assert(boundary);
@@ -283,11 +297,22 @@ int main(void) {
     cave_flight_input(s,0,255,0,1);assert(!s->flight && s->flight_x==0);
     cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
     cave_flight_input(s,1,255,0,1);assert(s->flight && s->flight_throttle==1);
+    assert(s->flight_axis_y>0);
+    cave_options.invert_y=1;cave_flight_input(s,0,255,0,0);assert(s->flight_axis_y<0);
+    cave_options.invert_y=0;
     s->flight_x=.2f;s->flight_y=.1f;cave_view(s,s->motion.travel,restored);
     assert(memcmp(normal_view,restored,sizeof(restored)));
     cave_flight_input(s,1,128,128,0);assert(!s->flight && s->flight_x==0 && s->flight_y==0);
     cave_view(s,s->motion.travel,restored);assert(!memcmp(normal_view,restored,sizeof(restored)));
     assert(s->random==rng && s->motion.travel==travel);
+    CaveScene *speed_test=cave_create();assert(speed_test);
+    memcpy(speed_test,s,sizeof(*s));
+    cave_prepare(speed_test,bands,90,s->motion.previous+10000);
+    float full_step=speed_test->motion.travel-s->motion.travel;assert(full_step>0);
+    memcpy(speed_test,s,sizeof(*s));cave_options.speed=50;
+    cave_prepare(speed_test,bands,90,s->motion.previous+10000);
+    assert(fabsf((speed_test->motion.travel-s->motion.travel)-full_step*.5f)<.001f);
+    cave_options.speed=100;cave_destroy(speed_test);
     assert((cave_effect_color(0,0,0,1,1)>>24)==0x58);
     assert((cave_effect_color(0,0,1,1,1)>>24)==0x80);
     assert((cave_effect_color(0,0,0,1,0)>>24)==0xff);

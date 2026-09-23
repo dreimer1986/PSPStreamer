@@ -42,6 +42,21 @@ def main(path):
             u.mem_write(0x30008000+offset, struct.pack('<f', t))
         u.emu_start(0x10005d87, 0x1000617f, count=100000)
         print('bend', seed, t, struct.unpack('<6f', u.mem_read(0x200df734, 24)))
+    # RGB target smoothing, followed by the source brightness floor/clamps.
+    for seed, phase, rgb in [(0, (0, 0, 0), (0, 0, 0)),
+                             (313.45, (100, 200, 300), (120, 150, 180)),
+                             (10, (20, 30, 40), (250, 40, 20))]:
+        u.mem_write(0x20012a58, struct.pack('<f', seed))
+        u.mem_write(0x20ed4930, struct.pack('<3f', *phase))
+        u.mem_write(0x200129e8, struct.pack('<3f', *rgb))
+        u.reg_write(UC_X86_REG_ECX, 0x20000000)
+        u.reg_write(UC_X86_REG_ESP, 0x30008000)
+        u.mem_write(0x30008000, struct.pack('<I', 0x40000000))
+        u.emu_start(0x10003a10, 0x40000000, count=10000)
+        u.reg_write(UC_X86_REG_ESI, 0x20000000)
+        u.reg_write(UC_X86_REG_ESP, 0x30008000)
+        u.emu_start(0x10005b62, 0x10005d31, count=10000)
+        print('background', seed, phase, rgb, struct.unpack('<3f', u.mem_read(0x200129e8, 12)))
 
 
 if __name__ == '__main__':

@@ -219,6 +219,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_CAVE_SENSITIVITY] = "Beat-Empfindlichkeit (0-16)",
     [TXT_CAVE_AMPLITUDE] = "Beat-Stärke (0-16)",
     [TXT_CAVE_STYLE] = "Stil (-1: automatisch)",
+    [TXT_CAVE_SPEED] = "Geschwindigkeit (%)",
+    [TXT_CAVE_INVERT_Y] = "Flug-Y invertieren",
 
     [TXT_PRESET_RANDOM] = "Zusätzliche Zufallszeit (s)",
     [TXT_PRESET_HARD] = "Harte Beat-Wechsel",

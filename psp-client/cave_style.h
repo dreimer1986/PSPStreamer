@@ -7,6 +7,33 @@
 #include "cave_paths.h"
 typedef struct {float color[2][3],direction[2][3],ambient;} CaveLight;
 static inline float cave_unit(float x){return fmaxf(0,fminf(1,x));}
+/* Background/fog palette, NOT Hair color: 0x10003a10, 0x10005b62.
+ * The source deliberately raises dark palettes before clearing the frame. */
+static inline void cave_background_update(float rgb[3],float seed,const float phase[3]) {
+    const float base[3]={174,154,134},range[3]={121.8f,111.65f,101.5f},rate[3]={.17f,.13f,.29f};
+    for(int k=0;k<3;k++)rgb[k]=rgb[k]*.96f+.04f*(base[k]+range[k]*sinf(phase[k]*.013f+seed*rate[k]));
+    float brightness=rgb[0]+rgb[1]+rgb[2]*.88f;
+    if(brightness>0 && brightness<440) {
+        for(int k=0;k<3;k++)rgb[k]*=440/brightness;
+        for(int k=0;k<3;k++)if(rgb[k]>255) {
+            float extra=(rgb[k]-255)*.5f;rgb[k]=255;
+            rgb[(k+1)%3]+=extra;rgb[(k+2)%3]+=extra;
+        }
+    }
+    for(int k=0;k<3;k++)rgb[k]=fmaxf(0,fminf(255,rgb[k]));
+}
+static inline unsigned cave_background_color(const float rgb[3],int fog,int black) {
+    /* 0x10006e83: black only when fog is OFF and the black-material flag ON.
+     * GE takes ABGR, whereas the original Direct3D clear takes ARGB. */
+    if(!fog && black)return 0xff000000U;
+    return 0xff000000U|(unsigned)rgb[0]|((unsigned)rgb[1]<<8)|((unsigned)rgb[2]<<16);
+}
+static inline float cave_fog_end(float seed,float t,float horizon) {
+    /* Original linear vertex fog starts at zero and ends at 29.04..33.
+     * Scale its depth envelope to the PSP's shorter prepared horizon. */
+    float end=31.02f+.99f*(sinf(seed*.29f+t*.01513f)+sinf(seed*.66f+t*.0219f));
+    return end*(horizon/33);
+}
 /* 0x100065a0..0x100066e3, selected movement=1 and neutral projection gate.
  * The caller still bounds advancement to geometry actually in the cache. */
 static inline float cave_forward_step(float dt,float impulse) {

@@ -9,7 +9,7 @@ enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HIS
        CAVE_EDGE_SLOTS=6*(CAVE_GRID+1)*(CAVE_GRID+1),
        CAVE_HAIR_VERTICES=2*CAVE_EDGE_SLOTS };
 _Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
-typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style;} CaveOptions;
+typedef struct {int fog,multitexture,hair,transparent_hair,beat,sensitivity,amplitude,style,speed,invert_y;} CaveOptions;
 extern CaveOptions cave_options;
 typedef struct {float travel,bass,phase,pulse,bank,roll,spin,forward;unsigned long long previous,last_beat;int direction;} CaveMotion;
 typedef struct {
@@ -39,6 +39,7 @@ typedef struct {
     float rgba[CAVE_MAX_VERTICES][4];
     unsigned short edge_id[CAVE_MAX_VERTICES];
     float material_phase[3];
+    float background_phase[3],background_rgb[3];
     float random_values[2048];
     unsigned random_cursor;
     int texture_index[2];

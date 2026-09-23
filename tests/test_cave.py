@@ -32,3 +32,13 @@ class CaveTests(unittest.TestCase):
                 *[str(ROOT/'psp-client'/(s+'.c')) for s in sources],
                 '-lpng','-ljpeg','-lz','-lm','-o',str(binary)],check=True)
             subprocess.run([str(binary),'--cave'],check=True,timeout=10)
+            # Same GU tests with real decoder output, mixed source formats,
+            # and a broken preferred JPG falling through to valid PNG.
+            from PIL import Image
+            folder=Path(directory)/'monkey';folder.mkdir()
+            for i,name in enumerate(('a1','a2','a3','a4','a5','b1','b2')):
+                picture=Image.new('RGB',(64,64),(30+i*20,100,180))
+                picture.save(folder/f'supertex_{name}.png')
+            (folder/'supertex_a1.jpg').write_bytes(b'not a JPEG')
+            Image.new('RGB',(512,512),(160,100,30)).save(folder/'supertex_b2.jpg')
+            subprocess.run([str(binary),'--cave-textures'],check=True,timeout=10,cwd=directory)

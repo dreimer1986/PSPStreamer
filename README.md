@@ -897,7 +897,7 @@ distance-dependent banking. Classic cube topology, weighted material fields,
 source material normals, spatial RGB/alpha envelopes and two-light shading follow
 the recovered formulas. Nine styles include displaced wireframe and Hair;
 the two texture banks blend with separate UV coordinates. PSP geometry budgets,
-procedural replacement textures, random sequence, audio analysis and some
+fallback replacement textures, random sequence, audio analysis and some
 camera/projection configuration branches still differ. See the
 [comparison audit and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
@@ -931,6 +931,8 @@ These settings are saved in the existing `pspstreamer.cfg`:
 | `cave_sensitivity` | `8` | Beat detection sensitivity, 0–16 |
 | `cave_amplitude` | `8` | Beat response strength, 0–16 |
 | `cave_style` | `-1` | Automatic styles; 0–8 fixes a style (7 = Hair) |
+| `cave_speed` | `100` | Travel speed, 10–200 percent; affects automatic and Easter-egg flight |
+| `cave_invert_y` | `0` | Invert the flight stick's vertical axis, 0/1; when enabled, pushing up dives |
 | `preset_random_seconds` | `10` | Additional random automatic-switch delay, 0–120 seconds |
 | `preset_hard_cuts` | `0` | Enable music-triggered immediate preset switches, 0/1 |
 | `preset_hard_threshold` | `250` | Hard-cut sensitivity threshold, 125–400 percent |
@@ -940,6 +942,52 @@ MilkDrop's four new options are available with Select inside the playing-music
 preset list. Automatic mode must be enabled for timed or hard-cut switches.
 Existing interval/fade controls remain; ordinary transitions still use a snapshot
 fade, not two simultaneously running presets. No new resolution options were added.
+
+Use Up/Down to reach the second page of Cave settings (speed and inverted flight).
+Try 30–50 percent for a calmer tunnel ride; the default 100 keeps the existing
+speed. The shoulders still temporarily slow/accelerate Easter-egg flight on top
+of this setting. Geometry preparation continues to bound the maximum speed.
+
+Cave's background now follows the recovered animated, brightness-limited palette
+even with fog disabled. When enabled, fog blends distant walls into that same
+color, rather than always into black. Black-material modes retain the original
+exception: with fog off, they clear to black. Fog depth is scaled to the PSP's
+shorter prepared horizon, not the desktop's longer view distance.
+The original additional ambient-light term for enabled multitexture is included.
+
+### Installing original Monkey textures (optional)
+
+Use the images from your own original Winamp Monkey installation. They are not
+included in PSPStreamer. No extraction from the DLL or manual conversion is needed:
+
+1. On your PC, open `Winamp/Plugins/monkey/`.
+2. On the Memory Stick, create `PSP/GAME/PSPStreamer/monkey/` beside `EBOOT.PBP`.
+3. Copy these seven files into that folder, keeping their names:
+
+   ```text
+   supertex_a1.jpg
+   supertex_a2.jpg
+   supertex_a3.jpg
+   supertex_a4.jpg
+   supertex_a5.jpg
+   supertex_b1.jpg
+   supertex_b2.jpg
+   ```
+
+4. Start Cave again to load them. No configuration entry is required.
+
+For example, the first file must be at
+`ms0:/PSP/GAME/PSPStreamer/monkey/supertex_a1.jpg`, not inside `presets/`.
+The original 512×512 JPEGs work unchanged: the loader downsizes them to 256×256
+for PSP memory limits. Replacement JPEGs may be up to 1024×1024; PNGs must have
+power-of-two dimensions from 16 to 256. Each file is limited to 1 MiB.
+The extensions `.jpg`, `.png`, then `.jpeg` are tried in that order per slot.
+
+Missing or invalid files use generated replacements individually, so partial
+sets also work. Only use images you are entitled to use; do not redistribute the
+original assets with the application. Seven maximum-size images use 1.75 MiB of
+additional memory, released when leaving the renderer. With diagnostics enabled,
+`Cave external textures: 7F` confirms that all seven slots loaded successfully.
 
 <details>
 <summary>Cave Easter egg</summary>
