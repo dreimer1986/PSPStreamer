@@ -3,6 +3,8 @@
  * No executable code, random tables or assets are copied from the DLL.
  * See docs/MONKEY_GEOMETRY.md for verified observations vs PSP adaptations. */
 #include "cave_visual.h"
+#include "cave_topology.h"
+#include "cave_style.h"
 #include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,20 +47,29 @@ void cave_camera(const CaveScene *s,float z,float *x,float *y) {
     CavePathFrame p;
     if(cave_paths_sample(&s->paths,z,&p,NULL)) {*x=(p.x[0]-.5f)*12;*y=(p.y[0]-.5f)*12;}
     else {*x=0;*y=0;}
+    /* Source 0x10007486..0x10007596, normalized coordinates mapped by 6.
+     * Keep the original three-sine eye sway; reject excursions into a wall. */
+    float sx=6*(.0227f*sinf(z*.0139f+41)+.0216f*sinf(z*.0197f+98)+.023f*sinf(z*.0179f+28));
+    float sy=6*(.0226f*sinf(z*.0173f+73)+.0207f*sinf(z*.0152f+23)+.024f*sinf(z*.0129f+11));
+    float gain=1;
+    for(int i=0;i<4;i++) {
+        if(cave_density(s,*x+gain*sx,*y+gain*sy,z)>.015f){*x+=gain*sx;*y+=gain*sy;break;}
+        gain*=.5f;
+    }
 }
 void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float x,y;cave_camera(s,z,&x,&y);
     CavePathFrame ahead;
     float dx=0,dy=0;
-    /* Recovered six-profile look-ahead; bounded PSP camera effects below
-     * are adaptations, not claimed as recovered original coefficients. */
+    /* Recovered six-profile look-ahead and source target sway. */
     if(cave_paths_sample(&s->paths,z+6,&ahead,NULL)) {
         dx=(ahead.x[0]-.5f)*12-x;dy=(ahead.y[0]-.5f)*12-y;
     }
-    float phase=s->motion.phase,energy=s->motion.bass,pulse=s->motion.pulse;
-    /* Angular sway keeps the eye on the known-clear center path. */
-    dx+=sinf(phase*3)*(.16f+.20f*energy)+sinf(phase*11)*pulse*.12f;
-    dy+=sinf(phase*2)*(.12f+.14f*energy)+cosf(phase*7)*pulse*.09f;
+    float seed=s->paths.seed;
+    /* 0x10007300..0x1000747e: .4 normalized sway, XY world scale=6.
+     * Fixed movement/FOV profile keeps the source gain gates at unity. */
+    dx+=2.4f*(.21f*sinf(seed*1.2f+z*.0119f+11)+.16f*sinf(seed*3.1f+z*.0137f+46)+.19f*sinf(seed*1.4f+z*.0059f+38));
+    dy+=2.4f*(.12f*sinf(seed*2.4f+z*.0103f+83)+.17f*sinf(seed*2.7f+z*.0122f+29)+.19f*sinf(seed*1.7f+z*.0069f+91));
     float inverse=1/sqrtf(dx*dx+dy*dy+36);
     float fx=dx*inverse,fy=dy*inverse,fz=-6*inverse;
     inverse=1/sqrtf(fz*fz+fx*fx);
@@ -66,7 +77,7 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     float ux=-rz*fy,uy=rz*fx-rx*fz,uz=rx*fy;
     float view[16]={rx,ux,-fx,0, 0,uy,-fy,0, rz,uz,-fz,0,
         -(rx*x-rz*z),-(ux*x+uy*y-uz*z),fx*x+fy*y-fz*z,1};
-    float roll=sinf(phase)*(.08f+.10f*energy)+sinf(phase*5)*pulse*.035f;
+    float roll=-s->motion.bank;
     float cr=cosf(roll),sr=sinf(roll);
     for(int k=0;k<4;k++) {
         float right=view[k*4],up=view[k*4+1];
@@ -124,68 +135,35 @@ float cave_sample(const CaveScene *s,float x,float y,float z,float gradient[3]) 
 float cave_density(const CaveScene *s,float x,float y,float z) {
     float gradient[3];return cave_sample(s,x,y,z,gradient);
 }
-static unsigned cave_light(float nx,float ny,float nz) {
-    float norm=sqrtf(nx*nx+ny*ny+nz*nz);
-    float light=.25f;
-    if(norm>.000001f)light+=.70f*fabsf((nx*.4f+ny*.6f+nz*.69282f)/norm);
-    if(light>1)light=1;
-    return 0xff000000U|(unsigned)(light*225)|((unsigned)(light*185)<<8)|((unsigned)(light*140)<<16);
-}
-
-/* Marching Cubes via face-edge connectivity, not a copied 256-case table.
- * Ambiguous faces use the same center-sign rule on either adjacent cell.
- * At most 12 intersections => 10 triangles. Positive field is cave interior. */
-static int polygonize(const float f[8],const float gradients[8][3],MdVertex *out,int capacity,float x,float y,float z) {
+/* Classic 256-case MC as in the original. Max five triangles per cube,
+ * including the original sign-only choices on ambiguous faces. */
+static int polygonize(const float f[8],const float gradients[8][3],const CaveLight light[2],MdVertex *out,int capacity,float x,float y,float z) {
     static const unsigned char corners[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}};
     static const unsigned char ends[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
-    static const unsigned char faces[6][4]={{0,1,2,3},{4,5,6,7},{0,9,4,8},{1,10,5,9},{2,11,6,10},{3,8,7,11}};
-    static const unsigned char face_corners[6][4]={{0,1,2,3},{4,5,6,7},{0,1,5,4},{1,2,6,5},{2,3,7,6},{3,0,4,7}};
-    if(capacity<30)return -1;
-    int links[12][2],degree[12]={0},active[12]={0},visited[12]={0};
+    unsigned mask=0;for(int i=0;i<8;i++)if(f[i]<=0)mask|=1U<<i;
+    const signed char *topology=cave_topology[mask];
+    int required=0;while(required<15 && topology[required]>=0)required++;
+    if(capacity<required)return -1;
     MdVertex points[12];
     for(int e=0;e<12;e++) {
         int a=ends[e][0],b=ends[e][1];
         if((f[a]>0)==(f[b]>0))continue;
-        active[e]=1;
         float t=f[a]/(f[a]-f[b]);
         points[e]=(MdVertex){0,0,0xffffffff,
             x+mix(corners[a][0],corners[b][0],t),
             y+mix(corners[a][1],corners[b][1],t),
             z+mix(corners[a][2],corners[b][2],t)};
-        if(gradients)points[e].color=cave_light(mix(gradients[a][0],gradients[b][0],t),
+        if(gradients)points[e].color=cave_shade(light,light+1,points[e].z-z,mix(gradients[a][0],gradients[b][0],t),
             mix(gradients[a][1],gradients[b][1],t),mix(gradients[a][2],gradients[b][2],t));
     }
-    for(int face=0;face<6;face++) {
-        int edges[4],n=0;
-        for(int k=0;k<4;k++)if(active[faces[face][k]])edges[n++]=faces[face][k];
-        if(n==4) {
-            float center=0;for(int k=0;k<4;k++)center+=f[face_corners[face][k]];
-            if((center>0)!=(f[face_corners[face][0]]>0)) {
-                int last=edges[3];for(int k=3;k>0;k--)edges[k]=edges[k-1];edges[0]=last;
-            }
-        }
-        for(int k=0;k+1<n;k+=2) {
-            int a=edges[k],b=edges[k+1];
-            if(degree[a]>=2 || degree[b]>=2)return -1;
-            links[a][degree[a]++]=b;links[b][degree[b]++]=a;
-        }
-    }
     int count=0;
-    for(int first=0;first<12;first++)if(active[first] && !visited[first]) {
-        int loop[12],n=0,at=first,previous=-1;
-        do {
-            if(n==12 || degree[at]!=2 || visited[at])return -1;
-            loop[n++]=at;visited[at]=1;
-            int next=links[at][0]==previous?links[at][1]:links[at][0];previous=at;at=next;
-        } while(at!=first);
-        for(int k=1;k+1<n;k++) {
-            if(count+3>capacity)return -1;
-            MdVertex a=points[loop[0]],b=points[loop[k]],c=points[loop[k+1]];
+    for(int k=0;k<required;k+=3) {
+            MdVertex a=points[(int)topology[k]],b=points[(int)topology[k+1]],c=points[(int)topology[k+2]];
             float ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z,vx=c.x-a.x,vy=c.y-a.y,vz=c.z-a.z;
             float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
             float norm=sqrtf(nx*nx+ny*ny+nz*nz);
             if(norm<.000001f)continue;
-            unsigned color=gradients?0:cave_light(nx,ny,nz);
+            unsigned color=0xffffffff;
             MdVertex triangle[3]={a,b,c};
             for(int j=0;j<3;j++) {
                 MdVertex p=triangle[j];if(!gradients)p.color=color;
@@ -196,12 +174,11 @@ static int polygonize(const float f[8],const float gradients[8][3],MdVertex *out
                 p.u=.5f+p.x/12-p.z/96;p.v=.5f+p.y/12;
                 p.z=-p.z;out[count++]=p;
             }
-        }
     }
     return count;
 }
 int cave_polygonize(const float f[8],MdVertex *out,int capacity,float x,float y,float z) {
-    return polygonize(f,NULL,out,capacity,x,y,z);
+    return polygonize(f,NULL,NULL,out,capacity,x,y,z);
 }
 static unsigned random_step(unsigned *state) {
     unsigned n=*state;n^=n<<13;n^=n>>17;n^=n<<5;return *state=n;
@@ -234,14 +211,23 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     s->motion.previous=now;if(dt>.1f)dt=.1f;
     float bass=(bands[0]+bands[1]+bands[2])/300.f;if(bass>1)bass=1;
     float attack=fmaxf(0,bass-s->motion.bass);
-    s->motion.pulse=fmaxf(attack,s->motion.pulse*(1-dt*4));
+    /* Smooth attack as well as release; never kick the view on one FFT bin. */
+    s->motion.pulse+=(attack-s->motion.pulse)*(1-expf(-dt*4));
     s->motion.phase+=dt*.07f;
     if(s->motion.phase>=6.283185307f)s->motion.phase-=6.283185307f;
-    s->motion.bass+=(bass-s->motion.bass)*(dt*8);
+    s->motion.bass+=(bass-s->motion.bass)*(1-expf(-dt*2));
     if(s->ready>=8) {
         float proposed=s->motion.travel+dt*(2+2*s->motion.bass);
         /* Never travel into an unprepared slab; audio is never stalled. */
         if(proposed<s->next-6)s->motion.travel=proposed;
+    }
+    CavePathFrame bank_near,bank_far;
+    if(cave_paths_sample(&s->paths,s->motion.travel+4,&bank_near,NULL) &&
+       cave_paths_sample(&s->paths,s->motion.travel+9,&bank_far,NULL)) {
+        float target=atanf(15*(bank_near.x[0]-bank_far.x[0]));
+        /* Source 0x10007278..0x100072dd: fixed movement=1 gives
+         * retention=(.43+.5*.86)^(14*dt). Avoid a frame-rate dependent mix. */
+        s->motion.bank+=(target-s->motion.bank)*(1-powf(.86f,14*dt));
     }
     int first=(int)floorf(s->motion.travel);
     /* Keep the original forward horizon AND three rear slabs. A banked view
@@ -263,13 +249,14 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         }
     }
     int used=0;
+    CaveLight light[2];cave_lighting(light,s->paths.seed,index);cave_lighting(light+1,s->paths.seed,index+1);
     for(int y=0;y<CAVE_GRID;y++)for(int x=0;x<CAVE_GRID;x++) {
         float f[8]={planes[0][y][x],planes[0][y][x+1],planes[0][y+1][x+1],planes[0][y+1][x],
                     planes[1][y][x],planes[1][y][x+1],planes[1][y+1][x+1],planes[1][y+1][x]};
         float gradients[8][3];
         static const unsigned char corner[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}};
         for(int i=0;i<8;i++)memcpy(gradients[i],normals[corner[i][2]][y+corner[i][1]][x+corner[i][0]],sizeof(gradients[i]));
-        int n=polygonize(f,gradients,slice->vertices+used,CAVE_MAX_VERTICES-used,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,index);
+        int n=polygonize(f,gradients,light,slice->vertices+used,CAVE_MAX_VERTICES-used,x-CAVE_GRID*.5f,y-CAVE_GRID*.5f,index);
         if(n<0){slice->count=0;return NULL;} /* Mathematically unreachable capacity guard. */
         used+=n;
     }

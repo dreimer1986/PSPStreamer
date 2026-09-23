@@ -7,12 +7,12 @@
 static unsigned rng(unsigned *s){unsigned n=*s;n^=n<<13;n^=n>>17;n^=n<<5;return *s=n;}
 static float clamp(float x,float low,float high){return x<low?low:x>high?high:x;}
 /* 0x10012340: repeat cosine easing, interpolate the fractional iteration.
- * Only the nonnegative branch is used by the recovered scene parameters. */
+ * Negative amounts use inverse cosine easing (source ambient-light branch). */
 float cave_path_shape(float value,float amount) {
-    value=clamp(value,0,1);amount=clamp(amount,0,4);
+    value=clamp(value,0,1);int inverse=amount<0;amount=clamp(fabsf(amount),0,4);
     int count=(int)amount;
-    for(int i=0;i<count;i++)value=.5f-.5f*cosf(value*3.141592654f);
-    float next=.5f-.5f*cosf(value*3.141592654f);
+    for(int i=0;i<count;i++)value=inverse?acosf(clamp(1-2*value,-1,1))/3.141592654f:.5f-.5f*cosf(value*3.141592654f);
+    float next=inverse?acosf(clamp(1-2*value,-1,1))/3.141592654f:.5f-.5f*cosf(value*3.141592654f);
     return value+(next-value)*(amount-count);
 }
 static float spline_interval(unsigned *random,float interval,float spread) {

@@ -1,0 +1,62 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Recovered Monkey color envelopes and two directional-light construction.
+ * See MONKEY_GEOMETRY.md for the remaining ambient/material adaptations. */
+#ifndef PSPSTREAMER_CAVE_STYLE_H
+#define PSPSTREAMER_CAVE_STYLE_H
+#include <math.h>
+#include "cave_paths.h"
+typedef struct {float color[2][3],direction[2][3],ambient;} CaveLight;
+static inline float cave_unit(float x){return fmaxf(0,fminf(1,x));}
+static inline void cave_lighting(CaveLight *light,float seed,float t) {
+    /* 0x10004cef..0x10004fa3: channel envelopes, 6% gray mixing,
+     * limit sum of deviations to .35, then complementary second light. */
+    float r=.5f+.1f*sinf(seed*.41f+t*.00221f)+.4f*sinf(seed*.14f+t*.00317f);
+    float g=.5f+.1f*sinf(seed*.32f+t*.00411f)+.4f*sinf(seed*.94f+t*.00197f);
+    float b=.5f+.1f*sinf(seed*.79f+t*.00297f)+.4f*sinf(seed*.47f+t*.00247f);
+    r*=r;b=sqrtf(fmaxf(0,b));
+    float gray=(r+g+b)/3;
+    float c[3]={r*.94f+gray*.06f,g*.94f+gray*.06f,b*.94f+gray*.06f};
+    float deviation=fabsf(c[0]-gray)+fabsf(c[1]-gray)+fabsf(c[2]-gray);
+    float scale=deviation>.35f?.35f/deviation:1;
+    for(int i=0;i<3;i++){light->color[0][i]=cave_unit(gray+(c[i]-gray)*scale);light->color[1][i]=1-light->color[0][i];}
+    /* 0x10004fa7..0x100051e8: bounded secondary chroma disturbance. */
+    float envelope=1.4f*powf(cave_unit(.5f+.23f*sinf(seed*.35f+t*.000997f)+.27f*sinf(seed*.53f+t*.001127f)),3.4f);
+    float delta[3]={envelope*sinf(seed*.42f+t*.002317f),envelope*sinf(seed*.26f+t*.002197f),envelope*sinf(seed*.73f+t*.001747f)};
+    for(int i=0;i<3;i++) {
+        float base=light->color[1][i];
+        if(base+delta[i]>1)delta[i]=1-base;
+        if(base-delta[i]<0)delta[i]=-base; /* Preserve source branch, not a symmetric clamp. */
+    }
+    float common=.3f*(delta[0]+delta[1]+delta[2]);
+    for(int i=0;i<3;i++)light->color[1][i]=cave_unit(light->color[1][i]+delta[i]-common);
+    /* 0x100051e8..0x100052da: two related spherical light directions. */
+    float a=4.71f+.85f*sinf(seed*.371f+t*.00611f);
+    float e=1.67f*sinf(seed*.491f+t*.00494f);
+    for(int i=0;i<2;i++) {
+        light->direction[i][0]=cosf(a)*cosf(e);
+        light->direction[i][1]=sinf(a)*cosf(e);
+        light->direction[i][2]=sinf(e);
+        a+=.5f+.6f*sinf(seed*.124f+t*.00773f);
+        e+=.7f*sinf(seed*.782f+t*.00903f);
+    }
+    /* 0x100052de..0x100053af, ordinary (non-extra-material) branch. */
+    float ambient=.5f+.14f*sinf(seed*.998f+t*.0041f)+.11f*sinf(seed*.763f+t*.00706f)
+        +.12f*sinf(seed*.334f+t*.00981f)+.13f*sinf(seed*.531f+t*.01303f);
+    light->ambient=.4f+.3f*(2*cave_path_shape(ambient,-1.8f)-1);
+}
+static inline unsigned cave_shade(const CaveLight *a,const CaveLight *b,float t,float nx,float ny,float nz) {
+    float length=sqrtf(nx*nx+ny*ny+nz*nz);
+    float normal[3]={0,0,0};
+    if(length>1e-6f){normal[0]=nx/length;normal[1]=ny/length;normal[2]=nz/length;}
+    float color[3]={0,0,0};
+    for(int l=0;l<2;l++) {
+        float dot=0;
+        for(int j=0;j<3;j++)dot+=normal[j]*(a->direction[l][j]+t*(b->direction[l][j]-a->direction[l][j]));
+        /* Source scales directions by 1.04, then clamps signed dot +
+         * varying ambient to [.17,1], no fabs(). */
+        float strength=fmaxf(.17f,fminf(1,dot*1.04f+a->ambient+t*(b->ambient-a->ambient)));
+        for(int j=0;j<3;j++)color[j]+=strength*(a->color[l][j]+t*(b->color[l][j]-a->color[l][j]));
+    }
+    return 0xff000000U|(unsigned)(255*cave_unit(color[0]))|((unsigned)(255*cave_unit(color[1]))<<8)|((unsigned)(255*cave_unit(color[2]))<<16);
+}
+#endif

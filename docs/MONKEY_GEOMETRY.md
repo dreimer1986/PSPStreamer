@@ -3,7 +3,77 @@
 The tube prototype was removed after successful cave hardware testing. **Cave** implements an
 independent isosurface engine following the field/surface approach identified
 in the local Winamp Monkey 1.0 DLL. It is **not a complete Monkey port**.
-No original executable instructions, lookup tables or textures are distributed.
+No original executable instructions, textures or random assets are distributed.
+The classic mathematical Marching Cubes connectivity is now included, verified
+against the 256 cases used by the inspected DLL.
+
+## Current comparison audit (2026-09-23)
+
+The user confirmed the CPU clipping fix: edge holes are gone, and both animated
+texture layers work. The next combined build changes topology, lighting and
+camera response. **It is still not a frame-identical Monkey port.**
+
+| Area | Current correspondence and remaining differences |
+| --- | --- |
+| Surface topology | Same 256 classic MC cases at `0x10042040`, including sign-only ambiguous cases; linear edge intersections. Previous center-sign/fan method removed. Degenerate triangles are still discarded. |
+| Field | Recovered compact radial kernel, rotated three-octave noise and octave ratios. PSP threshold, grid scale, base noise frequency, contributor count and deterministic RNG remain explicit adaptations. |
+| Paths | Recovered four-term oscillator, nonuniform random cubic branch, blend easing and odd-path perturbations. Fixed movement profile and bounded cache remain; this is not every original scene/configuration branch. |
+| Camera | Six-profile look-ahead retained. Source three-sine eye/target sway replaces invented oscillations. Curvature banking uses source `atan` scaling and time-dependent retention. Continuous +4/+9 sampling replaces the DLL's asymmetric +4/+9 and +6/+11 interpolation; source accumulated roll and every runtime configuration mode are not reproduced. |
+| Music / timing | Direct bass kicks removed from view orientation. Bass speed modulation now has an exponential response; audio analysis is still PSPStreamer’s, not Winamp's. Visual cost-aware pacing, delta cap and one-slab-per-frame generation remain and can limit smoothness. Decoder clocks are untouched. |
+| Light / color | Recovered channel envelopes, gray/chroma limiting, secondary perturbation, two spherical light directions, signed diffuse clamp and inverse-eased ambient variation. Fixed warm single-light/fabs shading removed. |
+| Materials | Procedural PSP rock remains. Original spatial RGB material waves, extra alpha/material modes and random normal-effect branch are not reconstructed; normalized material is used with the recovered two-light mixture. Adjacent profile lighting is interpolated to avoid slab seams. |
+| Texture / passes | Continuous base UV follows the inspected assignment. Animated scale/scroll and the extra fixed-function detail pass remain PSP adaptations, not an exact reconstruction of all Direct3D stage combinations. |
+| Display | Fixed 512×256 target, fog and bounded near/side CPU clipping; three rear slabs. Original resolution, forward horizon, camera projection changes and scene transitions are not copied. |
+
+### Camera changes and the reported jerks
+
+The previous implementation mixed several unrelated PSP oscillations directly
+with an immediate bass-attack envelope; bass used a frame-dependent `8*dt` mix.
+The source instead has explicit retained camera state at `0x10007278..0x100072dd`.
+Its helper at `0x10012450` computes `base^(reference_rate / current_rate)`.
+With the selected movement profile, retention is `.86^(14*dt)`. The new bank
+uses that recurrence and `atan(15*(x(z+4)-x(z+9)))`; it does not copy the DLL's
+asymmetric offset pair or unbounded accumulated roll.
+
+The exact three-sine target weights/frequencies/phases from
+`0x10007300..0x1000747e`, and eye sway from `0x10007486..0x10007596`, are used.
+Normalized XY is mapped to the PSP grid by a factor of six. Fixed gain gates
+replace configurable speed/FOV gates. Eye sway is reduced if it would enter a
+wall, a PSP safety adaptation. Bass attack/release and forward-speed response
+are smoothed; these envelopes are not claimed as original Winamp audio analysis.
+These changes address concrete abrupt-response paths, but visual smoothness
+still needs hardware confirmation and is constrained by visual frame pacing.
+
+### Recovered lighting details
+
+`cave_style.h` implements the palette at `0x10004cef..0x10004fa3`: three
+two-sine channel envelopes with exponents 2, 1 and .5; 6% gray mixing; total
+chroma deviation capped at .35. The secondary complement then follows the
+bounded disturbance at `0x10004fa7..0x100051e8`, retaining even its asymmetric
+clamp branch. Directions follow the two related spherical angles at
+`0x100051e8..0x100052da`. The negative easing branch in `0x10012340` uses
+`acos(1-2*x)/pi`; it is now implemented for the ambient formula at
+`0x100052de..0x100053af`. Direction gain 1.04 and signed diffuse-plus-ambient
+clamp [.17,1] replace the old absolute-value dot product. Coefficients are
+prepared per slab endpoint, not per render-frame vertex. Lighting remains in
+the cached vertex colors, with shared endpoints consistent between slabs.
+
+### Current bounds and validation
+
+Classic MC needs at most five triangles per cube, not the old fan's ten.
+The fixed vertex budget is now 2,160 per slab, reducing scene allocation from
+1,999,424 to 1,014,464 bytes without lowering resolution or cache depth.
+The table's complete 4,096 entries were checked against the local DLL. Tests
+cover every cube sign case with four scalar variants, exact nondegenerate case
+counts, capacity sentinels, inverse easing, palette fixtures and bounds,
+unit-length light directions, camera clearance and matrix orthonormality.
+The 1,800-tick trajectory builds 696 slabs (peak 630 vertices), with 28,977
+visible clipped triangles in sampled frames. LCD/TV, both window sizes,
+two-pass lifetime/depth behavior and teardown pass; peak fixture scratch is
+28,224 bytes. These are host results, not PSP FPS measurements.
+
+The sections below preserve the earlier reconstruction history; where an older
+stage differs, this current audit is authoritative.
 
 ## Observations from the DLL
 

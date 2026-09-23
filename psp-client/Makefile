@@ -59,6 +59,7 @@ milkdrop_gu.o: preset_fpu.h
 milkdrop_gu.o: cave_gu.h cave_visual.h
 milkdrop_gu.o: cave_clip.h
 cave_visual.o: cave_visual.h cave_paths.h milkdrop_warp.h
+cave_visual.o: cave_style.h cave_topology.h
 cave_paths.o: cave_paths.h
 milkdrop_gu.o: cave_paths.h
 milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h

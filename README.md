@@ -892,8 +892,11 @@ moving the main camera path; values are cached rather than regenerated each fram
 The recovered alternate cubic paths now blend with the oscillators; the camera
 looks six profiles ahead, and continuous base texture coordinates replace
 per-triangle projections. This is **not yet a complete reproduction of Monkey**:
-additional camera roll/sway, animated texture stages, lighting and ambiguous
-cube triangulation differ. See [verified observations and adaptations](docs/MONKEY_GEOMETRY.md).
+the camera now uses source sway and smoothed banking, classic cube topology
+matches the original cases, and color envelopes/two-light shading follow the
+recovered formulas. Original material modes, exact texture-stage choreography,
+audio analysis and some camera modes still differ. See the
+[comparison audit and adaptations](docs/MONKEY_GEOMETRY.md).
 Only one new depth slab is built per visual update; completed geometry is cached.
 Three rear slabs remain visible for camera turns without shortening the forward horizon.
 Adjacent slabs reuse their shared field/gradient plane, and trigonometric path

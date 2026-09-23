@@ -4,9 +4,9 @@
 #include "milkdrop_warp.h"
 #include "cave_paths.h"
 enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HISTORY,
-       CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*30 };
+       CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*15 };
 _Static_assert(CAVE_PATH_CACHE>=CAVE_SLICES+3,"Path cache must retain camera and both future field profiles");
-typedef struct {float travel,bass,phase,pulse;unsigned long long previous;} CaveMotion;
+typedef struct {float travel,bass,phase,pulse,bank;unsigned long long previous;} CaveMotion;
 typedef struct {
     float field[CAVE_GRID+1][CAVE_GRID+1];
     float gradient[CAVE_GRID+1][CAVE_GRID+1][3];

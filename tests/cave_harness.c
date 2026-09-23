@@ -1,5 +1,7 @@
 #include "cave_visual.h"
 #include "cave_clip.h"
+#include "cave_topology.h"
+#include "cave_style.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -23,6 +25,8 @@ int main(void) {
     assert(fabsf(cave_path_shape(.5f,2)-.5f)<1e-6f);
     assert(fabsf(cave_path_shape(.25f,1)-.1464466094f)<1e-6f);
     assert(fabsf(cave_path_shape(.25f,.5f)-.1982233047f)<1e-6f);
+    assert(fabsf(cave_path_shape(.25f,-1)-1.f/3)<1e-6f);
+    assert(fabsf(cave_path_shape(cave_path_shape(.2f,1),-1)-.2f)<1e-6f);
     /* Four-knot nonuniform straight line must remain exactly linear. */
     CaveSpline line={.time={-2,0,3,7},.value={-.2f,0,.3f,.7f},.ready=1};
     unsigned spline_random=123;
@@ -39,7 +43,9 @@ int main(void) {
         float f[8];for(int i=0;i<8;i++)f[i]=(mask&(1<<i))?(1+i*.13f):variant==3?0:-(1+variant*i*.17f);
         out.guard=0x12345678;
         int n=cave_polygonize(f,out.v,30,0,0,0);
-        assert(n>=0 && n<=30 && n%3==0 && out.guard==0x12345678);
+        int expected=0;while(expected<15 && cave_topology[255-mask][expected]>=0)expected++;
+        assert(n>=0 && n<=15 && n%3==0 && out.guard==0x12345678);
+        if(variant!=3)assert(n==expected);
         for(int i=0;i<n;i++) {
             assert(isfinite(out.v[i].u) && isfinite(out.v[i].v));
             assert(fabsf(out.v[i].u-(.5f+out.v[i].x/12+out.v[i].z/96))<1e-6f);
@@ -47,7 +53,24 @@ int main(void) {
             assert(out.v[i].x>=0 && out.v[i].x<=1 && out.v[i].y>=0 && out.v[i].y<=1);
             assert(out.v[i].z>=-1 && out.v[i].z<=0);
         }
-        assert(cave_polygonize(f,out.v,29,0,0,0)==-1);
+        if(expected)assert(cave_polygonize(f,out.v,expected-1,0,0,0)==-1);
+    }
+    CaveLight light[2];cave_lighting(light,0,0);cave_lighting(light+1,0,1);
+    /* Independent source-envelope fixture before and after gray/chroma mixing. */
+    float raw[3]={.25f,.5f,sqrtf(.5f)},gray=(raw[0]+raw[1]+raw[2])/3;
+    float dev=0;for(int j=0;j<3;j++)dev+=fabsf(.94f*(raw[j]-gray));
+    for(int j=0;j<3;j++)assert(fabsf(light->color[0][j]-(gray+.94f*(raw[j]-gray)*.35f/dev))<1e-6f);
+    for(int i=0;i<500;i++) {
+        cave_lighting(light,313.45f,i*7.3f);cave_lighting(light+1,313.45f,i*7.3f+1);
+        assert(light->ambient>=.1f && light->ambient<=.7f);
+        for(int l=0;l<2;l++) {
+            float length=0;for(int j=0;j<3;j++) {
+                assert(light->color[l][j]>=0 && light->color[l][j]<=1);
+                length+=light->direction[l][j]*light->direction[l][j];
+            }
+            assert(fabsf(length-1)<1e-5f);
+        }
+        assert((cave_shade(light,light+1,.4f,1,2,3)>>24)==255);
     }
     CaveScene *s=cave_create();assert(s && !((uintptr_t)s&63));
     while(s->paths.next<15)cave_paths_step(&s->paths);
@@ -135,7 +158,11 @@ int main(void) {
     int peak=0,clipped_visible=0;
     for(int tick=0;tick<1800;tick++) {
         int before=s->built;
+        float old_bank=s->motion.bank,old_bass=s->motion.bass;
         CaveSlice *slice=cave_prepare(s,bands,90,1000000ULL+tick*100000ULL);
+        assert(isfinite(s->motion.bank) && fabsf(s->motion.bank)<1.571f);
+        assert(fabsf(s->motion.bank-old_bank)<=3.142f*(1-powf(.86f,1.4f))+.00001f);
+        if(tick)assert(fabsf(s->motion.bass-(.9f+(old_bass-.9f)*expf(-.2f)))<1e-6f);
         assert(s->built-before<=1);
         assert(s->sampled_planes==s->built+1);
         if(slice) {
