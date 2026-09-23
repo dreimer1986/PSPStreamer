@@ -78,7 +78,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="TRIANGLE: fullscreen on / off",
         .step2_text="The old X + TRIANGLE works too.",
         .step3_title="O: open MilkDrop preset list",
-        .step3_text="Music keeps playing while you pick."
+        .step3_text="Not in Cave; music keeps playing."
     },
     [HELP_PAGE_PRESETS]={
         .title="Inside the preset list",

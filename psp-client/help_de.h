@@ -78,7 +78,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="DREIECK: Vollbild ein / aus",
         .step2_text="X + DREIECK geht weiterhin auch.",
         .step3_title="O: Liste der MilkDrop-Presets",
-        .step3_text="Die Musik läuft beim Auswählen weiter."
+        .step3_text="Nicht in Höhle; Musik läuft weiter."
     },
     [HELP_PAGE_PRESETS]={
         .title="In der Preset-Auswahl",

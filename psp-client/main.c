@@ -1974,7 +1974,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             }
         }
         sceCtrlPeekBufferPositive(&pad, 1);
-        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
+        if (visual_preset != 6 && (pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
             md_stop(); music_visual_active=0;
             int preset_changed=music_choose_preset();
             if(preset_changed) {
