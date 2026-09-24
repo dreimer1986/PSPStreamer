@@ -93,8 +93,11 @@ typedef struct {
     unsigned int color,milliseconds;
     unsigned long long origin,start;
     float seconds,weight;
+    int capture;
 } MdLiveTransition;
 static MdLiveTransition *md_live;
+static int md_capture_needed(const MdFilePreset *preset,int mode);
+static int md_capture_union(int a,int b);
 static void md_live_clear(void) {
     if(!md_live)return;
     md_free_preset(&md_live->preset);
@@ -151,6 +154,12 @@ int md_load_transition(const char *path,unsigned int fade_ms,MdFileError *error)
         previous->preset=md_custom_preset; /* Move bytecode ownership, not clone. */
         memset(&md_custom_preset,0,sizeof(md_custom_preset));
         previous->state=md_preset_state;previous->signal=md_signal_state;
+        previous->capture=md_capture_needed(&previous->preset,previous->preset.wave_mode);
+        /* Frame formulas may select any primary wave. Cache this scan once;
+         * preserve incoming-then-outgoing EEL global-memory evaluation order. */
+        if(pm_assignment_line(&previous->preset.program,PM_DYNAMIC_BASE) ||
+           pm_assignment_line(&previous->preset.init_program,PM_DYNAMIC_BASE))
+            previous->capture=md_capture_union(previous->capture,4);
         previous->origin=md_origin;previous->milliseconds=fade_ms>5000?5000:fade_ms;
         memcpy(previous->images,md_images,sizeof(md_images));memset(md_images,0,sizeof(md_images));
     }
@@ -178,10 +187,20 @@ static int md_live_evaluate(const unsigned char bands[12],int level,unsigned lon
         md_bins_left,md_bins_right,&p->state,p->waves,&md_runtime_error)!=MD_FILE_OK)return 0;
     return 1;
 }
-static unsigned md_mix_color(unsigned old,unsigned fresh,float weight) {
-    unsigned out=0;
-    for(int i=0;i<4;i++){int a=(old>>(8*i))&255,b=(fresh>>(8*i))&255;out|=(unsigned)(a+(b-a)*weight)<<(8*i);}
-    return out;
+static int md_capture_needed(const MdFilePreset *preset,int mode) {
+    int waves=0,spectrum=0;
+    for(int i=0;i<MD_CUSTOM_WAVES;i++)if(preset->waves[i].enabled) {
+        waves=1;spectrum|=preset->waves[i].spectrum!=0;
+    }
+    return spectrum?5:waves?(mode==8?4:2):mode>=0?(mode==8?3:mode?2:1):0;
+}
+static int md_capture_union(int a,int b) {
+    /* 1=right PCM, 2=stereo PCM, 3=left FFT source, 4=PCM+left
+     * FFT source, 5=PCM+stereo FFT source. Numeric max alone misses 1+3. */
+    if(a==5 || b==5)return 5;
+    if(a==4 || b==4)return 4;
+    if(a==3 || b==3)return (!a || !b || a==b)?3:4;
+    return a>b?a:b;
 }
 static float md_lerp(float a,float b,float w){return a+(b-a)*w;}
 static void md_mix_border(MdBorder *b,const MdBorder *a,float w) {
@@ -405,21 +424,17 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
                              &next_state,md_pixel_points,&md_runtime_error)!=MD_FILE_OK) return -1;
     } else {md_signal_active = 0;md_profile_mark(1);}
     md_profile_mark(2);
-    int waveform=preset==3 && next_state.wave_mode>=0;
-    int mode=waveform?next_state.wave_mode:0;
     int custom_waves=0;
-    int custom_spectrum=0;
     if(preset==3) for(int i=0;i<MD_CUSTOM_WAVES;i++) custom_waves|=md_custom_preset.waves[i].enabled!=0;
-    if(custom_waves) for(int i=0;i<MD_CUSTOM_WAVES;i++) custom_spectrum|=md_custom_preset.waves[i].enabled && md_custom_preset.waves[i].spectrum;
-    int capture=custom_spectrum?5:custom_waves?(waveform && mode==8?4:2):waveform ? (mode==8?3:mode?2:1) : 0;
-    if(md_live)capture=5; /* One coherent PCM/FFT snapshot feeds both states. */
+    int capture=preset==3?md_capture_needed(&md_custom_preset,next_state.wave_mode):0;
+    if(md_live)capture=md_capture_union(capture,md_live->capture);
     if(capture!=md_wave_capture) {
         memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum));
         memset(md_bins_left,0,sizeof(md_bins_left)); memset(md_bins_right,0,sizeof(md_bins_right));
         md_wave_forget();
     }
     md_wave_capture=capture;
-    if(waveform || custom_waves || md_live) {
+    if(capture) {
         if(level>0) {
             if(capture==5) {
                 if(md_wave_snapshot_full(md_right,md_left,md_spectrum,md_spectrum_right)) {
@@ -457,18 +472,11 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
-    md_warp_mesh_varying(mesh, preset == 3 ? &evaluated : &md_presets[preset],
-        preset==3 && md_custom_preset.pixel_program.count?md_pixel_points:NULL, seconds);
     if(md_live) {
-        MdVertex *old=sceGuGetMemory(MD_MESH_VERTICES*sizeof(*old));
-        md_warp_mesh_varying(old,&md_live->warp,md_live->preset.pixel_program.count?md_live->pixels:NULL,md_live->seconds);
-        for(int i=0;i<MD_MESH_VERTICES;i++) {
-            float w=md_live->weight;
-            mesh[i].u=old[i].u+(mesh[i].u-old[i].u)*w;
-            mesh[i].v=old[i].v+(mesh[i].v-old[i].v)*w;
-            mesh[i].color=md_mix_color(old[i].color,mesh[i].color,w);
-        }
-    }
+        md_warp_mesh_blended(mesh,&evaluated,md_custom_preset.pixel_program.count?md_pixel_points:NULL,seconds,
+            &md_live->warp,md_live->preset.pixel_program.count?md_live->pixels:NULL,md_live->seconds,md_live->weight);
+    } else md_warp_mesh_varying(mesh,preset==3?&evaluated:&md_presets[preset],
+        preset==3 && md_custom_preset.pixel_program.count?md_pixel_points:NULL,seconds);
     md_expand(mesh, MD_MESH_VERTICES, 1);
     for(int i=0;i<MD_MESH_VERTICES;i++) if(!isfinite(mesh[i].u)||!isfinite(mesh[i].v)) {
         md_runtime_error.code=MD_FILE_INVALID;md_runtime_error.line=0;

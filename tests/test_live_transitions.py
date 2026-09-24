@@ -38,6 +38,14 @@ class LiveTransitionTests(unittest.TestCase):
                             str(source), *[str(ROOT / 'psp-client' / (s + '.c')) for s in units],
                             '-lpng', '-ljpeg', '-lz', '-lm', '-o', str(binary)], check=True)
             subprocess.run([str(binary), '--live', *map(str, presets)], check=True, timeout=20)
+            # Static spectrum-only + PCM, dynamic primary-wave mode and custom
+            # stereo-spectrum waves must still request the union of both inputs.
+            for variant in ('nWaveMode=8\n',
+                            'nWaveMode=0\nper_frame_2=wave_mode=if(above(sin(time),0),8,0);\n',
+                            'nWaveMode=0\nwavecode_0_enabled=1\nwavecode_0_bSpectrum=1\n'):
+                presets[0].write_text('[preset00]\nper_frame_1=counter=counter+1;\n' + variant)
+                presets[1].write_text('[preset00]\nnWaveMode=0\nper_frame_1=counter=counter+1;\n')
+                subprocess.run([str(binary), '--live', *map(str, presets)], check=True, timeout=20)
             demos = ROOT / 'psp-client/presets/live-transition-test'
             subprocess.run([str(binary), '--live', str(demos / '01 - Amber orbit.milk'),
                             str(demos / '02 - Cyan wave.milk')], check=True, timeout=20)

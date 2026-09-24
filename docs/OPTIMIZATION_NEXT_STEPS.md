@@ -102,6 +102,12 @@ associated ToDo test item. No per-scenario timing measurements were supplied.
 
 ## Remaining candidates (not measured speed guarantees)
 
+The live-transition follow-up removes the second expanded warp mesh from the GU
+list and blends unique grid points (289 instead of 1,536 corners). Audio capture
+uses the requirements of both presets, avoiding stereo FFTs on PCM-only fades.
+Exact geometry comparisons and focused renderer tests pass; no PSP speedup is
+claimed before hardware feedback. See [details](MILKDROP_LIVE_TRANSITIONS.md).
+
 ### MilkDrop
 
 7. **Longer prepared expression blocks and safe loop coverage.** Current prepared

@@ -413,6 +413,10 @@ int main(int argc,char **argv) {
     memset(vram,0xa5,edram_size);
     if(argc==4 && !strcmp(argv[1],"--live")) {
         memset(bands,60,sizeof(bands));MdFileError error;
+        static const int capture_union[6][6]={
+            {0,1,2,3,4,5},{1,1,2,4,4,5},{2,2,2,4,4,5},
+            {3,4,4,3,4,5},{4,4,4,4,4,5},{5,5,5,5,5,5}};
+        for(int a=0;a<6;a++)for(int b=0;b<6;b++)assert(md_capture_union(a,b)==capture_union[a][b]);
         for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
             md_high_resolution=resolution;md_live_transitions=1;assert(md_start());
             expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
@@ -424,12 +428,19 @@ int main(int argc,char **argv) {
             void *code=md_custom_preset.program.code;
             assert(md_load_transition(argv[3],500,&error)==MD_FILE_OK);
             assert(md_live && md_live->preset.program.code==code && !md_fade_image);
+            int retained_capture=md_capture_needed(&md_live->preset,md_live->preset.wave_mode);
+            if(pm_assignment_line(&md_live->preset.program,PM_DYNAMIC_BASE) ||
+               pm_assignment_line(&md_live->preset.init_program,PM_DYNAMIC_BASE))
+                retained_capture=md_capture_union(retained_capture,4);
+            assert(md_live->capture==retained_capture);
             assert(md_live->state.frames==old_frames);
             for(int frame=0;frame<7;frame++) {
                 test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
                 if(frame<5) {
                     assert(md_live && md_live->state.frames==old_frames+(unsigned)frame+1);
                     assert(md_preset_state.frames==(unsigned)frame+1);
+                    assert(md_wave_capture==md_capture_union(retained_capture,
+                        md_capture_needed(&md_custom_preset,md_preset_state.wave_mode)));
                     if(!frame)assert(md_live->weight==0);
                     if(frame==2)assert(md_live->weight>.3f && md_live->weight<.4f);
                 } else assert(!md_live);

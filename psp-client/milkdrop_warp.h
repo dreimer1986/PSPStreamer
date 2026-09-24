@@ -15,6 +15,9 @@ extern const MdPreset md_presets[3];
 void md_warp_mesh(MdVertex *vertices, const MdPreset *preset, float seconds);
 void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *preset,
                           const MdPreset *points, float seconds);
+/* Renderer-thread only; shared scratch avoids another expanded GU mesh. */
+void md_warp_mesh_blended(MdVertex *vertices,const MdPreset *fresh,const MdPreset *fresh_points,float seconds,
+                         const MdPreset *old,const MdPreset *old_points,float old_seconds,float weight);
 void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
                    int level, float seconds, int variant);
 

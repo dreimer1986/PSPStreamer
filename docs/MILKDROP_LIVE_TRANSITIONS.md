@@ -24,7 +24,7 @@ An incoming third preset releases the oldest one; never retain three live states
 The blend clock starts on its first rendered frame, not while parsing files.
 Stop, hard cut and layout changes release old bytecode, textures and state.
 
-State: 959,360 bytes on the host fixture (PSP has smaller pointers), plus retained
+State: 959,368 bytes on the host fixture (PSP has smaller pointers), plus retained
 bytecode/assets. No extra framebuffer. Additional GU-list restarts keep each live
 geometry layer inside the original command-list budget. The same coherent
 PCM/FFT snapshot feeds both presets; music decoding and clocks are unchanged.
@@ -37,3 +37,21 @@ Run `python3 -m unittest tests.test_live_transitions tests.test_visual_options`.
 Actual audio stability and visual quality are hardware tests, not host claims.
 
 User controls and the two dedicated hardware-test presets are documented in README.
+
+## Transition optimization (2026-09-24)
+
+- Blend 289 unique warp-grid points before expanding to 1,536 triangle corners.
+  The same UV equations and interpolation order are retained. Uniform decay color
+  is blended once, instead of once per corner. The additional expanded old mesh
+  no longer occupies 36 KiB of the GU command list. A 6,936-byte render-thread
+  scratch grid replaces it; the fixed command-list allocation itself is unchanged.
+- Capture only the union of the two presets' audio requirements. PCM-only fades
+  no longer request or transform stereo spectra. Dynamic outgoing primary-wave
+  assignments are detected once when retaining the preset and reserve both PCM
+  and left spectrum input. Custom spectrum waves retain full stereo input/FFTs.
+  Formula/global-memory evaluation order and coherent audio snapshots are unchanged.
+- Build first, then focused tests: exact full-mesh comparison against the former
+  expanded blend (84 combinations), all 36 capture-mode combinations, dynamic
+  modes, spectrum/PCM overlaps, stereo-spectrum waves, lifecycle and GU ownership.
+  Host checks pass; these are not PSP FPS measurements. No formula budget,
+  resolution, audio timing or synchronization change is included.

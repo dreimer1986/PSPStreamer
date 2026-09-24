@@ -47,8 +47,7 @@ const MdPreset md_presets[3] = {
 void md_warp_mesh(MdVertex *vertices, const MdPreset *p, float seconds) {
     md_warp_mesh_varying(vertices,p,NULL,seconds);
 }
-void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset *points, float seconds) {
-    MdVertex grid[(MD_GRID + 1) * (MD_GRID + 1)];
+static void md_warp_grid(MdVertex grid[MD_GRID_POINTS], const MdPreset *p, const MdPreset *points, float seconds) {
     float time = seconds * p->warp_speed, inv_scale = 1.0f / p->warp_scale;
     float f[4] = {11.68f + 4*cosf(time*1.413f + 10),
                    8.77f + 3*cosf(time*1.113f + 7),
@@ -66,7 +65,7 @@ void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset 
         radii_ready=1;
     }
     unsigned int decay = (unsigned int)(p->decay * 255);
-    int x, y, n = 0;
+    int x, y;
     for (y = 0; y <= MD_GRID; y++) for (x = 0; x <= MD_GRID; x++) {
         if(points) {
             p=&points[y*(MD_GRID+1)+x];
@@ -106,11 +105,40 @@ void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset 
         out->y = (float)y*MD_TEXTURE/MD_GRID; out->z = 0;
         out->color = 0xff000000U | decay | (decay<<8) | (decay<<16);
     }
-    for (y = 0; y < MD_GRID; y++) for (x = 0; x < MD_GRID; x++) {
+}
+static void md_expand_grid(MdVertex *vertices,const MdVertex grid[MD_GRID_POINTS]) {
+    int n=0;
+    for (int y = 0; y < MD_GRID; y++) for (int x = 0; x < MD_GRID; x++) {
         int a = y*(MD_GRID+1)+x, b = a+1, c0 = a+MD_GRID+1, d = c0+1;
         vertices[n++] = grid[a]; vertices[n++] = grid[b]; vertices[n++] = grid[c0];
         vertices[n++] = grid[b]; vertices[n++] = grid[d]; vertices[n++] = grid[c0];
     }
+}
+void md_warp_mesh_varying(MdVertex *vertices, const MdPreset *p, const MdPreset *points, float seconds) {
+    MdVertex grid[MD_GRID_POINTS];
+    md_warp_grid(grid,p,points,seconds);
+    md_expand_grid(vertices,grid);
+}
+void md_warp_mesh_blended(MdVertex *vertices,const MdPreset *fresh,const MdPreset *fresh_points,float seconds,
+                         const MdPreset *old,const MdPreset *old_points,float old_seconds,float weight) {
+    /* Render-thread scratch: blend 289 unique vertices, not 1536 duplicated
+     * triangle corners. Keep the second grid off the PSP stack and GU list. */
+    static MdVertex previous[MD_GRID_POINTS];
+    MdVertex grid[MD_GRID_POINTS];
+    md_warp_grid(grid,fresh,fresh_points,seconds);
+    md_warp_grid(previous,old,old_points,old_seconds);
+    /* Warp decay is uniform even when UV coordinates have per-pixel formulas. */
+    unsigned color=0;
+    for(int channel=0;channel<4;channel++) {
+        int a=(previous[0].color>>(8*channel))&255,b=(grid[0].color>>(8*channel))&255;
+        color|=(unsigned)(a+(b-a)*weight)<<(8*channel);
+    }
+    for(int i=0;i<MD_GRID_POINTS;i++) {
+        grid[i].u=previous[i].u+(grid[i].u-previous[i].u)*weight;
+        grid[i].v=previous[i].v+(grid[i].v-previous[i].v)*weight;
+        grid[i].color=color;
+    }
+    md_expand_grid(vertices,grid);
 }
 
 void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
