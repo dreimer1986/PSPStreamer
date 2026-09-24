@@ -22,6 +22,7 @@ static int writable(Parser *p,int id) {
 }
 static int sequence(Parser *p);
 static int assignment(Parser *p);
+static int assignment_suffix(Parser *p,int begin);
 static int precedence(Parser *p,int minimum);
 static int register_id(const char *s) {
     return strlen(s)==5 && !strncmp(s,"reg",3) && isdigit((unsigned char)s[3]) &&
@@ -74,7 +75,7 @@ static int call(Parser *p,int op) {
 }
 static int unary(Parser *p) {
     char text[32],*end;
-    int ok=0;
+    int ok=0,begin=p->code->count;
     space(p);
     if(++p->depth>PM_DEPTH) {p->error=PM_INVALID;p->depth--;return 0;}
     if(*p->p=='+' || *p->p=='-' || *p->p=='!') {
@@ -122,6 +123,11 @@ static int unary(Parser *p) {
         if(*p->p==']') {p->p++;ok=emit(p,MEML,0,0);}
         else ok=argument(p,']') && emit(p,ADD,0,0) && emit(p,MEML,0,0);
     }
+    /* Desktop preprocessCode rewrites assignment at the immediately preceding
+     * operand, even inside arithmetic: a+b=3 becomes a+_set(b,3).
+     * Its RHS extends to the enclosing expression delimiter. Never insert a
+     * semicolon at a source-record boundary: identifiers can span records. */
+    if(ok)ok=assignment_suffix(p,begin);
     p->depth--;return ok;
 }
 static int operator_at(Parser *p,int *length,int *rank) {
@@ -168,7 +174,6 @@ static int precedence(Parser *p,int minimum) {
     }
 }
 static int assignment_body(Parser *p) {
-    int begin=p->code->count;
     if(!precedence(p,1)) return 0;
     space(p);
     if(*p->p=='?') {
@@ -179,6 +184,10 @@ static int assignment_body(Parser *p) {
         if(!assignment(p)) return 0;
         p->code->code[finish].arg=p->code->count;return 1;
     }
+    return 1;
+}
+static int assignment_suffix(Parser *p,int begin) {
+    space(p);
     int compound=-1,length=0;
     if(*p->p=='=' && p->p[1]!='=') length=1;
     else if(*p->p && p->p[1]=='=') {

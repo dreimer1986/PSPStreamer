@@ -40,6 +40,9 @@ User controls and the two dedicated hardware-test presets are documented in READ
 
 ## Transition optimization (2026-09-24)
 
+The user confirmed smooth live transitions with two moderately complex presets.
+This confirms practical operation, not performance of all expensive presets.
+
 - Blend 289 unique warp-grid points before expanding to 1,536 triangle corners.
   The same UV equations and interpolation order are retained. Uniform decay color
   is blended once, instead of once per corner. The additional expanded old mesh

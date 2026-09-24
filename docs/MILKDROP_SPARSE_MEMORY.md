@@ -50,7 +50,7 @@ The other ten rejected files are distinct from the corrected EEL dot syntax:
 | 2 BrainStain exports | Orphan `per_frame_8` line without `=` before a later proper entry | Still reported; no automatic editing of source/duplicate semantics |
 | 1 multi-author export | Empty key `=1` | Still reported as malformed input |
 | 2 static rotation entries | `rot=-` | Desktop uses its default after failed numeric conversion; PSP retains explicit validation |
-| 2 Suksma/Hexcollie exports | Missing statement separator across joined formula records | Still reported, not silently rewritten |
+| 2 Suksma/Hexcollie exports | Desktop operand-assignment binding across joined records | Resolved 2026-09-24 in the parser; originals unchanged, both pass 120 host frames |
 | `amandio c - new life` and `martin - pixies party d-strux wille` | 128 named-variable limit | **Further redesign needed** |
 | `amandio c - epicenter the end of the world we never knew` | 64-KiB file limit | **Further resource/loader work needed**; later limits may also apply |
 

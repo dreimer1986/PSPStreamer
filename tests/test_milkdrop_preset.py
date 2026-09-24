@@ -512,6 +512,29 @@ class PresetTests(unittest.TestCase):
         values,_=self.execute_eel('a=1; /* inline */ b=a=3;result=a+b;')
         self.assertEqual(values['result'],6)
 
+    def test_desktop_assignment_inside_arithmetic(self):
+        # Verified using MilkDrop 2's original preprocessCode: the immediate
+        # left operand is rewritten to _set/_addop; the RHS extends to ';'.
+        for source,result in [
+                ('b=2;result=1+b*c=7;',15),
+                ('b=2;c=3;result=1+b*c+=7;',21),
+                ('result=2*megabuf(4)=3+1;',8),
+                ('result=1+reg00=3;',4),
+                ('result=-b=7;',-7),
+                ('result=1+if(0,b=4,b=7);',8)]:
+            values,_=self.execute_eel(source)
+            self.assertEqual(values['result'],result,source)
+        code,preset,error=self.parse(b'[preset00]\nper_frame_1=gamma=1 + bass*bass_att\n'
+                                    b'per_frame_2=chng=sin(time*.5);\n')
+        self.assertEqual(code,0,(error.line,error.key))
+        code,reference,error=self.parse(b'[preset00]\nper_frame_1=gamma=1 + bass*(bass_attchng=sin(time*.5));\n')
+        self.assertEqual(code,0)
+        self.assertEqual([(o.op,o.arg,o.value) for o in preset.program.code[:preset.program.count]],
+                         [(o.op,o.arg,o.value) for o in reference.program.code[:reference.program.count]])
+        values,_=self.execute_eel('bass=2;time=1;gamma=1+bass*bass_attchng=sin(time*.5);result=gamma;')
+        self.assertAlmostEqual(values['result'],1+2*math.sin(.5),places=5)
+        self.assertAlmostEqual(values['bass_attchng'],math.sin(.5),places=5)
+
     def test_eel_exceptional_intermediates_and_assignment(self):
         cases={
             '1/0':0,'-1/0':0,'0/0':0,'1/(1/0)':0,
