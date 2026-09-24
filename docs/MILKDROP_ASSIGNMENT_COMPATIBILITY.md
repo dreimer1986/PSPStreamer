@@ -19,7 +19,23 @@ rewritten. Assignment validation, bounded execution and safe numeric stores rema
 Verification: production build first; eight focused parser tests pass. Both
 original Hexcollie nz+5/nz+6 presets pass import and 120-frame host execution
 including expanded shapes, pixel and custom-wave evaluation. The expanded
-collection imports 2266/2267 files; this is not a full-collection execution test.
-The remaining Clouded Bottle uses duplicate/gapped record numbers (including
-missing per_frame_12). Desktop stops reading a code block at a missing key;
-matching that import behavior remains separate work. No PSP FPS claim is made.
+collection initially imported 2266/2267 files; this was not a full-collection
+execution test.
+
+## Numbered lookup: Clouded Bottle
+
+The original `state.cpp` `ReadCode` calls `GetFastString` for suffixes 1,2,...
+and stops at the first absent key. `_GetLineByName` searches the file's indexed
+keys when the next physical line does not match. Clouded Bottle's later duplicate
+4/9/10 records are not appended; missing 12 means records 13 onward are not read.
+The PSP importer now collects separate records, orders them by number and compiles
+only the contiguous prefix. Preset files remain untouched. Physical source-line
+diagnostics are retained, including when records occur out of order. Additional
+import-only scratch space is bounded by source size and freed before playback;
+the runtime memory layout and execution budgets are unchanged.
+
+Build first, then six focused parser tests: eight formula contexts, duplicates,
+gaps, missing first key, out-of-order records, diagnostics, comments, limits and
+the previous Hexcollie fix. All pass. Clouded Bottle passes 120 host frames;
+the complete expanded collection now imports **2267/2267**. This does not claim
+full-collection runtime success, Desktop-identical rendering or PSP FPS.

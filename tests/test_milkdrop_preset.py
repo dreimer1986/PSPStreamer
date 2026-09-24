@@ -203,6 +203,37 @@ class PresetTests(unittest.TestCase):
                 self.assertEqual([(o.op,o.arg,o.value) for o in block.code[:block.count]],
                                  [(o.op,o.arg,o.value) for o in reference.code[:reference.count]])
 
+    def test_desktop_numbered_record_lookup_and_missing_tail(self):
+        cases=[('per_frame_',lambda p:p.program),('per_frame_init_',lambda p:p.init_program),
+               ('per_pixel_',lambda p:p.pixel_program),
+               ('shape_0_init',lambda p:p.shape_program[0].init),
+               ('shape_0_per_frame',lambda p:p.shape_program[0].frame),
+               ('wave_0_init',lambda p:p.waves[0].init),
+               ('wave_0_per_frame',lambda p:p.waves[0].frame),
+               ('wave_0_per_point',lambda p:p.waves[0].point)]
+        for prefix,get in cases:
+            with self.subTest(prefix=prefix):
+                code,reference,error=self.parse(f'[preset00]\n{prefix}1=q1=2;q2=3;'.encode())
+                self.assertEqual(code,0)
+                # Numbered lookup, not physical order. First duplicate wins;
+                # missing 3 means the syntactically invalid 4 is never compiled.
+                data=(f'[preset00]\n{prefix}2=q2=3;\n{prefix}1=q1=2;\n'
+                      f'{prefix}2=invalid(;\n{prefix}4=invalid(;\n')
+                code,preset,error=self.parse(data.encode())
+                self.assertEqual(code,0,(error.line,error.key))
+                block,expected=get(preset),get(reference)
+                self.assertEqual(block.lines,2)
+                self.assertEqual([(o.op,o.arg,o.value) for o in block.code[:block.count]],
+                                 [(o.op,o.arg,o.value) for o in expected.code[:expected.count]])
+                code,preset,error=self.parse(f'[preset00]\nzoom=1\n{prefix}2=invalid(;'.encode())
+                self.assertEqual(code,0,(error.line,error.key))
+                self.assertEqual(get(preset).count,0)
+
+    def test_reordered_record_error_keeps_physical_location(self):
+        code,_,error=self.parse(b'[preset00]\nper_frame_2=);\nper_frame_1=q1=(1+\n')
+        self.assertEqual(code,2)
+        self.assertEqual((error.line,error.key),(2,b'per_frame_2'))
+
     def test_multirecord_comments_tokens_and_interleaved_blocks(self):
         code,preset,error=self.parse(b'[preset00]\n'
             b'per_frame_init_1=is_beat=2;\n'

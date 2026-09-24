@@ -40,12 +40,14 @@ static MdSourceBlock *md_source_create(MdFilePreset *p) {
 }
 static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int line,MdFileError *error) {
     size_t prefix=strlen(b->prefix);
-    if(!strncmp(key,b->prefix,prefix)) {
-        char *end;long record=strtol(key+prefix,&end,10);
-        if(end!=key+prefix && !*end && record>0 && record<=b->count)return MD_FILE_OK;
-    } /* GetPrivateProfileString returns the first matching numbered key. */
-    char expected[48];snprintf(expected,sizeof(expected),"%s%d",b->prefix,b->count+1);
-    if(strcmp(key,expected) || b->count>=PM_MAX_RECORDS)return md_file_error(error,MD_FILE_INVALID,line,key);
+    if(strncmp(key,b->prefix,prefix))return md_file_error(error,MD_FILE_INVALID,line,key);
+    char *end;long record=strtol(key+prefix,&end,10);
+    if(end==key+prefix || *end || record<1 || record>PM_MAX_RECORDS)
+        return md_file_error(error,MD_FILE_INVALID,line,key);
+    char expected[48];snprintf(expected,sizeof(expected),"%s%ld",b->prefix,record);
+    if(strcmp(key,expected))return md_file_error(error,MD_FILE_INVALID,line,key);
+    int slot=(int)record-1;
+    if(b->locations[slot].line)return MD_FILE_OK; /* First matching numbered key. */
     if(*text=='`')text++; /* Desktop's optional exported-line marker. */
     /* state.cpp StripLinefeedCharsAndComments removes the record delimiter,
      * rather than replacing it with whitespace (despite its old comment).
@@ -58,9 +60,10 @@ static int md_source_add(MdSourceBlock *b,const char *key,const char *text,int l
     if(size>PM_SOURCE_BYTES-(unsigned)b->used-2U)return md_file_error(error,MD_FILE_INVALID,line,key);
     char *joined=realloc(b->text,b->used+size+2);
     if(!joined)return md_file_error(error,MD_FILE_IO,line,"formula allocation");
-    b->text=joined;b->locations[b->count++]=(PmSourceLocation){b->used,line};
+    b->text=joined;b->locations[slot]=(PmSourceLocation){b->used,line};
+    if(record>b->count)b->count=(int)record;
     memcpy(b->text+b->used,text,size);b->used+=(int)size;
-    b->text[b->used]=0;
+    b->text[b->used++]=0; /* Retain records separately until numbered lookup. */
     return MD_FILE_OK;
 }
 static int md_source_compile(MdSourceBlock *blocks,MdFileError *error) {
@@ -68,11 +71,24 @@ static int md_source_compile(MdSourceBlock *blocks,MdFileError *error) {
     for(int i=0;i<MD_SOURCE_BLOCKS;i++) {
         MdSourceBlock *b=blocks+i;
         if(!b->count)continue;
+        /* Desktop ReadCode looks up 1,2,... regardless of physical order and
+         * stops at the first absent key. Do not compile or renumber its tail. */
+        char *ordered=malloc(b->used+1);
+        if(!ordered)return md_file_error(error,MD_FILE_IO,0,"formula allocation");
+        int used=0,count=0;
+        while(count<b->count && b->locations[count].line) {
+            const char *source=b->text+b->locations[count].offset;
+            size_t size=strlen(source);
+            memcpy(ordered+used,source,size);
+            b->locations[count].offset=used;used+=(int)size;count++;
+        }
+        ordered[used]=0;free(b->text);b->text=ordered;b->used=used;b->count=count;
+        if(!count)continue;
         int line=0;
         int result=pm_compile_mapped(b->program,b->text,b->locations,b->count,b->symbols,b->context,&line);
         if(result!=PM_OK) {
             int record=0;
-            while(record+1<b->count && b->locations[record+1].line<=line)record++;
+            while(record+1<b->count && b->locations[record].line!=line)record++;
             char key[48];snprintf(key,sizeof(key),"%s%d",b->prefix,record+1);
             return md_file_error(error,result==PM_NOMEM?MD_FILE_IO:result==PM_UNSUPPORTED?MD_FILE_UNSUPPORTED:MD_FILE_INVALID,line,key);
         }

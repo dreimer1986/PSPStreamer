@@ -25,11 +25,12 @@ Like the reference's `MAX_CUSTOM_WAVES=4` and `MAX_CUSTOM_SHAPES=4`, only slots
 storage or compiling their formulas. Malformed slot identifiers still fail;
 a file containing only ignored records is not a usable preset.
 
-Current import audit (2026-09-24, expanded collection): **2,266/2,267** files load.
+Current import audit (2026-09-24, expanded collection): **2,267/2,267** files load.
 Both formerly rejected Hexcollie files now load and pass 120 host-evaluated frames.
 Their joined assignment syntax is accepted by Desktop; no files are rewritten.
-The remaining `Illusion & Rovastar - Clouded Bottle` has duplicate/gapped formula
-record numbers; Desktop's stop-at-missing-record behavior needs separate handling.
+`Illusion & Rovastar - Clouded Bottle` now also passes 120 host frames: numbered
+formula lookup stops at the first absent record, as Desktop does. Duplicate
+records are not appended, and physical order does not determine formula order.
 See [assignment compatibility](MILKDROP_ASSIGNMENT_COMPATIBILITY.md) for evidence.
 The preceding fork-field hardware checks were confirmed by the user:
 `BDRV et AL shifter - tumbling cubes 5`, `ORB - Fire and Fumes 2`, and

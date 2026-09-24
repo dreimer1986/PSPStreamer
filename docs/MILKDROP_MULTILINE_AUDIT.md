@@ -1,5 +1,9 @@
 # Numbered formula blocks: collection audit
 
+Historical audit below. As of 2026-09-24, the expanded collection imports
+2267/2267 presets. Numbered lookup now handles physical reordering and stops
+at missing keys like Desktop. See [current results](MILKDROP_ASSIGNMENT_COMPATIBILITY.md).
+
 Date: 2026-09-18. Baseline: `cb0cb24`. Collection:
 `favorite_presets_2021_01_03`, including subdirectories (1,715 `.milk` files).
 

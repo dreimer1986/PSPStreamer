@@ -152,11 +152,13 @@ The import/sparse-memory demonstration presets have also passed their hardware
 tests. This resolves the reported Martin startup/return crash; it does not remove
 the separate computation limit on `martin - city of shadows`.
 
-The expanded 2026-09-24 collection imports **2266/2267** files. Both previously
+The expanded 2026-09-24 collection imports **2267/2267** files. Both previously
 rejected Hexcollie nz+5/nz+6 files now pass import and 120 host-evaluated frames.
 The earlier diagnosis of a source error was incorrect: Desktop accepts the
 joined operand assignment. The parser now follows that binding without changing
-the files. See [assignment compatibility](MILKDROP_ASSIGNMENT_COMPATIBILITY.md).
+the files. Clouded Bottle also passes 120 host frames after matching Desktop's
+numbered lookup and stop-at-missing-record behavior.
+See [assignment compatibility](MILKDROP_ASSIGNMENT_COMPATIBILITY.md).
 The earlier focused 79-file problem set had 77 imports and **76 successful 120-frame
 runs**; the one runtime failure is the case described above. The additional
 full-collection execution run was stopped by the assistant after incorrectly
