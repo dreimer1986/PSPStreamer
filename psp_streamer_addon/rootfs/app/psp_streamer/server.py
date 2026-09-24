@@ -447,9 +447,10 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == '/api/psp-artwork':
                 selector = query.get('item', [''])[0]
-                provider = self.server.plex if selector.startswith(('plex.', ':plex:')) else self.server.jellyfin
+                provider = self.server.dlna if selector.startswith(('dlna.', ':dlna:')) else self.server.plex if selector.startswith(('plex.', ':plex:')) else self.server.jellyfin
                 folder = re.fullmatch(r':(plex|jellyfin):m([0-9a-f]+)', selector)
                 token = provider.token(folder[2]) if folder else selector
+                if provider is self.server.dlna:token=provider.artwork_token(selector)
                 try:
                     if query.get('v') == ['2']:
                         known = query.get('known', [''])[0]
@@ -486,7 +487,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if len(parts) != 5:
                     return self.send_error_json(404, 'Artwork unavailable')
                 token, kind = parts[3:]
-                provider = self.server.plex if token.startswith('plex.') else self.server.jellyfin
+                provider = self.server.dlna if token.startswith('dlna.') else self.server.plex if token.startswith('plex.') else self.server.jellyfin
                 try:
                     data, mime = provider.artwork.get(token, kind)
                 except ValueError:
@@ -963,6 +964,9 @@ class AppHandler(BaseHTTPRequestHandler):
             payload.update(self.server.jellyfin.details(token))
             if self.headers.get('X-PSP-Web'):
                 payload['markers'] = self.server.jellyfin.web_markers(token)
+        elif token.startswith('dlna.'):
+            row=self.server.dlna.metadata(token)
+            payload.update(name=row['name'],artwork=self.server.dlna.artwork.links(row,token))
         elif identity is not None:
             if len(self.server.metadata_cache) >= 128:
                 self.server.metadata_cache.clear()

@@ -1,4 +1,40 @@
 static const HelpText help_en[HELP_PAGE_COUNT]={
+    [HELP_PAGE_TRAVEL]={
+        .title="Ready for a trip?",
+        .step1_title="Local storage: L opens overview",
+        .step1_text="File status and free space.",
+        .step2_title="Downloads: check before transfer",
+        .step2_text="Remaining size after encoding.",
+        .step3_title="X: confirm transfer   O: cancel",
+        .step3_text="Size check, not an integrity scan."
+    },
+    [HELP_PAGE_COMFORT]={
+        .title="Quick access and limits",
+        .step1_title="SELECT, then Quick access",
+        .step1_text="Favorites / history for this server.",
+        .step2_title="Highlight a file or folder first",
+        .step2_text="Then Add/remove selected favorite.",
+        .step3_title="Limits: LEFT / RIGHT to change",
+        .step3_text="Stops playback; no power-off."
+    },
+    [HELP_PAGE_RESUME]={
+        .title="Continue a video",
+        .step1_title="X: continue   []: restart   O: back",
+        .step1_text="After options, if a position exists.",
+        .step2_title="Positions saved after stopping",
+        .step2_text="Files / DLNA too; survives updates.",
+        .step3_title="Plex / Jellyfin: provider position",
+        .step3_text="No prompt for autoplay / remote."
+    },
+    [HELP_PAGE_PROFILES]={
+        .title="Server profiles",
+        .step1_title="Save settings with START first",
+        .step1_text="Quick access > Server profiles.",
+        .step2_title="[]: name and save connection",
+        .step2_text="Five slots; password on the stick.",
+        .step3_title="X: use profile   TRIANGLE: delete",
+        .step3_text="Switch without restarting the app."
+    },
     [HELP_PAGE_BROWSE]={
         .title="Choose something to play",
         .step1_title="1. UP / DOWN: choose a file",

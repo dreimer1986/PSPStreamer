@@ -48,6 +48,7 @@ static int help_visits;
 static int output_failed,output_changes;
 static int tv_menu_select(int tv) {output_changes++;if(output_failed)return -1;tv_ui_active=tv;return 0;}
 static void help_open(int topic) {assert(topic==HELP_BROWSE);help_visits++;}
+static int comfort_menu(void){return 0;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
@@ -114,8 +115,8 @@ int main(void) {
     assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
     /* Both submenus are reachable without audio running. OC cancel has no
      * filesystem side effects. A preset remains a draft until outer START. */
-    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
-    sequence(oc_cancel,7);assert(app_settings()==0);
+    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(oc_cancel,9);assert(app_settings()==0);
     for(int accept=0;accept<2;accept++) {
         n=0;held[n++]=0;
         for(int i=0;i<SET_PRESET+2;i++){held[n++]=PSP_CTRL_DOWN;held[n++]=0;}

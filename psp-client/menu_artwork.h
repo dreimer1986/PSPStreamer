@@ -20,7 +20,7 @@ static int menu_art_valid(const unsigned char *p,int size) {
     return (!bg || bg==320*180*2) && (!cover || cover==80*112*2) && size==20+(int)bg+(int)cover;
 }
 static void menu_art_select(const char *value) {
-    if(strncmp(value,"plex.",5) && strncmp(value,"jellyfin.",9) &&
+    if(strncmp(value,"plex.",5) && strncmp(value,"jellyfin.",9) && strncmp(value,"dlna.",5) && strncmp(value,":dlna:",6) &&
        strncmp(value,":plex:m",7) && strncmp(value,":jellyfin:m",11))value="";
     if(!strcmp(value,menu_art_wanted))return;
     snprintf(menu_art_wanted,sizeof(menu_art_wanted),"%s",value);

@@ -299,7 +299,8 @@ assert.equal(preferredTrack([],'off',true),-1);
         integer = main[main.index('static int json_integer(const char *from, const char *key, int fallback) {'):]
         integer = integer[:integer.index('\n}\n')+3]
         worker = worker.replace('/* JSON_HELPERS */', value+integer)
-        worker = worker.replace('/* FILE_HELPERS */', client[client.index('static int offline_key_valid('):client.index('static unsigned long long offline_size(')])
+        worker = worker.replace('/* FILE_HELPERS */', client[client.index('static int offline_key_valid('):client.index('static unsigned long long offline_size(')]+
+            client[client.index('static int offline_free_bytes('):client.index('static int offline_connect(')])
         worker = worker.replace('/* HASH_AND_WORKER */', client[client.index('static int offline_hash('):client.index('static int offline_transfer(')])
         source = self.root / 'worker.c';source.write_text(code+worker)
         binary = self.root / 'worker'

@@ -395,6 +395,42 @@ static int server_port = PSP_STREAMER_PORT;
 static struct in_addr cached_server_address;
 static int have_cached_server_address;
 
+#include "comfort_store.h"
+#define COMFORT_PATH "ms0:/PSP/SYSTEM/PSPStreamer.state"
+static ComfortStore comfort_store;
+static LibraryItem comfort_focus,comfort_shortcut;
+static int comfort_shortcut_pending,provider_resume_seconds;
+static unsigned long long comfort_deadline;
+static int comfort_remaining,comfort_timer_stopped;
+static int comfort_menu(void);
+static int comfort_resume_prompt(const char *id,int local);
+static void comfort_scope(char *scope,int local) {
+    if(local)strcpy(scope,"local");
+    else snprintf(scope,80,"%s:%d:%d",server_host,server_port,server_https);
+}
+static int comfort_expired(void) {
+    if(comfort_deadline && (unsigned long long)sceKernelGetSystemTimeWide()>=comfort_deadline) {
+        comfort_deadline=0;comfort_timer_stopped=1;return 1;
+    }
+    return 0;
+}
+static void comfort_finished(const char *id,const char *name,int audio,int local,int result) {
+    char scope[80];comfort_scope(scope,local);
+    /* Failed startup must not replace an existing bookmark with zero. */
+    if(result>=0 || (!audio && playback_position_ms>stream_start_seconds*1000)) {
+        int index=comfort_find(&comfort_store,scope,id,1);
+        if(index>=0) {
+            ComfortRecord *r=&comfort_store.records[index];
+            snprintf(r->name,sizeof(r->name),"%s",name&&*name?name:id);
+            r->audio=audio;r->folder=0;r->used=++comfort_store.sequence;
+            if(!audio)r->seconds=playback_reached_end?0:playback_position_ms/1000;
+            if(!comfort_save_file(COMFORT_PATH,&comfort_store))snprintf(status,sizeof(status),"%s",tr(TXT_SETTINGS_FAILED));
+        }
+    }
+    if(playback_reached_end && comfort_remaining>0 && --comfort_remaining==0)comfort_timer_stopped=1;
+    if(comfort_timer_stopped)playback_reached_end=resume_pending=seek_requested=0;
+}
+
 static const char *audio_quality_name(void) {
     static const char *names[] = {"96k", "128k", "160k", "v6", "v5", "v4", "v3"};
     return names[selected_audio_quality];
@@ -1884,6 +1920,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             plex_started=audio_played_blocks>0;
         }
         video_watch_ping("music loop");
+        if(comfort_expired()){stopped_by_user=1;radio_next_action=0;break;}
         SceCtrlData pad;
         int action = music_remote_action;
         int seek_seconds = music_remote_seconds;
@@ -2133,6 +2170,7 @@ static int play_audio(const char *media_id,const char *title) {
         if(music_remote_start()<0)return result<0?result:-1;
         while(1) {
             SceCtrlData pad;keep_awake();sceCtrlPeekBufferPositive(&pad,1);
+            if(comfort_expired()){music_remote_stop();return 0;}
             int action=music_remote_action;
             if(action==MUSIC_REMOTE_STOP || action==MUSIC_REMOTE_PLAY ||
                ((pad.Buttons & (PSP_CTRL_START|PSP_CTRL_CIRCLE)) & ~old)) {
@@ -2285,6 +2323,7 @@ static int play_h264(const char *media_id) {
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
+        if(comfort_expired()){result=frames;break;}
         playback_clock(video_cpu_mhz);
         plex_position_ms=playback_position_ms;
         plex_paused=paused;
@@ -2597,6 +2636,22 @@ done:
     return frames ? frames : -1306;
 }
 
+static int comfort_play_audio(const char *id,const char *name) {
+    comfort_timer_stopped=0;
+    int result=play_audio(id,name);
+    comfort_finished(id,name,1,offline_active,result);
+    if(comfort_timer_stopped)video_file_direction=0;
+    return result;
+}
+static int comfort_play_video(const char *id) {
+    comfort_timer_stopped=0;playback_reached_end=0;
+    playback_position_ms=stream_start_seconds*1000;
+    int result=play_h264(id);
+    comfort_finished(id,current_media_name,0,offline_active,result);
+    if(comfort_timer_stopped)video_file_direction=0;
+    return result;
+}
+
 /* This is intentionally a narrow parser for our own compact JSON response. */
 static int json_value(const char *from, const char *key, char *destination, size_t length) {
     char needle[24];
@@ -2641,6 +2696,7 @@ static int load_media_metadata(const char *media_id) {
     int result;
     snprintf(path, sizeof(path), "/api/metadata/%s", media_id);
     current_duration_seconds = 0.0f;
+    provider_resume_seconds=-1;
     current_media_name[0]=0;
     current_media_title[0]=current_media_artist[0]=current_media_album[0]=0;
     result = media_request_get(path, response, sizeof(response), 60000, 0);
@@ -2658,6 +2714,8 @@ static int load_media_metadata(const char *media_id) {
     parse_stream_tracks("\"a\":[", audio_tracks, &audio_track_count);
     parse_stream_tracks("\"s\":[", subtitle_tracks, &subtitle_track_count);
     current_duration_seconds = json_value(response, "d", duration, sizeof(duration)) ? (float)atof(duration) : 0.0f;
+    const char *resume_value=strstr(response,"\"resume\":");
+    if(resume_value)provider_resume_seconds=atoi(resume_value+9);
     if (audio_track_count && selected_audio_track >= audio_track_count) selected_audio_track = 0;
     if (!audio_track_count) selected_audio_track = 0;
     if (selected_subtitle_track >= subtitle_track_count) selected_subtitle_track = -1;
@@ -2853,7 +2911,8 @@ static void url_encode(const char *source, char *destination, size_t length) {
 }
 
 static void parent_path(void) {
-    if(!strncmp(current_path,":plex:",6) || !strncmp(current_path,":jellyfin:",10)) {
+    if(!strncmp(current_path,":plex:",6) || !strncmp(current_path,":jellyfin:",10) ||
+       !strncmp(current_path,":dlna:",6) || !strncmp(current_path,":versions:",10)) {
         snprintf(current_path,sizeof(current_path),"%s",current_parent_path);
         return;
     }
@@ -3193,6 +3252,7 @@ static int playback_options(int audio_only) {
 
 #include "help_ui.h"
 #include "app_settings.h"
+#include "comfort_ui.h"
 #include "offline_ui.h"
 
 int main(void) {
@@ -3210,6 +3270,7 @@ int main(void) {
     setup_callbacks();
     tls_init();
     load_playback_settings();
+    comfort_load_file(COMFORT_PATH,&comfort_store);
     pspDebugScreenInit();
     pspDebugScreenSetXY(0, 0);
     /* Hold L at startup to bypass an unavailable TV without editing config. */
@@ -3244,6 +3305,12 @@ int main(void) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
         now = sceKernelGetSystemTimeWide();
+        comfort_expired(); /* An idle expiry must not stop the next manual start. */
+        if(comfort_shortcut_pending && !library_pending) {
+            comfort_shortcut_pending=0;
+            items[0]=comfort_shortcut;item_count=1;selected=0;
+            pad.Buttons=PSP_CTRL_CROSS;old_buttons=0;
+        }
         /* Exit must not wait behind a stalled directory/remote request. */
         if (((pad.Buttons & PSP_CTRL_START) && !(old_buttons & PSP_CTRL_START)) ||
             (browser_deferred_buttons & PSP_CTRL_START)) break;
@@ -3301,7 +3368,7 @@ int main(void) {
                 snprintf(status, sizeof(status), "%s", remote_is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
                 do {
-                    result = remote_is_audio ? play_audio(remote_media_id, current_media_name[0]?current_media_name:"Remote stream") : play_h264(remote_media_id);
+                    result = remote_is_audio ? comfort_play_audio(remote_media_id, current_media_name[0]?current_media_name:"Remote stream") : comfort_play_video(remote_media_id);
                     if (result < 0) break;
                     if (resume_pending && seek_requested) {
                         /* The caller is consuming this seek now. Do not let
@@ -3349,7 +3416,9 @@ int main(void) {
         }
         if ((pad.Buttons & PSP_CTRL_SELECT) && !(old_buttons & PSP_CTRL_SELECT) &&
             !(pad.Buttons & (PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER))) {
-            if(app_settings()>0) {selected=0;refresh_library();}
+            memset(&comfort_focus,0,sizeof(comfort_focus));
+            if(item_count)comfort_focus=items[selected];
+            if(app_settings()>0 && !comfort_shortcut_pending) {selected=0;refresh_library();}
             dirty=1;old_buttons=PSP_CTRL_SELECT|PSP_CTRL_START|PSP_CTRL_CIRCLE;continue;
         }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) {
@@ -3406,6 +3475,10 @@ int main(void) {
             old_buttons = pad.Buttons;
             continue;
         }
+        if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder==3) {
+            snprintf(offline_requested_id,sizeof(offline_requested_id),"%.32s",items[selected].value);
+            offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
+        }
         if (item_count && (pad.Buttons & PSP_CTRL_CROSS) && !(old_buttons & PSP_CTRL_CROSS) && items[selected].is_folder==2) {
             offline_browser();dirty=1;old_buttons=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;continue;
         }
@@ -3435,6 +3508,9 @@ int main(void) {
                     show(selected);old_buttons=pad.Buttons;continue;
                 }
                 if (!playback_options(radio_is_live(items[selected].value)?2:items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
+                if(!items[selected].is_audio && !download_before_play && !comfort_resume_prompt(items[selected].value,0)) {
+                    dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
+                }
                 if(!radio_is_live(items[selected].value) && download_before_play) {
                     offline_enqueue_play(items[selected].value,items[selected].is_audio);
                     dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
@@ -3444,7 +3520,7 @@ int main(void) {
                 int next;
                 snprintf(status, sizeof(status), "%s", items[selected].is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 show(selected);
-                result = items[selected].is_audio ? play_audio(items[selected].value, items[selected].title) : play_h264(items[selected].value);
+                result = items[selected].is_audio ? comfort_play_audio(items[selected].value, items[selected].title) : comfort_play_video(items[selected].value);
                 ui_restore_after_playback();
                 if (result < 0) {
                     snprintf(status, sizeof(status), "%s: %08X", video_step, result);
@@ -3463,7 +3539,7 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                if((!strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) && (playback_reached_end || video_file_direction)) {
+                if((item_count==1 || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9) || !strncmp(items[selected].value,"dlna.",5)) && (playback_reached_end || video_file_direction)) {
                     char following_id[ID_SIZE];
                     snprintf(following_id,sizeof(following_id),"%s",items[selected].value);
                     int following=remote_next_media(following_id,sizeof(following_id),items[selected].is_audio,video_file_direction);

@@ -1,5 +1,30 @@
 /* Each entry is keyed by the UI role it serves; order no longer matters. */
 static const char *const lang_en[TXT_COUNT] = {
+    /* Comfort, bookmarks, profiles and travel preparation. */
+    [TXT_COMFORT] = "Quick access / playback limits",
+    [TXT_FAVORITES] = "Favorites",
+    [TXT_RECENT] = "Recently played",
+    [TXT_FAVORITE_TOGGLE] = "Add/remove selected favorite",
+    [TXT_SERVER_PROFILES] = "Server profiles",
+    [TXT_TIMER] = "Stop in: %d min (0 = off)",
+    [TXT_STOP_AFTER] = "Stop after: %d files (0 = off)",
+    [TXT_COMFORT_HELP] = "X OPEN   LEFT/RIGHT CHANGE   O BACK",
+    [TXT_SHORTCUT_HELP] = "X OPEN   TRIANGLE REMOVE   O BACK",
+    [TXT_PROFILE_HELP] = "X USE   [] SAVE CURRENT   TRIANGLE DELETE",
+    [TXT_PROFILE_NAME] = "Profile name",
+    [TXT_EMPTY_SLOT] = "Empty slot",
+    [TXT_RESUME_QUESTION] = "Continue at %d:%02d?",
+    [TXT_RESUME_HELP] = "X CONTINUE   [] RESTART   O BACK",
+    [TXT_TRAVEL] = "Travel / storage overview",
+    [TXT_TRAVEL_COUNTS] = "Complete: %d   Incomplete: %d",
+    [TXT_TRAVEL_SPACE] = "Free: %.1f MiB",
+    [TXT_TRAVEL_SIZE] = "Selected needs: %.1f MiB more",
+    [TXT_TRAVEL_HELP] = "X TRANSFER   O CANCEL",
+    [TXT_STORAGE_FULL] = "Favorites full / cannot save",
+    [TXT_COMFORT_SAVED] = "Saved",
+    [TXT_TIMER_HINT] = "Session only; timer includes pauses.",
+    [TXT_PROFILE_SAVED] = "Save CFG changes before saving a profile.",
+
     /* Illustrated help; page text lives in help_en.h. */
     [TXT_HELP] = "HELP",
     [TXT_HELP_OPEN] = "Help - buttons and quick guides",

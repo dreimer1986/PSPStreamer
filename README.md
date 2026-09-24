@@ -1,5 +1,65 @@
 # PSP Streamer
 
+### Quick access, resume and travel preparation (2026-09-25)
+
+Update the PSP's matching **EBOOT.PBP and PSPStreamer.prx** together. The new
+features use **SELECT → Quick access / playback limits** in the main browser
+(one row above Help). No decoder clocks, A/V synchronization or preset formulas
+are changed.
+
+- **Resume:** manually opening a video offers **X Continue**, **Square Restart**
+  or **Circle Back** when a meaningful position is known. Plex/Jellyfin's returned
+  position is authoritative. Filesystem/SMB, DLNA and downloaded videos retain
+  their own positions on the Memory Stick after playback returns, including a
+  normal Stop and recoverable playback errors. Natural completion clears the
+  position. Autoplay, remote starts and internal seeks do not ask again. An
+  abrupt power-off/forced app exit before playback returns does not checkpoint
+  the latest position; there are no background disk writes during playback.
+- **Favorites/recent:** highlight a folder, album, file or radio station, open
+  Quick access and choose **Add/remove selected favorite**. Open Favorites or
+  Recently played with X; Triangle removes an entry from that list. History
+  includes downloaded media. Online entries are scoped to the configured host,
+  port and HTTP/HTTPS mode; local entries remain available across servers.
+  There are 64 shared records; oldest non-favorites are recycled. Favorites are
+  never silently evicted, so a full favorites list leaves no new history slots.
+- **Playback limits:** Left/Right sets a wall-clock timer in 15-minute increments
+  up to 120 minutes, or stops after 1–10 naturally completed files. Zero disables
+  a limit; whichever active limit is reached first stops playback through the
+  ordinary cleanup path. Timer time includes pauses/menus; seeks are not counted
+  as completed files. These are session-only limits, not power-off commands.
+- **Travel overview:** open Local storage with Circle, then **L** for completed /
+  incomplete download counts and free space. Completion checks use the ready
+  marker and manifest file sizes, including FAT aliases for PC-copied media.
+  This is not a fresh checksum scan. Once server conversion is ready, downloads
+  show additional bytes needed (existing partial transfers deducted) and free
+  space before **X** confirms transfer. Each transferred file still gets SHA256
+  verification. Size is not guessed before conversion finishes.
+- **Server profiles:** five named slots store host, port, HTTP/HTTPS and password.
+  Save main settings with Start first; in Server profiles, Square saves the
+  currently active connection, X switches, Triangle deletes a slot. Switching
+  closes the settings screen and resets navigation/connection caches, without
+  restarting the app. Unsaved outer settings are discarded when switching or
+  opening a saved media shortcut. Profiles do not change PSP WLAN credentials.
+
+State is stored separately from application binaries in
+**`ms0:/PSP/SYSTEM/PSPStreamer.state`**, with a version/checksum and `.bak`
+recovery copy. Normal app and server updates do not overwrite it. Back up this
+file together with `PSPStreamer.cfg`; deleting the state file **and its backup**
+resets bookmarks, favorites/history and profiles. Profile passwords are stored
+in plaintext, just like the active connection in the CFG: protect the stick and
+its backups. The file is not included in release packages. Server profile
+changes are also saved to the active CFG. Existing configuration keys remain
+unchanged.
+
+**DLNA covers (server 0.1.52, HA integration 0.1.3):** the standard
+`upnp:albumArtURI` field supplies covers for web browsing, current-media artwork
+in HA and idle PSP menus on LCD/TV. Images stay behind the authenticated server
+proxy, are bounded and cannot redirect to another host. The PSP reuses the
+existing image sizing/caching path. No fake backdrop is generated from a cover;
+vendor-specific background-image fields are not interpreted. See the
+[ContentDirectory specification](https://upnp.org/specs/av/UPnP-av-ContentDirectory-v3-Service.pdf).
+DLNA resume is local to the PSP, not written back to the DLNA server.
+
 ### DLNA, original versions and external subtitles (server 0.1.51)
 
 **DLNA:** Settings → DLNA / UPnP → **Discover DLNA servers** searches the

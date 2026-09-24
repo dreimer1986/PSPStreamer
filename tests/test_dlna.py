@@ -23,6 +23,8 @@ class DlnaTests(unittest.TestCase):
             def do_GET(self):
                 if self.path=='/root.xml':
                     body=b'<root xmlns="urn:schemas-upnp-org:device-1-0"><device><friendlyName>Test NAS</friendlyName><UDN>uuid:test</UDN><serviceList><service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><controlURL>/control</controlURL></service></serviceList></device></root>'
+                elif self.path=='/cover.png':
+                    body=(Path(__file__).resolve().parents[1]/'psp-client/assets/icon0.png').read_bytes()
                 else:
                     owner.ranges.append(self.headers.get('Range'))
                     self.send_response(206);self.send_header('Content-Length','4');self.send_header('Content-Range','bytes 2-5/10');self.end_headers();self.wfile.write(b'2345');return
@@ -35,8 +37,8 @@ class DlnaTests(unittest.TestCase):
                     nodes='<container id="0" parentID="-1"><dc:title>Root</dc:title></container>'
                 else:
                     ids=[oid] if metadata else ['a','b']
-                    nodes=''.join(f'<item id="{key}" parentID="0"><dc:title>Track {key}</dc:title><res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_CI=1">{owner.url}/converted.mp3</res><res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_CI=0">{owner.url}/original.mp3</res></item>' for key in ids)
-                didl='<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/">'+nodes+'</DIDL-Lite>'
+                    nodes=''.join(f'<item id="{key}" parentID="0"><dc:title>Track {key}</dc:title><upnp:albumArtURI>{owner.url}/cover.png</upnp:albumArtURI><res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_CI=1">{owner.url}/converted.mp3</res><res protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_CI=0">{owner.url}/original.mp3</res></item>' for key in ids)
+                didl='<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dc="http://purl.org/dc/elements/1.1/">'+nodes+'</DIDL-Lite>'
                 response=('<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><BrowseResponse><Result>'+escape(didl)+'</Result><NumberReturned>2</NumberReturned><TotalMatches>2</TotalMatches></BrowseResponse></s:Body></s:Envelope>').encode()
                 self.send_response(200);self.send_header('Content-Length',str(len(response)));self.end_headers();self.wfile.write(response)
         self.http=ThreadingHTTPServer(('127.0.0.1',0),Handler)
@@ -75,6 +77,22 @@ class DlnaTests(unittest.TestCase):
         for value in ('a/b & c','ä','0',''):
             self.assertEqual(decode(encode(value)),value)
         with self.assertRaises(ValueError):decode('!')
+
+    def test_cover_proxy_psp_packet_no_invented_backdrop(self):
+        self.dlna.add(self.url+'/root.xml')
+        folder=self.dlna.browse(0,':dlna:')['folders'][0]['path']
+        item=self.dlna.browse(0,folder)['videos'][0]
+        self.assertIn('cover',item['artwork']);self.assertNotIn('backdrop',item['artwork'])
+        data,mime=self.dlna.artwork.get(item['id'],'cover')
+        self.assertEqual(mime,'image/png');self.assertTrue(data.startswith(b'\x89PNG'))
+        with self.assertRaises(ValueError):self.dlna.artwork.get(item['id'],'backdrop')
+        packet=self.dlna.artwork.psp(item['id'])
+        import struct
+        self.assertEqual(struct.unpack_from('<II',packet,12),(0,80*112*2))
+        with patch.object(self.dlna,'metadata',return_value={'cover':'http://other.invalid/image.png'}):
+            with self.assertRaises(ValueError):self.dlna.artwork.get(item['id'],'cover')
+        self.dlna.configure({'enabled':False})
+        with self.assertRaises(ValueError):self.dlna.artwork.get(item['id'],'cover')
 
     def test_ssdp_discovery_is_bounded_and_registers_description(self):
         with patch('psp_streamer.dlna.socket') as network:

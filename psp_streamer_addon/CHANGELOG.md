@@ -1,3 +1,12 @@
+# 0.1.52
+
+- Proxy standard DLNA album-art covers to web, PSP LCD/TV and HA media-player
+  artwork; keep host validation, bounded image loading and authenticated access.
+- Keep Docker and Home Assistant server implementations identical.
+- New PSP client adds persistent resume/favorites/history/server profiles,
+  session playback limits and local download inventory/preflight space checks.
+  Client state stays in PSP/SYSTEM and is not replaced by server/app updates.
+
 # 0.1.45
 
 - Fix bitmap-subtitle burn-in extending video beyond its real end: the overlay no longer repeats the main picture while waiting for the PGS timeline.

@@ -1,4 +1,40 @@
 static const HelpText help_de[HELP_PAGE_COUNT]={
+    [HELP_PAGE_TRAVEL]={
+        .title="Bereit für die Reise?",
+        .step1_title="Lokaler Speicher: L für Übersicht",
+        .step1_text="Dateistatus und freier Speicher.",
+        .step2_title="Downloads vor Übertragung prüfen",
+        .step2_text="Restgröße nach der Konvertierung.",
+        .step3_title="X: übertragen   O: abbrechen",
+        .step3_text="Größenprüfung, kein Integritätstest."
+    },
+    [HELP_PAGE_COMFORT]={
+        .title="Schnellzugriff und Grenzen",
+        .step1_title="SELECT, dann Schnellzugriff",
+        .step1_text="Favoriten / Verlauf dieses Servers.",
+        .step2_title="Favorit: im Browser markieren",
+        .step2_text="Im Schnellzugriff umschalten.",
+        .step3_title="Grenzen: LINKS / RECHTS",
+        .step3_text="Stoppt; schaltet die PSP nicht aus."
+    },
+    [HELP_PAGE_RESUME]={
+        .title="Ein Video fortsetzen",
+        .step1_title="X: fortsetzen   []: neu   O: zurück",
+        .step1_text="Nach Optionen, falls Position bekannt.",
+        .step2_title="Eigene Position bei Stopp sichern",
+        .step2_text="Dateien / DLNA: übersteht Updates.",
+        .step3_title="Plex / Jellyfin: Position des Servers",
+        .step3_text="Auto-/Fernstart: keine Rückfrage."
+    },
+    [HELP_PAGE_PROFILES]={
+        .title="Serverprofile",
+        .step1_title="Zuerst mit START Einstellungen sichern",
+        .step1_text="Dann Schnellzugriff > Serverprofile.",
+        .step2_title="[]: Verbindung benennen / sichern",
+        .step2_text="Fünf Plätze; Passwort auf dem Stick.",
+        .step3_title="X: nutzen   DREIECK: löschen",
+        .step3_text="Wechsel im Browser ohne Neustart."
+    },
     [HELP_PAGE_BROWSE]={
         .title="Etwas zum Abspielen auswählen",
         .step1_title="1. HOCH / RUNTER: Datei wählen",

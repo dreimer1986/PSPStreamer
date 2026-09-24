@@ -4,6 +4,11 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.52** adds standard DLNA cover images for web, PSP and HA artwork.
+Use HACS integration **0.1.3** for DLNA cover identifiers. Persistent PSP resume,
+favorites, server profiles and travel controls require the new PSP executable;
+their local state is independent of this server app's updates.
+
 Version **0.1.51** adds DLNA discovery/manual device-description URLs, Plex/Jellyfin
 version folders and external text/single-file PGS subtitles for streaming and
 downloads. The existing PSP client works unchanged. Settings remain in `/data`.

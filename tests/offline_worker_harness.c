@@ -2,6 +2,11 @@
 #include <mbedtls/sha256.h>
 typedef int SceSize;
 typedef int SceUID;
+typedef off_t SceOff;
+typedef struct stat SceIoStat;
+#define sceIoGetstat stat
+#define PSP_SEEK_END SEEK_END
+static SceUID offline_open_movie(char *path,size_t capacity,unsigned long long size){(void)capacity;(void)size;return open(path,O_RDONLY);}
 typedef struct {unsigned int freeClusters,sectorSize,sectorCount;} SceDevInf;
 typedef struct {SceDevInf *dev_inf;} SceDevctlCmd;
 #define PSP_O_RDONLY O_RDONLY
@@ -18,11 +23,13 @@ static char response[512*1024];
 static int sceNetApctlGetState(int *state){*state=4;return 0;}
 static int sceNetApctlConnect(int profile){(void)profile;return 0;}
 static volatile int download_done,download_result,download_percent,download_stage;
+static volatile int download_approve;
+static volatile unsigned long long download_needed,download_free;
 static char download_key[33],download_post[1024],download_reply[8192],root[256];
 #define OFFLINE_ROOT root
 static int no_space;
 static const char *tr(int id){(void)id;return "no space";}
-static void sceKernelDelayThread(int us){struct timespec t={us/1000000,(us%1000000)*1000};nanosleep(&t,NULL);}
+static void sceKernelDelayThread(int us){if(download_stage==4)download_approve=1;struct timespec t={us/1000000,(us%1000000)*1000};nanosleep(&t,NULL);}
 static int sceIoMkdir(const char *path,int mode){return !strncmp(path,"ms0:",4)?0:mkdir(path,mode);}
 static int sceIoDevctl(const char *dev,int op,SceDevctlCmd *cmd,int size,void *out,int bytes){
     (void)dev;(void)op;(void)size;(void)out;(void)bytes;

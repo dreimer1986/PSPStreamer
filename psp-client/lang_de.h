@@ -1,6 +1,31 @@
 /* Deutsche PSP-Oberflächentexte.  Jede ID ist absichtlich explizit,
  * damit Übersetzungen unabhängig von der Reihenfolge bearbeitet werden können. */
 static const char *const lang_de[TXT_COUNT] = {
+    /* Komfort, Lesezeichen, Profile und Reisevorbereitung. */
+    [TXT_COMFORT] = "Schnellzugriff / Wiedergabegrenzen",
+    [TXT_FAVORITES] = "Favoriten",
+    [TXT_RECENT] = "Zuletzt abgespielt",
+    [TXT_FAVORITE_TOGGLE] = "Auswahl als Favorit umschalten",
+    [TXT_SERVER_PROFILES] = "Serverprofile",
+    [TXT_TIMER] = "Stopp in: %d Min (0 = aus)",
+    [TXT_STOP_AFTER] = "Stopp nach: %d Dateien (0 = aus)",
+    [TXT_COMFORT_HELP] = "X ÖFFNEN   LINKS/RECHTS ÄNDERN   O ZURÜCK",
+    [TXT_SHORTCUT_HELP] = "X ÖFFNEN   DREIECK ENTFERNEN   O ZURÜCK",
+    [TXT_PROFILE_HELP] = "X NUTZEN   [] SICHERN   DREIECK LÖSCHEN",
+    [TXT_PROFILE_NAME] = "Profilname",
+    [TXT_EMPTY_SLOT] = "Freier Speicherplatz",
+    [TXT_RESUME_QUESTION] = "Bei %d:%02d fortsetzen?",
+    [TXT_RESUME_HELP] = "X FORTSETZEN   [] NEUSTART   O ZURÜCK",
+    [TXT_TRAVEL] = "Reise / Speicherübersicht",
+    [TXT_TRAVEL_COUNTS] = "Vollständig: %d   Unvollständig: %d",
+    [TXT_TRAVEL_SPACE] = "Frei: %.1f MiB",
+    [TXT_TRAVEL_SIZE] = "Auswahl benötigt noch: %.1f MiB",
+    [TXT_TRAVEL_HELP] = "X ÜBERTRAGEN   O ABBRECHEN",
+    [TXT_STORAGE_FULL] = "Favoriten voll / Speichern fehlgeschlagen",
+    [TXT_COMFORT_SAVED] = "Gespeichert",
+    [TXT_TIMER_HINT] = "Nur diese Sitzung; Timer zählt auch Pausen.",
+    [TXT_PROFILE_SAVED] = "CFG vor dem Speichern eines Profils sichern.",
+
     /* Bebilderte Hilfe; Seitentexte stehen in help_de.h. */
     [TXT_HELP] = "HILFE",
     [TXT_HELP_OPEN] = "Hilfe - Tasten und Kurzanleitungen",

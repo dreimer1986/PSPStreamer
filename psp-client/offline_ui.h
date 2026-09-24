@@ -11,6 +11,9 @@ static int download_catalog_request;
 static volatile int download_running, download_done, download_result;
 static volatile unsigned int download_bytes, download_total, download_speed;
 static volatile int download_percent, download_stage;
+static volatile int download_approve;
+static volatile unsigned long long download_needed,download_free;
+static char offline_requested_id[33];
 static char download_key[33], download_post[1024], download_reply[8192];
 static char download_error[160];
 
@@ -50,6 +53,38 @@ static int offline_write(const char *path,const char *data,int size) {
 }
 static unsigned long long offline_size(const char *path) {
     SceIoStat st;if(sceIoGetstat(path,&st)<0)return 0;return st.st_size;
+}
+static int offline_free_bytes(unsigned long long *bytes) {
+    SceDevInf capacity;SceDevctlCmd command={&capacity};memset(&capacity,0,sizeof(capacity));
+    if(sceIoDevctl("ms0:",SCE_PR_GETDEV,&command,sizeof(command),NULL,0)<0)return 0;
+    *bytes=(unsigned long long)capacity.freeClusters*capacity.sectorSize*capacity.sectorCount;return 1;
+}
+static unsigned long long offline_remaining_bytes(char *meta,const char *folder,int partials) {
+    unsigned long long needed=0;char *cursor=strstr(meta,"\"files\":[");
+    if(!cursor)return ~0ULL;
+    cursor+=9;
+    for(int i=0;i<3;i++) {
+        char *end=offline_json_object_end(cursor),leaf[128],path[600];if(!end)return ~0ULL;
+        char save=end[1];end[1]=0;
+        char *sz=strstr(cursor,"\"size\":");
+        unsigned long long size=sz?strtoull(sz+7,NULL,10):0;
+        int ok=json_value(cursor,"name",leaf,sizeof(leaf))&&offline_leaf_valid(leaf)&&sz&&size<=0xFFFFFFFFULL;
+        end[1]=save;if(!ok)return ~0ULL;
+        snprintf(path,sizeof(path),"%s/%s",folder,leaf);
+        SceIoStat st;
+        int present=sceIoGetstat(path,&st)>=0 && (unsigned long long)st.st_size==size;
+        if(!present && !partials && i==0) {
+            SceUID fd=offline_open_movie(path,sizeof(path),size);
+            if(fd>=0){present=sceIoLseek(fd,0,PSP_SEEK_END)==(SceOff)size;sceIoClose(fd);}
+        }
+        if(!present) {
+            if(!partials)return 1;
+            snprintf(path,sizeof(path),"%s/%s.part",folder,leaf);
+            unsigned long long have=offline_size(path);needed+=size-(have<=size?have:0);
+        }
+        cursor=end+1;
+    }
+    return needed;
 }
 static int offline_connect(int fd) {
     struct sockaddr_in address;int nonblock=1,error=0;socklen_t size=sizeof(error);
@@ -186,6 +221,16 @@ static int offline_download_worker(SceSize args,void *argp) {
     if(!download_running)goto done;
     sceIoMkdir("ms0:/PSP/VIDEO",0777);sceIoMkdir(OFFLINE_ROOT,0777);
     snprintf(folder,sizeof(folder),"%s/%s",OFFLINE_ROOT,download_key);sceIoMkdir(folder,0777);
+    download_needed=offline_remaining_bytes(meta,folder,1);
+    unsigned long long free_bytes;
+    if(download_needed==~0ULL||!offline_free_bytes(&free_bytes))goto done;
+    download_free=free_bytes;
+    if(download_needed+1048576ULL>download_free) {
+        snprintf(download_error,sizeof(download_error),"%s",tr(TXT_DOWNLOAD_SPACE));goto done;
+    }
+    download_approve=0;download_stage=4;
+    while(download_running&&!download_approve)sceKernelDelayThread(20000);
+    if(!download_running)goto done;
     snprintf(path,sizeof(path),"%s/job.json",folder);if(offline_write(path,meta,strlen(meta))<0)goto done;
     snprintf(path,sizeof(path),"%s/ready",folder);sceIoRemove(path);
     char *cursor=strstr(meta,"\"files\":[");if(!cursor)goto done;
@@ -241,7 +286,7 @@ static int offline_transfer(const char *key,const char *post) {
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
         if((pad.Buttons&PSP_CTRL_CIRCLE)&&!(old&PSP_CTRL_CIRCLE))download_running=0;
         settings_shell(tr(TXT_DOWNLOADS));char line[100];
-        settings_line(0,0,tr(!download_running?TXT_DOWNLOAD_STOPPING:download_stage==3?TXT_CONNECTING_WIFI:download_stage==0?TXT_CONVERTING:download_stage==1?TXT_DOWNLOADING:TXT_VERIFYING));
+        settings_line(0,0,tr(!download_running?TXT_DOWNLOAD_STOPPING:download_stage==4?TXT_TRAVEL:download_stage==3?TXT_CONNECTING_WIFI:download_stage==0?TXT_CONVERTING:download_stage==1?TXT_DOWNLOADING:TXT_VERIFYING));
         unsigned int percent=download_stage==1 && download_total ? (unsigned int)((unsigned long long)download_bytes*100/download_total) : (unsigned int)download_percent;
         if(percent>100)percent=100;
         snprintf(line,sizeof(line),"%u%%",percent);settings_line(2,0,line);
@@ -254,7 +299,12 @@ static int offline_transfer(const char *key,const char *post) {
             else snprintf(line,sizeof(line),"%s",tr(TXT_PLEASE_WAIT));
             settings_line(5,0,line);
         }
-        settings_help(tr(TXT_DOWNLOAD_CANCEL));old=pad.Buttons;sceKernelDelayThread(100000);
+        if(download_stage==4) {
+            snprintf(line,sizeof(line),tr(TXT_TRAVEL_SPACE),download_free/1048576.0);settings_line(3,0,line);
+            snprintf(line,sizeof(line),tr(TXT_TRAVEL_SIZE),download_needed/1048576.0);settings_line(4,0,line);
+            if((pad.Buttons&~old)&PSP_CTRL_CROSS)download_approve=1;
+        }
+        settings_help(tr(download_stage==4?TXT_TRAVEL_HELP:TXT_DOWNLOAD_CANCEL));old=pad.Buttons;sceKernelDelayThread(100000);
     }
     sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);
     download_running=0;
@@ -277,12 +327,16 @@ static void offline_scan(void) {
             snprintf(path,sizeof(path),"%s/%s/job.json",OFFLINE_ROOT,entry.d_name);
             if(offline_text_load(path,meta,sizeof(meta))>0) {
                 OfflineEntry *item=&offline_entries[offline_count];
+                memset(item,0,sizeof(*item));
                 if(json_value(meta,"name",item->name,sizeof(item->name)) && offline_leaf_valid(item->name)) {
                     char kind[12]="";json_value(meta,"kind",kind,sizeof(kind));
                     item->is_audio=!strcmp(kind,"audio");
                     snprintf(item->id,sizeof(item->id),"%s",entry.d_name);
                     snprintf(path,sizeof(path),"%s/%s/ready",OFFLINE_ROOT,entry.d_name);
                     snprintf(item->state,sizeof(item->state),"%s",offline_size(path)?"ready":"partial");
+                    char folder[384];snprintf(folder,sizeof(folder),"%s/%s",OFFLINE_ROOT,entry.d_name);
+                    if(offline_remaining_bytes(meta,folder,0)!=0)strcpy(item->state,"partial");
+                    item->progress=!strcmp(item->state,"ready")?100:0;
                     char audio[20]="",sub[20]="",profile[16]="";
                     json_value(meta,"audio_label",audio,sizeof(audio));json_value(meta,"subtitle_label",sub,sizeof(sub));json_value(meta,"profile",profile,sizeof(profile));
                     snprintf(item->info,sizeof(item->info),"%s | A%d %s | S%d %s",!strcmp(profile,"tv")?"TV 720x480":"LCD 480x272",json_integer(meta,"audio",0)+1,audio,json_integer(meta,"subtitle",-1)+1,sub);
@@ -351,7 +405,7 @@ static void offline_delete(const OfflineEntry *item) {
     }
     snprintf(path,sizeof(path),"%s/%s",OFFLINE_ROOT,item->id);sceIoRmdir(path);
 }
-static int offline_play(const OfflineEntry *item) {
+static int offline_play(const OfflineEntry *item,int offer_resume) {
     char meta[8192],path[512],profile[16];
     snprintf(offline_directory,sizeof(offline_directory),"%s/%s",OFFLINE_ROOT,item->id);
     snprintf(path,sizeof(path),"%s/job.json",offline_directory);
@@ -362,6 +416,11 @@ static int offline_play(const OfflineEntry *item) {
     offline_profile_tv=json_value(meta,"profile",profile,sizeof(profile))&&!strcmp(profile,"tv");
     offline_active=1;stream_start_seconds=0;resume_pending=seek_requested=0;
     offline_music=item->is_audio;
+    snprintf(current_media_name,sizeof(current_media_name),"%s",item->name);
+    if(offer_resume && !offline_music && !comfort_resume_prompt(item->id,1)) {
+        offline_active=offline_music=0;offline_movie[0]=offline_directory[0]=0;
+        playback_reached_end=video_file_direction=0;return 0;
+    }
     current_media_title[0]=current_media_artist[0]=0;
     if(offline_music) {
         json_value(meta,"title",current_media_title,sizeof(current_media_title));
@@ -370,7 +429,7 @@ static int offline_play(const OfflineEntry *item) {
     int result;
     do {
         seek_requested=0;
-        result=offline_music?play_audio(item->id,item->name):play_h264(item->id);
+        result=offline_music?comfort_play_audio(item->id,item->name):comfort_play_video(item->id);
         ui_restore_after_playback();
         if(result<0 || !seek_requested)break;
         sceKernelDelayThread(250000);
@@ -394,10 +453,18 @@ static void offline_browser(void) {
     menu_art_select("");
     int server=0,selected=0,dirty=1;unsigned int old=PSP_CTRL_CIRCLE|PSP_CTRL_CROSS;
     unsigned long long repeat=0;offline_scan();
+    int requested=-1;
+    if(offline_requested_id[0]) {
+        for(int i=0;i<offline_count;i++)if(!strcmp(offline_entries[i].id,offline_requested_id))requested=i;
+        offline_requested_id[0]=0;
+        if(requested<0)comfort_notice(tr(TXT_NO_ENTRIES));
+        else selected=requested;
+    }
     while(1) {
         playback_clock_idle();
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;
+        if(requested>=0){pressed=PSP_CTRL_CROSS;requested=-1;}
         if(dirty) {
             settings_shell(tr(server?TXT_DOWNLOADS:TXT_LOCAL_STORAGE));
             if(!offline_count)settings_line(0,0,tr(TXT_NO_ENTRIES));
@@ -411,6 +478,35 @@ static void offline_browser(void) {
             settings_help(tr(server?TXT_DOWNLOAD_QUEUE_HELP:TXT_DOWNLOAD_LOCAL_HELP));dirty=0;
         }
         if(pressed&PSP_CTRL_CIRCLE)return;
+        if(pressed&PSP_CTRL_LTRIGGER) {
+            /* Local inventory, even while viewing the server queue. */
+            int ready=0,partial=0;SceIoDirent entry;SceUID dir=sceIoDopen(OFFLINE_ROOT);
+            if(dir>=0) {
+                memset(&entry,0,sizeof(entry));
+                while(sceIoDread(dir,&entry)>0) {
+                    if(offline_key_valid(entry.d_name)) {
+                        char path[512],meta[8192],folder[384];
+                        snprintf(folder,sizeof(folder),"%s/%s",OFFLINE_ROOT,entry.d_name);
+                        snprintf(path,sizeof(path),"%s/job.json",folder);
+                        if(offline_text_load(path,meta,sizeof(meta))>0) {
+                            snprintf(path,sizeof(path),"%s/ready",folder);
+                            if(offline_size(path)&&offline_remaining_bytes(meta,folder,0)==0)ready++;else partial++;
+                        }
+                    }
+                    memset(&entry,0,sizeof(entry));
+                }
+                sceIoDclose(dir);
+            }
+            char line[128];unsigned long long bytes=0;
+            settings_shell(tr(TXT_TRAVEL));
+            snprintf(line,sizeof(line),tr(TXT_TRAVEL_COUNTS),ready,partial);settings_line(1,0,line);
+            if(offline_free_bytes(&bytes))snprintf(line,sizeof(line),tr(TXT_TRAVEL_SPACE),bytes/1048576.0);
+            else snprintf(line,sizeof(line),"%s",tr(TXT_SETTINGS_FAILED));
+            settings_line(3,0,line);settings_help(tr(TXT_DOWNLOAD_BACK));
+            unsigned int previous=~0U;
+            while(1){keep_awake();sceCtrlReadBufferPositive(&pad,1);if((pad.Buttons&~previous)&(PSP_CTRL_CROSS|PSP_CTRL_CIRCLE))break;previous=pad.Buttons;sceKernelDelayThread(20000);}
+            dirty=1;old=pad.Buttons;continue;
+        }
         if(pressed&PSP_CTRL_SELECT) {
             help_open(HELP_DOWNLOADS);dirty=1;
             sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
@@ -440,11 +536,11 @@ static void offline_browser(void) {
                 offline_transfer(offline_entries[selected].id,NULL);
                 server=0;selected=0;offline_scan();
             } else {
-                int result;
+                int result,offer_resume=1;
                 unsigned char played[OFFLINE_JOBS]={0};
                 do {
                     played[selected]=1;
-                    result=offline_play(&offline_entries[selected]);
+                    result=offline_play(&offline_entries[selected],offer_resume);offer_resume=0;
                     if(result<0 || (!playback_reached_end&&!video_file_direction))break;
                     int next=-1,direction=video_file_direction<0?-1:1;
                     if(offline_entries[selected].is_audio && audio_shuffle) {
@@ -472,6 +568,6 @@ static void offline_enqueue_play(const char *media_id,int audio_only) {
         media_id,audio_only?0:selected_audio_track,audio_only?-1:selected_subtitle_track,audio_quality_name(),selected_video_fps?"24000/1001":"20",
         audio_only?"normal":(tvout_load_manager()==0 && pspDveMgrCheckVideoOut()==2)?"tv":PSP_STREAMER_PROFILE);
     if(offline_transfer(NULL,post)==0) {
-        offline_scan();for(int i=0;i<offline_count;i++)if(!strcmp(offline_entries[i].id,download_key)){offline_play(&offline_entries[i]);break;}
+        offline_scan();for(int i=0;i<offline_count;i++)if(!strcmp(offline_entries[i].id,download_key)){offline_play(&offline_entries[i],1);break;}
     }
 }

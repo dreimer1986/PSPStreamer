@@ -22,6 +22,7 @@ from .plex import NoRedirect
 from .plex_media import PlexMediaBridge, RemoteSource
 from .radio import display_text
 from .work_cache import WorkCache
+from .artwork import Artwork
 
 SERVICE = 'urn:schemas-upnp-org:service:ContentDirectory:'
 
@@ -97,7 +98,40 @@ class DlnaBridge(PlexMediaBridge):
         return http_url(url,config['url']),'',''
 
 
+class DlnaArtwork(Artwork):
+    def __init__(self,provider):
+        super().__init__(provider)
+        self.images=WorkCache(entries=4,jobs=2,timeout=8)
+
+    def _psp_scope(self,token):
+        device,_,_=self.provider.split(token)
+        config=self.provider.device(device)
+        return ('dlna',device,config['url'],config['control'])
+
+    def paths(self,row):
+        # albumArtURI is a cover, not a landscape background. Do not invent
+        # backdrop semantics from arbitrary vendor fields or crop the cover.
+        return {'cover':row.get('cover',''),'backdrop':''}
+
+    def get(self,token,kind):
+        if kind!='cover':raise ValueError('No DLNA backdrop supplied')
+        scope=self._psp_scope(token)
+        row=self.provider.metadata(token)
+        path=self.paths(row)['cover']
+        if not path:raise ValueError('DLNA artwork unavailable')
+        path=http_url(path,scope[2])
+        def load():
+            body=fetch(path)
+            if body.startswith(b'\xff\xd8\xff'):mime='image/jpeg'
+            elif body.startswith(b'\x89PNG\r\n\x1a\n'):mime='image/png'
+            elif body.startswith(b'RIFF') and body[8:12]==b'WEBP':mime='image/webp'
+            else:raise ValueError('Unsupported DLNA image')
+            return body,mime
+        return self.images.get((scope,path),load,ttl=60)
+
+
 class Dlna:
+    art_provider='dlna'
     def __init__(self,directory):
         self.path=Path(directory)/'dlna.json'
         self.lock=threading.RLock()
@@ -105,6 +139,7 @@ class Dlna:
         if self.path.exists(): self.config.update(json.loads(self.path.read_text()))
         self.cache=WorkCache(entries=32,jobs=4,timeout=8)
         self.bridge=None
+        self.artwork=DlnaArtwork(self)
 
     def public(self):
         with self.lock:
@@ -210,7 +245,13 @@ class Dlna:
                     except ValueError:continue
                     resources.append(dict(url=url,mime=mime,converted='DLNA.ORG_CI=1' in protocol[3],size=resource.get('size','0')))
                 resources.sort(key=lambda r:r['converted'])
-                rows.append(dict(id=oid,parent=parent,name=display_text(text(node,'title') or 'Untitled',126),
+                cover=''
+                for art in node.findall('{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI'):
+                    if not art.text or not art.text.strip():continue
+                    try:cover=http_url(art.text.strip(),config['url'])
+                    except ValueError:continue
+                    break
+                rows.append(dict(id=oid,parent=parent,name=display_text(text(node,'title') or 'Untitled',126),cover=cover,
                     folder=node.tag.endswith('}container') or node.tag=='container',resources=resources))
             try:total=int(response.findtext('.//{*}TotalMatches',str(len(rows))))
             except ValueError:total=len(rows)
@@ -232,8 +273,21 @@ class Dlna:
         if not row or not row['resources']:raise ValueError('No HTTP audio/video resource offered by this DLNA server')
         return device,row
 
+    def metadata(self,token):
+        device,oid,_=self.split(token)
+        rows,_=self.rows(device,oid,metadata=True)
+        row=next((r for r in rows if r['id']==oid),None)
+        if row is None:raise ValueError('DLNA item unavailable')
+        return row
+
+    def artwork_token(self,selector):
+        match=re.fullmatch(r':dlna:([a-f0-9]{16}):([A-Za-z0-9_-]+)(?:@[0-9]{1,9})?',selector)
+        if not match:return selector
+        return self.token(match[1],{'id':decode(match[2]),'parent':'0'})
+
     def entry(self,device,row):
-        return dict(id=self.token(device,row),name=row['name'],bytes=0,
+        token=self.token(device,row)
+        return dict(id=token,name=row['name'],bytes=0,artwork=self.artwork.links(row,token),
             kind='audio' if row['resources'][0]['mime'].startswith('audio/') else 'video')
 
     def browse(self,root,path):
@@ -251,7 +305,8 @@ class Dlna:
             meta,_=self.rows(device,oid,metadata=True)
             if meta:result['parent']=f':dlna:{device}:{encode(meta[0]["parent"])}'
         for row in rows:
-            if row['folder']:result['folders'].append(dict(name=row['name'],path=f':dlna:{device}:{encode(row["id"])}'))
+            if row['folder']:result['folders'].append(dict(name=row['name'],path=f':dlna:{device}:{encode(row["id"])}',
+                artwork=self.artwork.links(row,self.token(device,row))))
             elif row['resources']:result['videos'].append(self.entry(device,row))
         if offset:result['folders'].append(dict(name='Previous page',path=path.split('@')[0]+f'@{max(0,offset-100)}'))
         if rows and offset+len(rows)<total:result['folders'].append(dict(name='Next page',path=path.split('@')[0]+f'@{offset+len(rows)}'))
