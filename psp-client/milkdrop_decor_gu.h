@@ -132,13 +132,14 @@ static void md_border(const MdBorder *p,float inset) {
                            {a,b,b,256-b},{256-b,b,256-a,256-b}};
     md_blend(0);
     unsigned int color=md_rgba(p->r,p->g,p->b,p->a);
+    MdVertex *batch=sceGuGetMemory(8*sizeof(*batch));
     for(int i=0;i<4;i++) {
-        MdVertex *v=sceGuGetMemory(2*sizeof(*v));
+        MdVertex *v=batch+2*i;
         v[0]=(MdVertex){0,0,color,rectangles[i][0],rectangles[i][1],0};
         v[1]=(MdVertex){0,0,color,rectangles[i][2],rectangles[i][3],0};
         md_expand(v,2,0);
-        sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
     }
+    sceGuDrawArray(GU_SPRITES,MD_FORMAT,8,NULL,batch);
     sceGuDisable(GU_BLEND);
 }
 static void md_present(int left,int top,int width,int height,float gamma,
@@ -170,17 +171,19 @@ static void md_present(int left,int top,int width,int height,float gamma,
                 sceGuDrawArray(GU_TRIANGLES,MD_FORMAT,6,NULL,v);
                 continue;
             }
+            int strips=(width+31)/32;
+            MdVertex *batch=sceGuGetMemory(2*strips*sizeof(*batch));
             for(int x=0;x<width;x+=32) {
                 int end=x+32<width?x+32:width;
-                MdVertex *v=sceGuGetMemory(2*sizeof(*v));
+                MdVertex *v=batch+2*(x/32);
                 v[0]=(MdVertex){0,0,tint,(float)(left+x),(float)top,0};
                 v[1]=(MdVertex){0,0,tint,(float)(left+end),(float)(top+height),0};
                 md_echo_uv((float)x/width,0,zoom,orient,&v[0].u,&v[0].v);
                 md_echo_uv((float)end/width,1,zoom,orient,&v[1].u,&v[1].v);
                 v[0].u*=2; v[1].u*=2;
                 v[0].v*=(float)MD_HEIGHT/MD_TEXTURE; v[1].v*=(float)MD_HEIGHT/MD_TEXTURE;
-                sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
             }
+            if(strips)sceGuDrawArray(GU_SPRITES,MD_FORMAT,2*strips,NULL,batch);
         }
     }
     sceGuDisable(GU_BLEND);

@@ -84,7 +84,7 @@ static uint32_t expected_ring_color;
 static int expected_left, expected_top, expected_width, expected_height, covered_width;
 static int expected_passes=1;
 static int capture_clipped_wave,captured_count;
-static MdVertex captured_wave[8];
+static MdVertex captured_wave[32];
 static const MdVertex *shape_fan;
 static int outline_pass, thick_outline_draws;
 static int forbid_phase_border;
@@ -215,6 +215,14 @@ static void *sceGuGetMemory(int bytes) {
     return result;
 }
 static void sceGuDrawArray(int type,int format,int count,const void *indices,const void *data) {
+    /* A GU sprite batch is the same ordered stream of independent pairs.
+     * Validate every pair through the existing target/UV/coverage checks. */
+    if(type==GU_SPRITES && count>2) {
+        assert(format==(GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D) && !(count&1));
+        for(int i=0;i<count;i+=2)
+            sceGuDrawArray(type,format,2,indices,(const MdVertex *)data+i);
+        return;
+    }
     assert(smooth_shading); /* Transparent shape edges need interpolated alpha. */
     if(forbid_phase_border) assert(type!=GU_LINE_STRIP || count!=33);
     assert(!restore_target);
@@ -261,7 +269,7 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         covered_width+=(int)(v[1].x-v[0].x);assert(covered_width<=expected_width);
         return;
     }
-    MdVertex unpacked[4*MD_CUSTOM_POINTS];
+    MdVertex unpacked[8*(2*MD_CUSTOM_POINTS-1)];
     assert((format==15 || format==14) && !indices);
     if(format==15) {
         assert((const unsigned char *)data>=list_base);
@@ -271,13 +279,13 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
         struct Plain {unsigned int color;float x,y,z;};
         const struct Plain *p=data;
         assert(type==GU_LINE_STRIP || type==GU_POINTS || type==GU_LINES);
-        assert(count>0 && count<=4*MD_CUSTOM_POINTS);
+        assert(count>0 && count<=8*(2*MD_CUSTOM_POINTS-1));
         assert((const unsigned char *)data>=list_base &&
                (const unsigned char *)(p+count)<=list_base+list_used);
         for(int i=0;i<count;i++) unpacked[i]=(MdVertex){.color=p[i].color,.x=p[i].x,.y=p[i].y,.z=p[i].z};
         v=unpacked;
         if(capture_clipped_wave) {
-            assert(count<=8);captured_count=count;
+            assert(count<=32);captured_count=count;
             memcpy(captured_wave,v,count*sizeof(*v));
         }
     }
@@ -956,10 +964,14 @@ int main(int argc,char **argv) {
         capture_clipped_wave=1;fail_restart=failure;
         assert(md_draw_wave(GU_LINE_STRIP,wave,4,2,1)==!failure);
         if(!failure) {
-            assert(captured_count==4); /* no artificial bridge across split */
-            assert(captured_wave[0].x==0 && captured_wave[1].x==100);
-            assert(captured_wave[2].x==400 && captured_wave[3].x==512);
-            assert(captured_wave[0].y==9 && captured_wave[3].y==19);
+            assert(captured_count==16); /* four passes, no bridge across split */
+            for(int pass=0;pass<4;pass++) {
+                const MdVertex *v=captured_wave+pass*4;
+                int dx=pass==1 || pass==2,dy=pass>=2?-1:0;
+                assert(v[0].x==0 && v[1].x==100+dx);
+                assert(v[2].x==400+dx && v[3].x==512);
+                assert(v[0].y==10+dy && v[3].y==20+dy);
+            }
             sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         }
         capture_clipped_wave=fail_restart=0;md_stop();assert(!md_list);

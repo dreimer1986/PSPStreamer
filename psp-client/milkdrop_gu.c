@@ -46,6 +46,10 @@ static void md_thick_wave(int primitive,const MdVertex *vertices,int count,int s
         copies[2*count+i]=(MdPlainVertex){v->color,v->x,v->y-1,v->z};
     }
     int format=GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D;
+    if(primitive==GU_POINTS) {
+        sceGuDrawArray(primitive,format,3*count,NULL,copies);
+        return;
+    }
     for(int pass=0;pass<3;pass++) {
         MdPlainVertex *v=copies+pass*count;
         sceGuDrawArray(primitive,format,split?split:count,NULL,v);
@@ -261,8 +265,8 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
     if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
     md_target(md_offset(1-md_front),MD_WIDTH,MD_WIDTH,MD_HEIGHT);
     static const float dx[]={0,1,1,0},dy[]={0,0,-1,-1};
+    MdPlainVertex *out=sceGuGetMemory((thick?8:2)*count*sizeof(*out));int used=0;
     for(int pass=0;pass<(thick?4:1);pass++) {
-        MdPlainVertex *out=sceGuGetMemory(2*count*sizeof(*out));int used=0;
         for(int i=0;i<count;i++) {
             MdVertex a=md_clip_wave_source[i];a.x+=dx[pass];a.y+=dy[pass];
             if(primitive==GU_POINTS) {
@@ -275,9 +279,9 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
                 for(int j=0;j<n;j++)out[used++]=(MdPlainVertex){cut[j].color,cut[j].x,cut[j].y,0};
             }
         }
-        if(used)sceGuDrawArray(primitive==GU_POINTS?GU_POINTS:GU_LINES,
-            GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D,used,NULL,out);
     }
+    if(used)sceGuDrawArray(primitive==GU_POINTS?GU_POINTS:GU_LINES,
+        GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_2D,used,NULL,out);
     return 1;
 }
 static int md_continue_feedback(void) {

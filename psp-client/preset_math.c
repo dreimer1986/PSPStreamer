@@ -425,6 +425,30 @@ static int execute(const PmProgram *program,float local[PM_VALUES],int *error_li
                 *error_line=program->code[++i].line;
                 a=stack[used-1];
                 stack[used-1]=arithmetic==ADD?a+result:arithmetic==SUB?a-result:a*result;
+                /* Continue a straight arithmetic chain without returning to
+                 * the general dispatcher. Retain every original operation,
+                 * rounding point, fuel charge and PSP scheduling boundary. */
+                while(i+2<program->count && fuel>=2 &&
+                      (frame_fuel<0 || frame_fuel>=2)
+#ifdef __PSP__
+                      && !(allowance>PM_FUEL && (!(fuel&4095) || !((fuel-1)&4095)))
+#endif
+                ) {
+                    const PmOp *next=&program->code[i+1];
+                    int kind=next->op;
+                    if(kind<FAST_PUSH_ADD || kind>FAST_LOAD_MUL)break;
+                    int from_local=kind>=FAST_LOAD_ADD;
+                    int action=ADD+kind-(from_local?FAST_LOAD_ADD:FAST_PUSH_ADD);
+                    if(program->code[i+2].op!=action ||
+                       (from_local && (next->arg<0 || next->arg>=PM_VALUES)))break;
+                    float operand=from_local?local[next->arg]:next->value;
+                    if(!from_local && !isfinite(operand))break;
+                    fuel-=2;if(frame_fuel>0)frame_fuel-=2;
+                    i+=2;*error_line=program->code[i].line;
+                    float previous=stack[used-1];
+                    stack[used-1]=action==ADD?previous+operand:
+                        action==SUB?previous-operand:previous*operand;
+                }
                 continue;
             }
             /* Budget/yield/underflow edges follow the original instructions. */

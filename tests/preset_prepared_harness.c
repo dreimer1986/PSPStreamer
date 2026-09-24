@@ -21,6 +21,8 @@ static void run(PmProgram *p,int allowance,int aggregate,float seed) {
 int main(void) {
     const char *sources[]={
         "q1=q1+2;q2=q1*3-4;q3=2*q2+q1;",
+        "q1=q1+2-3+4*5-6+q2*2-1+q2;q3=q1+1+2+3+4+5+6+7;",
+        "q1=16777216+1-16777216+1-0*2+3;q2=(-0.0)*2+0.0-0.0;",
         "q1=16777216+1-16777216;q2=3-(2-1);q3=1e-30*1e-20;",
         "q1=(0/0)+2;q2=(1/0)*0;q3=(-1/0)-2;",
         "q1=1;q2=loop(5,q1=q1*2+1);q3=if(q1,q1+2,q1*3);",
@@ -62,7 +64,7 @@ int main(void) {
 #endif
     /* The second instruction in a prepared pair must not skip a PSP yield. */
     PmProgram p={0};PmSymbols symbols={0};char source[12000]={0};
-    for(int i=0;i<800;i++)strcat(source,"q1=q1*.9+1;");
+    for(int i=0;i<400;i++)strcat(source,"q1=q1*.9+1-2+3*.5+2;");
     assert(pm_compile_symbols(&p,source,42,&symbols)==PM_OK);pm_program_compact(&p);
     pm_reset_globals();run(&p,PM_FRAME_FUEL,PM_TOTAL_FUEL,.25f);assert(yields>0);
     pm_program_free(&p);

@@ -100,7 +100,38 @@ associated ToDo test item. No per-scenario timing measurements were supplied.
   episode transitions remain hardware checks, not claims from host mocks.
 - General packet-allocation pooling remains a separate profiling candidate.
 
-## Remaining candidates (not measured speed guarantees)
+## Final behavior-preserving batch (2026-09-24)
+
+The user selected expression dispatch and geometry batching as the final round.
+No reduced-detail mode, altered formula interpretation or cross-frame work is
+introduced. Clouded Bottle is now confirmed running on hardware, albeit slowly.
+
+- Consecutive prepared PUSH/LOAD + ADD/SUB/MUL pairs execute as a straight chain
+  within the fast dispatcher. Every arithmetic operation retains its original
+  order and float rounding; no reassociation, fast-math or assignment omission.
+  Original instruction storage, source lines, fuel and PSP yield boundaries are
+  preserved. At a budget/yield/invalid-bytecode boundary execution returns to the
+  scalar path. Loop-bearing programs retain the existing path so native clear
+  recognition is untouched. There is no additional bytecode/state allocation.
+- Presentation's 32-pixel sprite strips now share one allocation and draw per
+  pass (16 calls become one at width 512). Borders submit their four independent
+  rectangles together (four calls become one). Coordinates, UVs, colors and
+  rectangle order stay the same; gamma/echo/blend passes are not combined.
+- Thick point offsets share one ordered point draw instead of three (or six
+  for split points). Clipped wave passes share one line/point batch, preserving
+  original segment and pass order. Line strips remain separate to avoid joining
+  unrelated ends. No new triangles, removed vertices, simplified clipping or
+  removed GU ownership/synchronization barriers. Vertex storage is no larger
+  than before; fewer allocations can reduce alignment padding.
+
+Build preceded focused validation; all four affected tests passed. Differential VM checks compare values,
+rollback, error lines, fuel and mocked PSP yields against scalar execution,
+including long chains and scheduling boundaries. Geometry checks cover retained
+thick-wave vertices, sprite-pair coverage, clipping, LCD/TV targets and live
+transition ownership. Hardware speed and uninterrupted audio remain user tests;
+draw-call reductions are not FPS measurements.
+
+## Earlier work
 
 ### Completed: sparse renderer transactions and invisible shape submissions
 
@@ -127,22 +158,21 @@ uses the requirements of both presets, avoiding stereo FFTs on PCM-only fades.
 Exact geometry comparisons and focused renderer tests pass; no PSP speedup is
 claimed before hardware feedback. See [details](MILKDROP_LIVE_TRANSITIONS.md).
 
-### MilkDrop
+### Deferred or excluded candidates
 
-7. **Longer prepared expression blocks and safe loop coverage.** Current prepared
-   pairs are intentionally small. Larger blocks could reduce dispatch further,
-   but need precise fuel, branch, source-line and scheduling behavior.
+7. **Broader expression blocks and loop coverage.** Straight arithmetic chains
+   are implemented above. More general control-flow preparation is deferred;
+   no further rewrite is planned without a measured reason.
 8. **Pure expression-tree reuse.** Beyond the implemented scalar-function cache,
    dependency tracking could reuse larger frame-invariant subexpressions. Must
    account for assignments, per-point inputs, q/t state, memory and random calls.
-9. **Geometry/renderer batching and resumable expensive work.** Profile custom-wave
-   calculation, clipping/submission and expensive nested searches before deciding
-   between math batching and bounded continuation across frames. Continuation can
-   affect visual timing and is a significant change, not merely a higher limit.
+9. **Geometry/renderer batching.** The independent-primitive batch is implemented
+   above. Further work needs a measured bottleneck. Resuming one frame's formulas
+   across later frames is explicitly excluded: it changes original visual timing.
 
 ## Next measurement session
 
-PSP profiling is explicitly deferred until the next session. Compare identical
+If further optimization becomes necessary, compare identical
 presets, resolution, clock and audio source; include Wave-Budget, Cauldron and a
 memory-heavy preset. Separate formula, geometry, GPU wait, UI and network costs.
 Use these observations to choose among the candidates above. Live dual-preset
