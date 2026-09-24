@@ -1293,6 +1293,26 @@ Radio retains its separate pause/reconnect-to-live behavior.
 
 ### Web navigation (server/HA app 0.1.38)
 
+Server/HA app **0.1.49** adds a playback-following seek bar for the selected
+media item. It uses PSP position reports, interpolates briefly while playing,
+and stops extrapolating when reports become stale. Paused/buffering reports do
+not advance. Dragging the slider or waiting for a seek is not overwritten by
+old telemetry; choosing a different file still allows preparing its start position.
+
+Chapter ticks and a chapter selector offer jumps during playback, or select the
+start position before Play. Chapters come from the original container (including
+mounted files) or Plex/Jellyfin metadata. **Skip intro** and **Skip credits** appear
+only while the current position lies inside a supplied segment. No automatic
+skipping or local intro detection is performed. Plex must supply analyzed markers;
+Jellyfin must expose Intro/Outro entries through its MediaSegments API (for example
+from a segment provider). Older Jellyfin servers or missing segments simply offer
+no skip button. Optional Jellyfin segment lookup is bounded and browser-only;
+PSP metadata responses exclude these larger timeline arrays.
+
+Protocol references: [PlexAPI marker/chapter fields](https://python-plexapi.readthedocs.io/en/latest/_modules/plexapi/media.html)
+and [Jellyfin MediaSegments controller](https://github.com/jellyfin/jellyfin/blob/master/Jellyfin.Api/Controllers/MediaSegmentsController.cs).
+Docker and the Home Assistant app contain the same implementation.
+
 The PSP retries transient directory-loading failures up to three attempts,
 with a 15-second budget per attempt including bounded DNS lookup and a one-second
 pause between attempts. The UI shows the attempt and total elapsed time;

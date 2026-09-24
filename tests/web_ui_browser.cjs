@@ -6,7 +6,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'../static');
 (async()=>{
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_EXECUTABLE});
   try{
     const page=await browser.newPage({viewport:{width:1100,height:850},locale:'en'});
     const errors=[],commands=[],batches=[];
@@ -15,7 +15,7 @@ const root=path.resolve(__dirname,'../static');
       {id:'video2',name:'Episode 2.mkv',kind:'video'},
       {id:'video3',name:'Episode 3.mkv',kind:'video'},
       {id:'music',name:'Musik Grüße.flac',kind:'audio'}];
-    let preferences={},recursive=false,delayMetadata=false;
+    let preferences={},recursive=false,delayMetadata=false,player={state:'idle',online:true,age:0};
     let jellyfin={enabled:false,selected:false,url:'',username:''};
     await page.route('http://psp.test/**',async route=>{
       const request=route.request(),url=new URL(request.url());
@@ -24,6 +24,7 @@ const root=path.resolve(__dirname,'../static');
         const body=request.postDataJSON();
         switch(url.pathname){
           case '/api/session':data={csrf:'test-csrf',protected:true};break;
+          case '/api/player':data=player;break;
           case '/api/offline/preferences':if(body)preferences=body;data=preferences;break;
           case '/api/offline/jobs':data=[];break;
           case '/api/plex':data={files:true,enabled:true,radio:true,mappings:[],linked:false};break;
@@ -41,7 +42,7 @@ const root=path.resolve(__dirname,'../static');
             break;
           }
           case '/api/library/files':recursive=url.searchParams.get('recursive')==='1';data={files};break;
-          case '/api/metadata/video1':data={d:'120',a:[{n:'0',l:'jpn',t:'Japanese'},{n:'1',l:'deu',t:'German'}],s:[{n:'0',l:'deu',t:'German'}]};break;
+          case '/api/metadata/video1':data={d:'120',a:[{n:'0',l:'jpn',t:'Japanese'},{n:'1',l:'deu',t:'German'}],s:[{n:'0',l:'deu',t:'German'}],chapters:[{start:0,title:'Opening'},{start:60,title:'Part two'}],markers:[{type:'intro',start:10,end:30},{type:'credits',start:100,end:120}]};break;
           case '/api/metadata/video2':data={d:'120',a:[{n:'0',l:'ger',t:'German'}],s:[{n:'3',l:'ger',t:'German'}]};break;
           case '/api/metadata/video3':data={d:'120',a:[{n:'0',l:'jpn',t:'Japanese'}],s:[]};break;
           case '/api/metadata/music':data={d:'90',a:[{n:'0',l:'und'}],s:[],artist:'Künstler',title:'Grüße'};break;
@@ -75,6 +76,24 @@ const root=path.resolve(__dirname,'../static');
     await page.locator('#mediaOptions').waitFor();await visible('#subtitleField',true);
     await page.selectOption('#subtitle','0');await click('#play');
     await page.waitForTimeout(40);assert.equal(commands.at(-1).subtitle,0);
+    const refreshPlayer=()=>page.evaluate(async()=>{playerSample={...await api('/api/player'),received:performance.now()};renderPosition()});
+    player={id:'video1',state:'playing',position:0,duration:120,online:true,age:0};await refreshPlayer();
+    player.position=20;await refreshPlayer();
+    assert.equal(await page.locator('#chapterTicks button').count(),2);
+    assert.equal(Math.floor(+await page.inputValue('#seek')),20);
+    await page.getByRole('button',{name:'Skip intro',exact:true}).click();
+    await page.waitForTimeout(40);assert.equal(commands.at(-1).seconds,30);
+    await refreshPlayer();assert.equal(+await page.inputValue('#seek'),30); // old telemetry cannot undo pending seek
+    player.position=30;await refreshPlayer();assert.equal(await page.locator('#skipButtons button').count(),0);
+    player.position=105;await refreshPlayer();await page.getByRole('button',{name:'Skip credits',exact:true}).waitFor();
+    player={...player,state:'paused',position:40,age:10};await page.evaluate(()=>pendingSeek=null);await refreshPlayer();
+    assert.equal(+await page.inputValue('#seek'),40);
+    await page.evaluate(()=>{document.querySelector('#seek').value=55;document.querySelector('#seek').dispatchEvent(new Event('input'))});
+    await refreshPlayer();assert.equal(+await page.inputValue('#seek'),55); // dragging is not overwritten
+    await page.evaluate(()=>seekEditing=false);
+    player.age=50;await refreshPlayer();assert.equal(await page.locator('#skipButtons button').count(),0);
+    player={...player,age:0,state:'playing',position:40};await refreshPlayer();
+    await page.selectOption('#chapterSelect','60');await page.waitForTimeout(40);assert.equal(commands.at(-1).seconds,60);
     await page.selectOption('#audio','1');
     await click('[data-view=library]');await click('#selectAll');await click('#prepareSelected');
     await page.waitForFunction(()=>!document.querySelector('#previewBatch').disabled);

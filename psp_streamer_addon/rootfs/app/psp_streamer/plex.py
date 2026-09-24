@@ -4,6 +4,7 @@ Originals are read over authenticated HTTP(S), with optional mounted-path
 shortcuts. Plex's transcoder is never involved.
 """
 import json
+from .timeline import chapters, plex_markers
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -204,7 +205,7 @@ class Plex:
             cached = self.cache.get(key)
             if cached and cached[0] > now:
                 return cached[1]
-        rows = self.request('/library/metadata/' + key).get('MediaContainer', {}).get('Metadata', [])
+        rows = self.request('/library/metadata/' + key + '?includeMarkers=1&includeChapters=1').get('MediaContainer', {}).get('Metadata', [])
         if not rows:
             raise ValueError('Plex item is unavailable')
         with self.lock:
@@ -341,6 +342,8 @@ class Plex:
                 'album': display_text(row.get('parentTitle')), 'summary': display_text(row.get('summary'), 1200),
                 'year': row.get('year'), 'resume': int(row.get('viewOffset', 0)) // 1000,
                 'watched': bool(row.get('viewCount')), 'provider': 'plex',
+                'chapters': chapters(row.get('Chapter'), 'startTimeOffset', 1000),
+                'markers': plex_markers(row.get('Marker')),
                 'artwork': self.artwork.links(row, self.token(str(row.get('ratingKey') or self.split(token)[0])))}
 
     def art_headers(self):

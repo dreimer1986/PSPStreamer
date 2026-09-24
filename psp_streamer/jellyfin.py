@@ -14,6 +14,8 @@ from urllib.error import URLError
 from .plex import Plex, NoRedirect
 from .plex_media import PlexMediaBridge
 from .radio import display_text
+from .timeline import chapters, jellyfin_markers
+from .work_cache import WorkCache
 
 ID = r'[0-9a-f]{32}'
 
@@ -52,6 +54,7 @@ class Jellyfin(Plex):
         if self.path.exists():
             self.config.update(json.loads(self.path.read_text(encoding='utf-8')))
         self.sessions = {}
+        self.segment_cache = WorkCache(entries=128, jobs=4, timeout=4)
 
     def public(self):
         with self.lock:
@@ -280,7 +283,24 @@ class Jellyfin(Plex):
             artist=display_text(', '.join(row.get('Artists') or [])), album=display_text(row.get('Album')),
             summary=display_text(row.get('Overview'),1200), year=row.get('ProductionYear'),
             resume=int(user.get('PlaybackPositionTicks') or 0)//10000000,
-            watched=bool(user.get('Played')), provider='jellyfin', artwork=self.artwork.links(row, self.token(row['Id'])))
+            watched=bool(user.get('Played')), provider='jellyfin',
+            chapters=chapters(row.get('Chapters'), 'StartPositionTicks', 10000000, 'Name'),
+            artwork=self.artwork.links(row, self.token(row['Id'])))
+
+    def web_markers(self, token):
+        key = self.split(token)[0]
+        # Optional capability: old servers/absent providers must not block play.
+        # Browser-only request, bounded and independent of compact PSP metadata.
+        def load():
+            try:
+                data = self.request('/MediaSegments/' + key, timeout=2)
+                return jellyfin_markers(data.get('Items'))
+            except (ValueError, OSError, AttributeError):
+                return []
+        try:
+            return self.segment_cache.get((self.namespace(), self.config['user'], key), load, ttl=30)
+        except ValueError:
+            return []
 
     def art_headers(self):
         return {'Authorization': authorization(self.config['client'], self.config['token']),

@@ -896,9 +896,10 @@ class AppHandler(BaseHTTPRequestHandler):
         cached = self.server.metadata_cache.get(cache_key) if identity is not None else None
         if cached is not None and not token.startswith(('plex.', 'jellyfin.')):
             self.server.player_status.remember(token, cached, cached.get('kind', 'video'))
-            return self.send_json(cached)
+            return self.send_json(cached if self.headers.get('X-PSP-Web') else
+                                  {k:v for k,v in cached.items() if k not in ('artwork', 'chapters', 'markers')})
         result = cached_probe(source,
-            ["-show_entries", "format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json"])
+            ["-show_entries", "chapter=start_time,end_time:chapter_tags=title:format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json"])
         if result.returncode:
             raise ValueError("Could not inspect media file")
         probe_data = json.loads(result.stdout)
@@ -912,6 +913,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 audio.append({"n": str(len(audio)), "l": language, "t": title})
         duration = probe_data.get("format", {}).get("duration", "0")
         payload = {"a": audio, "s": subtitles, "d": str(duration)}
+        from .timeline import chapters
+        file_chapters = chapters(probe_data.get('chapters'))
+        payload['chapters'] = file_chapters
         payload['kind'] = 'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video'
         payload['name'] = display_text(source.name, 126)
         if source.suffix.lower() in AUDIO_EXTENSIONS:
@@ -931,13 +935,17 @@ class AppHandler(BaseHTTPRequestHandler):
             payload.update(self.server.plex.details(token))
         elif token.startswith('jellyfin.'):
             payload.update(self.server.jellyfin.details(token))
+            if self.headers.get('X-PSP-Web'):
+                payload['markers'] = self.server.jellyfin.web_markers(token)
         elif identity is not None:
             if len(self.server.metadata_cache) >= 128:
                 self.server.metadata_cache.clear()
             self.server.metadata_cache[cache_key] = payload
+        if not payload.get('chapters'):
+            payload['chapters'] = file_chapters
         self.server.player_status.remember(token, payload, payload['kind'])
         self.send_json(payload if self.headers.get('X-PSP-Web') else
-                       {k:v for k,v in payload.items() if k != 'artwork'})
+                       {k:v for k,v in payload.items() if k not in ('artwork', 'chapters', 'markers')})
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False,
                   paged: bool = False, offset: int | None = None, at_ms: int = 0) -> None:

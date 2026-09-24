@@ -145,3 +145,9 @@
 - Reuse successful local ffprobe results with file-change detection, bounded
   caches and in-flight deduplication; remote/live sources remain uncached.
 - Docker and Home Assistant ship the same server implementation.
+# 0.1.49
+
+- Follow PSP playback telemetry in the browser seek bar, without overwriting a dragged or pending seek.
+- Show Plex and Jellyfin intro/credits skip controls only within the supplied marker interval; gracefully handle Jellyfin without segment support.
+- Add chapter ticks and a chapter selector from container/Plex metadata. Keep timeline payloads out of compact PSP metadata replies.
+- Identical server and web assets for Docker and the Home Assistant app.

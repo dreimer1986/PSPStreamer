@@ -1,5 +1,7 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Chapters':'Kapitel','Chapter {n}':'Kapitel {n}',
+  'Skip intro':'Intro überspringen','Skip credits':'Abspann überspringen',
   'Cover view':'Coveransicht',
   'Preview theme song':'Serien-Thema anhören',
   'No playable theme song available.':'Kein abspielbares Serien-Thema verfügbar.',

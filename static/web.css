@@ -10,3 +10,7 @@
 #view-remote>.media-backdrop{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.18;z-index:-1;pointer-events:none}
 .media-cover{float:left;width:min(27%,220px);max-height:280px;object-fit:contain;margin:0 20px 16px 0;border-radius:8px}
 #mediaOptions{clear:both}
+.chapter-ticks{position:relative;height:18px;margin:0 8px 6px}
+.chapter-ticks button{position:absolute;top:0;transform:translateX(-50%);min-width:0;width:4px;height:14px;padding:0;border:0;border-radius:1px;background:#e9b64f}
+.chapter-ticks button:focus,.chapter-ticks button:hover{width:8px;background:#fff}
+#chapterSelect{max-width:100%;margin:4px 0 8px}

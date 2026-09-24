@@ -41,6 +41,15 @@ class PlexTests(unittest.TestCase):
         self.assertEqual(restored.config['client'], self.plex.config['client'])
         self.assertEqual(restored.config['token'], 'secret-server')
 
+    def test_marker_and_chapter_metadata_request(self):
+        self.row.update(Marker=[{'type':'intro','startTimeOffset':10000,'endTimeOffset':30000}],
+                        Chapter=[{'startTimeOffset':0,'title':'Start'}])
+        with patch.object(self.plex,'request',return_value={'MediaContainer':{'Metadata':[self.row]}}) as request:
+            details=self.plex.details(self.plex.token('42'))
+            self.assertIn('includeMarkers=1&includeChapters=1',request.call_args.args[0])
+            self.assertEqual(details['markers'][0]['end'],30)
+            self.assertEqual(details['chapters'][0]['start'],0)
+
     def test_unsafe_local_paths_never_open_outside_roots(self):
         from psp_streamer.plex_media import RemoteSource
         (self.root / 'outside.mkv').touch()
@@ -171,11 +180,11 @@ class PlexTests(unittest.TestCase):
                 token = server.plex.token('42.s1.0')
                 worker = threading.Thread(target=server.serve_forever)
                 worker.start()
-                def request(method, path, data=None):
+                def request(method, path, data=None, web=False):
                     client = http.client.HTTPConnection(*server.server_address, timeout=3)
                     try:
                         client.request(method, path, json.dumps(data) if data is not None else None,
-                                       {'Content-Type': 'application/json'})
+                                       {'Content-Type': 'application/json', **({'X-PSP-Web':'1'} if web else {})})
                         response = client.getresponse()
                         return response.status, json.loads(response.read())
                     finally:
@@ -185,14 +194,20 @@ class PlexTests(unittest.TestCase):
                         status, listing = request('GET', '/api/library?path=:plex:s1')
                         self.assertEqual(status, 200)
                         self.assertEqual(listing['videos'][0]['id'], token)
-                        probe = type('Probe', (), {'returncode': 0, 'stdout': json.dumps({
-                            'format': {'duration': '240'}, 'streams': [{'codec_type': 'audio',
+                        probe = type('Probe', (), {'returncode': 0, 'stderr': '', 'stdout': json.dumps({
+                            'format': {'duration': '240'}, 'chapters':[{'start_time':'12.5','tags':{'title':'Chapter'}}], 'streams': [{'codec_type': 'audio',
                                 'tags': {'language': 'ger'}}, {'codec_type': 'subtitle', 'tags': {'language': 'ger'}}]})})()
                         with patch('psp_streamer.server.subprocess.run', return_value=probe):
                             status, metadata = request('GET', '/api/metadata/' + token)
                         self.assertEqual(status, 200)
                         self.assertEqual(metadata['s'][0]['l'], 'ger')
                         self.assertEqual(metadata['resume'], 45)
+                        self.assertNotIn('chapters',metadata)
+                        self.assertNotIn('markers',metadata)
+                        with patch('psp_streamer.server.subprocess.run', return_value=probe):
+                            status, web_metadata = request('GET', '/api/metadata/' + token, web=True)
+                        self.assertEqual(status,200)
+                        self.assertEqual(web_metadata['chapters'],[{'start':12.5,'title':'Chapter'}])
                         status, command = request('POST', '/api/remote/command', {'action': 'play', 'id': token, 'subtitle': 0})
                         self.assertEqual(status, 200)
                         self.assertEqual(command['subtitle'], 0)

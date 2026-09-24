@@ -15,6 +15,21 @@ A, B, P = 'a'*32, 'b'*32, 'c'*32
 
 
 class JellyfinTests(unittest.TestCase):
+    def test_optional_web_segments_and_chapters(self):
+        token=self.jf.token(B)
+        with patch.object(self.jf,'request',return_value={'Items':[
+                {'Type':'Intro','StartTicks':100000000,'EndTicks':300000000},
+                {'Type':'Outro','StartTicks':900000000,'EndTicks':1000000000}]} ) as request:
+            self.assertEqual(self.jf.web_markers(token),[
+                {'type':'intro','start':10,'end':30},{'type':'credits','start':90,'end':100}])
+            self.jf.web_markers(token);self.assertEqual(request.call_count,1)
+            request.assert_called_with('/MediaSegments/'+B,timeout=2)
+        with patch.object(self.jf,'request',side_effect=ValueError('Not found')):
+            self.assertEqual(self.jf.web_markers(self.jf.token(P)),[])
+        with patch.object(self.jf,'metadata',return_value={'Id':B,'Chapters':[
+                {'StartPositionTicks':120000000,'Name':'Kapitel'}]}):
+            self.assertEqual(self.jf.details(token)['chapters'],[{'start':12,'title':'Kapitel'}])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
