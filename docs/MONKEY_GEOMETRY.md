@@ -56,19 +56,25 @@ axis without recentering position. Roll rotates the steering axes. Speed is
 20–200 percent of the flight base rate, multiplied by the existing speed setting;
 automatic beat acceleration and automatic camera roll do not control the player.
 
-The visible ship and collision sphere share their world-space center, two
-profiles ahead of the generation cursor. The model uses scale 0.45; a radius-0.40
-sphere encloses every vertex with at least 0.08 margin (host assertion). Both ship
+The visible ship and oriented collision box share their world-space center, two
+profiles ahead of the generation cursor. The model uses scale 0.45. Local model
+half-extents (0.45, 0.1109721, 0.3529831) are scaled identically, with only 0.006
+world units of skin per side. The box follows yaw, pitch, roll and tunnel bending;
+it replaces the oversized radius-0.40 sphere. Host assertions enclose every vertex.
+Both ship
 and tunnel use the same projection/depth buffer, replacing the separate overlay
 projection that previously disagreed with collision position.
 
-Forward movement is subdivided into at most 40 small steps. Sphere/triangle
-closest-point checks include face interiors, edges and corners; cached per-slab
-world bounds reject distant geometry before per-triangle work. A field check also
+Forward movement is subdivided into at most 40 small steps. Triangle/box checks
+use 13 separating axes, including edge cross products; cached per-slab and
+triangle world bounds reject distant geometry before narrow checks. A field check also
 rejects the solid side. Contact normals are mapped back through the loft Jacobian;
 the inward component is removed, with up to four bounded slide attempts. Reverse
 progress is prohibited. A fully blocked passage may still stop the player.
-This is a conservative enclosing sphere, not an exact ship-hull collision model.
+This is a tight oriented bounding box, not an exact concave hull: empty space
+between wing tips and tapered nose corners is still enclosed. Thin vertical
+clearance is no longer forced to match wingspan or length. Targeted wall tests
+check a 0.001 clearance/contact boundary, 90-degree roll and tangential sliding.
 On entry only, a bounded nearby search prefers a hull-safe starting point over
 the old point-safe automatic camera location. The chase camera checks its arm
 against wall geometry and shortens it if necessary. Ship triangles use the same

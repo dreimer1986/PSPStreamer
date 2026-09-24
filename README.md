@@ -1032,14 +1032,15 @@ setting also applies, but automatic beat-driven acceleration does not.
 
 The camera follows the player across the generated cross section, without pulling
 back to the automatic centerline. Connected, forward-going branches can be entered;
-this does not create new branches or permit backward flight. A swept safety sphere
-encloses the visible hull and wings and checks the generated wall triangles,
+this does not create new branches or permit backward flight. A tight, rotating
+bounding box encloses the visible hull and wings with 0.006 world units of padding
+per side and checks the generated wall triangles in small movement steps,
 including edges and corners. The ship now uses the tunnel's world coordinates,
 projection and depth buffer rather than a separate camera-space projection.
 Contacts remove the inward movement component, allowing tangential sliding;
 genuinely blocked passages can still stop forward progress. The following camera
-shortens its chase distance before entering walls. This is a conservative sphere,
-not an exact hull collision model; there is no damage or combat.
+shortens its chase distance before entering walls. The box still encloses empty
+space around the tapered nose; it is not an exact hull mesh. There is no damage or combat.
 Triangle still switches fullscreen and Start stops playback.
 
 Flight starts disabled, is not saved, and is reset when the renderer is closed

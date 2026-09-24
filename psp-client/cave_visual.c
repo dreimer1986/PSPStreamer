@@ -84,9 +84,69 @@ static int cave_mesh_contact(const CaveScene *s,const float p[3],float radius,fl
     if(hit)unit3(normal);
     return hit;
 }
+static void cave_ship_pose_at(const CaveScene *s,float x,float y,float z,
+    float center[3],float right[3],float up[3],float forward[3]);
+/* Triangle/OBB separating axes: box axes, triangle normal and nine edge/axis
+ * cross products. Keep the minimum translation normal for wall sliding. */
+static int ship_axis(const float v[3][3],const float h[3],const float axis[3],float *depth,float normal[3]) {
+    float length2=dot3(axis,axis);if(length2<1e-12f)return 1;
+    float a=dot3(v[0],axis),b=dot3(v[1],axis),c=dot3(v[2],axis);
+    float low=fminf(a,fminf(b,c)),high=fmaxf(a,fmaxf(b,c));
+    float r=h[0]*fabsf(axis[0])+h[1]*fabsf(axis[1])+h[2]*fabsf(axis[2]);
+    if(low>=r || high<=-r)return 0;
+    float negative=r-low,positive=r+high;
+    float inverse=1/sqrtf(length2),d=fminf(negative,positive)*inverse;
+    if(d<*depth) {
+        *depth=d;float sign=negative<positive?-1:1;
+        for(int k=0;k<3;k++)normal[k]=sign*axis[k]*inverse;
+    }
+    return 1;
+}
+static int cave_ship_mesh_contact(const CaveScene *s,const float center[3],const float basis[3][3],float normal[3]) {
+    const float h[3]={CAVE_SHIP_HALF_X,CAVE_SHIP_HALF_Y,CAVE_SHIP_HALF_Z};
+    float extent[3],deepest=-1;int hit=0;
+    for(int k=0;k<3;k++)extent[k]=h[0]*fabsf(basis[0][k])+h[1]*fabsf(basis[1][k])+h[2]*fabsf(basis[2][k]);
+    for(int i=0;i<CAVE_SLICES;i++) {
+        const CaveSlice *sl=&s->slices[i];if(sl->index<0 || !sl->count)continue;
+        int outside=0;
+        for(int k=0;k<3;k++)if(center[k]+extent[k]<sl->minimum[k] || center[k]-extent[k]>sl->maximum[k])outside=1;
+        if(outside)continue;
+        for(int j=0;j<sl->count;j+=3) {
+            const MdVertex *tri=sl->vertices+j;
+            if(center[0]+extent[0]<fminf(tri[0].x,fminf(tri[1].x,tri[2].x)) || center[0]-extent[0]>fmaxf(tri[0].x,fmaxf(tri[1].x,tri[2].x)) ||
+               center[1]+extent[1]<fminf(tri[0].y,fminf(tri[1].y,tri[2].y)) || center[1]-extent[1]>fmaxf(tri[0].y,fmaxf(tri[1].y,tri[2].y)) ||
+               center[2]+extent[2]<fminf(tri[0].z,fminf(tri[1].z,tri[2].z)) || center[2]-extent[2]>fmaxf(tri[0].z,fmaxf(tri[1].z,tri[2].z)))continue;
+            float v[3][3],edge[3][3],n[3]={0},depth=1e30f;
+            for(int a=0;a<3;a++) {
+                float p[3]={tri[a].x-center[0],tri[a].y-center[1],tri[a].z-center[2]};
+                for(int k=0;k<3;k++)v[a][k]=dot3(p,basis[k]);
+            }
+            int overlap=1;
+            for(int a=0;a<3 && overlap;a++) {
+                float axis[3]={0};axis[a]=1;
+                overlap=ship_axis(v,h,axis,&depth,n);
+            }
+            if(!overlap)continue;
+            for(int a=0;a<3;a++)for(int k=0;k<3;k++)edge[a][k]=v[(a+1)%3][k]-v[a][k];
+            float face[3];cross3(edge[0],edge[1],face);
+            if(dot3(face,face)<1e-12f)continue;
+            if(!ship_axis(v,h,face,&depth,n))continue;
+            for(int a=0;a<3 && overlap;a++)for(int k=0;k<3 && overlap;k++) {
+                float unit[3]={0},axis[3];unit[k]=1;cross3(edge[a],unit,axis);
+                overlap=ship_axis(v,h,axis,&depth,n);
+            }
+            if(overlap && depth>deepest) {
+                deepest=depth;hit=1;
+                for(int k=0;k<3;k++)normal[k]=n[0]*basis[0][k]+n[1]*basis[1][k]+n[2]*basis[2][k];
+            }
+        }
+    }
+    return hit;
+}
 int cave_ship_contact(const CaveScene *s,float x,float y,float z,float normal[3]) {
-    float world[3],n[3]={0};cave_world_point(s,x,y,z+2,world);
-    int hit=cave_mesh_contact(s,world,CAVE_SHIP_RADIUS,n);
+    float world[3],basis[3][3],n[3]={0};
+    cave_ship_pose_at(s,x,y,z,world,basis[0],basis[1],basis[2]);
+    int hit=cave_ship_mesh_contact(s,world,basis,n);
     if(hit) {
         /* Transform the contact normal into loft coordinates (J transpose). */
         for(int k=0;k<3;k++) {
@@ -266,17 +326,21 @@ void cave_view(const CaveScene *s,float z,float matrix[16]) {
     }
     memcpy(matrix,view,sizeof(view));
 }
-void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]) {
+static void cave_ship_pose_at(const CaveScene *s,float x,float y,float z,
+    float center[3],float right[3],float up[3],float forward[3]) {
     float dx,dy,q[3];cave_flight_direction(s,&dx,&dy);
-    cave_world_point(s,s->flight_x,s->flight_y,s->motion.travel+2,center);
-    cave_world_point(s,s->flight_x+dx*.1f,s->flight_y+dy*.1f,s->motion.travel+2.1f,q);
+    cave_world_point(s,x,y,z+2,center);
+    cave_world_point(s,x+dx*.1f,y+dy*.1f,z+2.1f,q);
     for(int k=0;k<3;k++)forward[k]=q[k]-center[k];
     unit3(forward);
-    cave_world_point(s,s->flight_x,s->flight_y+1,s->motion.travel+2,q);
+    cave_world_point(s,x,y+1,z+2,q);
     for(int k=0;k<3;k++)up[k]=q[k]-center[k];
     cross3(forward,up,right);unit3(right);cross3(right,forward,up);
     float cr=cosf(s->flight_roll),sr=sinf(s->flight_roll);
     for(int k=0;k<3;k++){float r=right[k],u=up[k];right[k]=cr*r+sr*u;up[k]=cr*u-sr*r;}
+}
+void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]) {
+    cave_ship_pose_at(s,s->flight_x,s->flight_y,s->motion.travel,center,right,up,forward);
 }
 typedef struct {float x[CAVE_PATHS],y[CAVE_PATHS],dx[CAVE_PATHS],dy[CAVE_PATHS],inverse[CAVE_PATHS],dr[CAVE_PATHS];} CaveField;
 static int prepare_field(const CaveScene *s,CaveField *p,float z) {

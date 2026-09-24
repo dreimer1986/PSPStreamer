@@ -23,14 +23,21 @@ static void test_ship_wall(void) {
     for(int i=0;i<6;i++){sl->vertices[i].x=.5f;sl->vertices[i].y=yz[i][0];sl->vertices[i].z=yz[i][1];}
     sl->minimum[0]=sl->maximum[0]=.5f;sl->minimum[1]=-10;sl->maximum[1]=10;sl->minimum[2]=-30;sl->maximum[2]=5;
     float n[3];assert(!cave_ship_contact(s,0,0,0,n));
-    assert(cave_ship_contact(s,.2f,0,0,n) && n[0]<-.99f);
+    assert(!cave_ship_contact(s,.2f,0,0,n)); /* former oversized sphere hit */
+    assert(!cave_ship_contact(s,.5f-CAVE_SHIP_HALF_X-.001f,0,0,n));
+    assert(cave_ship_contact(s,.5f-CAVE_SHIP_HALF_X+.001f,0,0,n) && n[0]<-.99f);
+    /* Banking turns the thin vertical extent toward this wall. */
+    s->flight_roll=1.570796327f;
+    assert(!cave_ship_contact(s,.5f-CAVE_SHIP_HALF_Y-.001f,0,0,n));
+    assert(cave_ship_contact(s,.5f-CAVE_SHIP_HALF_Y+.001f,0,0,n) && n[0]<-.99f);
+    s->flight_roll=0;
     cave_flight_input(s,1,255,128,0,0);
     s->flight_x=s->flight_y=s->flight_roll=0;s->flight_yaw=.85f;s->flight_initialized=1;
     s->motion.previous=1000000;unsigned char bands[12]={0};
     cave_options.flight_sensitivity=100;cave_options.flight_inertia=0;
     for(int i=1;i<=15;i++) {
         cave_prepare(s,bands,0,1000000+i*10000);
-        assert(s->flight_x<=.1001f);
+        assert(s->flight_x<.5f);
         assert(!cave_ship_contact(s,s->flight_x,s->flight_y,s->motion.travel,n));
     }
     assert(s->motion.travel>.5f); /* tangential progress, not a wall freeze */
@@ -406,7 +413,9 @@ int main(void) {
     CaveScene *flight=cave_create();assert(flight);
     for(int i=0;i<CAVE_SHIP_VERTICES;i++) {
         const MdVertex *v=&cave_ship_mesh[i];
-        assert(sqrtf(v->x*v->x+v->y*v->y+v->z*v->z)*CAVE_SHIP_SCALE<CAVE_SHIP_RADIUS-.08f);
+        assert(fabsf(v->x)*CAVE_SHIP_SCALE<=CAVE_SHIP_HALF_X-CAVE_SHIP_SKIN+1e-6f);
+        assert(fabsf(v->y)*CAVE_SHIP_SCALE<=CAVE_SHIP_HALF_Y-CAVE_SHIP_SKIN+1e-6f);
+        assert(fabsf(v->z)*CAVE_SHIP_SCALE<=CAVE_SHIP_HALF_Z-CAVE_SHIP_SKIN+1e-6f);
     }
     cave_options.flight_sensitivity=100;cave_options.flight_inertia=0;
     cave_flight_input(flight,1,128,128,0,0); /* also safe before cache warmup */

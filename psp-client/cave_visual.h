@@ -57,9 +57,13 @@ typedef struct {
     float flight_yaw,flight_pitch,flight_roll,flight_speed;
     float flight_roll_velocity;
 } CaveScene;
-/* Shared world-space ship pose. Sphere includes every scaled mesh vertex. */
+/* Model-space extents, scaled exactly like drawing, plus a small wall skin.
+ * The narrow collision box rotates with the visible ship. */
 #define CAVE_SHIP_SCALE .45f
-#define CAVE_SHIP_RADIUS .40f
+#define CAVE_SHIP_SKIN .006f
+#define CAVE_SHIP_HALF_X (.45f*CAVE_SHIP_SCALE+CAVE_SHIP_SKIN)
+#define CAVE_SHIP_HALF_Y (.1109721f*CAVE_SHIP_SCALE+CAVE_SHIP_SKIN)
+#define CAVE_SHIP_HALF_Z (.3529831f*CAVE_SHIP_SCALE+CAVE_SHIP_SKIN)
 void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]);
 int cave_ship_contact(const CaveScene *s,float x,float y,float z,float normal[3]);
 void cave_flight_input(CaveScene *scene,int toggle,int analog_x,int analog_y,int throttle,int roll);
