@@ -1,5 +1,32 @@
 # PSP Streamer
 
+### Settings survive updates (server 0.1.50)
+
+Home Assistant now keeps Plex/Jellyfin tokens, source switches, path mappings
+and the server identity in its persistent `/data` directory, alongside radio
+stations and `/data/downloads` (conversion queue, files and saved track/quality
+choices). Its password, port and TLS options remain managed by Home Assistant.
+Ordinary updates preserve these files; uninstalling the app/data does not.
+
+Docker Compose already mounts the named `streamer-settings` volume at `/data`.
+Keep that same volume when recreating/updating containers; do not use
+`docker compose down -v` if you want to retain settings. With `docker run`,
+explicitly reuse `-v streamer-settings:/data` rather than a fresh anonymous
+volume. Back up `/data` securely: it contains media-server access tokens.
+
+Standalone installations use `PSP_STREAMER_SETTINGS_DIR`, otherwise
+`PSP_STREAMER_STATE_DIR`, otherwise the existing `~/.cache/psp-streamer` path.
+`PSP_STREAMER_STATE_DIR` selects data storage without enabling the WebUI password
+editor; this is how HA retains control of its password. The download/radio
+directory overrides still apply. Browser language/cover-view choices stay in
+browser storage; deployment settings stay in Compose/environment or HA options.
+
+HA copies any surviving legacy Plex/Jellyfin/radio settings and server ID from
+its old container cache at startup, without overwriting existing `/data` files.
+An update may already have discarded that old cache: if credentials are missing,
+sign in once after updating to 0.1.50. Previously deleted credentials cannot be
+recovered automatically. Later updates retain the newly saved connections.
+
 ### Covers and backgrounds (server 0.1.46)
 
 The web library's **Cover view** button switches between the compact list and
@@ -148,7 +175,7 @@ subtitle sidecars managed only by Plex are not imported yet.
   Plex applies its own watched/resume rules. Reporting errors are shown under
   Media sources, without interrupting playback. Final Stop reporting is
   best-effort if the network fails. Offline playback progress is not synced yet.
-- Credentials are stored only in `plex.json` under `PSP_STREAMER_SETTINGS_DIR`
+- Credentials are stored only in `plex.json` in the settings directory described above
   (`/data` in the containers; otherwise `~/.cache/psp-streamer`). The file has
   owner-only permissions. Back it up securely; do not commit it. Disconnect
   removes local credentials and restores the filesystem library. Revoke the
@@ -201,7 +228,7 @@ labels apply to mounted files, Plex and Jellyfin on both PSP and web. After an
 update, reselect a saved web preference if multiple tracks make it ambiguous.
 
 The password is used only to obtain a user token, not saved. Tokens and device
-identity live in owner-only `jellyfin.json` under `PSP_STREAMER_SETTINGS_DIR`
+identity live in owner-only `jellyfin.json` in the settings directory described above
 (`/data` in Docker/Home Assistant). Disconnect removes the local token; revoke
 the device in Jellyfin as well to invalidate it upstream. Tokens never enter
 PSP configuration, public API replies or FFmpeg arguments. Redirects carrying

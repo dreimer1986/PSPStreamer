@@ -1,6 +1,8 @@
 #!/usr/bin/with-contenv bashio
 set -euo pipefail
 export MEDIA_ROOTS=/media
+export PSP_STREAMER_STATE_DIR=/data
+export PSP_STREAMER_LEGACY_STATE_DIR="${HOME}/.cache/psp-streamer"
 export PSP_STREAMER_DOWNLOAD_DIR=/data/downloads
 export PSP_STREAMER_RADIO_DIR=/data
 export PORT="$(bashio::config 'port')"

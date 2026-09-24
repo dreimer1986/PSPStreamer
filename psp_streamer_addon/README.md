@@ -4,6 +4,14 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.50** stores Plex/Jellyfin connections, source settings and server
+identity in persistent `/data`, just like radio and the download queue. Updates
+keep this data; uninstalling/removing app data does not. Password/port/TLS options
+remain controlled by HA. Back up app data securely because it contains tokens.
+Surviving legacy cache files are copied without overwriting saved settings.
+If an earlier update already removed the cache, connect to the media servers
+once again after installing 0.1.50; subsequent updates preserve the connections.
+
 Version **0.1.40** adds Jellyfin alongside Files, Plex and Radio. In the web UI,
 open **Settings → Jellyfin**, enter the server address and user credentials,
 then connect. Source switches remain independent; refresh the PSP library

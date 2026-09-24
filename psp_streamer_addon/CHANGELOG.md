@@ -151,3 +151,12 @@
 - Show Plex and Jellyfin intro/credits skip controls only within the supplied marker interval; gracefully handle Jellyfin without segment support.
 - Add chapter ticks and a chapter selector from container/Plex metadata. Keep timeline payloads out of compact PSP metadata replies.
 - Identical server and web assets for Docker and the Home Assistant app.
+
+# 0.1.50
+
+- Persist HA Plex/Jellyfin credentials, source configuration and player identity
+  in `/data` rather than the disposable container cache.
+- Copy surviving legacy settings without overwriting persistent files; retain
+  HA-managed password options and existing download/radio paths.
+- Document volume reuse, backups and the one-time sign-in needed if an older
+  update already discarded credentials. Docker and HA share the implementation.

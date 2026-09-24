@@ -33,6 +33,7 @@ from .subtitle_pages import display_timeline, subtitle_page
 from .track_labels import subtitle_labels
 from .probe_cache import probe as cached_probe, file_identity
 from .settings import PasswordSettings
+from .state_storage import state_directory
 from .radio import RadioDirectory, RADIO_PATH, resolve_playlist, radio_command, IcyLogReader, display_text
 from .plex import Plex
 from .jellyfin import Jellyfin
@@ -1179,6 +1180,7 @@ class AppServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], library: Library):
+        state_root = state_directory()
         self.settings = PasswordSettings()
         self.web_sessions = WebSessions()
         self.stream_pauses = StreamPauses()
@@ -1193,16 +1195,14 @@ class AppServer(ThreadingHTTPServer):
             self.tls_context.load_cert_chain(cert, key)
         super().__init__(address, AppHandler)
         self.library = library
-        self.plex = Plex(os.environ.get('PSP_STREAMER_SETTINGS_DIR') or
-                         str(Path.home() / '.cache/psp-streamer'), library.roots)
+        self.plex = Plex(state_root, library.roots)
         library.plex = self.plex
-        self.jellyfin = Jellyfin(os.environ.get('PSP_STREAMER_SETTINGS_DIR') or
-                                str(Path.home() / '.cache/psp-streamer'), library.roots)
+        self.jellyfin = Jellyfin(state_root, library.roots)
         library.jellyfin = self.jellyfin
         self.plex.additional_source = lambda: self.jellyfin.config['enabled']
         self.jellyfin.additional_source = lambda: any(self.plex.config[k] for k in ('enabled','files','radio'))
         self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
-            os.environ.get('PSP_STREAMER_SETTINGS_DIR') or str(Path.home() / '.cache/psp-streamer'))
+            state_root)
         self.metadata_cache: dict[tuple, object] = {}
         self.subtitle_cache: dict[tuple[str, int], object] = {}
         self.subtitle_cache_lock = threading.Lock()
@@ -1221,8 +1221,7 @@ class AppServer(ThreadingHTTPServer):
         from .player_status import PlayerStatus
         self.player_status = PlayerStatus(self.plex.path.parent)
         from .offline import OfflineQueue
-        cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(
-            Path(os.environ.get('PSP_STREAMER_SETTINGS_DIR', str(Path.home() / '.cache/psp-streamer'))) / 'downloads')
+        cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(state_root / 'downloads')
         self.offline = OfflineQueue(cache_root, library, ffmpeg_command, parse_srt_cues, self.transcode_slots)
         if self.offline.jobs:
             self.offline.start()
