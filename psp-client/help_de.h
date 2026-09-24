@@ -87,7 +87,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="QUADRAT: automatischer Wechsel",
         .step2_text="Aus, Reihe, Zufall oder bewertet.",
         .step3_title="DREIECK: Wechselintervall ändern",
-        .step3_text="SELECT: weitere Wechseloptionen."
+        .step3_text="SELECT: lebendige Übergänge, Schnitte."
     },
     [HELP_PAGE_FLIGHT]={
         .title="Höhle: selbst fliegen",

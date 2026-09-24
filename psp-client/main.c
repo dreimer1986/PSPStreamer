@@ -1945,10 +1945,10 @@ static int play_audio_once(const char *media_id, const char *title) {
                 char path[272];MdFileError error;
                 snprintf(path,sizeof(path),"presets/%s",sequence->catalog.names[index]);
                 video_watch_ping("automatic preset load");
-                int result=md_load_preset(path,&md_custom_preset,&error);
+                int result=md_load_transition(path,hard_cut?0:music_preset_fade_ms,&error);
                 if(result==MD_FILE_OK) {
                     strcpy(music_preset_file,sequence->catalog.names[index]);
-                    md_preset_duration=(float)music_preset_seconds;md_begin_preset(hard_cut?0:music_preset_fade_ms);
+                    md_preset_duration=(float)music_preset_seconds;
                     preset_result=MD_FILE_OK;
                     if(!music_visual_active) music_visual_active=md_start();
                 } else {sequence->rating[index]=-1;next_preset_tick=sceKernelGetSystemTimeWide()+250000;}

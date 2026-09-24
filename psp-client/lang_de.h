@@ -224,6 +224,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_CAVE_NOISE] = "Wandrauheit",
     [TXT_CAVE_FLIGHT_SENSITIVITY] = "Flugempfindlichkeit",
     [TXT_CAVE_FLIGHT_INERTIA] = "Flugträgheit",
+    [TXT_PRESET_LIVE] = "Lebendige Übergänge",
 
     [TXT_PRESET_RANDOM] = "Zusätzliche Zufallszeit (s)",
     [TXT_PRESET_HARD] = "Harte Beat-Wechsel",

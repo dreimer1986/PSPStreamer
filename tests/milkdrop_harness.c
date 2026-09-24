@@ -391,10 +391,17 @@ static void *test_memalign(size_t alignment,size_t size) {
     return memalign(alignment,size);
 }
 #define memalign test_memalign
+static size_t fail_calloc_size;
+static void *test_calloc(size_t n,size_t size) {
+    if(fail_calloc_size && n*size==fail_calloc_size){fail_calloc_size=0;return NULL;}
+    return calloc(n,size);
+}
+#define calloc test_calloc
 /* GU_ADAPTER */
 #undef memalign
+#undef calloc
 int main(int argc,char **argv) {
-    assert(argc==40 || argc==41 || (argc==2 && (!strcmp(argv[1],"--cave") || !strcmp(argv[1],"--cave-textures"))));
+    assert(argc==40 || argc==41 || (argc==4 && !strcmp(argv[1],"--live")) || (argc==2 && (!strcmp(argv[1],"--cave") || !strcmp(argv[1],"--cave-textures"))));
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
     MdVertex mesh[MD_MESH_VERTICES], ring[97];
@@ -404,6 +411,53 @@ int main(int argc,char **argv) {
     assert(mmap(vram,edram_size,PROT_READ|PROT_WRITE,
                 MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0)==vram);
     memset(vram,0xa5,edram_size);
+    if(argc==4 && !strcmp(argv[1],"--live")) {
+        memset(bands,60,sizeof(bands));MdFileError error;
+        for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
+            md_high_resolution=resolution;md_live_transitions=1;assert(md_start());
+            expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
+            expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
+            expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
+            assert(md_load_preset(argv[2],&md_custom_preset,&error)==MD_FILE_OK);
+            for(int frame=0;frame<3;frame++){test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);}
+            unsigned old_frames=md_preset_state.frames;
+            void *code=md_custom_preset.program.code;
+            assert(md_load_transition(argv[3],500,&error)==MD_FILE_OK);
+            assert(md_live && md_live->preset.program.code==code && !md_fade_image);
+            assert(md_live->state.frames==old_frames);
+            for(int frame=0;frame<7;frame++) {
+                test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+                if(frame<5) {
+                    assert(md_live && md_live->state.frames==old_frames+(unsigned)frame+1);
+                    assert(md_preset_state.frames==(unsigned)frame+1);
+                    if(!frame)assert(md_live->weight==0);
+                    if(frame==2)assert(md_live->weight>.3f && md_live->weight<.4f);
+                } else assert(!md_live);
+            }
+            assert(md_load_transition(argv[2],500,&error)==MD_FILE_OK && md_live);
+            MdLiveTransition *retained=md_live;
+            assert(md_load_transition("/missing/transition.milk",500,&error)!=MD_FILE_OK && md_live==retained);
+            test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+            /* Replace a fade in progress: no third retained preset. */
+            assert(md_load_transition(argv[3],500,&error)==MD_FILE_OK && md_live);
+            test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+            /* Deliberate allocation failure keeps the established snapshot fallback. */
+            fail_calloc_size=sizeof(MdLiveTransition);
+            assert(md_load_transition(argv[2],500,&error)==MD_FILE_OK && !md_live && md_fade_image && !fail_calloc_size);
+            test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+            assert(md_load_transition(argv[3],0,&error)==MD_FILE_OK && !md_live && !md_fade_image);
+            test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+            md_live_transitions=0;
+            assert(md_load_transition(argv[2],500,&error)==MD_FILE_OK && !md_live && md_fade_image);
+            md_live_transitions=1;
+            test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);
+            assert(md_load_transition(argv[3],500,&error)==MD_FILE_OK && md_live);
+            md_stop();assert(!md_live && !md_fade_image && !md_list && !md_raw_image);
+            md_free_preset(&md_custom_preset);memset(&md_custom_preset,0,sizeof(md_custom_preset));
+        }
+        printf("Live transitions: both states advance, LCD/TV, both sizes, window/fullscreen, replacement, failed load, OOM fallback, hard cut and stop OK; state %zu bytes, list peak %zu bytes\n",sizeof(MdLiveTransition),list_peak);
+        return 0;
+    }
     if(argc==2) {
         cave_test=1;memset(bands,75,sizeof(bands));
         int frames=32,mode=5;

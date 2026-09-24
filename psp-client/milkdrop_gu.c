@@ -20,6 +20,7 @@
 #define MD_WIDTH 512
 static int md_height=512;
 int md_high_resolution=1;
+int md_live_transitions=1;
 static int md_last_high_resolution;
 #define MD_HEIGHT md_height
 /* TV scanout leaves room for one 512-square RGB565 surface plus scratch.
@@ -80,6 +81,26 @@ static unsigned long long md_shader_epoch;
 static int md_shader_seeded;
 static MdImage md_images[MD_SHAPES];
 static int md_images_ready;
+typedef struct {
+    MdFilePreset preset;
+    MdPresetState state;
+    MdSignalState signal;
+    MdShapeFrame shapes;
+    MdPreset pixels[MD_GRID_POINTS],warp;
+    MdWaveGeometry waves[MD_CUSTOM_WAVES];
+    MdDecor decor;
+    MdImage images[MD_SHAPES];
+    unsigned int color,milliseconds;
+    unsigned long long origin,start;
+    float seconds,weight;
+} MdLiveTransition;
+static MdLiveTransition *md_live;
+static void md_live_clear(void) {
+    if(!md_live)return;
+    md_free_preset(&md_live->preset);
+    for(int i=0;i<MD_SHAPES;i++)md_image_free(md_live->images+i);
+    free(md_live);md_live=NULL;
+}
 static void md_images_clear(void) {
     for(int i=0;i<MD_SHAPES;i++) md_image_free(&md_images[i]);
     md_images_ready=0;
@@ -102,6 +123,7 @@ static void md_fade_clear(void) {free(md_fade_image);md_fade_image=NULL;md_fade_
 void md_begin_preset(unsigned int fade_ms) {
     md_trace_frames=0;
     if(md_list) sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+    md_live_clear();
     md_images_clear();
     md_fade_clear();
     if(md_list && md_origin && fade_ms) {
@@ -115,6 +137,56 @@ void md_begin_preset(unsigned int fade_ms) {
     }
     md_origin=md_next=0;md_signal_active=0;
     memset(&md_preset_state,0,sizeof(md_preset_state));
+}
+int md_load_transition(const char *path,unsigned int fade_ms,MdFileError *error) {
+    MdFilePreset *incoming=calloc(1,sizeof(*incoming));
+    if(!incoming){error->code=MD_FILE_IO;error->line=0;snprintf(error->key,sizeof(error->key),"preset allocation");return MD_FILE_IO;}
+    int result=md_load_preset(path,incoming,error);
+    if(result!=MD_FILE_OK){free(incoming);return result;}
+    MdLiveTransition *previous=NULL;
+    if(md_live_transitions && fade_ms && md_list && md_origin && md_signal_active && md_preset_state.ready)
+        previous=calloc(1,sizeof(*previous));
+    if(previous) {
+        sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+        previous->preset=md_custom_preset; /* Move bytecode ownership, not clone. */
+        memset(&md_custom_preset,0,sizeof(md_custom_preset));
+        previous->state=md_preset_state;previous->signal=md_signal_state;
+        previous->origin=md_origin;previous->milliseconds=fade_ms>5000?5000:fade_ms;
+        memcpy(previous->images,md_images,sizeof(md_images));memset(md_images,0,sizeof(md_images));
+    }
+    md_begin_preset(previous?0:fade_ms);
+    md_free_preset(&md_custom_preset);md_custom_preset=*incoming;free(incoming);
+    md_live=previous;
+    return MD_FILE_OK;
+}
+static int md_live_evaluate(const unsigned char bands[12],int level,unsigned long long now) {
+    if(!md_live)return 1;
+    md_trace("MilkDrop outgoing live formulas");
+    MdLiveTransition *p=md_live;
+    if(!p->start)p->start=now;
+    unsigned long long elapsed=now-p->start;
+    if(elapsed>=p->milliseconds*1000ULL){md_live_clear();return 1;}
+    float progress=(float)elapsed/(p->milliseconds*1000.f);
+    p->weight=.5f-.5f*cosf(progress*3.141592654f);
+    p->seconds=(now-p->origin)*.000001f;
+    md_signal_update(&p->signal,bands,level,now);
+    if(md_eval_preset_shapes(&p->preset,p->seconds,&p->signal.signal,&p->state,
+        &p->warp,&p->color,&p->decor,&md_runtime_error,&p->shapes)!=MD_FILE_OK)return 0;
+    if(p->preset.pixel_program.count && md_eval_pixel_grid(&p->preset,&p->warp,p->seconds,
+        &p->signal.signal,&p->state,p->pixels,&md_runtime_error)!=MD_FILE_OK)return 0;
+    if(md_eval_custom_waves(&p->preset,p->seconds,&p->signal.signal,md_right,md_left,
+        md_bins_left,md_bins_right,&p->state,p->waves,&md_runtime_error)!=MD_FILE_OK)return 0;
+    return 1;
+}
+static unsigned md_mix_color(unsigned old,unsigned fresh,float weight) {
+    unsigned out=0;
+    for(int i=0;i<4;i++){int a=(old>>(8*i))&255,b=(fresh>>(8*i))&255;out|=(unsigned)(a+(b-a)*weight)<<(8*i);}
+    return out;
+}
+static float md_lerp(float a,float b,float w){return a+(b-a)*w;}
+static void md_mix_border(MdBorder *b,const MdBorder *a,float w) {
+    b->size=md_lerp(a->size,b->size,w);b->r=md_lerp(a->r,b->r,w);
+    b->g=md_lerp(a->g,b->g,w);b->b=md_lerp(a->b,b->b,w);b->a=md_lerp(a->a,b->a,w);
 }
 /* Geometry helpers retain their logical 256-square coordinate system. Only
  * this adapter maps it to the rectangular physical feedback surface. */
@@ -189,6 +261,12 @@ static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int 
     }
     return 1;
 }
+static int md_continue_feedback(void) {
+    sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
+    if(sceGuStart(GU_DIRECT,md_list)<0)return 0;
+    md_target(md_offset(1-md_front),MD_WIDTH,MD_WIDTH,MD_HEIGHT);
+    sceGuDisable(GU_TEXTURE_2D);sceGuDisable(GU_BLEND);return 1;
+}
 int md_start(void) {
     if (md_list) return 1;
     if (sceGeEdramGetSize() < 2*1024*1024) return 0;
@@ -233,6 +311,7 @@ void md_stop(void) {
     cave_destroy(cave_scene);cave_scene=NULL;
     cave_textures_clear();
     md_images_clear();
+    md_live_clear();
     md_fade_clear();
     sceGuTerm();
     free(md_raw_image);md_raw_image=NULL;
@@ -252,7 +331,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     int width = right - left, height = bottom - top;
     float seconds;
     MdPreset evaluated;
-    MdDecor frame_decor;
+    MdDecor frame_decor={0};
     unsigned int custom_color = 0;
     unsigned long long finished, cost;
     if (!md_list || preset < 0 || preset > 5 || preset==4) return 0;
@@ -267,6 +346,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     md_profile_begin();
     if (tv != md_last_tv || md_high_resolution!=md_last_high_resolution) {
         md_fade_clear();
+        md_live_clear();
         free(md_raw_image);md_raw_image=NULL;
         md_height=preset==5?256:md_high_resolution?512:256;
         if(tv && md_high_resolution && preset!=5) {
@@ -327,20 +407,19 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     md_profile_mark(2);
     int waveform=preset==3 && next_state.wave_mode>=0;
     int mode=waveform?next_state.wave_mode:0;
-    int script=waveform && mode==4;
-    int spiral=waveform && mode==1;
     int custom_waves=0;
     int custom_spectrum=0;
     if(preset==3) for(int i=0;i<MD_CUSTOM_WAVES;i++) custom_waves|=md_custom_preset.waves[i].enabled!=0;
     if(custom_waves) for(int i=0;i<MD_CUSTOM_WAVES;i++) custom_spectrum|=md_custom_preset.waves[i].enabled && md_custom_preset.waves[i].spectrum;
     int capture=custom_spectrum?5:custom_waves?(waveform && mode==8?4:2):waveform ? (mode==8?3:mode?2:1) : 0;
+    if(md_live)capture=5; /* One coherent PCM/FFT snapshot feeds both states. */
     if(capture!=md_wave_capture) {
         memset(md_right,0,sizeof(md_right)); memset(md_left,0,sizeof(md_left)); memset(md_spectrum,0,sizeof(md_spectrum));
         memset(md_bins_left,0,sizeof(md_bins_left)); memset(md_bins_right,0,sizeof(md_bins_right));
         md_wave_forget();
     }
     md_wave_capture=capture;
-    if(waveform || custom_waves) {
+    if(waveform || custom_waves || md_live) {
         if(level>0) {
             if(capture==5) {
                 if(md_wave_snapshot_full(md_right,md_left,md_spectrum,md_spectrum_right)) {
@@ -357,6 +436,8 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     if(custom_waves && md_eval_custom_waves(&md_custom_preset,seconds,&md_signal_state.signal,
             md_right,md_left,md_bins_left,md_bins_right,&next_state,md_custom_geometry,&md_runtime_error)!=MD_FILE_OK) return -1;
     if(preset==3) md_preset_state=next_state;
+    if(preset!=3)md_live_clear();
+    else if(!md_live_evaluate(bands,level,now))return -1;
     md_profile_mark(4);
     if (fullscreen) left = top = 0;
     md_trace("MilkDrop GPU submit");
@@ -370,13 +451,24 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     sceGuTexImage(0, MD_WIDTH, MD_HEIGHT, MD_WIDTH, md_raw_image?md_raw_image:md_texture(md_front));
     sceGuTexFunc(GU_TFX_MODULATE, GU_TCC_RGBA);
     sceGuTexFilter(GU_LINEAR, GU_LINEAR);
-    int wrap=preset==3 && !next_state.wrap ? GU_CLAMP : GU_REPEAT;
+    int wrap_state=md_live && md_live->weight<.5f?md_live->state.wrap:next_state.wrap;
+    int wrap=preset==3 && !wrap_state ? GU_CLAMP : GU_REPEAT;
     sceGuTexWrap(wrap,wrap);
     sceGuTexScale(1, 1); sceGuTexOffset(0, 0);
     sceGuTexFlush();
     mesh = sceGuGetMemory(MD_MESH_VERTICES*sizeof(*mesh));
     md_warp_mesh_varying(mesh, preset == 3 ? &evaluated : &md_presets[preset],
         preset==3 && md_custom_preset.pixel_program.count?md_pixel_points:NULL, seconds);
+    if(md_live) {
+        MdVertex *old=sceGuGetMemory(MD_MESH_VERTICES*sizeof(*old));
+        md_warp_mesh_varying(old,&md_live->warp,md_live->preset.pixel_program.count?md_live->pixels:NULL,md_live->seconds);
+        for(int i=0;i<MD_MESH_VERTICES;i++) {
+            float w=md_live->weight;
+            mesh[i].u=old[i].u+(mesh[i].u-old[i].u)*w;
+            mesh[i].v=old[i].v+(mesh[i].v-old[i].v)*w;
+            mesh[i].color=md_mix_color(old[i].color,mesh[i].color,w);
+        }
+    }
     md_expand(mesh, MD_MESH_VERTICES, 1);
     for(int i=0;i<MD_MESH_VERTICES;i++) if(!isfinite(mesh[i].u)||!isfinite(mesh[i].v)) {
         md_runtime_error.code=MD_FILE_INVALID;md_runtime_error.line=0;
@@ -385,42 +477,60 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     }
     sceGuDrawArray(GU_TRIANGLES, MD_FORMAT, MD_MESH_VERTICES, NULL, mesh);
     sceGuDisable(GU_TEXTURE_2D);
-    if(preset==3 && md_preset_state.motion[0]>0) {
+    float motion[9];memcpy(motion,md_preset_state.motion,sizeof(motion));
+    if(md_live)for(int i=0;i<9;i++)motion[i]=md_lerp(md_live->state.motion[i],motion[i],md_live->weight);
+    if(preset==3 && motion[0]>0) {
         MdVertex *vectors=sceGuGetMemory(MD_MOTION_MAX_VERTICES*sizeof(*vectors));
-        int count=md_motion_vertices(vectors,mesh,md_preset_state.motion);
+        int count=md_motion_vertices(vectors,mesh,motion);
         if(count) { md_blend(0); sceGuDisable(GU_TEXTURE_2D); sceGuDrawArray(GU_LINES,MD_FORMAT,count,NULL,vectors); }
         sceGuDisable(GU_BLEND);
     }
-    if(preset==3 && !md_shapes(md_shape_frame,(float)height/width)) {md_stop();return 0;}
+    if(md_live && (!md_shapes(&md_live->shapes,(float)height/width,md_live->images,1-md_live->weight) || !md_continue_feedback())) {md_stop();return 0;}
+    if(preset==3 && !md_shapes(md_shape_frame,(float)height/width,md_images,md_live?md_live->weight:1)) {md_stop();return 0;}
+    for(int layer=0;layer<(md_live?2:1);layer++) {
+    if(md_live && !md_continue_feedback()){md_stop();return 0;}
+    int outgoing=md_live && layer==0;
+    const MdFilePreset *wave_preset=outgoing?&md_live->preset:&md_custom_preset;
+    const MdPresetState *wave_state=outgoing?&md_live->state:&md_preset_state;
+    const MdSignal *wave_signal=outgoing?&md_live->signal.signal:&md_signal_state.signal;
+    const MdWaveGeometry *wave_geometry=outgoing?md_live->waves:md_custom_geometry;
+    float opacity=md_live?(outgoing?1-md_live->weight:md_live->weight):1;
+    float wave_seconds=outgoing?md_live->seconds:seconds;
+    MdDecor wave_decor=outgoing?md_live->decor:frame_decor;
+    unsigned wave_color=outgoing?md_live->color:custom_color;
+    int waveform=preset==3 && wave_state->wave_mode>=0;
+    int mode=waveform?wave_state->wave_mode:0,script=waveform&&mode==4,spiral=waveform&&mode==1;
+    int custom_waves=0;
+    if(preset==3)for(int i=0;i<MD_CUSTOM_WAVES;i++)custom_waves|=wave_preset->waves[i].enabled!=0;
     if(custom_waves) for(int slot=0;slot<MD_CUSTOM_WAVES;slot++) {
-        const MdCustomWave *w=&md_custom_preset.waves[slot];
-        int count=md_custom_geometry[slot].count;
+        const MdCustomWave *w=&wave_preset->waves[slot];
+        int count=wave_geometry[slot].count;
         if(!count) continue;
         MdVertex *vertices=sceGuGetMemory((w->dots?count:count*2-1)*sizeof(*vertices));
-        if(w->dots) memcpy(vertices,md_custom_geometry[slot].vertices,count*sizeof(*vertices));
-        else count=md_wave_smooth(vertices,md_custom_geometry[slot].vertices,count);
+        if(w->dots) memcpy(vertices,wave_geometry[slot].vertices,count*sizeof(*vertices));
+        else count=md_wave_smooth(vertices,wave_geometry[slot].vertices,count);
+        if(opacity<1)for(int i=0;i<count;i++)vertices[i].color=(vertices[i].color&0xffffff)|((unsigned)((vertices[i].color>>24)*opacity)<<24);
         md_expand(vertices,count,0); md_blend(w->additive!=0);
         sceGuDisable(GU_TEXTURE_2D);
         if(!md_draw_wave(w->dots?GU_POINTS:GU_LINE_STRIP,vertices,count,0,w->thick!=0)) {md_stop();return 0;}
         sceGuDisable(GU_BLEND);
     }
     if(waveform) {
-        const MdDecor *d=&frame_decor;
-        float wave_scale=fminf(100,fmaxf(-100,md_custom_preset.wave_scale));
+        const MdDecor *d=&wave_decor;
+        float wave_scale=fminf(100,fmaxf(-100,wave_preset->wave_scale));
         ring=sceGuGetMemory(MD_WAVE_MAX_VERTICES*sizeof(*ring));
-        float alpha=md_wave_opacity(d,mode,md_signal_state.signal.values[7],
-            md_signal_state.signal.values[8],md_signal_state.signal.values[9]);
-        float r=(custom_color&255)/255.0f,g=((custom_color>>8)&255)/255.0f,b=((custom_color>>16)&255)/255.0f;
+        float alpha=md_wave_opacity(d,mode,wave_signal->values[7],wave_signal->values[8],wave_signal->values[9])*opacity;
+        float r=(wave_color&255)/255.0f,g=((wave_color>>8)&255)/255.0f,b=((wave_color>>16)&255)/255.0f;
         if(d->wave_brighten) {float peak=r>g?r:g; if(b>peak) peak=b; if(peak>0) {r/=peak;g/=peak;b/=peak;}}
         int wave_count=MD_WAVE_VERTICES,split=0;
         if(script) wave_count=md_wave_script(ring,md_right,md_left,wave_scale,
-                                            md_custom_preset.wave_smoothing,md_rgba(r,g,b,alpha),d);
+                                            wave_preset->wave_smoothing,md_rgba(r,g,b,alpha),d);
         else if(spiral) wave_count=md_wave_spiral(ring,md_right,md_left,wave_scale,
-                         md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
+                         wave_preset->wave_smoothing,wave_seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         else if(mode) wave_count=md_wave_extra(ring,mode,md_right,md_left,md_spectrum,wave_scale,
-                          md_custom_preset.wave_smoothing,seconds,(float)height/width,md_rgba(r,g,b,alpha),d,&split);
-        else md_wave_circle_style(ring,md_right,wave_scale,md_custom_preset.wave_smoothing,
-                       seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
+                          wave_preset->wave_smoothing,wave_seconds,(float)height/width,md_rgba(r,g,b,alpha),d,&split);
+        else md_wave_circle_style(ring,md_right,wave_scale,wave_preset->wave_smoothing,
+                       wave_seconds,(float)height/width,md_rgba(r,g,b,alpha),d);
         md_expand(ring, wave_count, 0);
         /* Finite offscreen coordinates are clipped before GU conversion. */
         for(int i=0;i<wave_count;i++) if(!isfinite(ring[i].x)||!isfinite(ring[i].y)) {
@@ -438,12 +548,24 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         md_audio_ring(ring, bands, level, seconds, preset);
         md_expand(ring, 97, 0);
         if (preset == 3) {
-            for (int i = 0; i < 97; i++) ring[i].color = custom_color;
+            for (int i = 0; i < 97; i++) ring[i].color = (wave_color&0xffffff)|((unsigned)((wave_color>>24)*opacity)<<24);
         }
+        if(opacity<1)md_blend(0);
         sceGuDrawArray(GU_LINE_STRIP, MD_FORMAT, 97, NULL, ring);
+        sceGuDisable(GU_BLEND);
+    }
+    }
+    const float *effects=md_live && md_live->weight<.5f?md_live->state.effects:md_preset_state.effects;
+    if(md_live) {
+        const MdDecor *old=&md_live->decor;float w=md_live->weight;
+        frame_decor.gamma=md_lerp(old->gamma,frame_decor.gamma,w);
+        frame_decor.echo_zoom=md_lerp(old->echo_zoom,frame_decor.echo_zoom,w);
+        frame_decor.echo_alpha=md_lerp(old->echo_alpha,frame_decor.echo_alpha,w);
+        if(w<.5f)frame_decor.echo_orient=old->echo_orient;
+        md_mix_border(&frame_decor.outer,&old->outer,w);md_mix_border(&frame_decor.inner,&old->inner,w);
     }
     if(preset==3) {
-        if(md_preset_state.effects[0]) md_darken_center((float)height/width);
+        if(effects[0]) md_darken_center((float)height/width);
         md_border(&frame_decor.outer,0);
         md_border(&frame_decor.inner,frame_decor.outer.size);
     }
@@ -464,14 +586,15 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     const MdDecor *d=&frame_decor;
     float shade[4][3];
     const float (*shading)[3]=NULL;
-    if(preset==3 && md_custom_preset.shader_amount>.001f) {
+    float shader_amount=md_live?md_lerp(md_live->preset.shader_amount,md_custom_preset.shader_amount,md_live->weight):md_custom_preset.shader_amount;
+    if(preset==3 && shader_amount>.001f) {
         md_shader_colors(shade,(float)(now-md_shader_epoch)/1000000,
-                         md_custom_preset.shader_amount,md_shader_phase);
+                         shader_amount,md_shader_phase);
         shading=shade;
     }
     md_present(0,0,MD_WIDTH,MD_HEIGHT,preset==3?d->gamma:1,
         preset==3?d->echo_zoom:1,preset==3?d->echo_alpha:0,preset==3?(int)d->echo_orient:0,shading);
-    if(preset==3) md_image_effects(md_preset_state.effects);
+    if(preset==3) md_image_effects(effects);
     if(md_fade_image) {
         unsigned long long elapsed=now-md_fade_start;
         if(preset!=3 || elapsed>=(unsigned long long)md_fade_ms*1000) md_fade_clear();

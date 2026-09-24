@@ -8,10 +8,12 @@ static void md_blend(int additive) {
     sceGuEnable(GU_BLEND);
     sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,additive?GU_FIX:GU_ONE_MINUS_SRC_ALPHA,0,additive?0xffffff:0);
 }
-static int md_shapes(const MdShapeFrame *shapes,float aspect) {
+static int md_shapes(const MdShapeFrame *shapes,float aspect,const MdImage *images,float opacity) {
     int submitted=0;
     for(int slot=0;slot<MD_SHAPES;slot++) for(int instance=0;instance<shapes->count[slot];instance++) {
-        const MdShape *p=&shapes->shapes[slot][instance];
+        MdShape faded=shapes->shapes[slot][instance];
+        faded.a*=opacity;faded.a2*=opacity;faded.border_a*=opacity;
+        const MdShape *p=&faded;
         if(!p->enabled) continue;
         int sides=md_shape_sides(p->sides);
         if(!sides)continue;
@@ -50,7 +52,7 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect) {
             sceGuEnable(GU_TEXTURE_2D);
             /* Original fixed-function shapes take alpha from vertex color,
              * not the feedback texture's alpha channel. */
-            const MdImage *image=&md_images[slot];
+            const MdImage *image=&images[slot];
             if(image->pixels) {
                 for(int j=0;j<count;j++) {
                     v[j].u*= (float)image->width/MD_WIDTH;

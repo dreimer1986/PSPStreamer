@@ -87,7 +87,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="SQUARE: automatic preset mode",
         .step2_text="Off, sequential, random or rated.",
         .step3_title="TRIANGLE: change the interval",
-        .step3_text="SELECT: extra switch options."
+        .step3_text="SELECT: live fades and cut options."
     },
     [HELP_PAGE_FLIGHT]={
         .title="Cave: take the controls",

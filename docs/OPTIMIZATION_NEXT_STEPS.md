@@ -121,7 +121,11 @@ PSP profiling is explicitly deferred until the next session. Compare identical
 presets, resolution, clock and audio source; include Wave-Budget, Cauldron and a
 memory-heavy preset. Separate formula, geometry, GPU wait, UI and network costs.
 Use these observations to choose among the candidates above. Live dual-preset
-transitions remain deferred until sufficient CPU/RAM headroom is demonstrated.
+transitions now have an optional shaderless implementation: two independent
+formula states, blended warp grids and weighted geometry on shared feedback.
+The outgoing context is about 937 KiB plus bytecode/assets, without another
+framebuffer. Allocation failure keeps the snapshot fallback. Hardware evaluation
+of visual rate and uninterrupted audio during heavy overlaps remains necessary.
 
 The previous artwork/navigation and normal playback validation checklist has
 been closed by the user's test confirmation. Further profiling is optional;

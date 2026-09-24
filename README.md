@@ -674,6 +674,7 @@ music_preset=active.milk
 preset_auto=0
 preset_seconds=60
 preset_fade_ms=1500
+preset_live_transitions=1
 milkdrop_high_resolution=1
 volume=24
 shuffle=0
@@ -745,6 +746,10 @@ MilkDrop automation: `preset_auto=0` disables automatic changes (default);
 `1` selects in order, `2` randomly and `3` randomly weighted by each preset's
 `fRating`. `preset_seconds` accepts 30–600 seconds (default 60).
 `preset_fade_ms` accepts 0–5000 (default 1500; 0 means a hard cut).
+`preset_live_transitions=1` (default) keeps both presets running during automatic
+soft changes. Set it to `0` for the cheaper snapshot fade. In music, open the
+MilkDrop preset list with Circle, then Select for **Live transitions**.
+Manual selection from the stopped preset browser still starts a fresh renderer.
 
 `milkdrop_high_resolution=1` selects 512×512 feedback (default); `0` restores
 the faster 512×256 mode, including the original 32-bit LCD feedback. Change it
@@ -945,8 +950,25 @@ These settings are saved in the existing `pspstreamer.cfg`:
 
 MilkDrop's four new options are available with Select inside the playing-music
 preset list. Automatic mode must be enabled for timed or hard-cut switches.
-Existing interval/fade controls remain; ordinary transitions still use a snapshot
-fade, not two simultaneously running presets. No new resolution options were added.
+Existing interval/fade controls remain. Automatic soft transitions now evaluate
+both presets, blend their warp grids with cosine easing and crossfade their live
+waves and shapes on shared feedback, following the shaderless MilkDrop approach.
+Echo, gamma, borders, motion vectors and legacy color shading blend too; discrete
+effects switch at the midpoint. These are uniform transitions, not shader-based
+or spatial wipe patterns. Hard cuts remain immediate.
+
+The outgoing state costs about 937 KiB plus its retained bytecode and texture
+assets; it does not require another full-screen buffer. Allocation failure falls
+back to the existing snapshot fade. Formula and asset errors are still reported.
+During demanding transitions, visual frame rate may fall; audio clocks, decoding
+and renderer idle/yield rules are unchanged. The old state is released at fade
+completion, stop, hard cut, another preset replacement or an output-layout rebuild.
+
+For a clear hardware test, choose `live-transition-test/01 - Amber orbit.milk`,
+set automatic mode to sequential and the interval to 30 seconds. The catalog uses
+the selected folder, so these two fixtures alternate. Keep hard cuts off.
+The amber polygon and cyan wave should continue moving during the overlap.
+For a longer inspection, set `preset_fade_ms=4000` before starting the app.
 
 Use Up/Down to reach the second page of Cave settings (speed, inverted flight,
 flight sensitivity and inertia). The flight defaults are deliberately gentle;
@@ -1109,7 +1131,7 @@ The completed [wave/transform range package](docs/MILKDROP_GEOMETRY_RANGES.md)
 has one combined hardware test: `geometry-range-demo.milk`.
 The next batch adds up to eight instances per shape, 512-point custom waves,
 read-only `instance`/`instances`/`progress` inputs, optional ordered/random/rated
-preset cycling, playlists and snapshot-to-live crossfades. Try
+preset cycling, playlists and live shaderless transitions (optional snapshot fallback). Try
 `shape-instances-demo.milk` and `large-wave-demo.milk`; details and resource
 limits are in the [automation guide](docs/MILKDROP_AUTOMATION.md).
 See [supported fields, time formulas and limits](docs/MILKDROP_PRESETS.md).

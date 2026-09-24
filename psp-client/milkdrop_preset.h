@@ -70,4 +70,6 @@ int md_eval_pixel_grid(const MdFilePreset *preset, const MdPreset *frame, float 
  * copies of owners. Successful replacement frees old code; failure preserves it. */
 void md_free_preset(MdFilePreset *preset);
 int md_load_preset(const char *path, MdFilePreset *out, MdFileError *error);
+/* PSP renderer: transactional load, optionally retain the outgoing live state. */
+int md_load_transition(const char *path,unsigned int fade_ms,MdFileError *error);
 #endif

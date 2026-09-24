@@ -22,6 +22,7 @@ void md_audio_ring(MdVertex *vertices, const unsigned char bands[12],
 int md_start(void);
 /* Applied by md_frame at a synchronized buffer rebuild; no app restart. */
 extern int md_high_resolution;
+extern int md_live_transitions;
 /* Snapshot the previous presentation, restart custom state, fade into the new preset. */
 void md_begin_preset(unsigned int fade_ms);
 void md_stop(void);

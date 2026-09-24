@@ -1,0 +1,25 @@
+// Original PSPStreamer fixture: the amber polygon keeps orbiting while fading.
+[preset00]
+fRating=4
+nWaveMode=0
+fWaveAlpha=0.7
+wave_r=1
+wave_g=0.55
+wave_b=0.1
+fDecay=0.94
+zoom=1.009
+per_frame_1=rot=.012*sin(time*.5);wave_x=.5+.12*sin(time);wave_y=.5+.12*cos(time);
+per_pixel_1=dx=.003*sin(time+rad*4);
+shapecode_0_enabled=1
+shapecode_0_sides=5
+shapecode_0_rad=.13
+shapecode_0_r=1
+shapecode_0_g=.45
+shapecode_0_b=.05
+shapecode_0_a=.9
+shapecode_0_r2=1
+shapecode_0_g2=.8
+shapecode_0_b2=.1
+shapecode_0_a2=.25
+shapecode_0_border_a=.8
+shape_0_per_frame1=x=.5+.25*sin(time*2);y=.5+.22*cos(time*2);ang=time;

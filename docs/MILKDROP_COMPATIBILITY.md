@@ -100,7 +100,8 @@ independent of these non-shader parameters.
 * Init/frame/pixel/shape/wave formulas, q1–q32, local t1–t8 where applicable,
   persistent named variables, global reg00–reg99 and memory buffers.
 * Preset browser, saved selection, ordered/random/rating-weighted automation,
-  playlists, snapshot-to-live fades, embedded/fullscreen LCD and TV layouts.
+  playlists, live automatic soft transitions with an optional snapshot fallback,
+  embedded/fullscreen LCD and TV layouts.
 
 The new expression batch adds the remaining public function/operator families
 of the supplied MilkDrop 2 NS-EEL reference, without implementing shaders.
@@ -230,8 +231,12 @@ context; native point/instance loops are not resized by these assignments.
 For the expanded compiler and geometry limits, see the
 [parser and density batch](MILKDROP_PARSER_DENSITY.md) and try
 `extended-formula-demo.milk`, `dense-wave-demo.milk`, `fine-mesh-demo.milk`.
-Audio analysis is normalized for this player. The renderer retains
-snapshot transitions rather than running two full preset engines simultaneously.
+Audio analysis is normalized for this player. Automatic soft transitions evaluate
+both presets and blend their meshes on shared feedback, with live shape/wave
+crossfades. Primary waves crossfade rather than morphing matching vertices;
+desktop spatial transition wipes and shader transitions are not implemented.
+Snapshot fades remain available as an option and allocation fallback. See
+[live transitions](MILKDROP_LIVE_TRANSITIONS.md) for costs and test instructions.
 The legacy `fShader` hue effect uses the Desktop no-shader corner-color equations
 and GU interpolated vertex colors (strength clamped to 0–1). It reuses the
 existing echo/gamma composition passes, without another buffer or drawing pass.

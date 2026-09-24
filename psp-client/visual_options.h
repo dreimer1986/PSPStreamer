@@ -21,6 +21,7 @@ static VisualOption visual_options[]={
     {"cave_noise",TXT_CAVE_NOISE,&cave_options.noise,0,16,1},
     {"cave_flight_sensitivity",TXT_CAVE_FLIGHT_SENSITIVITY,&cave_options.flight_sensitivity,10,100,5},
     {"cave_flight_inertia",TXT_CAVE_FLIGHT_INERTIA,&cave_options.flight_inertia,0,100,5},
+    {"preset_live_transitions",TXT_PRESET_LIVE,&md_live_transitions,0,1,1},
     {"preset_random_seconds",TXT_PRESET_RANDOM,&preset_random_seconds,0,120,5},
     {"preset_hard_cuts",TXT_PRESET_HARD,&preset_hard_cuts,0,1,1},
     {"preset_hard_threshold",TXT_PRESET_THRESHOLD,&preset_hard_threshold,125,400,10},
