@@ -153,7 +153,7 @@ int md_load_transition(const char *path,unsigned int fade_ms,MdFileError *error)
         sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);
         previous->preset=md_custom_preset; /* Move bytecode ownership, not clone. */
         memset(&md_custom_preset,0,sizeof(md_custom_preset));
-        previous->state=md_preset_state;previous->signal=md_signal_state;
+        md_copy_preset_state(&previous->state,&md_preset_state);previous->signal=md_signal_state;
         previous->capture=md_capture_needed(&previous->preset,previous->preset.wave_mode);
         /* Frame formulas may select any primary wave. Cache this scan once;
          * preserve incoming-then-outgoing EEL global-memory evaluation order. */
@@ -412,7 +412,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         }
         md_signal_active = 1;
         md_signal_update(&md_signal_state, bands, level, now);
-        next_state=md_preset_state;
+        md_copy_preset_state(&next_state,&md_preset_state);
         md_trace("MilkDrop frame/shape formulas");
         if (md_eval_preset_shapes(&md_custom_preset, seconds, &md_signal_state.signal,
                                   &next_state, &evaluated, &custom_color, &frame_decor, &md_runtime_error,md_shape_frame) != MD_FILE_OK)
@@ -450,7 +450,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     md_trace("MilkDrop custom waves");
     if(custom_waves && md_eval_custom_waves(&md_custom_preset,seconds,&md_signal_state.signal,
             md_right,md_left,md_bins_left,md_bins_right,&next_state,md_custom_geometry,&md_runtime_error)!=MD_FILE_OK) return -1;
-    if(preset==3) md_preset_state=next_state;
+    if(preset==3) md_copy_preset_state(&md_preset_state,&next_state);
     if(preset!=3)md_live_clear();
     else if(!md_live_evaluate(bands,level,now))return -1;
     md_profile_mark(4);

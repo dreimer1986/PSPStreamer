@@ -42,6 +42,9 @@ typedef struct { int ready; float q[PM_Q_COUNT], user[PM_USER_COUNT], frame_q[PM
     float pixel_user[PM_USER_COUNT],monitor;
     int wrap;
 } MdPresetState;
+/* Preserve logical state, copying only resident VM pages. Both states must
+ * be initialized (zero is valid); inactive physical VM storage is not state. */
+void md_copy_preset_state(MdPresetState *to,const MdPresetState *from);
 enum { MD_FILE_OK, MD_FILE_MISSING, MD_FILE_INVALID, MD_FILE_UNSUPPORTED, MD_FILE_IO };
 typedef struct { int code, line; char key[40]; } MdFileError;
 extern MdFilePreset md_custom_preset;

@@ -15,6 +15,13 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect,const MdImage *imag
         faded.a*=opacity;faded.a2*=opacity;faded.border_a*=opacity;
         const MdShape *p=&faded;
         if(!p->enabled) continue;
+        unsigned int border_color=md_shape_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
+        int fill_visible=(md_shape_rgba(p->r,p->g,p->b,p->a)>>24) ||
+                         (md_shape_rgba(p->r2,p->g2,p->b2,p->a2)>>24);
+        int border_visible=p->border_a>0 && (border_color>>24);
+        /* Formula state has already advanced. Zero-alpha layers cannot alter
+         * feedback, including additive drawing; keep visible borders alone. */
+        if(!fill_visible && !border_visible)continue;
         int sides=md_shape_sides(p->sides);
         if(!sides)continue;
         MdVertex source[MD_SHAPE_SIDES+2];
@@ -80,8 +87,7 @@ static int md_shapes(const MdShapeFrame *shapes,float aspect,const MdImage *imag
             memcpy(fill,v,count*sizeof(*fill));
             sceGuDrawArray(GU_TRIANGLE_FAN,MD_FORMAT,count,NULL,fill);
         }
-        unsigned int border_color=md_shape_rgba(p->border_r,p->border_g,p->border_b,p->border_a);
-        if(p->border_a>0 && (border_color>>24)) {
+        if(border_visible) {
             int passes=p->thick_outline!=0?4:1;
             /* Four one-feedback-texel offsets, following MilkDrop 2's
              * fixed-function border. Its positive D3D y is upward; our GU

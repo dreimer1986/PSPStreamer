@@ -102,6 +102,25 @@ associated ToDo test item. No per-scenario timing measurements were supplied.
 
 ## Remaining candidates (not measured speed guarantees)
 
+### Completed: sparse renderer transactions and invisible shape submissions
+
+The incoming renderer frame transaction and outgoing-transition retention now
+use `md_copy_preset_state`, which copies all logical fields but only resident VM
+pages via the existing sparse runtime copier. Failed evaluation still leaves the
+committed incoming state untouched. RNG seeds, fill defaults and stale destination
+page maps are preserved/replaced correctly. With all 14 local runtimes empty,
+two per-frame copies avoid 1,032,192 bytes of memory/map copying (about 0.98 MiB).
+Dense-memory presets save less; this is traffic reduction, not an FPS promise.
+
+Custom shapes whose quantized fill and outline alpha are both zero skip geometry
+and submission. Shapes with visible outlines keep their existing rendering path
+and draw order. Formula evaluation and asset-error reporting
+are unchanged. No synchronization barrier or renderer work budget is removed.
+
+PSP build precedes targeted sparse-copy, live-transition and GU ownership tests.
+The sparse-copy check compares against full copies with empty, populated and
+maximum-resident memories, stale-page removal and self-copy. No collection sweep.
+
 The live-transition follow-up removes the second expanded warp mesh from the GU
 list and blends unique grid points (289 instead of 1,536 corners). Audio capture
 uses the requirements of both presets, avoiding stereo FFTs on PCM-only fades.

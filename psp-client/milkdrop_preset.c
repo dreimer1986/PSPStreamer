@@ -20,6 +20,17 @@ static void md_copy_wave_state(MdWaveState *to,const MdWaveState *from) {
     memcpy(to->point_user,from->point_user,sizeof(to->point_user));
     pm_runtime_copy(&to->point_runtime,&from->point_runtime);
 }
+void md_copy_preset_state(MdPresetState *to,const MdPresetState *from) {
+    if(to==from)return;
+    memcpy(to,from,offsetof(MdPresetState,shape));
+    for(int i=0;i<MD_SHAPES;i++)md_copy_shape_state(&to->shape[i],&from->shape[i]);
+    for(int i=0;i<MD_CUSTOM_WAVES;i++)md_copy_wave_state(&to->waves[i],&from->waves[i]);
+    memcpy(to->effects,from->effects,sizeof(to->effects));
+    pm_runtime_copy(&to->runtime,&from->runtime);
+    pm_runtime_copy(&to->pixel_runtime,&from->pixel_runtime);
+    memcpy(to->pixel_user,from->pixel_user,sizeof(to->pixel_user));
+    to->monitor=from->monitor;to->wrap=from->wrap;
+}
 /* A frame transaction owns main/shape state, not the independent wave and
  * pixel VMs. Avoid copying those large contexts twice on every visual frame.
  * Keep the transaction: failure must still leave committed state untouched. */

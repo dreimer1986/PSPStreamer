@@ -400,7 +400,44 @@ static void *test_calloc(size_t n,size_t size) {
 /* GU_ADAPTER */
 #undef memalign
 #undef calloc
+static void test_sparse_preset_copy(void) {
+    static MdPresetState source,destination,reference;
+    PmRuntime *a[14],*b[14],*c[14];int count=0;
+    a[count]=&source.runtime;b[count]=&destination.runtime;c[count++]=&reference.runtime;
+    a[count]=&source.pixel_runtime;b[count]=&destination.pixel_runtime;c[count++]=&reference.pixel_runtime;
+    for(int i=0;i<MD_SHAPES;i++){a[count]=&source.shape[i].runtime;b[count]=&destination.shape[i].runtime;c[count++]=&reference.shape[i].runtime;}
+    for(int i=0;i<MD_CUSTOM_WAVES;i++) {
+        a[count]=&source.waves[i].frame.runtime;b[count]=&destination.waves[i].frame.runtime;c[count++]=&reference.waves[i].frame.runtime;
+        a[count]=&source.waves[i].point_runtime;b[count]=&destination.waves[i].point_runtime;c[count++]=&reference.waves[i].point_runtime;
+        source.waves[i].point_user[i]=17+i;source.waves[i].frame.t[i]=3+i;
+        source.shape[i].ready=1;source.shape[i].user[i]=27+i;
+    }
+    source.ready=1;source.frames=99;source.monitor=3;source.wrap=1;source.pixel_user[255]=7;
+    source.effects[4]=.7f;source.motion[8]=.8f;source.q[31]=1;source.user[255]=2;
+    for(int pass=0;pass<3;pass++) {
+        for(int i=0;i<count;i++) {
+            memset(a[i],0,sizeof(*a[i]));
+            a[i]->random=123+i;a[i]->fill_count=1;a[i]->fills[0]=(PmFill){200,250,3};
+            a[i]->page_count=pass==1?0:pass==2?32:1;
+            for(int p=0;p<a[i]->page_count;p++) {
+                a[i]->keys[p]=p+30;a[i]->pages[p+30]=p+1;
+                for(int j=0;j<PM_GLOBAL_PAGE_SIZE;j++)a[i]->memory[p*PM_GLOBAL_PAGE_SIZE+j]=i+j+p;
+            }
+        }
+        reference=source;
+        md_copy_preset_state(&destination,&source);
+        md_copy_preset_state(&destination,&destination);
+        for(int i=0;i<count;i++) {
+            /* Unused physical pages are deliberately not observable state. */
+            size_t used=b[i]->page_count*PM_GLOBAL_PAGE_SIZE;
+            memset(b[i]->memory+used,0,(PM_MEMORY-used)*sizeof(float));
+            memset(c[i]->memory+used,0,(PM_MEMORY-used)*sizeof(float));
+        }
+        assert(!memcmp(&destination,&reference,sizeof(reference)));
+    }
+}
 int main(int argc,char **argv) {
+    test_sparse_preset_copy();
     assert(argc==40 || argc==41 || (argc==4 && !strcmp(argv[1],"--live")) || (argc==2 && (!strcmp(argv[1],"--cave") || !strcmp(argv[1],"--cave-textures"))));
     md_profile_reset(1);
     md_profile_select("host render integration",0,0,3);
@@ -424,6 +461,16 @@ int main(int argc,char **argv) {
             expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
             assert(md_load_preset(argv[2],&md_custom_preset,&error)==MD_FILE_OK);
             for(int frame=0;frame<3;frame++){test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);}
+            {
+                MdShapeFrame *hidden=calloc(1,sizeof(*hidden));assert(hidden);
+                hidden->count[0]=1;
+                hidden->shapes[0][0]=(MdShape){.enabled=1,.sides=64,.rad=.4f,.x=.5f,.y=.5f};
+                assert(sceGuStart(GU_DIRECT,md_list)>=0);
+                assert(md_shapes(hidden,1,md_images,1) && list_used==0);
+                hidden->shapes[0][0].a=hidden->shapes[0][0].border_a=1;
+                assert(md_shapes(hidden,1,md_images,0) && list_used==0);
+                sceGuFinish();sceGuSync(GU_SYNC_FINISH,GU_SYNC_WHAT_DONE);free(hidden);
+            }
             unsigned old_frames=md_preset_state.frames;
             void *code=md_custom_preset.program.code;
             assert(md_load_transition(argv[3],500,&error)==MD_FILE_OK);
