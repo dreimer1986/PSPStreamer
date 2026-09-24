@@ -2,6 +2,11 @@
 
 ## Hardware feedback and closed test items
 
+The user also confirmed the final expression-chain/geometry-batching PSP test
+and server 0.1.51 / HACS integration 0.1.2 validation as successful. Both test
+reminders have been removed from the active ToDo. This confirms functionality,
+not a measured frame-rate gain or every possible heavy-preset combination.
+
 The user confirmed the former ToDo items 4–7 as tested: raster-variable
 optimization, sparse state copies, the server 0.1.48 artwork/TV/UI batch and
 the direct AVCC path. They remain functional, without a major additional
