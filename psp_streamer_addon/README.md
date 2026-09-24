@@ -4,6 +4,15 @@
 
 Exposes Home Assistant's `/media` directory read-only on port 8091 for the PSP client.
 
+Version **0.1.51** adds DLNA discovery/manual device-description URLs, Plex/Jellyfin
+version folders and external text/single-file PGS subtitles for streaming and
+downloads. The existing PSP client works unchanged. Settings remain in `/data`.
+The app now uses **host networking** for SSDP multicast. The **port** app option
+sets the actual host port; Docker port mappings no longer apply. Avoid conflicts.
+If an integration/proxy used a container-only DNS name, use the HA host address
+instead. Discovery searches the HA network, not the PSP hotspot; manual URLs can
+cross routed networks. See the main README for supported formats and limits.
+
 Version **0.1.50** stores Plex/Jellyfin connections, source settings and server
 identity in persistent `/data`, just like radio and the download queue. Updates
 keep this data; uninstalling/removing app data does not. Password/port/TLS options

@@ -209,7 +209,7 @@ class OfflineQueue:
             raise ValueError('Media inspection/subtitle extraction failed')
         return output
 
-    def _subtitles(self, job, source, probe, folder):
+    def _subtitles(self, job, source, probe, folder, external=None):
         from .plex_media import RemoteSource
         """OVL1: uint32 JSON length, compact cue JSON, then indexed PGS sprites."""
         track = job['subtitle']
@@ -221,7 +221,7 @@ class OfflineQueue:
             from .server import TEXT_SUBTITLE_CODECS, BITMAP_SUBTITLE_CODECS
             codec = streams[track]['codec_name']
             if codec in TEXT_SUBTITLE_CODECS:
-                text = (self.library.jellyfin.text_subtitle(job['id'], track)
+                text = external[1].decode('utf-8-sig',errors='replace') if external else (self.library.jellyfin.text_subtitle(job['id'], track)
                         if job['id'].startswith('jellyfin.') and self.library.jellyfin else None)
                 if text is None:
                     data = self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map',
@@ -234,10 +234,12 @@ class OfflineQueue:
                     # fetching. Never silently truncate downloaded subtitles.
                     payload['c'] = []
                     burn = track
-            elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
+            elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (external or isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
                 from .pgs import parse_pgs
                 sup = folder / 'extract.sup'
-                if isinstance(source, RemoteSource):
+                if external:
+                    sup.write_bytes(external[1])
+                elif isinstance(source, RemoteSource):
                     self._capture(['ffmpeg', '-v', 'error', '-i', str(source), '-map', f'0:s:{track}',
                                    '-c:s', 'copy', '-f', 'sup', str(sup)], job, 600)
                 else:
@@ -277,6 +279,9 @@ class OfflineQueue:
         if audio and job['audio'] >= len(audio):
             raise ValueError('Selected audio track does not exist')
         job['audio_label'] = audio[job['audio']].get('tags', {}).get('language', 'und') if audio else 'none'
+        from .external_subtitles import tracks, payload as external_payload
+        external=external_payload(self.library,job['id'],job['subtitle'],source,probe)
+        probe['streams'] += tracks(self.library,job['id'])
         subtitles = [s for s in probe['streams'] if s.get('codec_type') == 'subtitle']
         job['subtitle_label'] = (subtitles[job['subtitle']].get('tags', {}).get('language', 'und')
                                  if 0 <= job['subtitle'] < len(subtitles) else 'off')
@@ -289,11 +294,16 @@ class OfflineQueue:
                        artist=display_text(tags.get('artist') or tags.get('album_artist')))
         if shutil.disk_usage(folder).free < 32 * 1024 * 1024:
             raise ValueError('Insufficient server disk space')
-        burn = self._subtitles(job, source, probe, folder)
+        burn = self._subtitles(job, source, probe, folder, external)
         from .server import BITMAP_SUBTITLE_CODECS
         bitmap = burn >= 0 and subtitles[burn]['codec_name'] in BITMAP_SUBTITLE_CODECS
+        sidecar=None
+        if external and burn>=0:
+            sidecar=folder/('burn.sup' if bitmap else 'burn.srt')
+            sidecar.write_bytes(external[1])
         command = self.command_builder(source, job['audio'], 'mp3' if music else 'flv', job['profile'] == 'low',
-                                      burn, job['audio_quality'], None, 0, bitmap, job['profile'] == 'tv', job['video_fps'])
+                                      burn, job['audio_quality'], sidecar, 0, bitmap, job['profile'] == 'tv', job['video_fps'],
+                                      **({'external_subtitle':True} if sidecar else {}))
         if '-re' in command:
             command.remove('-re')
         if '-readrate_initial_burst' in command:

@@ -1,0 +1,22 @@
+# Alternative Compose deployment for SSDP discovery on Linux:
+# docker compose -f compose.dlna.yaml up -d --build
+# Run from this repository, preserving the same project name and data volume.
+services:
+  psp-streamer:
+    build: .
+    network_mode: host
+    environment:
+      MEDIA_ROOTS: /media
+      MAX_TRANSCODES: "4"
+      PSP_STREAMER_PASSWORD: "${PSP_STREAMER_PASSWORD:-}"
+      PSP_STREAMER_SETTINGS_DIR: /data
+      PSP_STREAMER_TLS_CERT: "${PSP_STREAMER_TLS_CERT:-}"
+      PSP_STREAMER_TLS_KEY: "${PSP_STREAMER_TLS_KEY:-}"
+      PORT: "${PSP_STREAMER_PORT:-8091}"
+    volumes:
+      - streamer-settings:/data
+      - ${MEDIA_ROOT_PATH:-/media}:/media:ro
+    restart: unless-stopped
+
+volumes:
+  streamer-settings:

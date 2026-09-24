@@ -135,12 +135,16 @@ class Library:
         self.roots = roots
         self.plex = None
         self.jellyfin = None
+        self.dlna = None
 
     def encode(self, item: MediaItem) -> str:
         raw = json.dumps({"r": item.root, "p": item.relative}, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
     def decode(self, token: str) -> tuple[MediaItem, Path | RemoteSource]:
+        if token.startswith('dlna.') and self.dlna:
+            source = self.dlna.source(token)
+            return MediaItem(-1,source.name),source
         if token.startswith('jellyfin.') and self.jellyfin:
             source = self.jellyfin.source(token)
             if source.suffix.lower() not in MEDIA_EXTENSIONS:
@@ -178,6 +182,8 @@ class Library:
         Video stops at the folder's end. Music may shuffle, excluding the
         current file.
         """
+        if token.startswith('dlna.') and self.dlna:
+            return self.dlna.next_media(token,shuffle,previous)
         if token.startswith('plex.') and self.plex:
             return self.plex.next_media(token, shuffle, previous)
         if token.startswith('jellyfin.') and self.jellyfin:
@@ -250,7 +256,7 @@ class Library:
 def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
                    subtitle_track: int = -1, audio_bitrate: str = "160k", subtitle_source: Path | None = None,
                    start_seconds: float = 0, bitmap_subtitle: bool = False,
-                   tv_output: bool = False, video_fps: str = "20") -> list[str]:
+                   tv_output: bool = False, video_fps: str = "20", external_subtitle: bool = False) -> list[str]:
     """Conservative AVC/AAC profile for a PSP-3000 over an 802.11b LAN."""
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
@@ -290,7 +296,7 @@ def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, containe
             # Subtitle-to-video can end far beyond the last real video frame.
             # Do not let that secondary timeline extend the main picture.
             # shortest=1 would instead cut off episodes with short sub tracks.
-            bitmap_filter = f"[0:v:0][0:s:{subtitle_track}]overlay=eof_action=pass:repeatlast=0,{video_filter}[v]"
+            bitmap_filter = f"[0:v:0][{'1:s:0' if external_subtitle else '0:s:'+str(subtitle_track)}]overlay=eof_action=pass:repeatlast=0,{video_filter}[v]"
         elif subtitle_track >= 0:
             # ffmpeg's subtitles filter burns the chosen embedded subtitle
             # into the small PSP frame, avoiding any client-side renderer.
@@ -303,12 +309,13 @@ def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, containe
             # crawl the complete host font catalogue made PSP startup appear
             # frozen for tens of seconds.
             fonts_dir = os.environ.get("FFMPEG_FONTS_DIR", "/usr/share/fonts/truetype/dejavu")
-            video_filter = f"subtitles='{escaped}':si={subtitle_track}:fontsdir='{fonts_dir}',{video_filter}"
+            video_filter = f"subtitles='{escaped}':si={0 if external_subtitle else subtitle_track}:fontsdir='{fonts_dir}',{video_filter}"
         command = [
             # Deliver the opening seconds at disk speed.  This hides libass
             # setup and creates a small TCP runway; after two seconds -re
             # resumes the normal real-time rate.
             "ffmpeg", "-hide_banner", "-loglevel", "error", *( ["-ss", f"{start_seconds:.3f}"] if start_seconds else [] ), "-re", "-readrate_initial_burst", "2", "-i", str(source),
+            *([*(["-ss", f"{start_seconds:.3f}"] if start_seconds else []), "-i",str(subtitle_source)] if external_subtitle and bitmap_filter else []),
             "-map", "[v]" if bitmap_filter else "0:v:0",
             # Main/CABAC compatibility test: keep packet PTS in display order
             # with no B-frames, and retain unweighted P prediction.
@@ -507,6 +514,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.plex.details(parsed.path.rsplit('/', 1)[-1]))
             if parsed.path == '/api/radio':
                 return self.send_json(self.server.radio.list())
+            if parsed.path == '/api/dlna':
+                return self.send_json(self.server.dlna.public())
             if parsed.path.startswith('/api/radio/status/'):
                 return self.send_json(self.server.radio.status(parsed.path.rsplit('/', 1)[-1]))
             if parsed.path == '/api/offline/preferences':
@@ -542,6 +551,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
                     self.server.stream_pauses.report(self.client_address[0], media[0],
                         query['state'][0] == 'paused')
+                    if media[0].startswith('dlna.') and self.server.dlna.bridge:
+                        self.server.dlna.bridge.report_pause(media[0],query['state'][0]=='paused')
                     provider = (self.server.jellyfin if media[0].startswith('jellyfin.') else
                                 self.server.plex if media[0].startswith('plex.') else None)
                     if provider and provider.media_bridge:
@@ -671,6 +682,18 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.web_sessions.revoke(self.headers.get('Cookie'))
                 self.session_cookie = self.cookie_value('', 0)
                 return self.send_json({'ok': True})
+            if parsed.path.startswith('/api/dlna/'):
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=8192:
+                    self.close_connection=True
+                    raise ValueError('Invalid DLNA settings length')
+                data=json.loads(self.rfile.read(length))
+                if not isinstance(data,dict):raise ValueError('Invalid DLNA settings')
+                action=parsed.path.rsplit('/',1)[-1]
+                if action=='discover':return self.send_json(self.server.dlna.discover())
+                if action=='add':return self.send_json(self.server.dlna.add(data.get('url')))
+                if action=='settings':return self.send_json(self.server.dlna.configure(data))
+                return self.send_error_json(HTTPStatus.NOT_FOUND,'Not found')
             if parsed.path.startswith('/api/jellyfin/'):
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 2 <= length <= 8192:
@@ -686,7 +709,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_json(self.server.jellyfin.configure(data))
                 if action == 'disconnect':
                     result = self.server.jellyfin.disconnect()
-                    if not any(self.server.plex.config[k] for k in ('enabled', 'files', 'radio')):
+                    if not self.server.dlna.config['enabled'] and not any(self.server.plex.config[k] for k in ('enabled', 'files', 'radio')):
                         self.server.plex.config['files'] = True
                         self.server.plex.save()
                     return self.send_json(result)
@@ -905,6 +928,8 @@ class AppHandler(BaseHTTPRequestHandler):
             raise ValueError("Could not inspect media file")
         probe_data = json.loads(result.stdout)
         streams = probe_data.get("streams", [])
+        from .external_subtitles import tracks
+        streams = streams + tracks(self.server.library,token)
         audio, subtitles = [], subtitle_labels(streams)
         for stream in streams:
             tags = stream.get("tags", {})
@@ -968,6 +993,12 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json(dict(payload, c=payload['c'][:MAX_SUBTITLE_CUES]))
         if cached is not None:
             return respond(cached)
+        from .external_subtitles import payload as external_payload
+        external = external_payload(self.server.library,token,track)
+        if external:
+            codec,body=external
+            payload={'t':'bitmap','c':[]} if codec=='hdmv_pgs_subtitle' else {'t':'text','c':display_timeline(parse_srt_cues(body.decode('utf-8-sig',errors='replace'),fps))}
+            return respond(payload)
         if token.startswith('jellyfin.'):
             text = self.server.jellyfin.text_subtitle(token, track)
             if text is not None:
@@ -1004,6 +1035,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.pgs_cache[cache_key] = cached
         if cached is not None:
             return cached
+        from .external_subtitles import payload as external_payload
+        external=external_payload(self.server.library,token,track)
+        if external:
+            if external[0]!='hdmv_pgs_subtitle':raise ValueError('Selected external subtitle is not PGS')
+            cues=parse_pgs(external[1])
+            with self.server.pgs_cache_lock:
+                self.server.pgs_cache[cache_key]=cues
+                while len(self.server.pgs_cache)>PGS_CACHE_TRACKS:self.server.pgs_cache.popitem(last=False)
+            return cues
         _, source = self.server.library.decode(token)
         remote = isinstance(source, RemoteSource)
         if remote:
@@ -1078,6 +1118,7 @@ class AppHandler(BaseHTTPRequestHandler):
         process = None
         radio_lease = None
         pause_lease = None
+        external_folder = None
         try:
             # Keep the existing startup/subtitle inactivity allowance. During
             # blocked body writes only, fresh client-confirmed pause reports
@@ -1089,16 +1130,25 @@ class AppHandler(BaseHTTPRequestHandler):
             pause_lease = self.server.stream_pauses.begin(self.client_address[0], token)
             subtitle_source = None
             bitmap_subtitle = False
+            external = None
             if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
-                probe = cached_probe(source, ["-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
-                bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
-                if not isinstance(source, RemoteSource):
+                from .external_subtitles import payload as external_payload
+                external = external_payload(self.server.library,token,subtitle_track,source)
+                if not external:
+                    probe = cached_probe(source, ["-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
+                    bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
+                if external:
+                    external_folder=tempfile.TemporaryDirectory(prefix='psp-external-')
+                    subtitle_source=Path(external_folder.name)/('subtitle.sup' if external[0]=='hdmv_pgs_subtitle' else 'subtitle.srt')
+                    subtitle_source.write_bytes(external[1])
+                    bitmap_subtitle=external[0]=='hdmv_pgs_subtitle'
+                elif not isinstance(source, RemoteSource):
                     alias_dir = Path(tempfile.gettempdir()) / "psp-streamer-subtitles"
                     alias_dir.mkdir(mode=0o700, exist_ok=True)
                     subtitle_source = alias_dir / hashlib.sha256(str(source).encode()).hexdigest()
                     if not subtitle_source.exists():
                         os.symlink(source, subtitle_source)
-            command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps)
+            command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps, external_subtitle=external is not None)
             if live:
                 radio_lease = self.server.radio.begin(token)
             process = subprocess.Popen(
@@ -1173,6 +1223,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 process.stdout.close()
             if process and process.stderr:
                 process.stderr.close()
+            if external_folder:
+                external_folder.cleanup()
             self.server.transcode_slots.release()
 
 
@@ -1199,8 +1251,12 @@ class AppServer(ThreadingHTTPServer):
         library.plex = self.plex
         self.jellyfin = Jellyfin(state_root, library.roots)
         library.jellyfin = self.jellyfin
-        self.plex.additional_source = lambda: self.jellyfin.config['enabled']
-        self.jellyfin.additional_source = lambda: any(self.plex.config[k] for k in ('enabled','files','radio'))
+        from .dlna import Dlna
+        self.dlna = Dlna(state_root)
+        library.dlna = self.dlna
+        self.plex.additional_source = lambda: self.jellyfin.config['enabled'] or self.dlna.config['enabled']
+        self.jellyfin.additional_source = lambda: self.dlna.config['enabled'] or any(self.plex.config[k] for k in ('enabled','files','radio'))
+        self.dlna.additional_source = lambda: self.jellyfin.config['enabled'] or any(self.plex.config[k] for k in ('enabled','files','radio'))
         self.radio = RadioDirectory(os.environ.get('PSP_STREAMER_RADIO_DIR') or
             state_root)
         self.metadata_cache: dict[tuple, object] = {}
@@ -1227,6 +1283,8 @@ class AppServer(ThreadingHTTPServer):
             self.offline.start()
 
     def server_close(self):
+        if hasattr(self,'dlna'):
+            self.dlna.close()
         if hasattr(self, 'offline'):
             self.offline.close()
         if hasattr(self, 'plex'):

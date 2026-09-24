@@ -36,7 +36,7 @@ def authorization(client, token=''):
 
 
 class JellyfinBridge(PlexMediaBridge):
-    endpoint_pattern = rf'/Items/{ID}/Download'
+    endpoint_pattern = rf'(?:/Items/{ID}/Download|/(?:Videos|Audio)/{ID}/stream\?static=true&MediaSourceId={ID})'
 
     def headers(self, token, client):
         return {'Authorization': authorization(client, token)}
@@ -138,6 +138,8 @@ class Jellyfin(Plex):
         return f'jellyfin.{identifier(key)}{context}.{self.namespace()}'
 
     def split(self, token):
+        from .media_versions import split_version
+        token, _ = split_version(token)
         self.require()
         match = re.fullmatch(rf'jellyfin\.({ID})(?:\.([mp])({ID})\.([0-9]{{1,10}}))?\.([0-9a-f]{{12}})', token)
         if not match or match[5] != self.namespace():
@@ -159,26 +161,31 @@ class Jellyfin(Plex):
 
     def source(self, token):
         row = self.metadata(token)
+        from .media_versions import selected
+        chosen = selected(self, token)
         if row.get('Type') not in ('Movie', 'Episode', 'Audio', 'MusicVideo', 'Video'):
             raise ValueError('Jellyfin item is not playable media')
         if int(row.get('PartCount') or 1) > 1:
             raise ValueError('Multipart Jellyfin media is not supported')
-        name = PurePosixPath(str(row.get('Path', '')).replace('\\', '/')).name
+        name = PurePosixPath(str(chosen.get('Path') or row.get('Path', '')).replace('\\', '/')).name
         if not PurePosixPath(name).suffix:
-            extension = row.get('Container', '')
+            extension = chosen.get('Container') or row.get('Container', '')
             if not re.fullmatch('[A-Za-z0-9]{1,8}', extension):
                 raise ValueError('Jellyfin did not identify the original container')
             name = display_text(row.get('Name') or 'Jellyfin media')+'.'+extension
         with self.lock:
             if self.media_bridge is None:
                 self.media_bridge = JellyfinBridge(self)
-            return self.media_bridge.source({'key': '/Items/'+identifier(row['Id'])+'/Download',
-                'size': row.get('Size', 0)}, name, row.get('Etag', row.get('DateLastMediaAdded', '')), identifier(row['Id']))
+            endpoint = '/Items/'+identifier(row['Id'])+'/Download'
+            if chosen.get('Id'):
+                endpoint = ('/Audio/' if row.get('Type')=='Audio' else '/Videos/') + identifier(row['Id']) + '/stream?static=true&MediaSourceId=' + identifier(chosen['Id'])
+            return self.media_bridge.source({'key': endpoint,
+                'size': chosen.get('Size', row.get('Size', 0))}, name, row.get('Etag', row.get('DateLastMediaAdded', '')), identifier(row['Id']))
 
     def text_subtitle(self, token, track):
         row=self.metadata(token)
-        sources=row.get('MediaSources') or []
-        source=next((s for s in sources if s.get('Path')==row.get('Path')), {})
+        from .media_versions import selected
+        source=selected(self, token)
         if not source:
             return None  # Do not guess across alternative original versions.
         streams=sorted((s for s in source.get('MediaStreams', [])
@@ -242,6 +249,11 @@ class Jellyfin(Plex):
             if row.get('Type') in ('Movie', 'Episode', 'Audio', 'MusicVideo', 'Video'):
                 if row['Type'] == 'Episode':
                     name = f"S{int(row.get('ParentIndexNumber') or 0):02}E{int(row.get('IndexNumber') or 0):02} {name}"
+                from .media_versions import version_folder
+                folder = version_folder(self, row, self.token(row['Id'], kind, key, offset+index), name)
+                if folder:
+                    result['folders'].append(folder)
+                    continue
                 result['videos'].append(dict(artwork=self.artwork.links(row, self.token(row['Id'])), id=self.token(row['Id'], kind, key, offset+index),
                     name=name, kind='audio' if row['Type']=='Audio' else 'video', bytes=0))
             elif row.get('IsFolder'):
@@ -307,6 +319,8 @@ class Jellyfin(Plex):
                 'Accept': 'image/jpeg,image/png,image/webp'}
 
     def report(self, token, state, position, duration):
+        from .media_versions import split_version
+        version=split_version(token)[1]
         key = self.split(token)[0]
         position, duration = int(position), int(duration)
         if state not in ('playing','paused','stopped') or not 0<=position<=604800000 or not 0<=duration<=604800000:
@@ -314,9 +328,9 @@ class Jellyfin(Plex):
         with self.report_condition:
             if self.closed: return
             last = self.last_report.get(key); now = time.monotonic()
-            if last and last[0]==state and now-last[1]<5: return
+            if last and last[0]==state and last[2]==version and now-last[1]<5: return
             if len(self.last_report)>128: self.last_report.clear()
-            self.last_report[key] = state, now
+            self.last_report[key] = state, now, version
             if len(self.pending)>=16 and key not in self.pending: self.pending.pop(next(iter(self.pending)))
             self.pending[key] = (self.namespace(), token, state, position)
             if self.report_thread is None:
@@ -334,10 +348,12 @@ class Jellyfin(Plex):
                 with self.lock:
                     self.require()
                     if namespace!=self.namespace(): continue
+                from .media_versions import selected
+                source=selected(self, token)
+                source_id=source.get('Id',key)
+                if key in self.sessions and self.sessions[key]['MediaSourceId']!=source_id:
+                    self.request('/Sessions/Playing/Stopped',method='POST',data=self.sessions.pop(key))
                 if key not in self.sessions:
-                    row=self.metadata(token)
-                    sources=row.get('MediaSources', [])
-                    source=next((s for s in sources if s.get('Path')==row.get('Path')), sources[0] if sources else {})
                     body=dict(ItemId=key, MediaSourceId=source.get('Id',key), PlaySessionId=uuid.uuid4().hex,
                         CanSeek=True, PlayMethod='DirectStream', PositionTicks=position*10000, IsPaused=state=='paused')
                     self.request('/Sessions/Playing',method='POST',data=body)

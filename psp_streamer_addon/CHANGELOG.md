@@ -160,3 +160,15 @@
   HA-managed password options and existing download/radio paths.
 - Document volume reuse, backups and the one-time sign-in needed if an older
   update already discarded credentials. Docker and HA share the implementation.
+
+# 0.1.51
+
+- Add persisted DLNA servers, bounded SSDP discovery and manual description URLs,
+  ContentDirectory browsing, original-resource preference, range proxy and next/shuffle.
+- Use host networking in HA for multicast; the port app option controls the
+  listener. Ordinary Docker offers an optional host-network Compose deployment.
+- Select Plex/Jellyfin originals through version folders on web and PSP, retaining
+  stable identities across provider list reordering and downloads.
+- Add selected-version external text and single-file PGS subtitles to metadata,
+  streaming and offline overlays/burn-in. Unsupported sidecars fail explicitly.
+- No PSP executable or A/V synchronization changes. Docker/HA sources remain equal.

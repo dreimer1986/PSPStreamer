@@ -41,3 +41,14 @@ class DeploymentParityTests(unittest.TestCase):
             text = (ROOT / path).read_text()
             for dependency in ("ffmpeg", "fontconfig", "mkvtoolnix"):
                 self.assertIn(dependency, text, path)
+
+    def test_dlna_deployments_use_host_network_and_persistent_state(self):
+        addon = (ROOT / "psp_streamer_addon/config.yaml").read_text()
+        self.assertIn("host_network: true", addon)
+        self.assertNotIn("\nports:", addon)
+        self.assertIn("PSP_STREAMER_STATE_DIR=/data",
+                      (ROOT / "psp_streamer_addon/run.sh").read_text())
+        compose = (ROOT / "compose.dlna.yaml").read_text()
+        self.assertIn("network_mode: host", compose)
+        self.assertIn("streamer-settings:/data", compose)
+        self.assertIn("PSP_STREAMER_SETTINGS_DIR: /data", compose)

@@ -349,6 +349,40 @@ assert.equal(preferredTrack([],'off',true),-1);
         job['profile']='tv'
         self.assertEqual(self.server.offline._subtitles(job,source,probe,folder),0)
 
+    def test_plex_external_subtitle_metadata_stream_and_offline_conversion(self):
+        local=self.source();source=self.library.decode(local)[1]
+        plex=self.server.plex
+        plex.config.update(enabled=True,url='http://example.invalid',token='external-test',
+                           mappings=[{'plex':'/tv','local':str(self.root)}])
+        stream={'streamType':3,'id':701,'key':'/library/streams/701','codec':'srt',
+                'languageCode':'deu','title':'External German'}
+        row={'type':'episode','ratingKey':'70','title':'Sidecar test','Media':[{'id':1,'Part':[
+            {'file':'/tv/'+source.name,'Stream':[{'streamType':3,'codec':'srt'},stream]}]}]}
+        token=plex.token('70')
+        body='1\n00:00:00,200 --> 00:00:01,900\nExterne Grüße!\n'.encode()
+        with patch.object(plex,'metadata',return_value=row),patch.object(plex,'request',return_value=body):
+            status,_,raw=self.request('GET','/api/metadata/'+token)
+            self.assertEqual(status,200,raw)
+            self.assertEqual(json.loads(raw)['s'][1]['l'],'deu')
+            status,_,raw=self.request('GET','/api/subtitles/'+token+'?track=1&timebase=ms&page=1')
+            self.assertEqual(status,200,raw);self.assertIn('Externe Grüße',raw.decode())
+            job=self.server.offline.add({'id':token,'subtitle':1})
+            ready=self.wait_ready(job['job'])
+            self.assertEqual(ready['subtitle_label'],'deu')
+            package=self.server.offline.root/job['job']/'subtitles.ovl'
+            self.assertIn('Externe Grüße',package.read_bytes()[8:].decode())
+            # Oversized text overlays must use the actual sidecar for burn-in,
+            # never reinterpret its index as a nonexistent embedded track.
+            stream.update(id=702,key='/library/streams/702')
+            def stamp(ms):return f'00:00:{ms//1000:02},{ms%1000:03}'
+            many='\n\n'.join(f'{i}\n{stamp(i*3)} --> {stamp(i*3+2)}\nLine {i}' for i in range(1,963)).encode()
+            with patch.object(plex,'request',return_value=many):
+                job=self.server.offline.add({'id':token,'subtitle':1})
+                self.wait_ready(job['job'])
+                folder=self.server.offline.root/job['job']
+                self.assertTrue((folder/'burn.srt').exists())
+                self.assertEqual(json.loads((folder/'subtitles.ovl').read_bytes()[8:])['c'],[])
+
 
 if __name__ == '__main__':
     unittest.main()

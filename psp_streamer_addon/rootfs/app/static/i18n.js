@@ -1,5 +1,10 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Discover media servers on the local network, or add their device description URL. Docker discovery requires host networking; manual addresses also work in bridge mode.':'Medienserver im lokalen Netz suchen oder deren Gerätebeschreibungs-URL hinzufügen. Die Suche benötigt bei Docker Host-Netzwerk; manuelle Adressen funktionieren auch im Bridge-Modus.',
+  'Enable DLNA (save with Save sources)':'DLNA aktivieren (mit „Quellen speichern“ übernehmen)',
+  'Discover DLNA servers':'DLNA-Server suchen','Device description URL':'Gerätebeschreibungs-URL',
+  'Add DLNA server':'DLNA-Server hinzufügen','Searching local network…':'Lokales Netzwerk wird durchsucht …',
+  'DLNA servers found: {count}':'Gefundene DLNA-Server: {count}',
   'Chapters':'Kapitel','Chapter {n}':'Kapitel {n}',
   'Skip intro':'Intro überspringen','Skip credits':'Abspann überspringen',
   'Cover view':'Coveransicht',

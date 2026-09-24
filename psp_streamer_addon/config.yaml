@@ -1,6 +1,6 @@
 name: PSP Streamer
 slug: psp_streamer
-version: "0.1.50"
+version: "0.1.51"
 description: Transcodes a Home Assistant media library for PSP Streamer.
 url: https://github.com/dreimer1986/PSPStreamer
 # The reference add-on runs on this Home Assistant installation's amd64 host.
@@ -9,8 +9,9 @@ arch: [amd64]
 startup: services
 boot: auto
 init: false
-ports: {8091/tcp: 8091}
-ports_description: {8091/tcp: PSP Streamer HTTP server}
+# SSDP multicast discovery needs the host network. The configured port is bound
+# directly; users can still enter a description URL for other routed networks.
+host_network: true
 map:
   - type: ssl
     read_only: true

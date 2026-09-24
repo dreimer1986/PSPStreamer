@@ -3,6 +3,11 @@ import re
 
 
 def browse(server, root=0, path=''):
+    if path.startswith(':versions:'):
+        from .media_versions import browse_versions
+        token = path[len(':versions:'):]
+        provider = server.plex if token.startswith('plex.') else server.jellyfin
+        return browse_versions(provider, token, root)
     sources = server.plex.public()
     if path in ('', '.'):
         folders = []
@@ -12,6 +17,8 @@ def browse(server, root=0, path=''):
             folders.append({'name': 'Plex', 'path': ':plex:'})
         if getattr(server, 'jellyfin', None) and server.jellyfin.config['enabled']:
             folders.append({'name': 'Jellyfin', 'path': ':jellyfin:'})
+        if getattr(server,'dlna',None) and server.dlna.config['enabled']:
+            folders.append({'name':'DLNA','path':':dlna:'})
         if sources['radio']:
             folders.append({'name': 'Internet Radio', 'path': ':radio:'})
         return dict(root=0, path='', parent=None, folders=folders, videos=[])
@@ -19,6 +26,8 @@ def browse(server, root=0, path=''):
         return server.plex.browse(root, path)
     if path.startswith(':jellyfin:'):
         return server.jellyfin.browse(root, path)
+    if path.startswith(':dlna:'):
+        return server.dlna.browse(root,path)
     if path == ':radio:' and sources['radio']:
         return server.radio.browse(root)
     if not sources['files']:
@@ -51,11 +60,11 @@ def browse(server, root=0, path=''):
 
 def folder_media(server, root, path, recursive=False):
     """Bound traversal, deduplicate IDs, and follow Plex pagination explicitly."""
-    if path in ('', '.', ':files:', ':plex:', ':jellyfin:', ':jellyfin:playlists', ':radio:'):
+    if path in ('', '.', ':files:', ':plex:', ':jellyfin:', ':jellyfin:playlists', ':radio:', ':dlna:'):
         raise ValueError('Select a media folder, not a source overview')
     # "This folder" includes earlier Plex pages, even if the user opened it
     # from page two. Pagination is not a child folder.
-    if path.startswith((':plex:', ':jellyfin:')):
+    if path.startswith((':plex:', ':jellyfin:', ':dlna:')):
         path = path.split('@')[0]
     pending, seen, media = [path], set(), {}
     while pending:
@@ -73,7 +82,7 @@ def folder_media(server, root, path, recursive=False):
                 raise ValueError('At most 128 files per batch; select a smaller folder')
         for folder in listing['folders']:
             child = folder['path']
-            if current.startswith((':plex:', ':jellyfin:')) and '@' in child:
+            if current.startswith((':plex:', ':jellyfin:', ':dlna:')) and '@' in child:
                 if child.split('@')[0] == current.split('@')[0] and int(child.split('@')[1]) > int(current.split('@')[1] if '@' in current else 0):
                     pending.append(child)
             elif recursive:

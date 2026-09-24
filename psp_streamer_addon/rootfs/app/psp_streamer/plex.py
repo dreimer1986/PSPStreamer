@@ -67,7 +67,7 @@ class Plex:
                 'linked': bool(self.config['account']), 'selected': bool(self.config['token']),
                 'report_error': self.report_error}
 
-    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None):
+    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None, raw=False):
         with self.lock:
             base = 'https://plex.tv' if cloud else (url or self.config['url'])
             credential = token if token is not None else self.config['account' if cloud else 'token']
@@ -82,10 +82,10 @@ class Plex:
         try:
             with build_opener(NoRedirect()).open(Request(base + path, data=payload,
                     headers=headers, method=method), timeout=8) as response:
-                raw = response.read(4 * 1024 * 1024 + 1)
-                if len(raw) > 4 * 1024 * 1024:
+                body = response.read(16 * 1024 * 1024 + 1 if raw else 4 * 1024 * 1024 + 1)
+                if len(body) > (16 if raw else 4) * 1024 * 1024:
                     raise ValueError('Plex response exceeds the safe size limit')
-                return json.loads(raw) if raw.strip() else {}
+                return body if raw else json.loads(body) if body.strip() else {}
         except (URLError, TimeoutError, OSError, json.JSONDecodeError):
             # Do not echo upstream URLs, tokens or response bodies into logs/UI.
             raise ValueError('Plex request failed; check server, connection and authorization') from None
@@ -184,6 +184,8 @@ class Plex:
             raise ValueError('Plex source is disabled')
 
     def split(self, token):
+        from .media_versions import split_version
+        token, _ = split_version(token)
         self.require()
         match = re.fullmatch(r'plex\.([0-9]{1,20})(?:\.(s|p|m)([0-9]{1,20})\.([0-9]{1,10}))?\.([0-9a-f]{12})', token)
         if not match or match.group(5) != self.namespace():
@@ -216,7 +218,8 @@ class Plex:
 
     def source(self, token):
         row = self.metadata(token)
-        media = row.get('Media', [])
+        from .media_versions import selected
+        media = [selected(self, token)]
         if not media or len(media[0].get('Part', [])) != 1:
             raise ValueError('Plex item needs one original file; multipart media is not supported yet')
         source = str(media[0]['Part'][0].get('file', '')).replace('\\', '/')
@@ -284,6 +287,11 @@ class Plex:
             if row.get('type') in ('movie', 'episode', 'track'):
                 if row.get('type') == 'episode':
                     title = display_text(f"S{int(row.get('parentIndex', 0)):02}E{int(row.get('index', 0)):02} {title}")
+                from .media_versions import version_folder
+                folder = version_folder(self, row, self.token(f'{rating}.{kind}{key}.{offset + index}'), title)
+                if folder:
+                    result['folders'].append(folder)
+                    continue
                 result['videos'].append({'artwork': self.artwork.links(row, self.token(rating)), 'id': self.token(f'{rating}.{kind}{key}.{offset + index}'),
                     'name': title, 'kind': 'audio' if row['type'] == 'track' else 'video', 'bytes': 0})
             else:

@@ -1,5 +1,66 @@
 # PSP Streamer
 
+### DLNA, original versions and external subtitles (server 0.1.51)
+
+**DLNA:** Settings → DLNA / UPnP → **Discover DLNA servers** searches the
+server's local network, not the PSP's hotspot. Found servers are saved and the
+DLNA source is enabled. Alternatively enter the device-description XML URL
+(for example `http://192.168.1.10:8200/rootDesc.xml`), not a web dashboard URL.
+Use **Save sources** to disable/re-enable DLNA; **Remove** forgets one server.
+Refresh the PSP library with Square, then open DLNA → server → folders.
+
+Audio/video browsing, range-capable streaming, offline conversion, next/previous
+and music shuffle use the existing player pipeline. Original HTTP resources are
+preferred over resources marked as transcoded. DLNA cannot guarantee that the
+upstream server never transcodes; use the direct Plex/Jellyfin adapters for those
+servers. Watched/resume reporting is not standardized by ContentDirectory and
+is not promised for DLNA. Vendor-specific sidecar subtitle extensions are not
+implemented; embedded tracks work through the existing pipeline.
+
+Automatic discovery needs multicast reachability. The HA app now uses host
+networking; set its listening port with the **port** app option (default 8091),
+not a Docker port mapping. If an integration/reverse proxy used a container-only
+DNS name, point it at the HA host address instead. Existing host-IP/domain
+connections on the same port remain valid. Avoid port conflicts.
+For ordinary Docker on Linux, use this alternative Compose file from the same
+repository directory/project to keep the existing settings volume:
+
+```sh
+docker compose -f compose.dlna.yaml up -d --build
+```
+
+The ordinary `compose.yaml` remains in bridge mode: manually supplied description
+URLs work there, but multicast discovery may not. VLANs, VPNs and isolated WLANs
+can also block discovery; manual URLs work when HTTP routing is available.
+Only register trusted servers. XML declarations/entities and cross-host resource
+URLs are rejected; use the same hostname in the server description/resources.
+Limits: 32 saved servers, 100 entries per Browse page, 1,000 entries for automatic
+next/shuffle, bounded XML responses and PSP-sized object IDs. Unsupported resources
+and servers that ignore the page bound produce errors rather than unbounded reads.
+
+**Plex/Jellyfin versions:** When an item advertises multiple originals, it appears
+as a folder containing the versions. Choose a version there on PSP or web; that
+choice also applies to conversion/downloads. IDs remain stable if the provider
+reorders its list; a removed version produces an error instead of playing another
+one. Automatic next-episode playback still uses the next item's default original,
+not a guessed equivalent of the previous item's version. Recursive conversion of
+a version folder includes all its versions; select individual files if unwanted.
+Multipart movies remain unsupported.
+
+**External subtitles:** Sidecar tracks managed by Plex/Jellyfin are appended after
+embedded tracks, with language and an `External` label. They belong to the selected
+original version. Text subtitles (SRT/ASS/SSA/WebVTT) use the same plain-text PSP
+overlay as embedded text; style simplification is unchanged. Single-file PGS
+sidecars use the existing bitmap pipeline. Downloads include overlays or use
+the existing burn-in fallback when needed. Unsupported codecs, including paired
+IDX/SUB sidecars, report an explicit error; they are not mistaken for an embedded
+track. Existing PSP track-display limits still apply. No PSP executable update is
+required for these server features; Docker and HA ship the same implementation.
+
+Protocol references: [UPnP ContentDirectory](https://upnp.org/specs/av/UPnP-av-ContentDirectory-v2-Service.pdf),
+[Plex server API](https://developer.plex.tv/pms/),
+[Jellyfin video API](https://typescript-sdk.jellyfin.org/functions/generated-client.VideoApiFp.html).
+
 ### Settings survive updates (server 0.1.50)
 
 Home Assistant now keeps Plex/Jellyfin tokens, source switches, path mappings
@@ -155,9 +216,8 @@ mounts** permits a path mapping to avoid the HTTP transfer. For example,
 Plex `/volume1/video` → container `/media/video` (inside `MEDIA_ROOTS`). Missing
 mapped files automatically fall back to Plex HTTP(S). Multipart originals are
 reported as unsupported rather than silently playing only the first part; for
-multiple versions, the first Plex media version is used.
-Track selection currently covers tracks embedded in that original; external
-subtitle sidecars managed only by Plex are not imported yet.
+multiple versions, a version folder allows choosing the original explicitly.
+Embedded tracks and supported external sidecars are selectable (see 0.1.51 above).
 
 - Large item lists have 100-entry pages. Playlist order is preserved; automatic
   next/previous playback can cross item-page boundaries. Changed playlists stop
@@ -204,10 +264,10 @@ alone does not mark it watched. Reporting runs outside playback/UI threads.
 Jellyfin supplies the original file over authenticated, range-capable HTTP(S).
 Only PSPStreamer transcodes it; no shared media mount is necessary. Embedded
 audio, text/PGS subtitle selection and offline conversion reuse the existing
-pipeline. This first integration uses the item's default original version;
-multipart files and external subtitle sidecars are not supported. Posters,
-Jellyfin-device remote control and offline progress synchronization are not
-included. Original-file bandwidth between Jellyfin and PSPStreamer still applies.
+pipeline. Version folders and external text/single-file PGS sidecars are supported
+since 0.1.51. Multipart files, Jellyfin-device remote control and offline progress
+synchronization remain unsupported. Original-file bandwidth between Jellyfin and
+PSPStreamer still applies. Artwork is supported as described above.
 Embedded text subtitles are requested through Jellyfin's subtitle-export API
 where its media-source mapping is available, avoiding a complete video transfer
 just to extract text. With server 0.1.41 and the matching PSP client, text cues
