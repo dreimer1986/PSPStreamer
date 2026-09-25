@@ -45,6 +45,7 @@ static int timed_recv(unsigned char *data,int size) {
         return 0;
     }
     result=sceNetInetRecv(timed_socket,data,size,0);
+    if(result<0 && sceNetInetGetErrno()==35)return -2;
     DEBUG_DIAG(stream_diag.recv_result=result;);
     if(result<0) {
         DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno(););

@@ -1,4 +1,23 @@
-# Controller and visualization update — 2026-09-25
+# Playback recovery update — 2026-09-26
+
+Music and video now retry transport failures after releasing the old playback
+workers and buffers. The waiting screen retries after five seconds; X/Square
+retries immediately, START/Circle cancels. Server Stop and Play remain usable
+when the server is reachable. Radio retains its existing live-edge recovery.
+Finite media resumes at the last played position, rounded down to a second.
+No server update is required for this recovery change.
+
+Music tolerates 30 seconds without incoming data before reconnecting. Playback
+pause/backpressure does not consume that budget. Initial preparation retains
+its longer 180-second allowance. HTTP playback sockets now stay nonblocking,
+TLS/connect/send operations are cancellable, and playback DNS uses a bounded
+resolver. Wrong HTTP responses, local file errors and decoder errors are not
+blindly retried. A clean stop must not restart playback.
+
+Hardware check: play several songs, switch the hotspot's uplink between mobile
+data and Wi-Fi, and repeat during a subtitled video. Check automatic resume,
+Stop while waiting, and a new remote Play command. Test on LCD and TV as needed.
+The six focused host checks pass; actual PSP/network recovery needs this test.
 
 Server 0.1.56: web favorites/history/continue watching and background name search
 across enabled sources. The matching PSP pair syncs shortcuts when opening

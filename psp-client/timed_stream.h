@@ -16,6 +16,7 @@ typedef struct {
 } TimedQueue;
 static TimedQueue timed_video, timed_audio;
 static volatile int timed_active, timed_running, timed_eof, timed_error, timed_playing;
+static volatile int timed_network_failed;
 static const char * volatile timed_error_step = "FLV/PTS stream";
 static volatile int timed_has_audio, timed_audio_done;
 static volatile int timed_video_blocked, timed_audio_waiting;
@@ -116,9 +117,13 @@ static int timed_read(unsigned char *out, int size) {
             if (playback_paused) last = sceKernelGetSystemTimeWide();
             if (sceKernelGetSystemTimeWide() - last < limit) continue;
             DEBUG_DIAG(stream_diag.reason="read inactivity timeout";);
+            if(!offline_active)timed_network_failed=1;
             return -1;
         }
-        if (got <= 0) return have ? -1 : 0;
+        if (got <= 0) {
+            if(!offline_active && timed_running)timed_network_failed=1;
+            return have ? -1 : 0;
+        }
         have += got; last = sceKernelGetSystemTimeWide();
         DEBUG_DIAG(stream_diag.received=have;);
     }
@@ -156,8 +161,7 @@ static int timed_connect(int fd, struct sockaddr_in *server) {
         if(result<0) {DEBUG_DIAG(stream_diag.reason="TLS handshake";);DEBUG_DIAG(stream_diag.socket_error=result;);}
         return result;
     }
-    nonblock = 0;
-    return sceNetInetSetsockopt(fd, SOL_SOCKET, SO_NONBLOCK, &nonblock, sizeof(nonblock));
+    return 0; /* Keep reads and writes cancellable even after poll readiness. */
 }
 #include "offline_preroll.h"
 
@@ -186,16 +190,15 @@ static int timed_reader(SceSize args, void *argp) {
     timed_socket = fd;
     if (fd < 0) { DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); goto end; }
     DEBUG_DIAG(stream_diag.stage="resolve server";);
-    if (prepare_server(&server) < 0) goto end;
+    if (prepare_server(&server) < 0) {timed_network_failed=1;goto end;}
     DEBUG_DIAG(stream_diag.stage="connect";);
-    if (!timed_running || timed_connect(fd, &server) < 0) goto end;
+    if (!timed_running || timed_connect(fd, &server) < 0) {timed_network_failed=1;goto end;}
     DEBUG_DIAG(stream_diag.stage="send HTTP request";);
     {
         int sent = 0, length = strlen(timed_request);
         while (sent < length && timed_running) {
-            got = server_https ? tls_send(fd,timed_request+sent,length-sent,&timed_running,15000) :
-                (int)sceNetInetSend(fd, timed_request + sent, length - sent, 0);
-            if (got <= 0) { DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); goto end; }
+            got = playback_send(fd,timed_request+sent,length-sent,&timed_running);
+            if (got <= 0) { timed_network_failed=1; DEBUG_DIAG(stream_diag.socket_error=sceNetInetGetErrno();); goto end; }
             sent += got;
         }
     }

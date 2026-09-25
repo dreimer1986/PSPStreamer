@@ -557,18 +557,27 @@ static int save_playback_settings(void) {
 }
 
 static int resolve_server_address(struct in_addr *address) {
-    struct hostent *entry;
     if (inet_aton(server_host, address)) {
         cached_server_address = *address;
         have_cached_server_address = 1;
         return 0;
     }
-    entry = gethostbyname(server_host);
-    if (!entry || entry->h_length != 4 || !entry->h_addr_list || !entry->h_addr_list[0]) {
+    /* gethostbyname() can outlive a cancelled playback worker after an
+     * uplink change. Use the same bounded firmware resolver as browsing. */
+    unsigned char workspace[1024];
+    int resolver=-1,result=sceNetResolverCreate(&resolver,workspace,sizeof(workspace));
+    if(result<0) {
+        sceNetResolverInit();
+        result=sceNetResolverCreate(&resolver,workspace,sizeof(workspace));
+    }
+    if(result>=0) {
+        result=sceNetResolverStartNtoA(resolver,server_host,address,2,1);
+        sceNetResolverDelete(resolver);
+    }
+    if(result<0) {
         if (have_cached_server_address) { *address = cached_server_address; return 0; }
         return -1;
     }
-    memcpy(address, entry->h_addr_list[0], 4);
     cached_server_address = *address;
     have_cached_server_address = 1;
     return 0;
@@ -582,6 +591,7 @@ static int prepare_server(struct sockaddr_in *server) {
 }
 
 #include "server_connection.h"
+#include "playback_transport.h"
 
 /* Used only after HTTP headers arrived.  A timeout is not an error: it lets
  * the playback owner stop an audio worker after WLAN disappears. */
@@ -1543,6 +1553,7 @@ static int audio_thread(SceSize args, void *argp) {
     unsigned int block_pts = 0;
     int have = 0, frame_size, result, initial_size, frames_in_block = 0;
     int write_slot_reserved = 0;
+    unsigned long long last_data=sceKernelGetSystemTimeWide();
     Mp3Preroll preroll={0};
     const int block_bytes = audio_dac_samples * 2 * (int)sizeof(short);
     const int decoded_bytes = MP3_DECODE_SAMPLES * 2 * (int)sizeof(short);
@@ -1572,16 +1583,15 @@ static int audio_thread(SceSize args, void *argp) {
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
     if (prepare_server(&server) < 0) { audio_state = -17; goto cleanup; }
-    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { audio_state = -12; goto cleanup; }
-    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { audio_state = -13; goto cleanup; }
+    if (playback_connect(socket_fd, &server, &audio_running) < 0) { audio_state = -12; goto cleanup; }
+    if (playback_send(socket_fd, request, strlen(request), &audio_running) < 0) { audio_state = -13; goto cleanup; }
+    last_data=sceKernelGetSystemTimeWide();
     while (header_size < (int)sizeof(header) - 1) {
-        if(!strncmp(audio_media_id,"radio.",6)) {
-            if(!audio_running)goto cleanup;
-            received=stream_recv(socket_fd,header+header_size,sizeof(header)-1-header_size,250);
-            if(received==-2)continue;
-        } else
-        received = (int)connection_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 0);
+        if(!audio_running)goto cleanup;
+        received=playback_recv(socket_fd,header+header_size,sizeof(header)-1-header_size,250);
+        if(received==-2 && sceKernelGetSystemTimeWide()-last_data<180000000ULL)continue;
         if (received <= 0) { audio_state = -14; goto cleanup; }
+        last_data=sceKernelGetSystemTimeWide();
         header_size += received; header[header_size] = '\0'; body = strstr(header, "\r\n\r\n");
         if (body) break;
     }
@@ -1632,17 +1642,24 @@ static int audio_thread(SceSize args, void *argp) {
             free(timed_packet.data); timed_packet.data = NULL;
             have = frame_size;
         } else {
+        /* PCM backpressure and pause do not count as network inactivity. */
+        last_data=sceKernelGetSystemTimeWide();
         while (have < 4 && audio_running) {
             received = offline_music ? sceIoRead(local_fd,mp3_input_buffer+have,MP3_INPUT_BUFFER_BYTES-have) :
-                stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+                playback_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
             if(offline_music && received<=0) {
                 if(received<0)audio_state=received;
                 else if(have)audio_state=-26;
                 else offline_music_eof=1;
                 goto cleanup;
             }
-            if (received == -2) continue;
-            if (received <= 0) { audio_running = 0; break; }
+            if (received == -2) {
+                if(!audio_start)last_data=sceKernelGetSystemTimeWide();
+                if(sceKernelGetSystemTimeWide()-last_data<30000000ULL)continue;
+                audio_state=-28;audio_running=0;break;
+            }
+            last_data=sceKernelGetSystemTimeWide();
+            if (received <= 0) { if(received<0)audio_state=-28; audio_running = 0; break; }
             have += received;
         }
         if (!audio_running) break;
@@ -1650,10 +1667,15 @@ static int audio_thread(SceSize args, void *argp) {
         if (frame_size < 0 || frame_size > MP3_MAX_FRAME_BYTES) { memmove(mp3_input_buffer, mp3_input_buffer + 1, --have); continue; }
         while (have < frame_size && audio_running) {
             received = offline_music ? sceIoRead(local_fd,mp3_input_buffer+have,MP3_INPUT_BUFFER_BYTES-have) :
-                stream_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
+                playback_recv(socket_fd, mp3_input_buffer + have, MP3_INPUT_BUFFER_BYTES - have, 250);
             if(offline_music && received<=0){audio_state=received<0?received:-26;goto cleanup;}
-            if (received == -2) continue;
-            if (received <= 0) { audio_running = 0; break; }
+            if (received == -2) {
+                if(!audio_start)last_data=sceKernelGetSystemTimeWide();
+                if(sceKernelGetSystemTimeWide()-last_data<30000000ULL)continue;
+                audio_state=-28;audio_running=0;break;
+            }
+            last_data=sceKernelGetSystemTimeWide();
+            if (received <= 0) { if(received<0)audio_state=-28; audio_running = 0; break; }
             have += received;
         }
         if (!audio_running) break;
@@ -1817,6 +1839,7 @@ static void music_transition_frame(void) {
 }
 /* 1: reconnect at live edge; 2: paused with all network/codec resources freed. */
 static int radio_next_action;
+static int music_network_failed;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
 
 static int music_formula_trace_remaining;
@@ -1848,6 +1871,7 @@ static void music_visual_trace(const char *stage,int persist) {
     }
 }
 static int play_audio_once(const char *media_id, const char *title) {
+    music_network_failed=0;
     plex_report_begin(media_id);
     md_profile_reset(debug_enabled);
     md_trace_hook=debug_enabled?music_visual_trace:NULL;
@@ -2171,8 +2195,18 @@ static int play_audio_once(const char *media_id, const char *title) {
         playback_reached_end=1;
     if (!offline_music && !live && !stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
         remote_result >= 0 &&
-        stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
+        stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds - 2.0f)
         playback_reached_end = 1;
+    if(!offline_music && !live && !stopped_by_user && !seek_requested && !video_file_direction) {
+        music_network_failed=audio_state==-12 || audio_state==-13 || audio_state==-14 ||
+            audio_state==-17 || audio_state==-28 ||
+            (audio_state>=15 && !playback_reached_end && current_duration_seconds>0);
+        if(music_network_failed) {
+            playback_reached_end=0;
+            playback_position_ms=stream_start_seconds*1000+(int)((unsigned long long)
+                audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
+        }
+    }
     music_transition=music_visual_active && !live && remote_result>=0 && audio_state>=0 &&
         (playback_reached_end || video_file_direction || (resume_pending&&seek_requested));
     if(!music_transition){md_stop();music_visual_active=0;}
@@ -2236,6 +2270,7 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    timed_network_failed=0;
     music_transition_end();
     menu_art_select("");
     plex_report_begin(media_id);
@@ -2243,6 +2278,7 @@ static int play_h264(const char *media_id) {
     video_controls.selected=3;
     video_file_direction=0;
     int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
+    int stopped_by_user=0;
     int prepared = 0, trace_start_seconds = stream_start_seconds;
     int watch_started = 0;
     int video_only_origin = 0;
@@ -2360,7 +2396,7 @@ static int play_h264(const char *media_id) {
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
-        if(comfort_expired()){result=frames;break;}
+        if(comfort_expired()){stopped_by_user=1;result=frames;break;}
         playback_clock(video_cpu_mhz);
         plex_position_ms=playback_position_ms;
         plex_paused=paused;
@@ -2374,7 +2410,7 @@ static int play_h264(const char *media_id) {
                 paused = action == 1;
                 playback_paused = paused;
                 audio_start = paused ? 0 : buffered;
-            } else if (action == 3 || action == 4) { result = frames; break; }
+            } else if (action == 3 || action == 4) { stopped_by_user=1; result = frames; break; }
         }
         if (remote_control_seek_seconds >= 0) {
             stream_start_seconds = remote_control_seek_seconds;
@@ -2386,7 +2422,7 @@ static int play_h264(const char *media_id) {
             result = frames;
             break;
         }
-        if (pad.Buttons & PSP_CTRL_START) { result = frames; break; }
+        if (pad.Buttons & PSP_CTRL_START) { stopped_by_user=1; result = frames; break; }
         {
             unsigned int pressed=pad.Buttons & ~previous_buttons;
             int was_visible=video_controls.visible;
@@ -2668,14 +2704,24 @@ done:
         video_watch_write(outcome,0);
     }
     scePowerTick(PSP_POWER_TICK_ALL);
+    if(stopped_by_user) {timed_network_failed=0;return frames;}
     if (result < 0) return result;
     if (!frames) video_step = "no H.264 frames";
     return frames ? frames : -1306;
 }
 
+#include "playback_recovery.h"
+
 static int comfort_play_audio(const char *id,const char *name) {
     comfort_timer_stopped=0;
-    int result=play_audio(id,name);
+    int result;
+    do {
+        result=play_audio(id,name);
+        if(offline_active || radio_is_live(id) || !music_network_failed)break;
+        if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
+        stream_start_seconds=playback_recovery_position(playback_position_ms);
+        resume_pending=seek_requested=0;
+    } while(1);
     comfort_finished(id,name,1,offline_active,result);
     if(comfort_timer_stopped)video_file_direction=0;
     if(!playback_reached_end && !video_file_direction && !seek_requested)music_transition_end();
@@ -2684,7 +2730,14 @@ static int comfort_play_audio(const char *id,const char *name) {
 static int comfort_play_video(const char *id) {
     comfort_timer_stopped=0;playback_reached_end=0;
     playback_position_ms=stream_start_seconds*1000;
-    int result=play_h264(id);
+    int result;
+    do {
+        result=play_h264(id);
+        if(offline_active || result>=0 || !timed_network_failed || seek_requested || video_file_direction)break;
+        if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
+        stream_start_seconds=playback_recovery_position(playback_position_ms);
+        resume_pending=seek_requested=0;
+    } while(1);
     comfort_finished(id,current_media_name,0,offline_active,result);
     if(comfort_timer_stopped)video_file_direction=0;
     return result;
