@@ -3,11 +3,20 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import re
 
 ROOT=Path(__file__).resolve().parents[1]
 
 
 class TitleTests(unittest.TestCase):
+    def test_monkey_normalized_uv_and_milkdrop_pixel_uv(self):
+        source=(ROOT/'psp-client/milkdrop_title.h').read_text()
+        cave=source.split('if(cave && cave_scene) {',1)[1].split('} else {',1)
+        def uv(block):
+            return [(int(u),int(v)) for u,v in re.findall(r'\(MdVertex\)\{(\d+),(\d+),',block)]
+        self.assertEqual(uv(cave[0]),[(0,0),(0,1),(1,0),(1,1)])
+        self.assertEqual(uv(cave[1]),[(0,0),(512,64)])
+
     def test_utf8_bounds_duration_and_explicit_repeat(self):
         source=(ROOT/'psp-client/milkdrop_title.h').read_text().split('static void md_title_draw(')[0]
         code='''

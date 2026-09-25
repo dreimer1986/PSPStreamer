@@ -48,8 +48,9 @@ static void md_title_draw(unsigned long long now,int cave) {
         color=(color&0xffffff)|(alpha<<24);
         MdVertex *v=sceGuGetMemory(4*sizeof(*v));
         float bob=.04f*sinf((float)(now%10000000)/1000000);
-        v[0]=(MdVertex){0,0,color,-.7f,.10f+bob,-2};v[1]=(MdVertex){0,64,color,-.7f,-.10f+bob,-2};
-        v[2]=(MdVertex){512,0,color,.7f,.10f+bob,-2};v[3]=(MdVertex){512,64,color,.7f,-.10f+bob,-2};
+        /* GU_TRANSFORM_3D uses normalized UVs, unlike the 2D sprite below. */
+        v[0]=(MdVertex){0,0,color,-.7f,.10f+bob,-2};v[1]=(MdVertex){0,1,color,-.7f,-.10f+bob,-2};
+        v[2]=(MdVertex){1,0,color,.7f,.10f+bob,-2};v[3]=(MdVertex){1,1,color,.7f,-.10f+bob,-2};
         sceGuDrawArray(GU_TRIANGLE_STRIP,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,4,NULL,v);
     } else {
         /* Inject before echo/gamma and keep it in RAW feedback: subsequent

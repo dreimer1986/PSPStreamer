@@ -1,5 +1,10 @@
 # Controller and visualization update — 2026-09-25
 
+Monkey title fix: use normalized texture coordinates for the 3D title surface.
+MilkDrop's 2D title path is unchanged. Install both PSP files; no additional
+server update beyond 0.1.55 is required. In Monkey, press X to show the title
+again for five seconds (LCD/TV, windowed/fullscreen).
+
 Install **EBOOT.PBP and PSPStreamer.prx together**. Keep the other firmware
 bridges, subtitle font, Monkey textures and all PSP/SYSTEM config/state files.
 The previous release pair and preset directories are archived on the build PC.
