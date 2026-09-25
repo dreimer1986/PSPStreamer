@@ -21,12 +21,14 @@ static int remote_http_get_budget(const char *path,char *buffer,int capacity,vol
 int main(void){
     SceCtrlData p={8,128,128};tick=100;
     strcpy(input_reply,"1 1 768 200 128 900 0 -");input_receive(tick);input_remote_tick(&p);
+    assert(input_next==tick+2000000ULL); /* No rapid polling for active keys. */
     assert(p.Buttons==(8|768)&&p.Lx==200);
     p=(SceCtrlData){0,90,128};input_remote_tick(&p);assert(p.Lx==90);
     tick+=70000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);
     assert(!p.Buttons&&p.Lx==200); /* Delayed release must not cause menu repeat. */
     tick+=901000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(!p.Buttons&&p.Lx==128);
     strcpy(input_reply,"1 3 16 128 128 900 0 -");input_receive(tick);
+    assert(input_next==tick+2000000ULL);
     tick+=200000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(p.Buttons==16);
     tick+=701000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(!p.Buttons);
     input_text_begin(32,1);char text[32]="old";

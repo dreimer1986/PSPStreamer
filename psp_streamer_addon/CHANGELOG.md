@@ -1,3 +1,13 @@
+# 0.1.55
+
+- Slow virtual-controller polling to a two-second gap after each response or
+  failure, including held keys, to reduce repeated PSP TLS connection overhead.
+- Keep acknowledged tap/text events for at most 15 seconds so slower polls do
+  not lose quick clicks. Held-button leases remain short; a new PSP session or
+  controller owner clears old input. Existing media-remote polling is unchanged.
+- Update both PSP files and the server. This is settings control, not real-time
+  gameplay: held buttons/analog updates can be intermittent between polls.
+
 # 0.1.54
 
 - Separate short virtual-button impulses from real held keys. A click releases

@@ -7,6 +7,8 @@ import re
 
 class RemoteInput:
     MASK = 0xF3F9  # SELECT, START, directions, L/R, triangle/circle/cross/square
+    ONLINE_SECONDS = 12  # Slow PSP polling plus bounded TLS handshake.
+    EVENT_SECONDS = 15   # Tap/text delivery, separate from the short hold lease.
 
     def __init__(self):
         self.lock = threading.Condition()
@@ -23,13 +25,12 @@ class RemoteInput:
     def _expire(self, now):
         if now >= self.lease:
             self.keys = (0, 128, 128)
-            self.queue.clear()
         while self.queue and self.queue[0][1] <= now:
             self.queue.popleft()
 
     def status(self):
         with self.lock:
-            online = bool(self.client) and time.monotonic() - self.seen < 3
+            online = bool(self.client) and time.monotonic() - self.seen < self.ONLINE_SECONDS
             return {'online': online, 'client': self.client if online else '', 'dialog': self.dialog if online else 0,
                     'capacity': self.capacity if online else 0, 'secret': bool(self.secret)}
 
@@ -45,12 +46,14 @@ class RemoteInput:
         with self.lock:
             now = time.monotonic()
             self._expire(now)
-            if not self.client or now - self.seen >= 3:
+            if not self.client or now - self.seen >= self.ONLINE_SECONDS:
                 raise ValueError('PSP input is offline')
             if self.owner == owner and serial <= self.serial:
                 return {'ok': True}  # Delayed duplicate/reordered browser request.
             if self.owner != owner and now < self.lease:
                 raise ValueError('Another browser is controlling the PSP')
+            if self.owner != owner:
+                self.queue.clear()  # Never deliver the previous owner's backlog.
             if len(self.queue) >= 32:
                 raise ValueError('PSP input queue is full')
             if 'text' in data:
@@ -77,7 +80,7 @@ class RemoteInput:
             self.owner, self.serial, self.lease = owner, serial, now + 2
             if event:
                 self.sequence += 1
-                self.queue.append((self.sequence, now + 2, event))
+                self.queue.append((self.sequence, now + self.EVENT_SECONDS, event))
             self.lock.notify_all()
             return {'ok': True}
 
@@ -108,7 +111,7 @@ class RemoteInput:
             now = time.monotonic()
             self._expire(now)
             if self.queue:
-                seq, _, event = self.queue[0]
+                seq, event_until, event = self.queue[0]
                 kind, mask, x, y, field, text = event
             else:
                 seq, kind, field, text = ack, 0, 0, '-'
@@ -120,5 +123,5 @@ class RemoteInput:
                     kind = 3
                 else:
                     mask = 0
-            ttl = max(0, min(1000, int((self.lease - now) * 1000)))
+            ttl = max(0, min(1000, int(((event_until if self.queue else self.lease) - now) * 1000)))
             return f'{seq} {kind} {mask} {x} {y} {ttl} {field} {text}\n'

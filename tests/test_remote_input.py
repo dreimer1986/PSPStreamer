@@ -43,7 +43,7 @@ class InputTests(unittest.TestCase):
         self.assertEqual(p[1:3], ['1', '0'])
         self.q['ack'] = [p[0]]
         self.send(3, mask=16)
-        self.now.return_value = 103
+        self.now.return_value = 116
         self.assertEqual(self.packet()[2:6], ['0', '128', '128', '0'])
         self.assertFalse(self.r.queue)
 
@@ -104,5 +104,29 @@ class InputTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.r.submit(dict(owner='other-browser', serial=1, mask=8))
         self.now.return_value = 102.1
         self.r.submit(dict(owner='other-browser', serial=1, mask=8))
-        self.now.return_value = 110
+        self.now.return_value = 113
         with self.assertRaises(ValueError): self.send(4, mask=1)
+
+    def test_slow_poll_keeps_tap_but_not_stale_hold(self):
+        self.send(1, mask=16)
+        self.send(2, mask=0)
+        self.now.return_value=104
+        self.assertTrue(self.r.status()['online'])
+        p=self.packet()
+        self.assertEqual(p[1:3], ['1', '16'])
+        self.assertEqual(p[5], '1000')
+        self.q['ack']=[p[0]]
+        self.now.return_value=108
+        p=self.packet()
+        self.assertEqual(p[1:3], ['1', '0'])
+        self.q['ack']=[p[0]]
+        self.assertEqual(self.packet()[1:3], ['0', '0'])
+
+    def test_slow_poll_keeps_text_and_new_owner_clears_backlog(self):
+        self.send(1, text='Grüße', dialog=1)
+        self.now.return_value=104
+        p=self.packet()
+        self.assertEqual(p[1], '2')
+        self.assertEqual(p[5], '1000')
+        self.r.submit(dict(owner='other-browser', serial=1, mask=8))
+        self.assertEqual(self.packet()[1:3], ['1', '8'])

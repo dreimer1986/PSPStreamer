@@ -6,7 +6,7 @@ The previous release pair and preset directories are archived on the build PC.
 
 ## Server
 
-Update the Docker or Home Assistant server app to **0.1.54** and reload the web
+Update the Docker or Home Assistant server app to **0.1.55** and reload the web
 page. Remote control → **PSP buttons and text input** opens the virtual controller.
 Click/hold buttons, drag the analog stick, or use the keyboard shortcuts shown
 there. Mouse users can latch L/R; multi-touch supports simultaneous buttons.
@@ -17,6 +17,12 @@ of network delays. Holding a button for at least 350 ms enables hold renewal.
 Update both the server and PSP files for this protocol change.
 In the local-storage browser, START now exits the app through its normal cleanup;
 Circle returns to the main browser. During playback, START still stops playback.
+
+Version 0.1.55 leaves two seconds between a virtual-controller response/failure
+and the next request, even while holding buttons. This reduces repeated PSP TLS
+handshakes. Tap/text events wait for collection for at most 15 seconds, but hold
+leases remain short. Held/analog input can be intermittent: this is deliberately
+slow settings control. The existing media remote is unchanged. Update both ends.
 
 Open a text field in the PSP app. Send UTF-8 text from the phone to replace the
 draft; then START accepts or Circle cancels. START in the settings page saves.

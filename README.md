@@ -2,7 +2,7 @@
 
 ### Full browser controller and visualization update (2026-09-25)
 
-Server/app **0.1.54** includes **Remote control → PSP buttons and text input**.
+Server/app **0.1.55** includes **Remote control → PSP buttons and text input**.
 Install the matching PSP EBOOT/PRX pair. The clickable PSP provides the D-pad,
 face buttons, L/R, START, SELECT and an analog stick. Hold buttons for repeats;
 use multi-touch combinations or the **Hold L / Hold R** switches with a mouse.
@@ -14,6 +14,11 @@ Quick clicks release on the PSP after 60 ms rather than waiting for a network
 release message; holding for at least 350 ms enables hold renewal. This requires
 both the matching server and PSP update. START also exits the app from the local
 storage browser; during playback it still stops the current file first.
+
+Virtual controls leave a two-second gap after each response or failure to reduce
+PSP HTTPS overhead. Tap/text events expire after 15 seconds; short held-input
+leases are unchanged. Expect delayed clicks and intermittent held/analog input,
+not real-time gameplay. Existing media-remote polling is unchanged.
 
 Open a text field on the PSP (also possible with the virtual buttons). The web
 text box becomes available; **Send text** replaces that field's draft. Check the

@@ -5,6 +5,9 @@ static unsigned int input_buttons,input_x=128,input_y=128;
 static unsigned long long input_until,input_analog_until,input_next;
 static char input_client[40],input_path[192],input_reply[2048],input_text[256];
 static int input_text_ready;
+/* Settings control is deliberately not real-time. Leave breathing room
+ * between TLS connections, including while keys are held or requests fail. */
+#define INPUT_POLL_INTERVAL_US 2000000ULL
 
 static int input_worker(SceSize args,void *argp) {
     (void)args;(void)argp;
@@ -71,7 +74,7 @@ static void input_receive(unsigned long long now) {
         input_until=now+((kind==1 && ttl>60)?60:ttl)*1000ULL;
     }
     if(seq>(unsigned)input_ack)input_ack=(int)seq;
-    input_next=now+(ttl?30000ULL:1000000ULL);
+    input_next=now+INPUT_POLL_INTERVAL_US;
     memset(input_reply,0,sizeof(input_reply));
 }
 static void input_remote_tick(SceCtrlData *pad) {
@@ -82,7 +85,7 @@ static void input_remote_tick(SceCtrlData *pad) {
             sceKernelDeleteThread(input_thread);input_thread=-1;
             __sync_synchronize();
             if(input_result>=0 && input_running)input_receive(now);
-            else {input_clear_keys();memset(input_reply,0,sizeof(input_reply));input_next=now+1000000ULL;}
+            else {input_clear_keys();memset(input_reply,0,sizeof(input_reply));input_next=now+INPUT_POLL_INTERVAL_US;}
             input_done=input_running=0;
         }
     }
@@ -97,7 +100,7 @@ static void input_remote_tick(SceCtrlData *pad) {
         if(!input_client[0])snprintf(input_client,sizeof(input_client),"psp-%llu",now);
         snprintf(input_path,sizeof(input_path),"/api/input/poll?client=%s&ack=%d&dialog=%d&capacity=%d&secret=%d",
                  input_client,input_ack,input_dialog,input_capacity,input_secret);
-        input_running=1;input_done=0;input_next=now+1000000ULL;
+        input_running=1;input_done=0;input_next=now+INPUT_POLL_INTERVAL_US;
         input_thread=sceKernelCreateThread("PSP GUI input",input_worker,0x41,0x10000,PSP_THREAD_ATTR_USER,NULL);
         if(input_thread<0 || sceKernelStartThread(input_thread,0,NULL)<0) {
             if(input_thread>=0)sceKernelDeleteThread(input_thread);
