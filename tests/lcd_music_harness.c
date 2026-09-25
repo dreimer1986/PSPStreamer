@@ -7,6 +7,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "language.h"
+#include "theme_layout.h"
+static int theme_text_active;
 typedef uint32_t u32;
 #define VIDEO_WIDTH 480
 #define VIDEO_HEIGHT 272

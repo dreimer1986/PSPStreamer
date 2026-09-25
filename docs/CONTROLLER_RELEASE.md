@@ -1,5 +1,12 @@
 # Controller and visualization update — 2026-09-25
 
+Measured theme update: windowed visuals and menu backgrounds now use the user's
+exact LCD/TV screen rectangles. Text is bounded to the glass, long LCD rows use
+ellipsis, and English/German sidebar messages are shortened. Cover heights,
+settings rows and spectrum partial redraws follow the new limits. See
+`docs/THEME_LAYOUT.md` in the repository. Install both PSP files; no server update
+is required. Fullscreen, receiver controls and the separate help strip remain.
+
 Monkey title fix: use normalized texture coordinates for the 3D title surface.
 MilkDrop's 2D title path is unchanged. Install both PSP files; no additional
 server update beyond 0.1.55 is required. In Monkey, press X to show the title

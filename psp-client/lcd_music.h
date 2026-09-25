@@ -21,6 +21,7 @@ static void lcd_music_full(const char *title, int fullscreen) {
             gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
         }
     } else {
+        theme_text_active=0;
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
         gui_text(18, 12, 0x00D8E8FF, tr(TXT_FULLSCREEN_MUSIC), title);
@@ -28,12 +29,12 @@ static void lcd_music_full(const char *title, int fullscreen) {
     /* Actual PCM frequency bins, not a decorative level animation. */
     for (x = 0; x < SPECTRUM_BANDS && !music_visual_active; x++) {
         int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[x];
-        int height, baseline = fullscreen ? 194 : 150;
+        int height, baseline = fullscreen ? 194 : LCD_LEFT_B;
         u32 color = x < 4 ? 0x0000D8FF : x < 8 ? 0x00B070FF : 0x00FFB000;
         spectrum_display[x] = music_ui_envelope(spectrum_display[x], target);
-        height = spectrum_display[x] * (fullscreen ? 145 : 82) / 100;
-        gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : 42 + x * 23, baseline - height,
-                 fullscreen ? 25 : 15, height, color);
+        height = spectrum_display[x] * (fullscreen ? 145 : LCD_LEFT_B-74) / 100;
+        gui_rect((u32 *)0x44000000, fullscreen ? 24 + x * 36 : theme_spectrum_x(0,x), baseline - height,
+                 fullscreen ? 25 : theme_spectrum_width(0), height, color);
     }
     if (fullscreen) gui_audio_fullscreen_receiver((u32 *)0x44000000);
     else gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_CONTROLS));
@@ -56,7 +57,7 @@ static void lcd_music_restore(int left, int top, int width, int height, int full
 
 static void lcd_draw_music(const char *title, int fullscreen) {
     u32 *vram = (u32 *)0x44000000;
-    int i, baseline = fullscreen ? 194 : 150;
+    int i, baseline = fullscreen ? 194 : LCD_LEFT_B;
     int volume_changed, label_dirty;
     unsigned long long now = sceKernelGetSystemTimeWide();
     /* Never write an LCD-pitch frame into a TV/video-owned framebuffer. */
@@ -68,7 +69,7 @@ static void lcd_draw_music(const char *title, int fullscreen) {
         lcd_music.fullscreen = fullscreen;
         lcd_music.volume = playback_volume;
         for (i = 0; i < SPECTRUM_BANDS; i++)
-            lcd_music.height[i] = spectrum_display[i] * (fullscreen ? 145 : 82) / 100;
+            lcd_music.height[i] = spectrum_display[i] * (fullscreen ? 145 : LCD_LEFT_B-74) / 100;
         lcd_music.full_frames++;
         lcd_music.next_tick = sceKernelGetSystemTimeWide() + MUSIC_UI_INTERVAL_US;
         return;
@@ -81,16 +82,16 @@ static void lcd_draw_music(const char *title, int fullscreen) {
     label_dirty = volume_changed;
     if (volume_changed) {
         lcd_music_restore(393, 188, 55, 55, fullscreen);
-        if (!fullscreen && !music_visual_active) lcd_music_restore(38, 64, 436, 8, 0);
+        if (!fullscreen && !music_visual_active) lcd_music_restore(38, 64, LCD_LEFT_R-38, 8, 0);
         lcd_music.volume = playback_volume;
     }
     for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
         int target = (!audio_running || !audio_start) ? 0 : spectrum_levels[i];
         int previous = lcd_music.height[i], height;
-        int x = fullscreen ? 24 + i * 36 : 42 + i * 23, width = fullscreen ? 25 : 15;
+        int x = fullscreen ? 24 + i * 36 : theme_spectrum_x(0,i), width = fullscreen ? 25 : theme_spectrum_width(0);
         u32 color = i < 4 ? 0x0000D8FF : i < 8 ? 0x00B070FF : 0x00FFB000;
         spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
-        height = spectrum_display[i] * (fullscreen ? 145 : 82) / 100;
+        height = spectrum_display[i] * (fullscreen ? 145 : LCD_LEFT_B-74) / 100;
         if (height > previous)
             gui_rect(vram, x, baseline - height, width, height - previous, color);
         else if (height < previous) {
@@ -99,15 +100,14 @@ static void lcd_draw_music(const char *title, int fullscreen) {
         }
         lcd_music.height[i] = height;
     }
-    /* At maximum height normal bars overlap the last four rows of the
-     * volume label. Preserve the full renderer's text-then-bars ordering.
-     * In fullscreen the knob overlaps the last six rows of the last bars. */
+    /* Windowed bars leave the metadata rows clear. The fullscreen knob still
+     * overlaps the last six rows of the last bars. */
     if (!fullscreen && label_dirty && !music_visual_active)
         gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
     for (i = 0; i < SPECTRUM_BANDS && !music_visual_active &&
          (fullscreen ? volume_changed : label_dirty); i++) {
         int top = baseline - lcd_music.height[i], bottom = fullscreen ? 194 : 72;
-        int x = fullscreen ? 24 + i * 36 : 42 + i * 23, width = fullscreen ? 25 : 15;
+        int x = fullscreen ? 24 + i * 36 : theme_spectrum_x(0,i), width = fullscreen ? 25 : theme_spectrum_width(0);
         u32 color = i < 4 ? 0x0000D8FF : i < 8 ? 0x00B070FF : 0x00FFB000;
         if (fullscreen && top < 188) top = 188;
         if (top < bottom) gui_rect(vram, x, top, width, bottom - top, color);

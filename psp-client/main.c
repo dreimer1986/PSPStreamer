@@ -30,6 +30,8 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "theme_layout.h"
+static int theme_text_active;
 #include "milkdrop_warp.h"
 #include "h264_hw.h"
 #include "language.h"
@@ -1138,15 +1140,23 @@ static void gui_text(int left, int top, u32 color, const char *format, ...) {
     const char *cursor;
     va_list arguments;
     int glyph, index = 0;
+    int right=VIDEO_WIDTH,bottom=VIDEO_HEIGHT;
+    int bounded=theme_text_active && theme_text_edges(0,left,top,&right,&bottom);
     u32 *vram = (u32 *)0x44000000;
     va_start(arguments, format);
     vsnprintf(line, sizeof(line), format, arguments);
     va_end(arguments);
     if (!subtitle_font) subtitle_load_font();
     if (!subtitle_font) return;
+    if(top+8>bottom)return;
+    int columns=(right-left+1)/7;
+    if(columns<=0)return;
+    const char *measure=line;int count=0;
+    while(*measure){subtitle_utf8_char(&measure);count++;}
     cursor = line;
-    while (*cursor && left + index * 7 < VIDEO_WIDTH - 6) {
+    while (*cursor && index<columns) {
         glyph = subtitle_utf8_char(&cursor);
+        if(bounded && count>columns && columns>=3 && index>=columns-3)glyph='.';
         gui_draw_small_glyph(vram, glyph, left + index * 7, top, color);
         index++;
     }
@@ -2873,7 +2883,7 @@ static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
     gui_text(38,47,0x0000D8FF,"%s",tr(TXT_PREPARING_MEDIA));
     gui_text(38,76,0x00FFFFFF,"%s",label);
     gui_text(38,116,0x008A9BAA,"%s",status);
-    gui_text(369,47,0x00FFB000,"%s",tr(TXT_PLEASE_WAIT));
+    gui_text(376,47,0x00FFB000,"%s",tr(TXT_PLEASE_WAIT));
 }
 
 static void show_metadata_loading(void) {
@@ -2885,7 +2895,7 @@ static void show_metadata_loading(void) {
     /* Start at the panel edge; the compact glyph itself already carries its
      * own tiny left bearing, so an extra character-cell offset reads as a
      * spurious leading blank on the PSP LCD. */
-    gui_text(369, 47, 0x00FFB000, "%s", tr(TXT_PLEASE_WAIT));
+    gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_PLEASE_WAIT));
     gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_NO_VIDEO));
     gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_STREAM_HAS));
     gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STARTED));
@@ -3041,6 +3051,7 @@ static void finish_library_request(void) {
  * primitives as the receiver strip.  It replaces the old diagnostic-console
  * landing page.  No video decoder buffers or textures are involved here. */
 static void gui_library_shell(const char *section) {
+    theme_text_active=1;
     u32 *vram = (u32 *)0x44000000;
     int x, lit_left = vu_left / 10, lit_right = vu_right / 10;
     int y;
@@ -3051,9 +3062,9 @@ static void gui_library_shell(const char *section) {
         gui_skin_receiver(vram);
         if(!strcmp(section,tr(TXT_MEDIA_LIBRARY)) || !strcmp(section,tr(TXT_PREPARING_MEDIA)) ||
            !strcmp(section,tr(TXT_FILE_DETAILS)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
-            menu_art_draw(vram,VIDEO_STRIDE,36,29,312,123,0);
+            menu_art_draw(vram,VIDEO_STRIDE,LCD_LEFT_X,LCD_LEFT_Y,LCD_LEFT_R-LCD_LEFT_X,LCD_LEFT_B-LCD_LEFT_Y,0);
         if(!strcmp(section,tr(TXT_PREPARING_MEDIA)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
-            menu_art_draw(vram,VIDEO_STRIDE,376,110,72,53,1);
+            menu_art_draw(vram,VIDEO_STRIDE,376,110,71,LCD_RIGHT_B-110,1);
         gui_text(27, 11, 0x00FFFFFF, "PSP STREAMER // %s", section);
         return;
     }
@@ -3118,19 +3129,19 @@ static void show(int selected) {
         }
     }
     gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_SELECTED));
-    if (item_count) gui_text(376, 57, 0x00FFFFFF, "%.11s", items[selected].title);
+    if (item_count) gui_text(376, 57, 0x00FFFFFF, "%s", items[selected].title);
     else gui_text(376, 57, 0x00FFFFFF, "%s", tr(TXT_WAITING));
     if(menu_art_has_cover()) {
         menu_art_draw((u32 *)0x44000000,VIDEO_STRIDE,376,70,72,65,1);
         if(item_count)gui_text(376,138,0x008A9BAA,"%s",items[selected].is_folder?tr(TXT_FOLDER):tr(items[selected].is_audio?TXT_MUSIC:TXT_VIDEO));
-        gui_text(376,150,0x008A9BAA,tr(TXT_ENTRIES),item_count);
+        gui_text(376,148,0x008A9BAA,tr(TXT_ENTRIES),item_count);
     } else {
     if (item_count) gui_text(376, 76, 0x008A9BAA, "%s", items[selected].is_folder ? tr(TXT_FOLDER) : (items[selected].is_audio ? tr(TXT_MUSIC) : tr(TXT_VIDEO)));
     gui_text(376, 90, 0x008A9BAA, tr(TXT_ENTRIES), item_count);
     if(debug_enabled) gui_text(376, 104, 0x008A9BAA, tr(TXT_PROFILE), active_network_profile);
     if (hardware_runtime_result == 0 && debug_enabled) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_READY));
     else if (hardware_runtime_result != 0 && hardware_runtime_result != -9999) gui_text(376, 118, 0x008A9BAA, "%s", tr(TXT_AVC_ERROR));
-    gui_text(376, 138, 0x00FFFFFF, "%.11s", status);
+    gui_text(376, 138, 0x00FFFFFF, "%s", status);
     }
     /* The tiny receiver sidebar intentionally clips ordinary status copy.
      * Decoder diagnostics need their complete signed hex code, however. */
@@ -3175,7 +3186,7 @@ static void media_info(int selected) {
             }
             gui_text(376, 40, 0x00FFB000, "%s", tr(TXT_STREAMS));
             int art_top=67+(audio_track_count+subtitle_track_count)*10;
-            if(art_top<132)menu_art_draw((u32 *)0x44000000,VIDEO_STRIDE,376,art_top,72,163-art_top,1);
+            if(art_top<132)menu_art_draw((u32 *)0x44000000,VIDEO_STRIDE,376,art_top,71,LCD_RIGHT_B-art_top,1);
             if (!audio_track_count && !subtitle_track_count) gui_text(376, 57, 0x008A9BAA, "%s", tr(TXT_NO_TRACKS));
             for (i = 0; i < audio_track_count && i < 6; i++)
                 gui_text(376, 57 + i * 10, 0x00FFFFFF, "A%d %.10s", i + 1, audio_tracks[i].language);

@@ -7,6 +7,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "language.h"
+#include "theme_layout.h"
+static int theme_text_active;
 typedef uint32_t u32;
 typedef struct {unsigned int Buttons;} SceCtrlData;
 enum {PSP_CTRL_UP=1,PSP_CTRL_DOWN=2,PSP_CTRL_LEFT=4,PSP_CTRL_RIGHT=8,
@@ -76,6 +78,30 @@ int main(void) {
     assert(mmap((void *)0x44000000,512*272*4,PROT_READ|PROT_WRITE,
         MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0)==(void *)0x44000000);
     tv_canvas.pixels=calloc(768*480,4);assert(tv_canvas.pixels);
+    /* Real glyph output must stay in either measured screen, including
+     * overflowing UTF-8 names and the last possible text row. */
+    theme_text_active=1;
+    for(int tv=0;tv<2;tv++)for(int side=0;side<2;side++) {
+        int x=tv?(side?562:34):(side?376:38);
+        int y=tv?66:40,right=0,bottom=0;
+        assert(theme_text_edges(tv,x,y,&right,&bottom));
+        u32 *pixels=tv?tv_canvas.pixels:(u32 *)0x44000000;
+        int stride=tv?768:512,height=tv?480:272;
+        memset(pixels,0,stride*height*4);
+        const char *long_name="ÄÖÜäöü Ein sehr langer Dateiname und Status ohne Ende 012345678901234567890123456789012345678901234567890123456789";
+        if(tv)tv_text(x,y,99,99,0xffffff,"%s",long_name);
+        else gui_text(x,y,0xffffff,"%s",long_name);
+        int painted=0;
+        for(int yy=0;yy<height;yy++)for(int xx=0;xx<stride;xx++)if(pixels[yy*stride+xx]) {
+            painted++;assert(xx>=x && xx<right && yy>=y && yy<bottom);
+        }
+        assert(painted);
+        memset(pixels,0,stride*height*4);
+        if(tv)tv_text(x,bottom-4,10,1,0xffffff,"TEST");
+        else gui_text(x,bottom-4,0xffffff,"TEST");
+        for(int i=0;i<stride*height;i++)assert(!pixels[i]);
+    }
+    theme_text_active=0;
     assert(help_first_page(-1)==0);
     for(int page=0;page<HELP_PAGE_COUNT;page++) {
         assert(help_pages[page].buttons);

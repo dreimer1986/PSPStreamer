@@ -12,6 +12,8 @@
 #include "display_output.h"
 #include "tv_canvas.h"
 #include "language.h"
+#include "theme_layout.h"
+static int theme_text_active;
 typedef uint32_t u32;
 typedef struct { unsigned int Buttons; } SceCtrlData;
 #define PSP_CTRL_LTRIGGER 1

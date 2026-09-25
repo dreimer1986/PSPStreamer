@@ -33,7 +33,7 @@ static void settings_shell(const char *title) {
 }
 static void settings_line(int row,int selected,const char *text) {
     if(tv_ui_active)tv_text(34,72+row*22,48,1,selected?TV_AMBER:TV_WHITE,"%s",text);
-    else gui_text(38,48+row*12,selected?0x0000D8FF:0x00FFFFFF,"%.49s",text);
+    else gui_text(38,40+row*11,selected?0x0000D8FF:0x00FFFFFF,"%s",text);
 }
 static void settings_help(const char *text) {
     if(tv_ui_active) {tv_help(text);tv_present();}

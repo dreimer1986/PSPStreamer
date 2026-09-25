@@ -1,5 +1,8 @@
 # PSP Streamer
 
+The measured LCD/TV screen rectangles, text limits and layout checks are
+documented in [Theme layout](docs/THEME_LAYOUT.md).
+
 ### Full browser controller and visualization update (2026-09-25)
 
 Server/app **0.1.55** includes **Remote control → PSP buttons and text input**.

@@ -35,13 +35,13 @@ static int preset_choose(char selection[256],int music) {
             } else {
                 gui_library_shell(tr(TXT_PRESETS));
                 for(int i=first;i<catalog->count && i<first+8;i++)
-                    gui_text(38,48+(i-first)*14,i==selected?0x0000D8FF:0x00FFFFFF,"%c %.37s",i==selected?'>':' ',catalog->names[i]);
+                    gui_text(38,35+(i-first)*12,i==selected?0x0000D8FF:0x00FFFFFF,"%c %s",i==selected?'>':' ',catalog->names[i]);
                 if(!catalog->count) gui_text(38,48,0x00FFFFFF,"%s",tr(TXT_PRESET_MISSING));
                 if(catalog->truncated) gui_text(376,70,0x0000D8FF,"%s",tr(TXT_PRESET_LIMIT));
                 gui_text(38,177,0x00FFFFFF,"%s",tr(TXT_PRESET_CONTROLS));
                 if(music) {
-                    gui_text(38,156,0x00FFFFFF,tr(TXT_PRESET_AUTO_STATUS),tr((TextId)(TXT_PRESET_AUTO_OFF+music_preset_auto)),music_preset_seconds);
-                    gui_text(38,166,0x00FFFFFF,"%s",tr(TXT_PRESET_AUTO_HELP));
+                    gui_text(38,134,0x00FFFFFF,tr(TXT_PRESET_AUTO_STATUS),tr((TextId)(TXT_PRESET_AUTO_OFF+music_preset_auto)),music_preset_seconds);
+                    gui_text(38,146,0x00FFFFFF,"%s",tr(TXT_PRESET_AUTO_HELP));
                 }
             }
             dirty=0;

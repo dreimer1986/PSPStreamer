@@ -9,8 +9,8 @@ enum { TV_VIEW_LIBRARY, TV_VIEW_LOADING, TV_VIEW_INFO, TV_VIEW_OPTIONS, TV_VIEW_
 #define TV_CYAN  0x00EAD080
 #define TV_AMBER 0x003CC9FF
 /* Inner glass of the production 720x480 skin, not the text/list rectangle.
- * Exclusive right/bottom edges are 533/292. Preserve its rounded corners. */
-enum { TV_ART_X=27, TV_ART_Y=61, TV_ART_W=506, TV_ART_H=231 };
+ * Uses the same measured boundaries as the visualizations. */
+enum { TV_ART_X=TV_LEFT_X, TV_ART_Y=TV_LEFT_Y, TV_ART_W=TV_LEFT_R-TV_LEFT_X, TV_ART_H=TV_LEFT_B-TV_LEFT_Y };
 static void tv_menu_backdrop(void) {
     menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,TV_ART_X,TV_ART_Y,TV_ART_W,TV_ART_H,0);
     if(receiver_tv_skin_end-receiver_tv_skin!=TV_GUI_WIDTH*TV_GUI_HEIGHT*4)return;
@@ -83,6 +83,11 @@ static int tv_text(int x, int y, int columns, int lines, u32 color, const char *
     static unsigned char ink_height[256];
     int bottom = y;
     int row = 0, offset = 0, new_word = 1, limit = columns * 13;
+    int right=TV_GUI_WIDTH,bound_bottom=TV_GUI_HEIGHT;
+    if(theme_text_active && theme_text_edges(1,x,y,&right,&bound_bottom)) {
+        if(limit>right-x)limit=right-x;
+        if(lines>(bound_bottom-y)/16)lines=(bound_bottom-y)/16;
+    }
     if(limit>TV_GUI_WIDTH-x-8) limit=TV_GUI_WIDTH-x-8;
     if(limit<=0 || lines<=0) return y;
     va_list args;
@@ -170,6 +175,7 @@ static void tv_receiver(void) {
 }
 
 static void tv_shell(const char *section) {
+    theme_text_active=1;
     int y;
     if (receiver_tv_skin_end - receiver_tv_skin == TV_GUI_WIDTH * TV_GUI_HEIGHT * 4) {
         for (y = 0; y < TV_GUI_HEIGHT; y++)
@@ -204,6 +210,7 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         view == TV_VIEW_OPTIONS ? TXT_STREAM_OPTIONS : TXT_NOW_PLAYING);
     if (!tv_ui_active || tvout_video_active || !tv_canvas.pixels) return;
     tv_shell(section);
+    if(view==TV_VIEW_MUSIC && fullscreen)theme_text_active=0;
     if(view!=TV_VIEW_MUSIC)tv_menu_backdrop();
     if (view == TV_VIEW_LIBRARY) {
         int first = item_count ? selected / TV_GUI_ROWS * TV_GUI_ROWS : 0;
@@ -220,14 +227,14 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         if(menu_art_has_cover()) {
             menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,128,116,113,1);
             tv_text(562,248,10,1,TV_MUTED,tr(TXT_ENTRIES),item_count);
-            tv_text(562,273,10,2,TV_CYAN,"%s",status);
+            tv_text(562,270,10,1,TV_CYAN,"%s",status);
         } else {
         tv_text(562, 209, 10, 2, TV_MUTED, tr(TXT_ENTRIES), item_count);
         tv_text(562, 244, 10, 3, TV_CYAN, "%s", status);
         }
         tv_help(tr(TXT_LIBRARY_CONTROLS));
     } else if (view == TV_VIEW_LOADING) {
-        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,130,116,166,1);
+        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,130,116,TV_RIGHT_B-130,1);
         tv_text(34, 67, 38, 2, TV_AMBER, "%s", tr(TXT_READING_MEDIA));
         tv_text(34, 121, 38, 3, TV_WHITE, "%s", title ? title : tr(TXT_LOADING_TRACKS));
         tv_text(34, 197, 38, 3, TV_MUTED, "%s", tr(TXT_SOURCE_WAKING));
@@ -249,16 +256,18 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         }
         tv_text(562, 66, 10, 1, TV_AMBER, "%s", tr(TXT_STREAMS));
         int art_top=98+(audio_track_count+subtitle_track_count)*18;
-        if(art_top<250)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,art_top,116,300-art_top,1);
+        if(art_top<250)menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,art_top,116,TV_RIGHT_B-art_top,1);
         for (i = 0; i < audio_track_count && i < 6; i++)
             tv_text(562, 94 + i * 18, 10, 1, TV_WHITE, "A%d %s", i + 1, audio_tracks[i].language);
         for (i = 0; i < subtitle_track_count && i + audio_track_count < 11; i++)
             tv_text(562, 94 + (i + audio_track_count) * 18, 10, 1, TV_CYAN, "S%d %s", i + 1, subtitle_tracks[i].language);
         tv_help(tr(TXT_INFO_CONTROLS));
     } else if (view == TV_VIEW_OPTIONS) {
-        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,195,116,105,1);
+        menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,195,116,TV_RIGHT_B-195,1);
         tv_text(34, 66, 38, 1, TV_CYAN, "%s", tr(TXT_STREAM_OPTIONS));
-        tv_rect(&tv_canvas, 32, 105 + row * (audio_only ? 60 : 40), 498, audio_only ? 48 : 38, 0x003B4824);
+        int selection_y=105+row*(audio_only?60:40),selection_h=audio_only?48:38;
+        if(selection_h>TV_LEFT_B-selection_y)selection_h=TV_LEFT_B-selection_y;
+        tv_rect(&tv_canvas,32,selection_y,498,selection_h,0x003B4824);
         if (audio_only) {
             tv_text(34, 110, 38, 2, TV_WHITE, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
             if(audio_only!=2)tv_text(34, 170, 38, 2, TV_WHITE, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
@@ -293,9 +302,9 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
             int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
             int height;
             spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
-            height = spectrum_display[i] * 168 / 100;
-            tv_rect(&tv_canvas, 37 + i * (fullscreen ? 54 : 41), 288 - height,
-                    fullscreen ? 38 : 28, height, i < 4 ? TV_AMBER : i < 8 ? 0x00B070FF : TV_CYAN);
+            height = spectrum_display[i] * (fullscreen?168:TV_LEFT_B-120) / 100;
+            tv_rect(&tv_canvas, fullscreen?37+i*54:theme_spectrum_x(1,i), (fullscreen?288:TV_LEFT_B) - height,
+                    fullscreen ? 38 : theme_spectrum_width(1), height, i < 4 ? TV_AMBER : i < 8 ? 0x00B070FF : TV_CYAN);
         }
         tv_help(tr(TXT_MUSIC_CONTROLS));
     }
@@ -353,7 +362,7 @@ static void tv_draw_music(const char *title, int fullscreen) {
         tv_music.meter[0] = (vu_display_left * 20 + 50) / 100;
         tv_music.meter[1] = (vu_display_right * 20 + 50) / 100;
         for (i = 0; i < 5; i++) tv_music.light[i] = tv_indicator_color(i);
-        for (i = 0; i < SPECTRUM_BANDS; i++) tv_music.height[i] = spectrum_display[i] * 168 / 100;
+        for (i = 0; i < SPECTRUM_BANDS; i++) tv_music.height[i] = spectrum_display[i] * (fullscreen?168:TV_LEFT_B-120) / 100;
         tv_music.next_tick = sceKernelGetSystemTimeWide() + MUSIC_UI_INTERVAL_US;
         tv_music.copied_bytes += TV_GUI_BYTES;
         tv_music.full_frames++;
@@ -395,17 +404,18 @@ static void tv_draw_music(const char *title, int fullscreen) {
     for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
         int target = !audio_running || !audio_start ? 0 : spectrum_levels[i];
         int height, previous = tv_music.height[i];
-        int x = 37 + i * (fullscreen ? 54 : 41), width = fullscreen ? 38 : 28;
+        int x = fullscreen?37+i*54:theme_spectrum_x(1,i), width = fullscreen ? 38 : theme_spectrum_width(1);
+        int baseline=fullscreen?288:TV_LEFT_B;
         spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
-        height = spectrum_display[i] * 168 / 100;
+        height = spectrum_display[i] * (fullscreen?168:TV_LEFT_B-120) / 100;
         if (height > previous) {
-            tv_rect(&tv_canvas, x, 288 - height, width, height - previous,
+            tv_rect(&tv_canvas, x, baseline - height, width, height - previous,
                     i < 4 ? TV_AMBER : i < 8 ? 0x00B070FF : TV_CYAN);
-            dirty[count++] = (TvDirtyRect){x, 288 - height, width, height - previous};
+            dirty[count++] = (TvDirtyRect){x, baseline - height, width, height - previous};
         } else if (height < previous) {
-            if (fullscreen) tv_rect(&tv_canvas, x, 288 - previous, width, previous - height, 0x000C0C0A);
-            else tv_restore_rect(x, 288 - previous, width, previous - height);
-            dirty[count++] = (TvDirtyRect){x, 288 - previous, width, previous - height};
+            if (fullscreen) tv_rect(&tv_canvas, x, baseline - previous, width, previous - height, 0x000C0C0A);
+            else tv_restore_rect(x, baseline - previous, width, previous - height);
+            dirty[count++] = (TvDirtyRect){x, baseline - previous, width, previous - height};
         }
         tv_music.height[i] = height;
     }

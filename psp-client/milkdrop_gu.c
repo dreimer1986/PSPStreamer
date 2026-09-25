@@ -15,6 +15,7 @@
 #include "milkdrop_profile.h"
 #include "preset_fpu.h"
 #include "cave_visual.h"
+#include "theme_layout.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -346,10 +347,10 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     int target = 1-md_front;
     /* Independent edges: changing top/left must not move bottom/right.
      * TV begins just inside the blue border and five rows below title ink. */
-    int left = fullscreen ? 0 : tv ? 26 : 38;
-    int top = fullscreen ? 0 : tv ? 59 : 29;
-    int right = fullscreen ? (tv ? 720 : 480) : tv ? 534 : 344;
-    int bottom = fullscreen ? (tv ? 480 : 272) : tv ? 294 : 149;
+    int left = fullscreen ? 0 : tv ? TV_LEFT_X : LCD_LEFT_X;
+    int top = fullscreen ? 0 : tv ? TV_LEFT_Y : LCD_LEFT_Y;
+    int right = fullscreen ? (tv ? 720 : 480) : tv ? TV_LEFT_R : LCD_LEFT_R;
+    int bottom = fullscreen ? (tv ? 480 : 272) : tv ? TV_LEFT_B : LCD_LEFT_B;
     int width = right - left, height = bottom - top;
     float seconds;
     MdPreset evaluated;

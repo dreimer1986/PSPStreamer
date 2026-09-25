@@ -63,6 +63,7 @@ static void help_psp(unsigned int active) {
     help_text(118,173,help_key_color(PSP_CTRL_START,active),"START");
 }
 static void help_draw(int page) {
+    theme_text_active=0;
     const HelpText *text=help_translation()+page;
     char position[64];
     int topic=help_pages[page].topic,first=help_first_page(topic),end=first;
