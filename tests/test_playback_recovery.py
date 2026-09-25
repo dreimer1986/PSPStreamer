@@ -25,7 +25,7 @@ class PlaybackRecoveryTests(unittest.TestCase):
         self.assertNotIn("gethostbyname(server_host)", source)
         wrappers = source[source.index("static int comfort_play_audio("):source.index("/* This is intentionally a narrow parser")]
         self.assertIn("offline_active || radio_is_live(id) || !music_network_failed", wrappers)
-        self.assertIn("result>=0 || !timed_network_failed", wrappers)
+        self.assertIn("result!=-1320 || !timed_network_failed", wrappers)
         self.assertIn("stream_start_seconds=playback_recovery_position(playback_position_ms)", wrappers)
 
 

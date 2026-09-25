@@ -2733,7 +2733,7 @@ static int comfort_play_video(const char *id) {
     int result;
     do {
         result=play_h264(id);
-        if(offline_active || result>=0 || !timed_network_failed || seek_requested || video_file_direction)break;
+        if(offline_active || result!=-1320 || !timed_network_failed || seek_requested || video_file_direction)break;
         if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
         stream_start_seconds=playback_recovery_position(playback_position_ms);
         resume_pending=seek_requested=0;
