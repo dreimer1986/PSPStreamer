@@ -1,3 +1,12 @@
+# 0.1.53
+
+- Add an authenticated virtual PSP controller and UTF-8 text entry to the web
+  remote. Includes analog input, held buttons, combinations and short leases.
+- Text is accepted only for the currently open PSP field; passwords are not
+  read back. Requires the matching new PSP EBOOT/PRX pair.
+- Docker and Home Assistant contain the same server and web assets. HACS
+  integration 0.1.3 remains compatible without an integration update.
+
 # 0.1.52
 
 - Proxy standard DLNA album-art covers to web, PSP LCD/TV and HA media-player

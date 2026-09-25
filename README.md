@@ -1,5 +1,54 @@
 # PSP Streamer
 
+### Full browser controller and visualization update (2026-09-25)
+
+Server/app **0.1.53** adds **Remote control → PSP buttons and text input**.
+Install the matching PSP EBOOT/PRX pair. The clickable PSP provides the D-pad,
+face buttons, L/R, START, SELECT and an analog stick. Hold buttons for repeats;
+use multi-touch combinations or the **Hold L / Hold R** switches with a mouse.
+Keyboard shortcuts are listed below the controller. This controls PSPStreamer
+menus and playback only, not XMB, HOME, hardware switches or other applications.
+It is not a live screenshot: watch the PSP or TV for the current menu.
+
+Open a text field on the PSP (also possible with the virtual buttons). The web
+text box becomes available; **Send text** replaces that field's draft. Check the
+result and press virtual START to accept. Settings still require START again
+to save. Circle cancels. UTF-8 is transferred intact; byte limits and existing
+field-specific validation remain in force. Font coverage is unchanged.
+Passwords stay masked and existing field contents are never sent to the browser.
+Use HTTPS outside a trusted network, especially when entering credentials.
+
+Inputs are acknowledged in order and are not saved on the server. A two-second
+browser lease, one-second PSP hold expiry, field IDs and app-start IDs prevent
+stuck keys, late text in another field and replay after restart. Hiding/closing
+the controls releases held buttons; the expiry also works if release cannot
+reach the PSP. Only one browser controls the virtual pad at a time. Physical
+buttons remain usable and physical analog movement has priority. An unresponsive
+or disconnected PSP cannot be recovered through this channel; physical controls
+remain the fallback. The existing direct Play/Pause/Stop/Seek controls are unchanged.
+Docker and the Home Assistant server app include identical assets. HACS 0.1.3
+needs no update for these web-only additions.
+
+MilkDrop and Monkey now use the full inner monitor, on LCD and TV. Track names
+appear for five seconds; **X** shows them again. MilkDrop injects a transparent
+title texture into its feedback before echo/gamma, so trails can outlive the
+five-second injection. Monkey renders a projected, material-coloured title
+inside its scene, without a GUI text box. This is a PSP title effect, not a
+claim that both desktop plugins implement titles identically.
+Automatic music changes retain the renderer and selected fullscreen mode;
+audio workers and codec queues are still joined and recreated normally.
+Metadata preparation advances the retained effect with silent input; short
+synchronous network/cleanup waits retain its last frame rather than a folder.
+Stop, errors, playback limits and video playback release those GU resources.
+
+The local release includes a curated **51-preset shaderless pack**; all 51
+passed parsing and 120 host evaluation frames, with no resource clamps reported.
+333 MHz smoothness still needs PSP testing, particularly with live transitions.
+No original equations were changed. Old release tests are archived, not deleted;
+development presets remain under `psp-client/presets` in Git. See
+[selection and packaging notes](docs/STANDARD_PRESETS.md) for the reproducible
+builder, provenance and third-party redistribution boundary.
+
 ### Quick access, resume and travel preparation (2026-09-25)
 
 Update the PSP's matching **EBOOT.PBP and PSPStreamer.prx** together. The new

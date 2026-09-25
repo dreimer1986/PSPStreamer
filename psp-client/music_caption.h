@@ -12,6 +12,10 @@ static void music_caption_line(char out[160],const char *text) {
     memcpy(out,begin,size);out[size]=0;
 }
 static void music_caption(const char *heading,const char *song,int fullscreen) {
+    if(music_visual_active) {
+        md_title(subtitle_font,heading,song,sceKernelGetSystemTimeWide(),0);
+        return;
+    }
     static char previous[400];
     static int previous_tv=-1,previous_fullscreen=-1;
     static unsigned int previous_generation;

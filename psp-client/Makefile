@@ -50,6 +50,8 @@ main.o: power_policy.h ../psp-overclock/control_api.h
 main.o: exit_policy.h
 main.o: music_caption.h
 main.o: comfort_store.h comfort_ui.h
+main.o: remote_input.h remote_input_impl.h
+milkdrop_gu.o: milkdrop_title.h
 milkdrop_preset.o: preset_source.h
 main.o milkdrop_gu.o milkdrop_wave.o: milkdrop_wave.h milkdrop_warp.h
 milkdrop_wave_extra.o: milkdrop_wave.h milkdrop_decor.h milkdrop_warp.h

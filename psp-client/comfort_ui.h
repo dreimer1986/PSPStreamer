@@ -100,6 +100,7 @@ static int comfort_profiles(void) {
         }
         if((pressed&PSP_CTRL_CROSS)&&p->host[0]) {
             AppSettings original;settings_capture(&original);
+            input_remote_stop();
             strcpy(server_host,p->host);strcpy(server_password,p->password);server_port=p->port;server_https=p->https;
             server_auth_update();
             if(save_playback_settings()<0) {

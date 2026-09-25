@@ -53,6 +53,7 @@ static void tv_ui_start(void) {
 }
 
 static void ui_restore_after_playback(void) {
+    if(music_transition)return;
     /* Only the historical LCD path may initialise the SDK debug console.
      * In native TV mode the menu will redraw after playback workers joined. */
     if (!tv_ui_active) pspDebugScreenInit();
@@ -282,7 +283,7 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         tv_help(tr(audio_only ? TXT_MUSIC_SETUP_CONTROLS : TXT_VIDEO_SETUP_CONTROLS));
     } else {
         if (fullscreen) tv_rect(&tv_canvas, 25, 59, 673, 239, 0x000C0C0A);
-        tv_music_title_bottom = tv_text(34, 65, fullscreen ? 50 : 38, 2, TV_WHITE, "%s", title);
+        if(!music_visual_active)tv_music_title_bottom = tv_text(34, 65, fullscreen ? 50 : 38, 2, TV_WHITE, "%s", title);
         if (!fullscreen) {
             tv_text(562, 67, 10, 3, TV_AMBER, "%s", tr(TXT_MUSIC));
             tv_text(562, 127, 10, 3, TV_MUTED, tr(TXT_TV_VOLUME), playback_volume * 100 / 30);

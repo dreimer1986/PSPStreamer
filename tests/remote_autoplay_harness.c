@@ -4,7 +4,7 @@
 
 static int resume_pending,seek_requested,playback_reached_end,video_file_direction;
 static int stream_start_seconds,scenario,calls,first_calls,next_calls,metadata_calls;
-static int play_h264(const char *id) {
+static int comfort_play_video(const char *id) {
     assert(++calls<8);
     playback_reached_end=video_file_direction=0;
     if(!strcmp(id,"first")) {
@@ -22,9 +22,9 @@ static int play_h264(const char *id) {
     playback_reached_end=1;
     return 100;
 }
-static int play_audio(const char *id,const char *title) {
+static int comfort_play_audio(const char *id,const char *title) {
     (void)title;
-    return play_h264(id); /* Also exercise the shared music seek branch. */
+    return comfort_play_video(id); /* Also exercise the shared music seek branch. */
 }
 static void sceKernelDelayThread(int delay) {(void)delay;}
 static int load_media_metadata(const char *id) {

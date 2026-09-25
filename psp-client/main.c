@@ -38,6 +38,7 @@
 #include "help_pages.h"
 #include "power_policy.h"
 #include "exit_policy.h"
+#include "remote_input.h"
 static void help_open(int topic);
 
 PSP_MODULE_INFO("PSPStreamer", PSP_MODULE_USER, 1, 0);
@@ -154,6 +155,8 @@ static volatile int remote_control_action;
 static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
 static int remote_control_sequence;
+static int music_transition;
+static void music_transition_end(void);
 #define TVOUT_STRIDE 768
 
 static int output_mode(int tv) {
@@ -698,6 +701,7 @@ static int http_get(const char *path, char *buffer, int buffer_size) {
 }
 
 #include "remote_http.h"
+#include "remote_input_impl.h"
 #include "menu_artwork.h"
 #include "media_request.h"
 
@@ -1790,6 +1794,16 @@ static void plex_report_stop(int sequence) {
  * Video uses its own presentation state; application restart resets these. */
 static int music_saved_visual_preset;
 static int music_saved_fullscreen;
+static void music_transition_end(void) {
+    if(!music_transition)return;
+    md_stop();music_transition=0;music_visual_active=0;
+}
+static void music_transition_frame(void) {
+    if(!music_transition)return;
+    unsigned char silence[SPECTRUM_BANDS]={0};
+    if(md_frame(tv_ui_active,music_saved_fullscreen,silence,0,sceKernelGetSystemTimeWide(),music_saved_visual_preset-1)<=0)
+        music_transition_end();
+}
 /* 1: reconnect at live edge; 2: paused with all network/codec resources freed. */
 static int radio_next_action;
 static int radio_is_live(const char *id) { return !strncmp(id,"radio.",6); }
@@ -1848,7 +1862,9 @@ static int play_audio_once(const char *media_id, const char *title) {
      * adapter's historical 0..2 test variants are no longer selectable. */
     int visual_preset = music_saved_visual_preset == 6 ? 6 : music_saved_visual_preset == 4 ? 4 : 0;
     MdFileError preset_error;
-    int preset_result;
+    int preset_result=MD_FILE_OK;
+    int retained_visual=music_transition;
+    music_transition=0;
     unsigned long long preset_notice_tick = ~0ULL;
     unsigned int old = 0;
     unsigned long long next_volume_repeat_tick = 0;
@@ -1871,21 +1887,22 @@ static int play_audio_once(const char *media_id, const char *title) {
     audio_dac_samples = AUDIO_BLOCK_SAMPLES;
     playback_reached_end = 0;
     timed_active = 0;
-    music_visual_active = 0;
+    if(!retained_visual)music_visual_active = 0;
     resume_pending = seek_requested = 0;
     video_first_presented = 1;
     /* Read once, before either music worker exists. Never parse on a draw tick. */
-    { char path[272]; snprintf(path,sizeof(path),"presets/%s",music_preset_file);
+    if(!retained_visual) { char path[272]; snprintf(path,sizeof(path),"presets/%s",music_preset_file);
+      if(access(path,F_OK)<0){strcpy(music_preset_file,"active.milk");snprintf(path,sizeof(path),"presets/active.milk");}
       preset_result = md_load_preset(path, &md_custom_preset, &preset_error); }
     audio_running = 1; audio_start = 1; audio_clock_started = 0; audio_state = 0;
     /* Neither music GUI may outrank the existing 0x3D DAC worker. Restore
      * the caller's priority before returning to menus or subsequent video. */
     previous_ui_priority = music_ui_lower_priority();
     /* The only initial full-frame draw happens BEFORE audio starts. */
-    if (tv_ui_active) {
+    if (!retained_visual && tv_ui_active) {
         tv_music_reset();
         tv_draw_music(title, 0);
-    } else {
+    } else if(!retained_visual) {
         lcd_music_reset();
         lcd_draw_music(title, 0);
     }
@@ -1895,6 +1912,10 @@ static int play_audio_once(const char *media_id, const char *title) {
     if (visual_preset && (visual_preset != 4 || preset_result == MD_FILE_OK)) {
         if (md_start()) music_visual_active = 1;
         else visual_preset = 0;
+    }
+    if(music_visual_active) {
+        subtitle_load_font();
+        md_title(subtitle_font,current_media_artist,current_media_title[0]?current_media_title:title,sceKernelGetSystemTimeWide(),1);
     }
     if (fullscreen && !music_visual_active) draw_fullscreen_spectrum();
     /* A held Select that resumed live radio must not immediately pause again. */
@@ -1967,7 +1988,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         }
         if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
         if(live)music_caption(radio_station,radio_song,fullscreen);
-        else if(current_media_title[0])music_caption(current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title,fullscreen);
+        else music_caption(current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title[0]?current_media_title:title,fullscreen);
         if(!audio_start) {next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();memset(&preset_cuts,0,sizeof(preset_cuts));}
         int hard_cut=0;
         if(audio_start && visual_preset==4 && music_preset_auto && preset_hard_cuts) {
@@ -1993,7 +2014,6 @@ static int play_audio_once(const char *media_id, const char *title) {
         }
         if (music_visual_active && !tvout_video_active && display_output.tv == tv_ui_active) {
             video_watch_ping("music visualization");
-            if (tv_ui_active) md_set_tv_title_bottom(tv_music_title_bottom);
             unsigned char bands[SPECTRUM_BANDS];
             int band, level = audio_start ? (vu_left + vu_right)/2 : 0;
             for (band = 0; band < SPECTRUM_BANDS; band++)
@@ -2024,6 +2044,8 @@ static int play_audio_once(const char *media_id, const char *title) {
             }
         }
         sceCtrlPeekBufferPositive(&pad, 1);
+        if(music_visual_active && (pad.Buttons&PSP_CTRL_CROSS) && !(old&PSP_CTRL_CROSS) && !(pad.Buttons&PSP_CTRL_TRIANGLE))
+            md_title(subtitle_font,live?radio_station:current_media_artist,live?radio_song:current_media_title[0]?current_media_title:title,sceKernelGetSystemTimeWide(),1);
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
             md_stop(); music_visual_active=0;
             int preset_changed=0;
@@ -2118,12 +2140,12 @@ static int play_audio_once(const char *media_id, const char *title) {
     }
     audio_queue_destroy();
     /* An EOF racing a terminal remote command must not trigger autoplay. */
+    /* Producer and DAC have joined; stop reusing the last song's waveform. */
+    { const short silence[2]={0,0};visualization_pcm_publish(silence,1); }
     if (music_remote_action >= MUSIC_REMOTE_STOP) stopped_by_user = 1;
     video_watch_ping("music stop: join remote");
     music_remote_stop();
     video_watch_ping("music stop: GU");
-    md_stop();
-    music_visual_active = 0;
     free(sequence);
     if(debug_enabled) {
         char profile_text[1024];
@@ -2140,6 +2162,9 @@ static int play_audio_once(const char *media_id, const char *title) {
         remote_result >= 0 &&
         stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds * 0.90f)
         playback_reached_end = 1;
+    music_transition=music_visual_active && !live && remote_result>=0 && audio_state>=0 &&
+        (playback_reached_end || video_file_direction || (resume_pending&&seek_requested));
+    if(!music_transition){md_stop();music_visual_active=0;}
     music_ui_restore_priority(previous_ui_priority);
     video_watch_stop();
     if(live && !stopped_by_user && remote_result>=0)radio_next_action=1;
@@ -2200,6 +2225,7 @@ static int play_audio(const char *media_id,const char *title) {
 }
 
 static int play_h264(const char *media_id) {
+    music_transition_end();
     menu_art_select("");
     plex_report_begin(media_id);
     video_controls.visible=video_controls.saved=0;
@@ -2641,6 +2667,7 @@ static int comfort_play_audio(const char *id,const char *name) {
     int result=play_audio(id,name);
     comfort_finished(id,name,1,offline_active,result);
     if(comfort_timer_stopped)video_file_direction=0;
+    if(!playback_reached_end && !video_file_direction && !seek_requested)music_transition_end();
     return result;
 }
 static int comfort_play_video(const char *id) {
@@ -2835,6 +2862,8 @@ static int remote_control_thread(SceSize args, void *argp) {
 static void gui_library_shell(const char *section);
 
 static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
+    if(music_transition && !cancelling){music_transition_frame();return;}
+    music_transition_end();
     const char *label=tr(cancelling?TXT_NETWORK_STOPPING:
         subtitles?TXT_PREPARING_SUBTITLES:TXT_LOADING_TRACKS);
     snprintf(status,sizeof(status),tr(TXT_PREPARATION_WAIT),seconds);
@@ -3061,6 +3090,7 @@ static void gui_library_shell(const char *section) {
 }
 
 static void show(int selected) {
+    music_transition_end();
     int i, first, last;
     if (selected < 0 || selected >= item_count) selected = 0;
     menu_art_select(item_count?items[selected].value:"");
@@ -3519,7 +3549,7 @@ int main(void) {
             do {
                 int next;
                 snprintf(status, sizeof(status), "%s", items[selected].is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
-                show(selected);
+                if(!music_transition || !items[selected].is_audio)show(selected);
                 result = items[selected].is_audio ? comfort_play_audio(items[selected].value, items[selected].title) : comfort_play_video(items[selected].value);
                 ui_restore_after_playback();
                 if (result < 0) {
@@ -3570,8 +3600,7 @@ int main(void) {
                 resume_pending = 0;
                 stream_start_seconds = 0;
                 snprintf(status, sizeof(status), items[selected].is_audio ? tr(TXT_NEXT_TRACK) : tr(TXT_NEXT_EPISODE), items[selected].title);
-                show(selected);
-                sceKernelDelayThread(500000);
+                if(!music_transition)show(selected);
                 if(load_media_metadata(items[selected].value)<0)break;
             } while (1);
             if(!strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) {
@@ -3590,6 +3619,7 @@ int main(void) {
         sceKernelDelayThread(20000);
     }
     int browser_stopped=exit_join_worker(stop_browser_requests);
+    music_transition_end();
     if(browser_stopped){free(menu_art_active);menu_art_active=NULL;}
     prepare_oc_exit();
     if (display_output.tv) display_output_select(&display_output, 0);
@@ -3597,6 +3627,7 @@ int main(void) {
     /* A cancelled DNS/TLS worker can still be unwinding. Never pull its
      * network modules away. loadexec owns final cleanup on timeout. */
     if(browser_stopped) {
+        input_remote_stop();
         sceNetApctlTerm();
         sceNetInetTerm();
         sceNetTerm();

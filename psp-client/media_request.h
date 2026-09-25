@@ -34,7 +34,7 @@ static int media_request_get(const char *path,char *buffer,int capacity,int budg
         if(media_request_done && sceKernelWaitThreadEnd(thread,&timeout)>=0)break;
         keep_awake();
         sceCtrlReadBufferPositive(&pad,1);
-        if(pad.Buttons & PSP_CTRL_CIRCLE) {cancelled=1;media_request_running=0;}
+        if((pad.Buttons & PSP_CTRL_CIRCLE) || (music_transition && (pad.Buttons & PSP_CTRL_START))) {cancelled=1;media_request_running=0;}
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(now>=redraw) {
             media_wait_draw(subtitles,(unsigned int)((now-started)/1000000ULL),cancelled);

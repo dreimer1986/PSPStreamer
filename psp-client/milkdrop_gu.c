@@ -59,7 +59,7 @@ static void md_thick_wave(int primitive,const MdVertex *vertices,int count,int s
 static unsigned int *md_list;
 static int md_front;
 static int md_last_tv, md_last_fullscreen;
-static int md_tv_top = 86, md_last_top;
+static int md_last_top;
 static unsigned long long md_origin, md_next;
 static MdSignalState md_signal_state;
 static MdPresetState md_preset_state;
@@ -222,11 +222,6 @@ static void md_expand(MdVertex *v, int count, int half_texel) {
         v[i].v = half_texel ? (v[i].v-.5f)*scale+.5f : v[i].v*scale;
     }
 }
-void md_set_tv_title_bottom(int bottom) {
-    int top = bottom + 5;
-    md_tv_top = top < 70 ? 70 : top > 102 ? 102 : top;
-}
-
 static int md_offset(int index) {
     return MD_TEXTURE_BASE+(md_raw_image?(index==2?1:0):index)*MD_TEXTURE_BYTES;
 }
@@ -245,6 +240,7 @@ static void md_target(int offset, int stride, int width, int height) {
 }
 #include "milkdrop_decor_gu.h"
 #include "cave_gu.h"
+#include "milkdrop_title.h"
 /* Copy before list reuse; renderer-owned scratch avoids stack growth. */
 static MdVertex md_clip_wave_source[2*MD_CUSTOM_POINTS-1];
 static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int thick) {
@@ -329,6 +325,9 @@ int md_start(void) {
 }
 void md_stop(void) {
     md_wave_capture=0;
+    if(md_list)sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    md_title_until=0;md_title_key[0]=0;
+    free(md_title_pixels);md_title_pixels=NULL;
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     cave_destroy(cave_scene);cave_scene=NULL;
@@ -348,7 +347,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
     /* Independent edges: changing top/left must not move bottom/right.
      * TV begins just inside the blue border and five rows below title ink. */
     int left = fullscreen ? 0 : tv ? 26 : 38;
-    int top = fullscreen ? 0 : tv ? md_tv_top : 74;
+    int top = fullscreen ? 0 : tv ? 59 : 29;
     int right = fullscreen ? (tv ? 720 : 480) : tv ? 534 : 344;
     int bottom = fullscreen ? (tv ? 480 : 272) : tv ? 294 : 149;
     int width = right - left, height = bottom - top;
@@ -402,6 +401,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         md_trace("Cave geometry");
         cave_draw(width,height);
         cave_draw_ship(width,height);
+        md_title_draw(now,1);
         goto present_scene;
     }
     /* Render-thread scratch: extended EEL memories must not consume the PSP
@@ -581,6 +581,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         md_border(&frame_decor.outer,0);
         md_border(&frame_decor.inner,frame_decor.outer.size);
     }
+    md_title_draw(now,0);
     sceGuTexSync();
     /* The old feedback is no longer needed. Compose echo/gamma into that
      * surface, keeping the new RAW feedback intact for the next frame.

@@ -25,6 +25,7 @@ typedef struct { unsigned int Buttons; } SceCtrlData;
 #define SPECTRUM_BANDS 12
 static TvCanvas tv_canvas;
 static int tv_ui_auto, tv_ui_active, tvout_video_active, cable = 2;
+static int music_transition;
 static int mode_calls, framebuffer_calls, mode_failure, buffer_failure, hardware_tv;
 static int debug_calls, load_failure;
 static unsigned long long clock_tick = 1800000;

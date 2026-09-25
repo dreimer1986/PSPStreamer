@@ -1,0 +1,11 @@
+#pspController{margin-top:1.5rem;border-top:1px solid #506075;padding-top:1rem}#pspController summary{cursor:pointer;font-weight:bold}
+.psp-pad{position:relative;width:100%;max-width:760px;aspect-ratio:2.65;margin:2rem auto;background:linear-gradient(160deg,#444b56,#11151c 45%,#262d37);border:3px solid #84909b;border-radius:19%/45%;box-shadow:inset 0 0 0 5px #141a22,0 8px 22px #0008;touch-action:none;user-select:none}
+.psp-screen{position:absolute;left:25%;top:17%;width:50%;height:62%;background:linear-gradient(125deg,#122638,#080d15);border:4px solid #070a10;border-radius:5%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9%;text-align:center;color:#b7e6ff;font-size:clamp(9px,2vw,17px)}.psp-screen small{font-size:.8em;padding:0 5%}
+.psp-pad .psp-key{position:absolute;display:grid;place-content:center;padding:0;margin:0;min-height:0;width:7%;height:18%;font-size:clamp(13px,3vw,24px);border-radius:50%;background:linear-gradient(#48505c,#151b25);color:white;border:1px solid #9fa8b5;box-shadow:0 2px 3px #0008;touch-action:none}
+.psp-pad .psp-key[aria-pressed=true]{background:#146b96;box-shadow:0 0 12px #71d6ff;transform:scale(.95)}
+.psp-pad .key-up{left:12%;top:23%}.psp-pad .key-down{left:12%;top:55%}.psp-pad .key-left{left:6%;top:39%}.psp-pad .key-right{left:18%;top:39%}
+.psp-pad .key-triangle{right:12%;top:23%;color:#67e7bc}.psp-pad .key-cross{right:12%;top:55%;color:#90cbff}.psp-pad .key-square{right:18%;top:39%;color:#f6a1dc}.psp-pad .key-circle{right:6%;top:39%;color:#ffaaaa}
+.psp-pad .key-l,.psp-pad .key-r{top:-5%;width:16%;height:13%;border-radius:40%}.psp-pad .key-l{left:5%}.psp-pad .key-r{right:5%}
+.psp-pad .key-select,.psp-pad .key-start{top:85%;width:11%;height:10%;border-radius:35%;font-size:clamp(9px,1.5vw,13px)}.psp-pad .key-select{left:48%}.psp-pad .key-start{left:63%}
+.psp-analog{position:absolute;left:17%;top:77%;width:7%;aspect-ratio:1;border-radius:50%;background:#080b11;box-shadow:inset 0 0 4px #bbb;display:grid;place-items:center;touch-action:none}.psp-analog span{width:65%;height:65%;border-radius:50%;background:repeating-radial-gradient(#555 0 1px,#222 2px 3px);pointer-events:none}
+#padTextForm{margin-top:1rem}#padTextForm input{width:min(100%,36rem)}.psp-pad:focus-visible,.psp-pad button:focus-visible{outline:2px solid #ffcc66;outline-offset:3px}

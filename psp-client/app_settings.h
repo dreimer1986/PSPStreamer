@@ -13,6 +13,7 @@ static void settings_capture(AppSettings *s) {
     memcpy(s->value,values,sizeof(values));
 }
 static void settings_apply(const AppSettings *s) {
+    input_remote_stop();
     strcpy(server_host,s->host);strcpy(server_password,s->password);strcpy(music_preset_file,s->preset);
     server_port=s->value[SET_PORT];server_https=s->value[SET_HTTPS];
     language_set_code(s->value[SET_LANGUAGE]?"de":"en");tv_ui_auto=s->value[SET_TV];
@@ -27,6 +28,7 @@ static void settings_apply(const AppSettings *s) {
     server_auth_update();
 }
 static void settings_shell(const char *title) {
+    music_transition_end();
     if(tv_ui_active)tv_shell(title);else gui_library_shell(title);
 }
 static void settings_line(int row,int selected,const char *text) {
@@ -42,10 +44,12 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
     int key=0,dirty=1;
     unsigned long long repeat=0;
     snprintf(draft,sizeof(draft),"%s",text);
+    input_text_begin(capacity,secret);
     /* Printable ASCII plus German letters, encoded as UTF-8 on insertion. */
     static const int extra[]={0xE4,0xF6,0xFC,0xC4,0xD6,0xDC,0xDF};
     while(1) {
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
+        if(input_text_take(draft,capacity))dirty=1;
         unsigned int pressed=pad.Buttons&~old;
         if(dirty) {
             char display[64];
@@ -62,8 +66,8 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
             }
             settings_help(tr(TXT_KEYBOARD_HELP));dirty=0;
         }
-        if(pressed&PSP_CTRL_CIRCLE) {memset(draft,0,sizeof(draft));return 0;}
-        if(pressed&PSP_CTRL_START) {strcpy(text,draft);memset(draft,0,sizeof(draft));return 1;}
+        if(pressed&PSP_CTRL_CIRCLE) {input_text_end();memset(draft,0,sizeof(draft));return 0;}
+        if(pressed&PSP_CTRL_START) {strcpy(text,draft);input_text_end();memset(draft,0,sizeof(draft));return 1;}
         if(pressed&PSP_CTRL_LTRIGGER) {int n=strlen(draft);if(n){do{n--;}while(n>0 && (draft[n]&0xC0)==0x80);draft[n]=0;}dirty=1;}
         if(pressed&PSP_CTRL_RTRIGGER) {draft[0]=0;dirty=1;}
         if(pressed&PSP_CTRL_CROSS) {

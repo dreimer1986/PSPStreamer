@@ -416,7 +416,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if getattr(self, 'session_cookie', None) is not None:
             self.send_header('Set-Cookie', self.session_cookie)
             self.session_cookie = None
-        if (self.server.settings.protected or urlparse(self.path).path in ('/api/session', '/api/login', '/api/logout')) and not any(
+        if (self.server.settings.protected or urlparse(self.path).path.startswith('/api/input') or urlparse(self.path).path in ('/api/session', '/api/login', '/api/logout')) and not any(
                 header.lower().startswith(b'cache-control:') for header in getattr(self, '_headers_buffer', [])):
             self.send_header("Cache-Control", "private, no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -546,6 +546,17 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == '/api/player':
                 return self.send_json(self.server.player_status.snapshot())
+            if parsed.path == '/api/input/status':
+                return self.send_json(self.server.remote_input.status())
+            if parsed.path == '/api/input/poll':
+                data = self.server.remote_input.poll(query).encode('ascii')
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain; charset=ascii')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if parsed.path == "/api/remote/next":
                 self.server.player_status.report(query)
                 media = query.get('media') or query.get('plex')
@@ -768,6 +779,12 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.server.web_sessions.clear()
                 self.session_cookie = self.cookie_value('', 0)
                 return self.send_json({"ok": True})
+            if parsed.path == '/api/input':
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 4096:
+                    self.close_connection = True
+                    raise ValueError('Invalid input length')
+                return self.send_json(self.server.remote_input.submit(json.loads(self.rfile.read(length))))
             if parsed.path != "/api/remote/command":
                 if parsed.path == '/api/radio':
                     length = int(self.headers.get('Content-Length', '0'))
@@ -1274,6 +1291,8 @@ class AppServer(ThreadingHTTPServer):
         # process. Spare slots allow reconnects and legacy two-stream clients.
         self.transcode_slots = threading.BoundedSemaphore(int(os.environ.get("MAX_TRANSCODES", "4")))
         self.remote_lock = threading.Lock()
+        from .remote_input import RemoteInput
+        self.remote_input = RemoteInput()
         self.remote_sequence = 0
         self.remote_deadline = 0.0
         self.remote_session = os.urandom(16).hex()

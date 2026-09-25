@@ -112,7 +112,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_title="QUADRAT: Visualisierung wechseln",
         .step1_text="Spektrum / MilkDrop / Höhle.",
         .step2_title="DREIECK: Vollbild ein / aus",
-        .step2_text="X + DREIECK geht weiterhin auch.",
+        .step2_text="X: Titel für fünf Sekunden zeigen.",
         .step3_title="O: Visualisierungsoptionen",
         .step3_text="Höhle: Effekte. MilkDrop: Presets."
     },
@@ -232,6 +232,24 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_text="Später ohne App-Neustart wechseln.",
         .step3_title="Lokales Video: LCD/TV muss passen",
         .step3_text="Erst stoppen, dann Ausgang wechseln."
+    },
+    [HELP_PAGE_REMOTE]={
+        .title="Browser: PSP-Steuerung",
+        .step1_title="Server: Fernbedienung öffnen",
+        .step1_text="PSP-Tasten und Texteingabe aufklappen.",
+        .step2_title="Klicken oder gedrückt halten",
+        .step2_text="Touch oder L/R halten für Kombination.",
+        .step3_title="Steuert nur diese App, nicht XMB",
+        .step3_text="Verbindungsabbruch löst alle Tasten."
+    },
+    [HELP_PAGE_REMOTE_TEXT]={
+        .title="Browser: Texte am Handy tippen",
+        .step1_title="PSP-Eingabefeld mit X öffnen",
+        .step1_text="Im Browser wird das Textfeld aktiv.",
+        .step2_title="Senden ersetzt den Feldinhalt",
+        .step2_text="UTF-8; Passwörter bleiben verdeckt.",
+        .step3_title="Prüfen; START übernimmt, O verwirft",
+        .step3_text="Einstellungen: nochmals START sichern."
     },
     [HELP_PAGE_NETWORK]={
         .title="Wenn es einmal länger dauert",

@@ -8,6 +8,8 @@
 typedef unsigned int SceSize;
 typedef struct {unsigned int Buttons;} SceCtrlData;
 #define PSP_CTRL_CIRCLE 1
+#define PSP_CTRL_START 2
+static int music_transition;
 #define PSP_THREAD_ATTR_USER 0
 static pthread_t worker;
 static int (*entry)(SceSize,void *);

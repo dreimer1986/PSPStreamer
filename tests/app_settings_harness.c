@@ -49,6 +49,11 @@ static int output_failed,output_changes;
 static int tv_menu_select(int tv) {output_changes++;if(output_failed)return -1;tv_ui_active=tv;return 0;}
 static void help_open(int topic) {assert(topic==HELP_BROWSE);help_visits++;}
 static int comfort_menu(void){return 0;}
+static void input_remote_stop(void){}
+static void music_transition_end(void){}
+static void input_text_begin(int capacity,int secret){(void)capacity;(void)secret;}
+static void input_text_end(void){}
+static int input_text_take(char *text,int capacity){(void)text;(void)capacity;return 0;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {

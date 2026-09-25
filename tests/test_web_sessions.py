@@ -71,7 +71,15 @@ class SessionTests(unittest.TestCase):
                     self.assertEqual(code, 200)
                     csrf = json.loads(body)['csrf']
                     self.assertEqual(request('POST', '/api/remote/command', {'action': 'stop'}, auth)[0], 403)
+                    self.assertEqual(request('GET', '/api/input/status')[0], 401)
+                    self.assertEqual(request('POST', '/api/input', {'owner':'browser-test','serial':1,'mask':8}, auth)[0], 403)
                     auth['X-CSRF-Token'] = csrf
+                    query='/api/input/poll?client=psp-test-123&ack=0&dialog=1&capacity=32&secret=1'
+                    self.assertEqual(request('GET', query, headers=auth)[0], 200)
+                    self.assertEqual(request('POST', '/api/input', {'owner':'browser-test','serial':1,'client':'psp-test-123','text':'Grüße','dialog':1}, auth)[0], 200)
+                    code, _, body = request('GET', query, headers=auth)
+                    self.assertEqual(code, 200)
+                    self.assertEqual(bytes.fromhex(body.decode().split()[7]).decode(), 'Grüße')
                     self.assertEqual(request('POST', '/api/remote/command', {'action': 'stop'}, auth)[0], 200)
                     self.assertEqual(request('POST', '/api/logout', {}, auth)[0], 200)
                     self.assertEqual(request('GET', '/api/session', headers=auth)[0], 401)

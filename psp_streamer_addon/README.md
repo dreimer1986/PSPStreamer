@@ -100,3 +100,12 @@ optional 23.976 fps video. Both settings are available in the browser remote
 and the PSP playback dialog. Existing CBR and 20 fps defaults are preserved.
 The browser remembers its choices locally and includes them with Play.
 No additional Home Assistant app configuration is required for these options.
+# Browser PSP controller (0.1.53)
+
+Remote control → **PSP buttons and text input** controls the matching updated
+PSP app, including settings and its text editor. Supports held buttons,
+combinations and analog input. Text is scoped to the open PSP field and app
+instance; passwords are not read back. Use HTTPS for remote credentials.
+Install the matching EBOOT.PBP/PSPStreamer.prx pair. HACS integration 0.1.3
+remains compatible; this feature belongs to the server web UI, not a new entity.
+The normal Docker image contains the same implementation.

@@ -112,7 +112,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step1_title="SQUARE: change visualization",
         .step1_text="Spectrum / MilkDrop / Cave.",
         .step2_title="TRIANGLE: fullscreen on / off",
-        .step2_text="The old X + TRIANGLE works too.",
+        .step2_text="X: show track title for five seconds.",
         .step3_title="O: visualization options",
         .step3_text="Cave: effects. MilkDrop: presets."
     },
@@ -232,6 +232,24 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_text="Switch later without restarting.",
         .step3_title="Offline video: matching LCD/TV file",
         .step3_text="Stop first; no mid-video switching."
+    },
+    [HELP_PAGE_REMOTE]={
+        .title="Browser: PSP controller",
+        .step1_title="Server: Remote control",
+        .step1_text="Open PSP buttons and text input.",
+        .step2_title="Click buttons or hold to repeat",
+        .step2_text="Touch or Hold L/R makes combinations.",
+        .step3_title="Only controls this app, not XMB",
+        .step3_text="Lost connections release all keys."
+    },
+    [HELP_PAGE_REMOTE_TEXT]={
+        .title="Browser: type on your phone",
+        .step1_title="Open a PSP text field with X",
+        .step1_text="The browser enables its text box.",
+        .step2_title="Send replaces the field contents",
+        .step2_text="UTF-8 works; passwords stay masked.",
+        .step3_title="Check on PSP, then START accepts",
+        .step3_text="O cancels; settings need START again."
     },
     [HELP_PAGE_NETWORK]={
         .title="When something takes a while",

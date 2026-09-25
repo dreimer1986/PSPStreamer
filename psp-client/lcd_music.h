@@ -15,9 +15,11 @@ static void lcd_music_full(const char *title, int fullscreen) {
     int x;
     if (!fullscreen) {
         gui_library_shell(tr(TXT_NOW_PLAYING));
-        gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
-        gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
-        gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
+        if(!music_visual_active) {
+            gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_MUSIC_STREAM));
+            gui_text(38, 52, 0x00FFFFFF, "%.39s", title);
+            gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
+        }
     } else {
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);
         gui_rect((u32 *)0x44000000, 0, 0, VIDEO_WIDTH, 2, 0x00D8E8FF);
@@ -79,7 +81,7 @@ static void lcd_draw_music(const char *title, int fullscreen) {
     label_dirty = volume_changed;
     if (volume_changed) {
         lcd_music_restore(393, 188, 55, 55, fullscreen);
-        if (!fullscreen) lcd_music_restore(38, 64, 436, 8, 0);
+        if (!fullscreen && !music_visual_active) lcd_music_restore(38, 64, 436, 8, 0);
         lcd_music.volume = playback_volume;
     }
     for (i = 0; i < SPECTRUM_BANDS && !music_visual_active; i++) {
@@ -100,7 +102,7 @@ static void lcd_draw_music(const char *title, int fullscreen) {
     /* At maximum height normal bars overlap the last four rows of the
      * volume label. Preserve the full renderer's text-then-bars ordering.
      * In fullscreen the knob overlaps the last six rows of the last bars. */
-    if (!fullscreen && label_dirty)
+    if (!fullscreen && label_dirty && !music_visual_active)
         gui_text(38, 64, 0x008A9BAA, tr(TXT_VOLUME_LINE), playback_volume * 100 / 30);
     for (i = 0; i < SPECTRUM_BANDS && !music_visual_active &&
          (fullscreen ? volume_changed : label_dirty); i++) {
