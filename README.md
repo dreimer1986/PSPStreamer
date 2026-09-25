@@ -2,13 +2,18 @@
 
 ### Full browser controller and visualization update (2026-09-25)
 
-Server/app **0.1.53** adds **Remote control → PSP buttons and text input**.
+Server/app **0.1.54** includes **Remote control → PSP buttons and text input**.
 Install the matching PSP EBOOT/PRX pair. The clickable PSP provides the D-pad,
 face buttons, L/R, START, SELECT and an analog stick. Hold buttons for repeats;
 use multi-touch combinations or the **Hold L / Hold R** switches with a mouse.
 Keyboard shortcuts are listed below the controller. This controls PSPStreamer
 menus and playback only, not XMB, HOME, hardware switches or other applications.
 It is not a live screenshot: watch the PSP or TV for the current menu.
+
+Quick clicks release on the PSP after 60 ms rather than waiting for a network
+release message; holding for at least 350 ms enables hold renewal. This requires
+both the matching server and PSP update. START also exits the app from the local
+storage browser; during playback it still stops the current file first.
 
 Open a text field on the PSP (also possible with the virtual buttons). The web
 text box becomes available; **Send text** replaces that field's draft. Check the

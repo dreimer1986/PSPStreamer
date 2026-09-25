@@ -17,6 +17,7 @@ class RemoteInput:
         self.serial = -1
         self.lease = 0.0
         self.keys = (0, 128, 128)
+        self.keys_since = 0.0
         self.queue = deque()
 
     def _expire(self, now):
@@ -70,6 +71,8 @@ class RemoteInput:
                 if any(type(v) is not int for v in values) or values[0] < 0 or values[0] & ~self.MASK or not all(0 <= v <= 255 for v in values[1:]):
                     raise ValueError('Invalid PSP buttons or analog position')
                 event = (1, *values, 0, '-') if values != self.keys else None
+                if values[0] != self.keys[0]:
+                    self.keys_since = now
                 self.keys = values
             self.owner, self.serial, self.lease = owner, serial, now + 2
             if event:
@@ -110,5 +113,12 @@ class RemoteInput:
             else:
                 seq, kind, field, text = ack, 0, 0, '-'
                 mask, x, y = self.keys
+                # A queued press is a short impulse, not a one-second hold.
+                # Only a still-down key, after the initial hold delay, may
+                # renew a hold. Quick taps cannot be revived by idle polls.
+                if mask and now - self.keys_since >= 0.35:
+                    kind = 3
+                else:
+                    mask = 0
             ttl = max(0, min(1000, int((self.lease - now) * 1000)))
             return f'{seq} {kind} {mask} {x} {y} {ttl} {field} {text}\n'

@@ -156,6 +156,7 @@ static volatile int remote_control_seek_seconds = -1;
 static int remote_control_thread_id = -1;
 static int remote_control_sequence;
 static int music_transition;
+static int app_exit_requested;
 static void music_transition_end(void);
 #define TVOUT_STRIDE 768
 
@@ -3331,6 +3332,7 @@ int main(void) {
     }
     while (1) {
         unsigned long long now;
+        if(app_exit_requested)break;
         playback_clock_idle();
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);

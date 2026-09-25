@@ -23,7 +23,12 @@ int main(void){
     strcpy(input_reply,"1 1 768 200 128 900 0 -");input_receive(tick);input_remote_tick(&p);
     assert(p.Buttons==(8|768)&&p.Lx==200);
     p=(SceCtrlData){0,90,128};input_remote_tick(&p);assert(p.Lx==90);
+    tick+=70000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);
+    assert(!p.Buttons&&p.Lx==200); /* Delayed release must not cause menu repeat. */
     tick+=901000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(!p.Buttons&&p.Lx==128);
+    strcpy(input_reply,"1 3 16 128 128 900 0 -");input_receive(tick);
+    tick+=200000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(p.Buttons==16);
+    tick+=701000;p=(SceCtrlData){0,128,128};input_remote_tick(&p);assert(!p.Buttons);
     input_text_begin(32,1);char text[32]="old";
     snprintf(input_reply,sizeof(input_reply),"2 2 0 128 128 900 %d 4772c3bcc39f65",input_dialog);
     input_receive(tick);assert(input_text_take(text,32)&&!strcmp(text,"Grüße"));assert(!input_text_take(text,32));

@@ -1,3 +1,11 @@
+# 0.1.54
+
+- Separate short virtual-button impulses from real held keys. A click releases
+  locally after 60 ms, without waiting for another PSP HTTP/TLS round trip.
+- Renew held keys only after a 350 ms hold delay; idle polls never revive taps.
+- Matching PSP client also supports START to exit from local storage through
+  the normal application cleanup path. Update both PSP files and the server.
+
 # 0.1.53
 
 - Add an authenticated virtual PSP controller and UTF-8 text entry to the web

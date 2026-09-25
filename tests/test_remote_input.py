@@ -53,6 +53,28 @@ class InputTests(unittest.TestCase):
         self.r.poll(self.q)
         with self.assertRaises(ValueError): self.r.submit(stale)
 
+    def test_tap_is_not_revived_and_real_hold_is_renewed(self):
+        self.send(1, mask=16)
+        p=self.packet()
+        self.assertEqual(p[1], '1')
+        self.q['ack']=[p[0]]
+        self.now.return_value=100.1
+        self.assertEqual(self.packet()[1:3], ['0', '0'])
+        self.now.return_value=100.4
+        self.assertEqual(self.packet()[1:3], ['3', '16'])
+        self.send(2, mask=0)
+        p=self.packet();self.q['ack']=[p[0]]
+        self.assertEqual(self.packet()[1:3], ['0', '0'])
+
+    def test_local_start_uses_normal_main_cleanup(self):
+        root=Path(__file__).resolve().parents[1]
+        local=(root/'psp-client/offline_ui.h').read_text()
+        main=(root/'psp-client/main.c').read_text()
+        self.assertIn('if(pressed&PSP_CTRL_START){app_exit_requested=1;return;}',local)
+        loop=main[main.index('int main(void)'):]
+        self.assertIn('if(app_exit_requested)break;',loop)
+        self.assertLess(loop.index('if(app_exit_requested)break;'),loop.index('int browser_stopped=exit_join_worker'))
+
     def test_restart_and_ordering(self):
         self.send(5, mask=16)
         self.send(4, mask=32)

@@ -478,6 +478,7 @@ static void offline_browser(void) {
             settings_help(tr(server?TXT_DOWNLOAD_QUEUE_HELP:TXT_DOWNLOAD_LOCAL_HELP));dirty=0;
         }
         if(pressed&PSP_CTRL_CIRCLE)return;
+        if(pressed&PSP_CTRL_START){app_exit_requested=1;return;}
         if(pressed&PSP_CTRL_LTRIGGER) {
             /* Local inventory, even while viewing the server queue. */
             int ready=0,partial=0;SceIoDirent entry;SceUID dir=sceIoDopen(OFFLINE_ROOT);
