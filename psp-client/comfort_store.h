@@ -71,7 +71,8 @@ static int comfort_find(ComfortStore *s,const char *scope,const char *id,int cre
     for(int i=0;i<COMFORT_RECORDS;i++) {
         ComfortRecord *r=&s->records[i];
         if(r->id[0]&&!strcmp(r->scope,scope)&&!strcmp(r->id,id))return i;
-        if(!r->favorite && (candidate<0||r->used<s->records[candidate].used))candidate=i;
+        if(!r->favorite && (candidate<0 || (!r->id[0] && s->records[candidate].id[0]) ||
+           (r->id[0] && s->records[candidate].id[0] && r->used<s->records[candidate].used)))candidate=i;
     }
     if(!create||candidate<0)return -1;
     ComfortRecord *r=&s->records[candidate];memset(r,0,sizeof(*r));

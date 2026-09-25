@@ -1,5 +1,11 @@
 # Controller and visualization update — 2026-09-25
 
+Server 0.1.56: web favorites/history/continue watching and background name search
+across enabled sources. The matching PSP pair syncs shortcuts when opening
+Comfort while idle, not during playback. Local downloads/passwords stay on PSP.
+Keep PSPStreamer.state and PSPStreamer-comfort.id. See docs/WEB_COMFORT.md for
+sync/storage/search limits and the hardware check.
+
 Measured theme update: windowed visuals and menu backgrounds now use the user's
 exact LCD/TV screen rectangles. Text is bounded to the glass, long LCD rows use
 ellipsis, and English/German sidebar messages are shortened. Cover heights,

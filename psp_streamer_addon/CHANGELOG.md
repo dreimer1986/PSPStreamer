@@ -1,3 +1,16 @@
+# 0.1.56
+
+- Add web favorites, recently played media and continue-watching shortcuts.
+  History uses existing PSP telemetry; state is saved atomically in the durable
+  settings directory. No extra playback polling is introduced.
+- The matching PSP build synchronizes server-scoped shortcuts when opening
+  Comfort and after favorite/history edits. Local downloads and connection
+  profiles/passwords never leave the Memory Stick. The PSP still holds 64 records.
+- Add background name search across enabled Files/SMB, Plex, Jellyfin, DLNA and
+  radio sources. Film/series folders and music are included. Progress and partial
+  results are shown; explicit time/folder/result limits prevent unlimited scans.
+- Docker and Home Assistant ship identical server/web code. No HACS update needed.
+
 # 0.1.55
 
 - Slow virtual-controller polling to a two-second gap after each response or

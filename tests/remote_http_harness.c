@@ -44,10 +44,12 @@ int main(int argc,char **argv) {
     cached_server_address.s_addr=htonl(INADDR_LOOPBACK);
     unsigned long long start=sceKernelGetSystemTimeWide();
     if(!strcmp(argv[2],"cancel")) running=0;
-    int n=remote_http_get("/api/remote/next?after=10",result,sizeof(result),&running);
+    char body[30001];memset(body,'x',30000);body[30000]=0;
+    int n=!strcmp(argv[2],"post")?remote_http_request_budget("/api/comfort/sync",result,sizeof(result),&running,2000,body):
+        remote_http_get("/api/remote/next?after=10",result,sizeof(result),&running);
     assert(closes==1 && remote_http_completed==1);
     assert(sceKernelGetSystemTimeWide()-start<2500000);
-    if(!strcmp(argv[2],"ok") || !strcmp(argv[2],"lowercase")) assert(n==2 && !strcmp(result,"{}"));
+    if(!strcmp(argv[2],"ok") || !strcmp(argv[2],"lowercase") || !strcmp(argv[2],"post")) assert(n==2 && !strcmp(result,"{}"));
     else assert(n<0);
     if(!strcmp(argv[2],"unauthorized"))assert(remote_http_last_status==401);
     return 0;

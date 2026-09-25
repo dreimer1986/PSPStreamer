@@ -1,5 +1,10 @@
 # PSP Streamer
 
+Server **0.1.56** adds shared [favorites, history, resume and cross-source
+search](docs/WEB_COMFORT.md). Install the matching PSP pair and open **Comfort**
+once to synchronize its existing server-scoped shortcuts. No continuous sync
+or extra playback polling is introduced.
+
 The measured LCD/TV screen rectangles, text limits and layout checks are
 documented in [Theme layout](docs/THEME_LAYOUT.md).
 

@@ -57,7 +57,7 @@ class RemoteHttpTests(unittest.TestCase):
             subprocess.run(["cc", "-D_POSIX_C_SOURCE=200809L", "-std=c11", "-Wall", "-Wextra",
                             "-Werror", "-I", str(ROOT / "psp-client"),
                             str(ROOT / "tests/remote_http_harness.c"), "-o", str(binary)], check=True)
-            for mode in ("ok", "lowercase", "short", "oversize", "timeout", "cancel", "unauthorized"):
+            for mode in ("ok", "lowercase", "short", "oversize", "timeout", "cancel", "unauthorized", "post"):
                 with self.subTest(mode=mode), socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     listener.listen()
@@ -65,7 +65,14 @@ class RemoteHttpTests(unittest.TestCase):
                     def serve():
                         with listener.accept()[0] as client:
                             client.settimeout(3)
-                            client.recv(4096)
+                            request=client.recv(4096)
+                            if mode=='post':
+                                while b'\r\n\r\n' not in request:request+=client.recv(4096)
+                                header,body=request.split(b'\r\n\r\n',1)
+                                while len(body)<30000:body+=client.recv(4096)
+                                self.assertTrue(header.startswith(b'POST /api/comfort/sync HTTP/1.0'))
+                                self.assertIn(b'Content-Length: 30000',header)
+                                self.assertEqual(body,b'x'*30000)
                             if mode == "cancel":
                                 return
                             if mode == "timeout":

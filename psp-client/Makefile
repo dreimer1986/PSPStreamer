@@ -49,7 +49,8 @@ main.o: library_fetch.h
 main.o: power_policy.h ../psp-overclock/control_api.h
 main.o: exit_policy.h
 main.o: music_caption.h
-main.o: comfort_store.h comfort_ui.h
+main.o: comfort_store.h comfort_ui.h comfort_sync.h
+main.o milkdrop_gu.o: theme_layout.h
 main.o: remote_input.h remote_input_impl.h
 milkdrop_gu.o: milkdrop_title.h
 milkdrop_preset.o: preset_source.h

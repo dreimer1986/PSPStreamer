@@ -546,6 +546,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == '/api/player':
                 return self.send_json(self.server.player_status.snapshot())
+            if parsed.path == '/api/comfort':
+                return self.send_json(self.server.comfort.snapshot())
+            if parsed.path == '/api/search':
+                return self.send_json(self.server.search.snapshot(query.get('q',[''])[0]))
             if parsed.path == '/api/input/status':
                 return self.send_json(self.server.remote_input.status())
             if parsed.path == '/api/input/poll':
@@ -559,6 +563,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/remote/next":
                 self.server.player_status.report(query)
+                self.server.comfort.report(query, self.server.player_status.snapshot())
                 media = query.get('media') or query.get('plex')
                 if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
                     self.server.stream_pauses.report(self.client_address[0], media[0],
@@ -657,7 +662,7 @@ class AppHandler(BaseHTTPRequestHandler):
         login = urlparse(self.path).path == '/api/login'
         if not login and not self.authorized():
             return
-        # Native PSP clients only GET. Browser commands must be same-origin
+        # Native PSP comfort sync also POSTs JSON. Browser commands must be same-origin
         # JSON; reject form POSTs that could reuse cached Basic credentials.
         origin = self.headers.get("Origin")
         if (self.headers.get_content_type() != "application/json" or
@@ -694,6 +699,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.server.web_sessions.revoke(self.headers.get('Cookie'))
                 self.session_cookie = self.cookie_value('', 0)
                 return self.send_json({'ok': True})
+            if parsed.path in ('/api/comfort', '/api/comfort/sync'):
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=100000:
+                    self.close_connection=True
+                    return self.send_error_json(HTTPStatus.BAD_REQUEST,'Invalid comfort request size')
+                data=json.loads(self.rfile.read(length))
+                return self.send_json(self.server.comfort.sync(data) if parsed.path.endswith('/sync') else self.server.comfort.change(data))
             if parsed.path.startswith('/api/dlna/'):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=8192:
@@ -1254,6 +1266,10 @@ class AppServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], library: Library):
         state_root = state_directory()
+        from .comfort import Comfort
+        self.comfort = Comfort(state_root)
+        from .search import Search
+        self.search = Search(self)
         self.settings = PasswordSettings()
         self.web_sessions = WebSessions()
         self.stream_pauses = StreamPauses()

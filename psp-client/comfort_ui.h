@@ -1,4 +1,5 @@
 /* Idle-menu conveniences; all persistence runs outside media workers. */
+#include "comfort_sync.h"
 static void comfort_notice(const char *text) {
     settings_shell(tr(TXT_COMFORT));settings_line(2,0,text);
     settings_help(tr(TXT_DOWNLOAD_BACK));
@@ -52,6 +53,7 @@ static int comfort_shortcuts(int favorites) {
             ComfortRecord *r=&comfort_store.records[order[selected]];
             if(favorites)r->favorite=0;else r->used=0;
             if(!comfort_save_file(COMFORT_PATH,&comfort_store))comfort_notice(tr(TXT_SETTINGS_FAILED));
+            else comfort_sync();
             dirty=1;
         }
         if(count && (pressed&PSP_CTRL_CROSS)) {
@@ -116,6 +118,7 @@ static int comfort_profiles(void) {
     }
 }
 static int comfort_menu(void) {
+    comfort_sync();
     int selected=0,dirty=1;unsigned int old=~0U;
     while(1) {
         if(dirty) {
@@ -143,7 +146,9 @@ static int comfort_menu(void) {
                     ComfortRecord *r=&comfort_store.records[i];
                     snprintf(r->name,sizeof(r->name),"%s",comfort_focus.title);
                     r->folder=comfort_focus.is_folder;r->audio=comfort_focus.is_audio;r->favorite=!r->favorite;
-                    comfort_notice(tr(comfort_save_file(COMFORT_PATH,&comfort_store)?TXT_COMFORT_SAVED:TXT_SETTINGS_FAILED));
+                    int saved=comfort_save_file(COMFORT_PATH,&comfort_store);
+                    if(saved)comfort_sync();
+                    comfort_notice(tr(saved?TXT_COMFORT_SAVED:TXT_SETTINGS_FAILED));
                 }
             }
             dirty=1;sceCtrlReadBufferPositive(&pad,1);

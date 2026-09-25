@@ -102,6 +102,13 @@ async function choose(v){
       const state=document.createElement('p');state.textContent=t(d.watched?'Watched':'Unwatched');$('#details').append(state);
       if(d.resume>0)$('#details').append(button(t('Resume at {time}',{time:timeLabel(d.resume)}),()=>{$('#seek').value=d.resume;$('#seek').dispatchEvent(new Event('input'));}));
     }
+    if(typeof favoriteButton==='function'){
+      $('#details').append(favoriteButton({id:v.id,name:v.name,folder:0,audio:Number(audio)}));
+      if(!['plex','jellyfin'].includes(d.provider)){
+        const saved=comfortRecords.find(r=>r.id===v.id);
+        if(saved?.seconds>0&&!audio&&!live)$('#details').append(button(t('Resume at {time}',{time:timeLabel(saved.seconds)}),()=>seekTo(saved.seconds)));
+      }
+    }
     $('#mediaOptions').hidden=false;$('#play').disabled=$('#queue').disabled=false;
     message(!audio&&(!a||!s)?t('Preferred track unavailable; check the selection.'):'');
   }catch(error){if(generation===chooseGeneration){clearMedia();throw error;}}

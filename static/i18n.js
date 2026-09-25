@@ -1,5 +1,13 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Favorites & history':'Favoriten & Verlauf','Favorites':'Favoriten','Recently played':'Zuletzt gespielt','Continue watching':'Weiterschauen',
+  'Open Comfort on the PSP to synchronize favorites and history. Local downloads and server passwords stay on the PSP.':'Zum Abgleichen von Favoriten und Verlauf die Komfortfunktionen auf der PSP öffnen. Lokale Downloads und Serverpasswörter bleiben auf der PSP.',
+  'Remove favorite':'Favorit entfernen','Add favorite':'Als Favorit speichern','Remove from history':'Aus Verlauf entfernen','No entries yet.':'Noch keine Einträge.',
+  'Search films, series and music':'Filme, Serien und Musik suchen','Search all sources':'Alle Quellen durchsuchen',
+  'Searching… {n} folders checked':'Suche läuft… {n} Ordner geprüft','Search complete: {n} folders checked':'Suche abgeschlossen: {n} Ordner geprüft',
+  'Search limit reached. Results are incomplete; browse the source for more.':'Suchlimit erreicht. Die Treffer sind unvollständig; weitere Inhalte bitte direkt in der Quelle suchen.',
+  'No results.':'Keine Treffer.','Close search':'Suche schließen','Enter 2–120 characters':'Bitte 2–120 Zeichen eingeben',
+  'A search is still running; please wait':'Eine Suche läuft noch; bitte warten',
   'PSP buttons and text input':'PSP-Tasten und Texteingabe',
   'Controls work inside PSPStreamer only. Hold buttons to repeat; touch supports combinations.':'Steuert nur PSPStreamer. Tasten für Wiederholungen gedrückt halten; mit Touch sind Kombinationen möglich.',
   'Watch the PSP or TV screen':'Anzeige auf PSP oder TV verfolgen',
