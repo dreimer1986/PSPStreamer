@@ -1,3 +1,10 @@
+# 0.1.57
+
+- Add bounded-rate stream transport diagnostics: FFmpeg output versus bytes sent
+  to the client, idle durations and termination reason. No media URLs or secrets
+  are logged. Streaming and pause timeouts remain unchanged.
+- Keep the Docker and Home Assistant server implementations identical.
+
 # 0.1.56
 
 - Add web favorites, recently played media and continue-watching shortcuts.

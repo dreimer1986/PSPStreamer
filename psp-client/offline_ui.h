@@ -273,6 +273,7 @@ static int offline_download_worker(SceSize args,void *argp) {
     snprintf(path,sizeof(path),"%s/ready",folder);
     result=offline_write(path,"1",1);
 done:
+    network_worker_finished("download");
     download_result=result;download_done=1;return 0;
 }
 static int offline_transfer(const char *key,const char *post) {

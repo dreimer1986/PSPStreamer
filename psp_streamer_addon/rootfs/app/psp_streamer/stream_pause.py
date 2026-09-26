@@ -30,7 +30,7 @@ class StreamPauses:
             self.active.pop(lease, None)
 
 
-def write_stream(connection, chunk, timeout, paused):
+def write_stream(connection, chunk, timeout, paused, progress=None):
     # Unlike retrying sendall()/wfile.write(), send() exposes how much was
     # transmitted. Retrying cannot duplicate a partially delivered FLV tag.
     pending = memoryview(chunk)
@@ -41,6 +41,8 @@ def write_stream(connection, chunk, timeout, paused):
         try:
             sent = connection.send(pending)
         except TimeoutError:
+            if progress:
+                progress(0)
             if time.monotonic() - last_progress >= timeout:
                 raise
             continue
@@ -48,3 +50,5 @@ def write_stream(connection, chunk, timeout, paused):
             raise BrokenPipeError("Streaming client disconnected")
         pending = pending[sent:]
         last_progress = time.monotonic()
+        if progress:
+            progress(sent)

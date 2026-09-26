@@ -47,6 +47,7 @@ static int sceIoWrite(int fd,const char *text,int size) {
 }
 static int sceIoClose(int fd) { assert(fd==8);return 0; }
 static int timed_network_failed;
+static int timed_flv_header_received;
 static int diagnostic_rotate(const char *path){(void)path;return 0;}
 #include "stream_diagnostic.h"
 /* TIMED_READ */
@@ -58,6 +59,9 @@ int main(void) {
     assert(!strcmp(stream_diag.reason,"read inactivity timeout"));
     timed_playing=0; tick=0;
     assert(timed_read(data,4)==-1 && tick==180000000);
+    timed_flv_header_received=1;tick=0;
+    assert(timed_read(data,4)==-1 && tick==30000000);
+    timed_flv_header_received=0;
     timed_playing=1; mode=6; tick=0; stream_diag_reset();
     assert(timed_read(data,4)==1 && tick==8300000);
     assert(stream_diag.received==4 && !memcmp(data,"xxxx",4));

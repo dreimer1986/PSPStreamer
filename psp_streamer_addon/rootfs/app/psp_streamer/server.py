@@ -40,6 +40,7 @@ from .jellyfin import Jellyfin
 from .plex_media import RemoteSource
 from .web_session import WebSessions
 from .stream_pause import StreamPauses, write_stream
+from .stream_trace import StreamTrace
 from .catalogue import browse as browse_catalogue, folder_media
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".webm", ".wmv"}
@@ -1152,6 +1153,8 @@ class AppHandler(BaseHTTPRequestHandler):
         radio_lease = None
         pause_lease = None
         external_folder = None
+        trace = None
+        transport_outcome = 'interrupted'
         try:
             # Keep the existing startup/subtitle inactivity allowance. During
             # blocked body writes only, fresh client-confirmed pause reports
@@ -1235,13 +1238,29 @@ class AppHandler(BaseHTTPRequestHandler):
             chunk_size = 4 * 1024 if container in {"mjpeg", "h264", "flv"} else 64 * 1024
             self.wfile.flush()
             self.connection.settimeout(min(1.0, write_timeout))
-            while chunk := process.stdout.read1(chunk_size):
+            # Diagnose producer starvation separately from a blocked client.
+            # select does not change the startup/pause timeout policy; it only
+            # allows a bounded-rate heartbeat while FFmpeg supplies no bytes.
+            trace = StreamTrace(process.pid, super().log_message)
+            trace.report('begin', force=True)
+            while True:
+                ready, _, _ = select.select([process.stdout], [], [], 1)
+                if not ready:
+                    trace.report('waiting for ffmpeg')
+                    continue
+                chunk = process.stdout.read1(chunk_size)
+                if not chunk:
+                    break
+                trace.received(len(chunk))
                 write_stream(self.connection, chunk, write_timeout,
-                             lambda: self.server.stream_pauses.paused(pause_lease))
+                             lambda: self.server.stream_pauses.paused(pause_lease), trace.delivered)
             process.wait(timeout=15)
-        except (BrokenPipeError, ConnectionResetError, TimeoutError):
-            pass
+            transport_outcome = f'ffmpeg exit {process.returncode}'
+        except (BrokenPipeError, ConnectionResetError, TimeoutError) as error:
+            transport_outcome = type(error).__name__
         finally:
+            if trace:
+                trace.report(transport_outcome, force=True)
             self.server.stream_pauses.end(pause_lease)
             if radio_lease:
                 self.server.radio.end(token, radio_lease)

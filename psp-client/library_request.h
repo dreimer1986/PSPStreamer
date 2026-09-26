@@ -19,6 +19,7 @@ static int library_worker(SceSize args,void *argp) {
          * retry; no thread killing and no overlapping server requests. */
         for(int wait=0;wait<10 && library_running;wait++)sceKernelDelayThread(100000);
     }
+    network_worker_finished("library");
     __sync_synchronize();library_done=1;
     return 0;
 }

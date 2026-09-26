@@ -16,7 +16,7 @@ static int sceKernelCreateThread(const char *name, int (*worker)(SceSize, void *
                                 int priority, int stack, int flags, void *option) {
     assert(!strcmp(name, "PSPStreamerMusicRemote") && worker == music_remote_worker);
     assert(priority == (server_https?0x41:0x40));
-    assert(stack == (server_https?0x10000:0x4000) && flags == 0 && !option);
+    assert(stack == 0x10000 && flags == 0 && !option);
     return create_failure ? -10 : 123;
 }
 static int sceKernelStartThread(int id, int args, void *argp) {
@@ -37,6 +37,7 @@ static int remote_http_get_budget(const char *path, char *reply, int capacity, v
 }
 /* PLEX_REPORTING */
 #include "remote_state.h"
+static void network_worker_finished(const char *name){(void)name;}
 #include "music_remote.h"
 static void subtitle_page_prefetch(unsigned long long *retry) {(void)retry;}
 /* VIDEO_REMOTE_WORKER */

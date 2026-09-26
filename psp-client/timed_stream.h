@@ -17,6 +17,7 @@ typedef struct {
 static TimedQueue timed_video, timed_audio;
 static volatile int timed_active, timed_running, timed_eof, timed_error, timed_playing;
 static volatile int timed_network_failed;
+static int timed_flv_header_received;
 static const char * volatile timed_error_step = "FLV/PTS stream";
 static volatile int timed_has_audio, timed_audio_done;
 static volatile int timed_video_blocked, timed_audio_waiting;
@@ -96,7 +97,7 @@ static int timed_put_video(FlvAvc *config,const unsigned char *data,int size,int
     return 0;
 }
 /* Exact reads tolerate TCP fragmentation. A timeout returns to this worker,
- * never blocks the UI; cancellation closes the socket before joining it.
+ * never blocks the UI; cancellation lets the owner close before it is joined.
  * Startup/subtitle preparation and intentional pause have separate budgets.
  */
 static int timed_read(unsigned char *out, int size) {
@@ -113,7 +114,7 @@ static int timed_read(unsigned char *out, int size) {
         if (got == -2) {
             /* Preserve partial FLV packets across temporary delivery gaps.
              * Cancellation still polls every 100 ms; startup is unchanged. */
-            unsigned long long limit = timed_playing ? 30000000ULL : 180000000ULL;
+            unsigned long long limit = (timed_playing || timed_flv_header_received) ? 30000000ULL : 180000000ULL;
             if (playback_paused) last = sceKernelGetSystemTimeWide();
             if (sceKernelGetSystemTimeWide() - last < limit) continue;
             DEBUG_DIAG(stream_diag.reason="read inactivity timeout";);
@@ -175,6 +176,7 @@ static int timed_reader(SceSize args, void *argp) {
     unsigned int local_position=13, video_start=offline_active?offline_seek_offset:0;
     (void)args; (void)argp;
     stream_diag_reset();
+    timed_flv_header_received=0;
     memset(&avc, 0, sizeof(avc));
     timed_error_step = "FLV/PTS stream";
     if(offline_active) {
@@ -215,6 +217,7 @@ flv_header:
     if (timed_read(h, 13) != 1 || memcmp(h, "FLV\1", 4) ||
         flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || !(h[4] & 1)) goto end;
     timed_has_audio = !!(h[4] & 4);
+    timed_flv_header_received=1;
     body = malloc(FLV_MAX_VIDEO);
     if (!body) { DEBUG_DIAG(stream_diag.reason="reader allocation failed";); goto end; }
     while (timed_running) {
@@ -265,6 +268,7 @@ end:
     }
     free(body);
     if (timed_socket == fd) { timed_socket = -1; if (fd >= 0) connection_close(fd); }
+    if(!offline_active)network_worker_finished("FLV reader");
     if (result < 0 && timed_running && !timed_error) timed_error = -1320;
     __sync_synchronize();
     timed_eof = 1;

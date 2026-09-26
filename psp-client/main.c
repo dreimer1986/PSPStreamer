@@ -1781,6 +1781,7 @@ cleanup:
         sceKernelSignalSema(audio_queue_free_sema, 1);
     if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) connection_close(socket_fd); }
     if (mp3_codec_work) { free(mp3_codec_work); mp3_codec_work = NULL; }
+    if(socket_fd>=0)network_worker_finished("audio reader");
     return 0;
 }
 
@@ -1982,7 +1983,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     if (fullscreen && !music_visual_active) draw_fullscreen_spectrum();
     /* A held Select that resumed live radio must not immediately pause again. */
     { SceCtrlData initial; sceCtrlPeekBufferPositive(&initial,1); old=initial.Buttons; }
-    audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, server_https?0x10000:0x4000, 0, NULL);
+    audio_thread_id = sceKernelCreateThread("PSPStreamerMusic", audio_thread, 0x18, 0x10000, 0, NULL);
     start_result = audio_thread_id < 0 ? audio_thread_id : sceKernelStartThread(audio_thread_id, 0, NULL);
     if (start_result < 0) {
         video_step = "Music worker";
@@ -2189,7 +2190,8 @@ static int play_audio_once(const char *media_id, const char *title) {
     music_remote_running = 0;
     video_watch_ping("music stop: close socket");
     audio_running = 0; audio_start = 1;
-    if (audio_socket_fd >= 0) sceNetInetShutdown(audio_socket_fd,2);
+    /* Bounded producer polls observe cancellation. Never shutdown an fd
+     * which its owner may have just closed and another worker reused. */
     video_watch_ping("music stop: join producer");
     sceKernelWaitThreadEnd(audio_thread_id, NULL);
     sceKernelDeleteThread(audio_thread_id);
@@ -2407,7 +2409,7 @@ static int play_h264(const char *media_id) {
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
         audio_quality_name(), selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
     video_step = "FLV reader worker";
-    timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, server_https?0x10000:0x5000, 0, NULL);
+    timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x10000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
     if (sceKernelStartThread(timed_reader_id, 0, NULL) < 0) {
         sceKernelDeleteThread(timed_reader_id); timed_reader_id = -1; result = -1321; goto done;
@@ -2415,7 +2417,7 @@ static int play_h264(const char *media_id) {
     remote_control_action = 0;
     remote_control_seek_seconds = -1;
     remote_control_running = 1;
-    remote_control_thread_id = offline_active ? -1 : sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, server_https?0x40:0x20, server_https?0x10000:0x3000, 0, NULL);
+    remote_control_thread_id = offline_active ? -1 : sceKernelCreateThread("PSPStreamerRemote", remote_control_thread, server_https?0x40:0x20, 0x10000, 0, NULL);
     result = remote_control_thread_id < 0 ? remote_control_thread_id :
         sceKernelStartThread(remote_control_thread_id, 0, NULL);
     if (offline_active) {result=0;remote_control_running=0;}
@@ -2704,9 +2706,7 @@ done:
     audio_running = 0; audio_start = 1;
     video_first_presented = 0;
     remote_control_running = 0;
-    if (timed_socket >= 0) {
-        sceNetInetShutdown(timed_socket,2);
-    }
+    /* Bounded reader polls observe timed_running; only the owner touches fd. */
     if (timed_reader_id >= 0) {
         video_watch_ping("stop: join FLV reader");
         sceKernelWaitThreadEnd(timed_reader_id, NULL);
@@ -2979,6 +2979,7 @@ static int remote_control_thread(SceSize args, void *argp) {
         remote_poll_wait(&remote_control_running);
     }
     plex_report_stop(sequence);
+    network_worker_finished("video remote");
     return 0;
 }
 

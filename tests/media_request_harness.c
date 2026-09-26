@@ -50,6 +50,7 @@ static int remote_http_request_policy(const char *path,char *buffer,int capacity
     if(!*running)return -1005;
     strcpy(buffer,"{\"t\":\"text\",\"c\":[]}");return strlen(buffer);
 }
+static void network_worker_finished(const char *name){(void)name;}
 #include "media_request.h"
 static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
     assert(subtitles==1);(void)seconds;(void)cancelling;draws++;

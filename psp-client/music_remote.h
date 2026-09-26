@@ -68,6 +68,7 @@ static int music_remote_worker(SceSize args, void *argp) {
 #ifdef PSPSTREAMER_PLEX_REPORT
     plex_report_stop(sequence);
 #endif
+    network_worker_finished("music remote");
     return 0;
 }
 
@@ -81,7 +82,7 @@ static int music_remote_start(void) {
      * the higher-priority DAC stays clean. Let the display preempt HTTPS
      * control work; it still runs during the UI's regular sleep intervals. */
     music_remote_thread_id = sceKernelCreateThread("PSPStreamerMusicRemote",
-        music_remote_worker, server_https?0x41:0x40, server_https?0x10000:0x4000, 0, NULL);
+        music_remote_worker, server_https?0x41:0x40, 0x10000, 0, NULL);
     if (music_remote_thread_id < 0) {
         result = music_remote_thread_id;
         music_remote_thread_id = -1; music_remote_running = 0;

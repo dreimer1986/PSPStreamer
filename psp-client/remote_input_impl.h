@@ -12,6 +12,7 @@ static int input_text_ready;
 static int input_worker(SceSize args,void *argp) {
     (void)args;(void)argp;
     input_result=remote_http_get_budget(input_path,input_reply,sizeof(input_reply),&input_running,5000);
+    network_worker_finished("GUI input");
     __sync_synchronize();input_done=1;
     return 0;
 }

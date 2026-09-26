@@ -48,6 +48,7 @@ static void menu_art_download(volatile int *running){
     while(*running && !release_reply)pause_ms();
 }
 static void menu_art_complete(int deliver){art_delivered+=deliver;art_completed++;}
+static void network_worker_finished(const char *name){(void)name;}
 #include "browser_remote.h"
 #define ID_SIZE 512
 static atomic_int library_entered, library_release;

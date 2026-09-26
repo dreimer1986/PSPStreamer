@@ -17,6 +17,7 @@ static int browser_remote_worker(SceSize args, void *argp) {
     if(browser_art_task)menu_art_download(&browser_remote_running);
     else browser_remote_result = remote_http_get(browser_remote_path, browser_remote_reply,
                                             sizeof(browser_remote_reply), &browser_remote_running);
+    network_worker_finished("browser");
     __sync_synchronize();
     browser_remote_done = 1;
     return 0;

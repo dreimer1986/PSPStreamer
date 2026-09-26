@@ -6,6 +6,17 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
 class StreamDiagnosticTests(unittest.TestCase):
+    def test_flv_read_recovery(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source=(ROOT / 'psp-client/timed_stream.h').read_text()
+            code=(ROOT / 'tests/stream_diagnostic_harness.c').read_text().replace(
+                '/* TIMED_READ */',source[source.index('static int timed_read('):source.index('static int timed_connect(')])
+            binary=Path(temp)/'read'
+            subprocess.run(['cc','-x','c','-','-std=c11','-Wall','-Wextra','-Werror',
+                            '-fsanitize=undefined','-I',str(ROOT/'psp-client'),'-o',str(binary)],
+                           input=code,text=True,check=True)
+            subprocess.run([str(binary)],check=True,timeout=5)
+
     def test_stream_errors_and_native_fullscreen_bounds(self):
         for name in ("stream_diagnostic", "spectrum_fullscreen", "video_controls"):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:

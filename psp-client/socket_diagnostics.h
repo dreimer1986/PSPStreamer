@@ -5,6 +5,22 @@ static volatile unsigned int socket_opens,socket_closes,socket_open_failures,soc
 static volatile int socket_live,socket_peak;
 static unsigned long long socket_snapshot_next;
 static volatile int socket_snapshot_lock;
+/* Socket closure does not free sceNet's per-thread bookkeeping. In particular
+ * the GUI polling worker is recreated every two seconds. Release its net data
+ * on the owner thread after its LAST network call, before publishing done. */
+static void network_worker_finished(const char *name) {
+    int tid=sceKernelGetThreadId();
+    SceNetMallocStat before={0},after={0};
+    if(debug_enabled)sceNetGetMallocStat(&before);
+    int result=sceNetFreeThreadinfo(tid);
+    if(debug_enabled) {
+        sceNetGetMallocStat(&after);
+        char detail[144];
+        snprintf(detail,sizeof(detail),"worker=%s tid=%d free_before=%d free_after=%d stack_unused=%d",
+            name,tid,before.free,after.free,sceKernelGetThreadStackFreeSize(tid));
+        recovery_log("network thread released",result,0,detail);
+    }
+}
 static void socket_snapshot(const char *event,int error) {
     if(!debug_enabled)return;
     SceNetMallocStat stat={0};
@@ -29,13 +45,14 @@ static int socket_tracked_open(int domain,int type,int protocol) {
     return fd;
 }
 static int socket_tracked_close(int fd) {
+    int stack_unused=debug_enabled?sceKernelGetThreadStackFreeSize(sceKernelGetThreadId()):-1;
     int result=tls_close(fd);
     if(result<0) {
         int error=sceNetInetGetErrno();
         __sync_fetch_and_add(&socket_close_failures,1);
-        char detail[112];
-        snprintf(detail,sizeof(detail),"fd=%d rc=0x%08X errno=%d errno_hex=0x%08X close=RST",
-            fd,(unsigned int)result,error,(unsigned int)error);
+        char detail[176];
+        snprintf(detail,sizeof(detail),"fd=%d rc=0x%08X errno=%d errno_hex=0x%08X close=RST tid=%d stack_unused=%d",
+            fd,(unsigned int)result,error,(unsigned int)error,sceKernelGetThreadId(),stack_unused);
         recovery_log("socket close result",result,0,detail);
         socket_snapshot("socket close failed",error);
     } else {

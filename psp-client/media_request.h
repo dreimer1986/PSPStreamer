@@ -18,6 +18,7 @@ static int media_request_worker(SceSize args, void *argp) {
     else if(!media_request_running)media_request_result=MEDIA_REQUEST_CANCELLED;
     else media_request_result=remote_http_request_policy(media_request_path,media_request_buffer,
         media_request_capacity,&media_request_running,media_request_budget,NULL,&media_request_report);
+    network_worker_finished("preparation");
     __sync_synchronize();
     media_request_done=1;
     return 0;

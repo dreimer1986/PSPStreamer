@@ -1,5 +1,40 @@
 # Playback recovery update — 2026-09-26
 
+Latest build: network-worker lifecycle repair and transport diagnostics.
+
+- Finished GUI-input, browser/artwork, library, preparation, download and
+  playback network workers now call `sceNetFreeThreadinfo` on themselves after
+  their last socket operation, before publishing completion. Previously the
+  frequently recreated input worker never explicitly released this firmware
+  bookkeeping. Debug logs record the pool before/after release, result and
+  unused thread stack. This fixes a missing cleanup, but the extent to which
+  it explains hardware pool depletion still requires a PSP run.
+- HTTP FLV/music readers and playback remote workers now have the same 64-KiB
+  stack reserve as their HTTPS paths. Failed socket closes include thread ID
+  and stack high-water information; no unsafe retry on an ambiguous close.
+- UI-side shutdown calls removed: bounded nonblocking reader polls already
+  observe cancellation. Only the owner now performs socket teardown, avoiding
+  a shutdown racing a close and descriptor reuse by another worker.
+- After a valid FLV header, 30 seconds of missing data triggers recovery even
+  before first presentation. Cold HTTP/FFmpeg startup retains its 180-second
+  budget and subtitle preparation remains unchanged. Pause behavior, PTS,
+  codecs, network pool size and polling cadence are unchanged.
+- Docker/HA server 0.1.57 logs transport progress once every 30 seconds plus
+  begin/end: process ID, bytes read/sent, idle durations, producer waiting or
+  client backpressure. No media addresses, authentication or content are logged.
+  This server update is prepared separately; copying the PSP build does not
+  deploy the server. Existing servers remain compatible.
+
+Reference for explicit network thread-data cleanup:
+https://github.com/pspdev/pspsdk/blob/master/src/net/pspnet.h
+
+Hardware test: direct HTTP, debug=1, at least two episodes and automatic advance.
+Also test Stop and restarting playback. Compare `network thread released` pool
+deltas and 30-second snapshots; retain the logs even on success. A successful
+host test cannot establish firmware cleanup behavior or radio reliability.
+
+Previous attempt (not sufficient in the latest hardware test):
+
 Socket teardown: after freeing its own TLS context, each socket owner now uses
 the PSP `sceNetInetCloseWithRST` export instead of normal close. This applies
 only after the required response is consumed or the operation is abandoned;
