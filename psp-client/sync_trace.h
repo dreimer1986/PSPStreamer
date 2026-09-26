@@ -57,6 +57,8 @@ static void sync_trace_save(int tv, int result, int start_seconds) {
     static char buffer[4096];
     int used=0,ok=1;
     unsigned int i, first = sync_trace_count > SYNC_TRACE_CAPACITY ? sync_trace_count - SYNC_TRACE_CAPACITY : 0;
+    if(diagnostic_rotate(tv?"ms0:/PSP/SYSTEM/PSPStreamer-sync-tv.csv":
+        "ms0:/PSP/SYSTEM/PSPStreamer-sync-lcd.csv")<0)return;
     SceUID fd = sceIoOpen(tv ? "ms0:/PSP/SYSTEM/PSPStreamer-sync-tv.csv" :
                               "ms0:/PSP/SYSTEM/PSPStreamer-sync-lcd.csv",
                          PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);

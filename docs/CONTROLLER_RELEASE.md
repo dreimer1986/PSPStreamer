@@ -1,5 +1,21 @@
 # Playback recovery update — 2026-09-26
 
+Recovery escalation: after two unsuccessful stream reconnection attempts,
+disconnect and rejoin the configured Wi-Fi profile. Full re-association is
+limited to once per minute. Playback, media remote and virtual-button workers
+are stopped before re-association. Playback DNS is resolved again on the next
+request. Thirty seconds of successful playback resets the consecutive-failure
+count. This also applies to radio, which resumes at its live edge.
+
+Diagnostic history: existing watch, stream-error and sync CSV files are renamed
+to `original-name.history-<unique timestamp>` at app startup and before another
+playback would overwrite them. At startup, only these explicitly named logs
+and their archives older than 24 hours are deleted. Configuration, state,
+media and other plugins' logs are untouched. Invalid/unset PSP clocks disable
+age-based deletion. Debug-off still generates no playback diagnostics.
+Completed writes survive an app restart; a hard power cut can still lose an
+in-flight filesystem write or sync measurements not yet saved from RAM.
+
 Music and video now retry transport failures after releasing the old playback
 workers and buffers. The waiting screen retries after five seconds; X/Square
 retries immediately, START/Circle cancels. Server Stop and Play remain usable

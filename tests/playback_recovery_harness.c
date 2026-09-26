@@ -51,6 +51,15 @@ typedef struct {unsigned int Buttons;} SceCtrlData;
 #define MUSIC_REMOTE_PLAY 4
 #define MUSIC_REMOTE_SEEK 5
 #define TXT_STREAM_RECONNECT 0
+typedef int TextId;
+#define TXT_STREAM_WIFI 1
+#define TXT_STREAM_SERVER 2
+#define TXT_STREAM_RESUME 3
+#define PSP_NET_APCTL_STATE_GOT_IP 4
+static int network_ready,http_ready,forced,inputs_stopped;
+static int sceNetApctlGetState(int *state){*state=4;return 0;}
+static void input_remote_stop(void){inputs_stopped++;}
+static int wifi_associate(int force){assert(force);forced++;return 0;}
 static int plex_paused,plex_started,tv_ui_active,music_remote_action,music_remote_seconds;
 static int playback_position_ms,radio_connect_wait,playback_reached_end,resume_pending,seek_requested,video_file_direction;
 static int scenario,starts,stops,connections,peeks;
@@ -88,6 +97,7 @@ int main(void){
     mode=0;server_https=1;assert(playback_connect(1,&address,&running)==0);
     assert(playback_send(1,data,10,&running)==10 && playback_recv(1,data,16,100)==-2);
     for(scenario=0;scenario<=5;scenario++){
+        playback_recovery_reset();
         tick=0;starts=stops=connections=peeks=0;tv_ui_active=scenario&1;
         int expected=scenario!=1 && scenario!=3;
         assert(playback_reconnect_wait()==expected);
@@ -97,6 +107,13 @@ int main(void){
         if(scenario==4)assert(playback_position_ms==123000);
         if(scenario==5)assert(connections==2 && tick>=10000000ULL);
     }
+    playback_recovery_reset();tick=0;scenario=0;
+    recovery_failures=3;assert(playback_recovery_associate()==0 && forced==1);
+    assert(inputs_stopped && network_ready && http_ready);
+    recovery_failures=3;tick=59999999;
+    assert(playback_recovery_associate()==0 && forced==1);
+    tick=60000000;
+    assert(playback_recovery_associate()==0 && forced==2);
     assert(playback_recovery_position(456789)==456 && playback_recovery_position(-1)==0);
     playback_reached_end=resume_pending=seek_requested=video_file_direction=1;
     playback_recovery_cancel();assert(!playback_reached_end && !resume_pending && !seek_requested && !video_file_direction);

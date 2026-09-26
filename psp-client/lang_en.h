@@ -255,4 +255,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_RADIO] = "Internet radio",
     [TXT_RADIO_PAUSED] = "Radio paused - SELECT: live START: stop",
     [TXT_STREAM_RECONNECT] = "Retry in 5s. X: retry; START: stop",
+    [TXT_STREAM_WIFI] = "Reconnecting Wi-Fi - START: stop",
+    [TXT_STREAM_SERVER] = "Connecting to server - START: stop",
+    [TXT_STREAM_RESUME] = "Resuming playback - START: stop",
     [TXT_RADIO_RECONNECT] = "Radio retry in 5s - START: stop"};

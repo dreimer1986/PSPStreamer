@@ -46,6 +46,8 @@ static int sceIoWrite(int fd,const char *text,int size) {
     return fail_write?size-1:size;
 }
 static int sceIoClose(int fd) { assert(fd==8);return 0; }
+static int timed_network_failed;
+static int diagnostic_rotate(const char *path){(void)path;return 0;}
 #include "stream_diagnostic.h"
 /* TIMED_READ */
 int main(void) {

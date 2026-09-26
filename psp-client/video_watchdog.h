@@ -5,6 +5,7 @@ static volatile int video_watch_ready;
 static const char *video_watch_path;
 static int video_watch_write(const char *text, int truncate) {
     if(!debug_enabled) return 0;
+    if(truncate && diagnostic_rotate(video_watch_path)<0)return -1;
     int size=(int)strlen(text), result;
     SceUID fd=sceIoOpen(video_watch_path,PSP_O_WRONLY|PSP_O_CREAT|
         (truncate?PSP_O_TRUNC:PSP_O_APPEND),0777);

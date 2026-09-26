@@ -43,6 +43,7 @@ static int sceKernelCreateThread(const char *name,int (*fn)(SceSize,void *),int 
 static int sceKernelStartThread(int id,int args,void *p) { assert(id==9); return worker_fn(args,p); }
 static void sceKernelDeleteThread(int id) { assert(id==9); }
 static void sceKernelWaitThreadEnd(int id,void *p) { assert(id==9 && !p); }
+static int diagnostic_rotate(const char *path){(void)path;return 0;}
 #include "video_watchdog.h"
 static void sceKernelDelayThread(int us) {
     clock_us+=us;

@@ -591,6 +591,7 @@ static int prepare_server(struct sockaddr_in *server) {
 }
 
 #include "server_connection.h"
+#include "diagnostic_history.h"
 #include "playback_transport.h"
 
 /* Used only after HTTP headers arrived.  A timeout is not an error: it lets
@@ -2218,6 +2219,7 @@ static int play_audio_once(const char *media_id, const char *title) {
 
 /* Every retry joins the old workers and releases the codec first. The waiting
  * screen owns no audio socket, PCM queue or GU list. Never autoplay a station. */
+#include "playback_recovery.h"
 static int play_audio(const char *media_id,const char *title) {
     menu_art_select(""); /* No decorative image RAM or requests during playback. */
     int result;
@@ -2257,13 +2259,10 @@ static int play_audio(const char *media_id,const char *title) {
             music_remote_action=0;old=pad.Buttons;sceKernelDelayThread(20000);
         }
         music_remote_stop();
-        int state=0;
-        if(sceNetApctlGetState(&state)<0 || state!=PSP_NET_APCTL_STATE_GOT_IP) {
-            radio_connect_wait=1;
-            int connected=wait_for_network_restore();
-            radio_connect_wait=0;
-            if(connected<0)return 0;
-        }
+        if(audio_played_blocks*audio_dac_samples/(unsigned int)PSP_AUDIO_SAMPLE_RATE>=30)recovery_failures=0;
+        if(!paused)recovery_failures++;
+        int connected=playback_recovery_associate();
+        if(connected==-5)return 0;
         stream_start_seconds=0;resume_pending=seek_requested=0;
         sceKernelDelayThread(250000);
     } while(1);
@@ -2710,14 +2709,15 @@ done:
     return frames ? frames : -1306;
 }
 
-#include "playback_recovery.h"
-
 static int comfort_play_audio(const char *id,const char *name) {
+    playback_recovery_reset();
     comfort_timer_stopped=0;
     int result;
     do {
+        int recovery_start=stream_start_seconds;
         result=play_audio(id,name);
         if(offline_active || radio_is_live(id) || !music_network_failed)break;
+        if(playback_position_ms-recovery_start*1000>=30000)recovery_failures=0;
         if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
         stream_start_seconds=playback_recovery_position(playback_position_ms);
         resume_pending=seek_requested=0;
@@ -2728,12 +2728,15 @@ static int comfort_play_audio(const char *id,const char *name) {
     return result;
 }
 static int comfort_play_video(const char *id) {
+    playback_recovery_reset();
     comfort_timer_stopped=0;playback_reached_end=0;
     playback_position_ms=stream_start_seconds*1000;
     int result;
     do {
+        int recovery_start=stream_start_seconds;
         result=play_h264(id);
         if(offline_active || result!=-1320 || !timed_network_failed || seek_requested || video_file_direction)break;
+        if(playback_position_ms-recovery_start*1000>=30000)recovery_failures=0;
         if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
         stream_start_seconds=playback_recovery_position(playback_position_ms);
         resume_pending=seek_requested=0;
@@ -3365,6 +3368,7 @@ int main(void) {
     setup_callbacks();
     tls_init();
     load_playback_settings();
+    diagnostic_history_start();
     comfort_load_file(COMFORT_PATH,&comfort_store);
     pspDebugScreenInit();
     pspDebugScreenSetXY(0, 0);

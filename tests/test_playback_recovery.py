@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlaybackRecoveryTests(unittest.TestCase):
+    def test_diagnostic_retention(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = str(Path(directory) / "history")
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=undefined",
+                            "-I", str(ROOT / "tests/psp_history_stubs"),
+                            "-I", str(ROOT / "psp-client"),
+                            str(ROOT / "tests/diagnostic_history_harness.c"),
+                            "-o", binary], check=True)
+            subprocess.run([binary], check=True, timeout=5)
+
     def test_transport_and_recovery_state(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = str(Path(directory) / "recovery")

@@ -1,13 +1,44 @@
 /* Retry only transport failures, never local media, codec or format errors.
  * Called after playback has joined all workers and released its buffers. */
+static int recovery_failures,recovery_reset_done;
+static unsigned long long recovery_last_reset;
+static void playback_recovery_reset(void) {
+    recovery_failures=recovery_reset_done=0;recovery_last_reset=0;
+}
+static void playback_recovery_status(TextId text) {
+    lcd_music_reset();tv_music_reset();
+    if(tv_ui_active)tv_draw_music(tr(text),0);else lcd_draw_music(tr(text),0);
+}
+static int playback_recovery_associate(void) {
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    int force=recovery_failures>=3 &&
+        (!recovery_reset_done || now-recovery_last_reset>=60000000ULL);
+    int state=0;
+    sceNetApctlGetState(&state);
+    playback_recovery_status(force || state!=PSP_NET_APCTL_STATE_GOT_IP?
+        TXT_STREAM_WIFI:TXT_STREAM_SERVER);
+    /* Playback and media-remote workers are already joined. Also stop the
+     * independent virtual-button request before disconnecting the AP. */
+    input_remote_stop();
+    network_ready=http_ready=0;
+    radio_connect_wait=1;
+    int result;
+    if(force) {
+        recovery_last_reset=now;recovery_reset_done=1;recovery_failures=0;
+        result=wifi_associate(1);
+        network_ready=http_ready=result==0;
+    } else result=wait_for_network_restore();
+    radio_connect_wait=0;
+    if(result==0)playback_recovery_status(TXT_STREAM_RESUME);
+    return result;
+}
 static int playback_reconnect_wait(void) {
+    recovery_failures++;
     unsigned int old=~0U;
     int paused=0;
     unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
     plex_paused=1;plex_started=0;
-    lcd_music_reset();tv_music_reset();
-    if(tv_ui_active)tv_draw_music(tr(TXT_STREAM_RECONNECT),0);
-    else lcd_draw_music(tr(TXT_STREAM_RECONNECT),0);
+    playback_recovery_status(TXT_STREAM_RECONNECT);
     if(music_remote_start()<0)return 0;
     for(;;) {
         SceCtrlData pad;
@@ -28,11 +59,11 @@ static int playback_reconnect_wait(void) {
         if((pressed & (PSP_CTRL_CROSS|PSP_CTRL_SQUARE)) ||
            (!paused && (unsigned long long)sceKernelGetSystemTimeWide()>=retry)) {
             music_remote_stop();
-            radio_connect_wait=1;
-            int connected=wait_for_network_restore();
-            radio_connect_wait=0;
+            int connected=playback_recovery_associate();
             if(connected==0)return 1;
             if(connected==-5)return 0;
+            recovery_failures++;
+            playback_recovery_status(TXT_STREAM_RECONNECT);
             retry=sceKernelGetSystemTimeWide()+5000000ULL;
             if(music_remote_start()<0)return 0;
         }

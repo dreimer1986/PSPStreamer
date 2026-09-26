@@ -72,6 +72,7 @@ static int stream_diag_save(int result) {
         stream_diag.video_pts,stream_diag.audio_pts,stream_diag.last_data_ms,
         stream_diag.failure_ms,stream_diag.last_data_ms?stream_diag.failure_ms-stream_diag.last_data_ms:0,
         stream_diag.ap_result,stream_diag.ap_state);
+    if(diagnostic_rotate("ms0:/PSP/SYSTEM/PSPStreamer-stream-error.txt")<0)return -1;
     SceUID fd=sceIoOpen("ms0:/PSP/SYSTEM/PSPStreamer-stream-error.txt",
         PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0777);
     if(fd<0) return fd;

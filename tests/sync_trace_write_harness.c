@@ -17,6 +17,7 @@ static int sceIoWrite(SceUID fd,const void *data,int size){
     if(chunk_limit && size>chunk_limit)size=chunk_limit;
     assert(length+size<(int)sizeof(output));memcpy(output+length,data,size);length+=size;return size;
 }
+static int diagnostic_rotate(const char *path){(void)path;return 0;}
 #include "sync_trace.h"
 int main(void){
     sync_trace_reset();sync_trace_record(0,1,0);
