@@ -66,7 +66,7 @@ milkdrop_gu.o: cave_gu.h cave_visual.h
 milkdrop_gu.o: cave_clip.h cave_style.h cave_bend.h
 milkdrop_gu.o: cave_ship_data.h
 milkdrop_gu.o: cave_textures.h
-main.o: cave_bend.h
+main.o: cave_bend.h wifi_events.h wifi_worker.h wifi_connection.h
 cave_visual.o: cave_visual.h cave_paths.h cave_bend.h milkdrop_warp.h
 cave_visual.o: cave_style.h cave_topology.h
 cave_paths.o: cave_paths.h

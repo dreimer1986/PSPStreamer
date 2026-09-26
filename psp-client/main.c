@@ -595,6 +595,7 @@ static int prepare_server(struct sockaddr_in *server) {
 #include "server_connection.h"
 #include "diagnostic_history.h"
 #include "recovery_log.h"
+#include "wifi_events.h"
 #include "playback_transport.h"
 
 /* Used only after HTTP headers arrived.  A timeout is not an error: it lets
@@ -614,6 +615,7 @@ static int stream_recv(int socket_fd, void *buffer, int length, int timeout_ms) 
  * blocking recv().  Callers treat a timeout exactly like a dropped stream. */
 
 static void keep_awake(void) {
+    wifi_events_drain();
     static unsigned long long last_tick;
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (now - last_tick >= 30000000ULL) {

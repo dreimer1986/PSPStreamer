@@ -37,7 +37,9 @@ static int wifi_associate(int force) {
         if((pad.Buttons & (PSP_CTRL_CIRCLE|PSP_CTRL_START)) || app_exit_requested || now-started>=60000000ULL) {
             wifi_worker_cancel=1;network_ready=http_ready=0;
             failure_step="WLAN cancelled - worker pending";
-            recovery_log("WLAN worker detached",-5,0,wifi_worker_step);
+            recovery_log("WLAN worker detached",-5,0,
+                app_exit_requested?"app exit":(pad.Buttons & (PSP_CTRL_CIRCLE|PSP_CTRL_START))?"user cancellation":"60s deadline");
+            recovery_log("WLAN pending call",-5,0,wifi_worker_step);
             return -5;
         }
         if(now-logged>=10000000ULL) {

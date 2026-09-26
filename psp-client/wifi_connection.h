@@ -32,6 +32,7 @@ static int wifi_initialize(void) {
         if(result<0)return result;
         wifi_init_stage++;
     }
+    wifi_events_register();
     return 0;
 }
 static int wifi_associate(int force) {
@@ -77,6 +78,7 @@ static int wifi_associate(int force) {
             result=sceNetApctlTerm();
             recovery_log("APCTL terminate",result,state,failure_step);
             if(result<0)return result;
+            wifi_events_terminated();
             wifi_init_stage=4;wifi_apctl_restarted=1;
             if(wifi_should_cancel())return -5;
             result=wifi_initialize();

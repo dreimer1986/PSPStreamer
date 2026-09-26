@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WifiConnectionTests(unittest.TestCase):
+    def test_event_capture_and_handler_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'events'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT/'psp-client'),
+                            str(ROOT/'tests/wifi_events_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_worker_cancel_deadline_and_exclusive_ownership(self):
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / 'worker'
@@ -27,6 +35,9 @@ static int active_network_profile;
 static int calls[5],fail_stage=-1,state,ticks,connects,disconnects;
 static int stuck,join_after=2,cancel_after,profile_exists=1,read_error,connect_error;
 static int terminated;
+static int registrations,handler_resets;
+static void wifi_events_register(void){registrations++;}
+static void wifi_events_terminated(void){handler_resets++;}
 static int wifi_should_cancel(void){return 0;}
 static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
 static int sceNetApctlTerm(void){terminated++;state=0;stuck=0;return 0;}
@@ -69,6 +80,7 @@ int main(void){
     assert(wifi_associate(0)==-6 && wifi_rebuild_pending && ticks==100 && !terminated);
     wifi_allow_apctl_restart=1;join_after=101;ticks=0;
     assert(wifi_associate(0)==0 && terminated==1 && !wifi_rebuild_pending);
+    assert(handler_resets==1 && registrations>1);
     assert(calls[0]==1 && calls[1]==1 && calls[2]==1 && calls[3]==2 && calls[4]==2);
     state=4;stuck=1;join_after=0;ticks=0;cancel_after=3;
     assert(wifi_associate(1)==-5 && wifi_rebuild_pending && terminated==1);

@@ -1,5 +1,19 @@
 # Playback recovery update — 2026-09-26
 
+APCTL event diagnostics: with debug enabled, `PSPStreamer-recovery.txt` now
+records firmware events, event-time milliseconds, old/new state and the raw
+eight-digit hexadecimal error. In these `APCTL event` lines, the legacy `http`
+field contains the APCTL event number, not an HTTP status. Named events include
+key exchange, IP acquisition, disconnect and firmware error notifications.
+The callback only copies into a bounded 64-entry RAM queue; it never writes to
+the Memory Stick, waits or calls network APIs. Normal application ticks drain
+at most four entries per call. Queue overflow is explicitly reported. Handler
+registration is non-fatal and repeated after a successful APCTL reinitialization.
+Worker cancellation logs now distinguish user input, application exit and the
+60-second deadline. This build does not change reconnect or playback timing.
+Test with the existing local HTTP configuration and debug enabled; after a
+failed reconnect, preserve the recovery log before another test.
+
 WLAN association now runs in one dedicated worker, including firmware status,
 disconnect, connect and APCTL restart calls. START/Circle cancels the UI wait;
 after 60 seconds an unreturned call also releases the UI. The worker is never
