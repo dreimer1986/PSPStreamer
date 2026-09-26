@@ -1,5 +1,9 @@
 # PSP Streamer
 
+Server **0.1.61** adds a **Cover view** switch to all new Plex/Jellyfin provider
+views, sharing the library's saved preference. Server/web update only; the PSP
+build from 0.1.60 remains current.
+
 Server **0.1.60** adds playlist repeat and independent playlist shuffle,
 [provider library views and adjacent-file navigation](docs/PROVIDER_VIEWS.md).
 Update both server and PSP EBOOT/PRX. The flight Easter egg now fades in,

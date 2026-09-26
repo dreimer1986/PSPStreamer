@@ -2,7 +2,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
- const errors=[],commands=[];
+ const errors=[],commands=[];let providerRequests=0;
  let queue={revision:0,enabled:false,repeat:0,shuffle:false,items:[]};
  let current={online:true,age:0,id:'episode1',title:'Episode One',kind:'video',state:'playing',position:123,duration:1200};
  const files=[{id:'episode1',name:'Episode One',kind:'video'},{id:'song',name:'Song',kind:'audio'},{id:'other',name:'Other',kind:'video'}];
@@ -23,8 +23,13 @@ const assert=require('node:assert/strict');
     assert.equal(query.get('folder'),'1');assert.equal(query.get('manual'),'1');
     data=files[0];
    }
-   else if(path==='/api/provider-view')data=new URL(route.request().url()).searchParams.get('view')==='sections'
-    ?{sections:[{id:'1',name:'Series'}]}:{folders:[],videos:[files[0]],next:null};
+   else if(path==='/api/provider-view'){
+    providerRequests++;const shelf=new URL(route.request().url()).searchParams.get('view');
+    data=shelf==='sections'?{sections:[{id:'1',name:'Series'}]}:{
+     folders:shelf==='collections'?[{name:'Collection',path:':plex:c1',artwork:{cover:'/api/artwork/cover'}}]:[],
+     videos:shelf==='collections'?[]:[{...files[0],artwork:{cover:'/api/artwork/cover'}}],next:null};
+   }
+   else if(path==='/api/artwork/cover')return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="30"><rect width="20" height="30" fill="blue"/></svg>'});
    else if(path==='/api/playlist'){
     if(route.request().method()==='POST'){
      const change=route.request().postDataJSON();assert.equal(change.revision,queue.revision);
@@ -85,6 +90,29 @@ const assert=require('node:assert/strict');
   await page.waitForFunction(()=>selected.id==='episode1');
   assert.equal(commands.length,before);
   await page.locator('nav [data-view="provider"]').click();
+  await page.locator('#view-provider').getByRole('button',{name:'Episode One',exact:true}).waitFor();
+  const providerPanel=page.locator('#view-provider');
+  for(const provider of ['plex','jellyfin']){
+   await providerPanel.getByRole('combobox',{name:'View',exact:true}).selectOption('continue');
+   await providerPanel.getByRole('combobox',{name:'Provider',exact:true}).selectOption(provider);
+   await page.waitForFunction(()=>providerListing!==null);
+   await providerPanel.getByRole('combobox',{name:'View',exact:true}).selectOption('recent');
+   await providerPanel.getByRole('combobox',{name:'Library',exact:true}).selectOption('1');
+   for(const shelf of ['continue','recent','unwatched','collections']){
+    await providerPanel.getByRole('combobox',{name:'View',exact:true}).selectOption(shelf);
+    await page.waitForFunction(()=>providerListing!==null);
+    const count=providerRequests;
+    await providerPanel.getByRole('button',{name:'Cover view',exact:true}).click();
+    await page.waitForFunction(()=>coverView);
+    await providerPanel.locator('.cover-grid img').waitFor();
+    assert.equal(await providerPanel.locator('.cover-grid img').count(),1);
+    await providerPanel.getByRole('button',{name:'Cover view',exact:true}).click();
+    await page.waitForFunction(()=>!coverView);
+    assert.equal(await providerPanel.locator('img').count(),0);
+    assert.equal(providerRequests,count);
+   }
+  }
+  await providerPanel.getByRole('combobox',{name:'View',exact:true}).selectOption('continue');
   await page.locator('#view-provider').getByRole('button',{name:'Episode One',exact:true}).click();
   await page.waitForFunction(()=>selected.id==='episode1');
   assert.equal(commands.length,before);

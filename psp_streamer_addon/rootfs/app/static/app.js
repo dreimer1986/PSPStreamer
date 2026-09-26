@@ -9,7 +9,12 @@ const nowPlayingOpen=button(t('Control current playback'),()=>openCurrentPlaybac
 nowPlaying.append(nowPlayingText,' ',nowPlayingOpen);$('#view-library').before(nowPlaying);
 const checked=new Map();
 let coverView=localStorage.getItem('psp-cover-view')==='1';
-const coverToggle=button(t('Cover view'),()=>{coverView=!coverView;localStorage.setItem('psp-cover-view',coverView?'1':'0');renderLibrary();});
+function toggleCoverView(){
+  coverView=!coverView;localStorage.setItem('psp-cover-view',coverView?'1':'0');
+  coverToggle.setAttribute('aria-pressed',String(coverView));renderLibrary();
+  document.dispatchEvent(new Event('cover-view-changed'));
+}
+const coverToggle=button(t('Cover view'),toggleCoverView);
 $('#refresh').after(coverToggle);
 coverToggle.dataset.i18n='Cover view';
 const backdrop=document.createElement('img');backdrop.className='media-backdrop';backdrop.alt='';backdrop.hidden=true;

@@ -5,6 +5,11 @@ must already be connected and enabled in server settings. These views are
 requested on demand, not polled during playback. They use the connected user's
 provider state, so playback on another client with that same account is included.
 
+From 0.1.61, **Cover view** switches every shelf between list and cover grid,
+including collections. It shares the library's saved browser preference and
+redraws the loaded page without requesting the provider again. Items without
+artwork remain selectable by title. No PSP client update is required.
+
 - **Continue watching**: Plex's Continue Watching hub; Jellyfin Resume plus Next
   Up, deduplicated within each page. Opening a resumable entry preselects its
   resume position. Press Play to start it.

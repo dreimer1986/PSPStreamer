@@ -1,3 +1,11 @@
+# 0.1.61
+
+- Add a Cover view toggle directly to all new Plex/Jellyfin provider shelves.
+  The saved preference is shared with the library. Switching views uses already
+  loaded entries, without another provider request or changing playback.
+- Keep collection covers and playlist actions correctly arranged in the grid.
+- Same web assets in Docker and Home Assistant; no PSP update required.
+
 # 0.1.60
 
 - Persistent playlist repeat off/one/all and independent playlist shuffle, in

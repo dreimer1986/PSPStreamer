@@ -6,6 +6,9 @@
 .cover-grid .item button{width:100%;height:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}
 .cover-grid .item img{display:block;width:100%;aspect-ratio:2/3;object-fit:contain;background:#101720;margin-bottom:10px;border-radius:6px}
 .cover-grid .item input{position:absolute;top:6px;left:6px;z-index:1;width:22px;height:22px}
+#view-provider .cover-grid .item{display:flex;flex-direction:column;gap:8px;text-align:left;white-space:normal;overflow-wrap:anywhere}
+#view-provider .cover-grid .item button{height:auto}
+#view-provider .cover-grid .item button:first-child{flex:1}
 #view-remote{position:relative;isolation:isolate;overflow:hidden}
 #view-remote>.media-backdrop{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.18;z-index:-1;pointer-events:none}
 .media-cover{float:left;width:min(27%,220px);max-height:280px;object-fit:contain;margin:0 20px 16px 0;border-radius:8px}
