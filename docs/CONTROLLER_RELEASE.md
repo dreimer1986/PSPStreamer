@@ -1,4 +1,27 @@
-# Playback recovery update — 2026-09-26
+# Current playback, persistent OC overlay and engine glow — 2026-09-26
+
+- Hardware confirmed: two episodes completed without playback/network errors.
+  Latest log has zero socket open/close failures; worker cleanup returns 104
+  bytes per short-lived worker and the menu pool recovers to about 115 KB free.
+- Server 0.1.58: current playback is visible across browser sessions. Open
+  Remote or "Control current playback" to adopt its controls without restarting
+  media. Selecting the same file from the library also loads its current
+  position. Automatic episode/song changes are followed when controlling the
+  current item, but do not override a different deliberately selected item.
+  Playlist editing is not included in this update.
+- StreamerOC: optional `overlay_always=1` keeps either overlay mode visible.
+  Default remains off; existing INI files need no changes. The app's INI editor
+  preserves the new value. Suspend and shutdown still clear the overlay.
+- Monkey flight Easter egg: two upper rear exhaust faces glow amber, responding
+  smoothly to the existing filtered music bass signal. Existing mesh faces are
+  recoloured, with no additional textures, triangles or collision changes.
+
+Test: open a fresh browser session while media is playing, adopt it from Remote
+and by selecting the library entry; check pause/seek and automatic next media.
+For persistent OC display, set `overlay_always=1` and restart the application.
+Check the exhausts in Monkey flight mode with music and silence.
+
+## Previous networking repair
 
 Latest build: network-worker lifecycle repair and transport diagnostics.
 

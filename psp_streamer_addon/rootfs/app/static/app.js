@@ -2,6 +2,11 @@
 const $=s=>document.querySelector(s);
 let root=0,path='',selected=null,media=null,listing=null,csrf='',remotePlaying=false,preferences={},view='library';
 let browseGeneration=0,chooseGeneration=0,preferenceWrites=Promise.resolve(),plexTimer,plexGeneration=0;
+let followPlayer=false,playerRefresh=null;
+const nowPlaying=document.createElement('section');nowPlaying.className='panel';nowPlaying.hidden=true;
+const nowPlayingText=document.createElement('span');
+const nowPlayingOpen=button(t('Control current playback'),()=>openCurrentPlayback());
+nowPlaying.append(nowPlayingText,' ',nowPlayingOpen);$('#view-library').before(nowPlaying);
 const checked=new Map();
 let coverView=localStorage.getItem('psp-cover-view')==='1';
 const coverToggle=button(t('Cover view'),()=>{coverView=!coverView;localStorage.setItem('psp-cover-view',coverView?'1':'0');renderLibrary();});
@@ -43,7 +48,7 @@ const post=(url,data={})=>api(url,{method:'POST',body:JSON.stringify(data)});
 function option(select,value,text){const o=document.createElement('option');o.value=value;o.textContent=text;select.append(o);return o;}
 function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>Promise.resolve().then(fn).catch(fail);return b;}
 function setView(name){view=name;if(name!=='remote')themeAudio.pause();document.querySelectorAll('.view').forEach(e=>e.hidden=e.id!=='view-'+name);document.querySelectorAll('[data-view]').forEach(e=>e.setAttribute('aria-current',String(e.dataset.view===name)));if(name==='downloads')updateDownloads().catch(fail);}
-document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dataset.view);if(view==='remote')refreshPlayer(true).catch(fail);});
 function timeLabel(seconds){return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');}
 function selectionCount(){ $('#selectionCount').textContent=t('{n} selected',{n:checked.size});$('#prepareSelected').disabled=!checked.size;}
 function folderLabel(folder){
@@ -51,7 +56,7 @@ function folderLabel(folder){
     ((folder.path.startsWith(':plex:')||folder.path.startsWith(':jellyfin:')||folder.path.startsWith(':dlna:'))&&folder.path.includes('@')&&['Previous page','Next page'].includes(folder.name));
   return system?t(folder.name):folder.name;
 }
-function clearMedia(){chooseGeneration++;selected=media=null;remotePlaying=false;pendingSeek=null;seekEditing=false;stopTheme();setArtwork();$('#title').textContent=t('PSP controls');$('#details').replaceChildren();$('#mediaOptions').hidden=true;$('#play').disabled=$('#queue').disabled=true;}
+function clearMedia(){chooseGeneration++;selected=media=null;followPlayer=false;remotePlaying=false;pendingSeek=null;seekEditing=false;stopTheme();setArtwork();$('#title').textContent=t('PSP controls');$('#details').replaceChildren();$('#mediaOptions').hidden=true;$('#play').disabled=$('#queue').disabled=true;}
 async function browse(next=''){
   const generation=++browseGeneration;message(t('Loading…'));
   const d=await api(`/api/library?root=${root}&path=${encodeURIComponent(next)}`);if(generation!==browseGeneration)return;
@@ -66,7 +71,7 @@ function renderLibrary(){
   for(const f of d.folders){const b=button('▸ '+folderLabel(f),()=>browse(f.path));b.className='item folder';addCover(b,f.artwork);box.append(b);}
   for(const v of d.videos){const row=document.createElement('div');row.className='item';
     if(!v.live&&!v.id.startsWith('radio.')){const check=document.createElement('input');check.type='checkbox';check.checked=checked.has(v.id);check.setAttribute('aria-label',t('Select')+' '+v.name);check.onchange=()=>{if(check.checked)checked.set(v.id,v);else checked.delete(v.id);selectionCount()};row.append(check);}
-    const b=button((v.kind==='audio'?'♫ ':'▶ ')+v.name,()=>choose(v));addCover(b,v.artwork);row.append(b);box.append(row);
+    const b=button((v.kind==='audio'?'♫ ':'▶ ')+v.name+(activePlayer(playerSample)&&playerSample.id===v.id?' — '+t('Now playing'):''),()=>choose(v));addCover(b,v.artwork);row.append(b);box.append(row);
   }
   if(!d.folders.length&&!d.videos.length)box.textContent=t('No files here.');message('');
 }
@@ -76,7 +81,8 @@ function savePreferences(){const data={...preferences};preferenceWrites=preferen
 for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile'],['audio','audio'],['subtitle','subtitle']]){
   $('#'+id).onchange=()=>{const s=$('#'+id);preferences[key]=['audio','subtitle'].includes(key)?s.selectedOptions[0]?.textContent||'':s.value;savePreferences();};
 }
-async function choose(v){
+async function choose(v,follow=false){
+  followPlayer=follow;
   const generation=++chooseGeneration;selected=v;media=null;remotePlaying=false;setView('remote');
   pendingSeek=null;seekEditing=false;showChapters();
   stopTheme();
@@ -111,6 +117,8 @@ async function choose(v){
     }
     $('#mediaOptions').hidden=false;$('#play').disabled=$('#queue').disabled=false;
     message(!audio&&(!a||!s)?t('Preferred track unavailable; check the selection.'):'');
+    await refreshPlayer(false);
+    if(generation===chooseGeneration){if(activePlayer(playerSample)&&playerSample.id===v.id)followPlayer=true;renderPosition();}
   }catch(error){if(generation===chooseGeneration){clearMedia();throw error;}}
 }
 async function command(action,extra={}){
@@ -120,7 +128,7 @@ async function command(action,extra={}){
   if(action==='seek'&&selected?.live)return;
   let body={action,...extra};
   if(action==='play')Object.assign(body,{id:selected.id,audio_quality:$('#audio_quality').value,video_fps:$('#video_fps').value,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:selected.live?0:+$('#seek').value||0});
-  await post('/api/remote/command',body);if(action==='play'&&selected?.id===body.id){remotePlaying=true;pendingSeek={id:body.id,seconds:body.start,sent:performance.now(),until:performance.now()+15000}}if(action==='stop'){remotePlaying=false;playerSample=null;pendingSeek=null;}
+  await post('/api/remote/command',body);if(action==='play'&&selected?.id===body.id){followPlayer=true;remotePlaying=true;pendingSeek={id:body.id,seconds:body.start,sent:performance.now(),until:performance.now()+15000}}if(action==='stop'){remotePlaying=false;playerSample=null;pendingSeek=null;}
   message(t('Sent: {action}',{action:t(action)}));
 }
 action('#home',()=>browse(''));action('#parent',()=>listing?.parent!==null&&browse(listing.parent));action('#refresh',()=>browse(path));
@@ -130,6 +138,22 @@ $('#seek').oninput=()=>{seekEditing=true;$('#seekLabel').textContent=timeLabel(+
 $('#seek').onchange=()=>{seekEditing=false;seekTo(+$('#seek').value).catch(fail)};
 $('#seek').onblur=()=>{seekEditing=false};
 let playerSample=null,seekEditing=false,pendingSeek=null,skipKey='';
+function activePlayer(p){return !!(p?.online&&p.id&&(+p.age||0)<45&&['playing','paused','buffering'].includes(p.state));}
+async function openCurrentPlayback(){
+  const p=playerSample;if(!activePlayer(p))return;
+  await choose({id:p.id,name:p.title||p.id,kind:p.kind||(p.live?'audio':'video'),live:p.live,artwork:p.artwork},true);
+}
+async function refreshPlayer(adopt=false){
+  // Share an in-flight status request, never turn a status refresh into Play.
+  if(!playerRefresh)playerRefresh=api('/api/player').finally(()=>{playerRefresh=null;});
+  const p=await playerRefresh,previous=playerSample;
+  playerSample={...p,received:performance.now()};
+  const active=activePlayer(p);nowPlaying.hidden=!active;
+  nowPlayingText.textContent=active?`${t('Now playing')}: ${p.title||p.id} — ${t(p.state)}`:'';
+  if(previous?.id!==p.id||previous?.state!==p.state||previous?.online!==p.online)renderLibrary();
+  renderPosition();
+  if(adopt&&view==='remote'&&active&&(!pendingSeek||performance.now()>=pendingSeek.until)&&(!selected||(followPlayer&&selected.id!==p.id)))await openCurrentPlayback();
+}
 const chapterTicks=document.createElement('div'),chapterSelect=document.createElement('select'),skipButtons=document.createElement('div');
 chapterTicks.id='chapterTicks';chapterSelect.id='chapterSelect';skipButtons.id='skipButtons';
 chapterTicks.className='chapter-ticks';skipButtons.className='controls';
@@ -284,7 +308,7 @@ async function passwordSettings(){const s=await api('/api/settings');$('#passwor
 $('#passwordForm').onsubmit=async event=>{event.preventDefault();if($('#newPassword').value!==$('#repeatPassword').value){message(t('Passwords do not match.'));return;}
   try{await post('/api/settings/password',{current:$('#oldPassword').value,password:$('#newPassword').value});$('#passwordForm').reset();alert(t('Password changed. Sign in again and update the PSP.'));location.assign('/login');}catch(e){fail(e)}
 };
-async function poll(){try{if(view==='downloads')await updateDownloads();if(view==='remote'){const p=await api('/api/player');playerSample={...p,received:performance.now()};renderPosition();}if(selected?.live&&view==='remote'){const item=selected,d=await api('/api/radio/status/'+encodeURIComponent(item.id));if(selected===item)$('#details').textContent=d.radio_active?[d.radio_station,d.radio_title||t('No title supplied')].join(' · '):t('Stopped / paused / reconnecting');}}catch(e){fail(e)}setTimeout(poll,3000);}
+async function poll(){try{if(view==='downloads')await updateDownloads();await refreshPlayer(true);if(selected?.live&&view==='remote'){const item=selected,d=await api('/api/radio/status/'+encodeURIComponent(item.id));if(selected===item)$('#details').textContent=d.radio_active?[d.radio_station,d.radio_title||t('No title supplied')].join(' · '):t('Stopped / paused / reconnecting');}}catch(e){fail(e)}setTimeout(poll,3000);}
 async function init(){const session=await api('/api/session');csrf=session.csrf;$('#logout').hidden=!session.protected;
   preferences=await api('/api/offline/preferences');for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile']])if(preferences[key])$('#'+id).value=preferences[key];
   await browse('');await Promise.all([plexRefresh(),jellyfinRefresh(),dlnaRefresh(),radioRefresh(),passwordSettings()]);setView('library');poll();

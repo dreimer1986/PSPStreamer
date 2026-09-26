@@ -1,5 +1,7 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+  'Now playing':'Aktuelle Wiedergabe','Control current playback':'Aktuelle Wiedergabe steuern',
+  'playing':'Wiedergabe läuft','paused':'Pausiert','buffering':'Wird geladen',
   'Favorites & history':'Favoriten & Verlauf','Favorites':'Favoriten','Recently played':'Zuletzt gespielt','Continue watching':'Weiterschauen',
   'Open Comfort on the PSP to synchronize favorites and history. Local downloads and server passwords stay on the PSP.':'Zum Abgleichen von Favoriten und Verlauf die Komfortfunktionen auf der PSP öffnen. Lokale Downloads und Serverpasswörter bleiben auf der PSP.',
   'Remove favorite':'Favorit entfernen','Add favorite':'Als Favorit speichern','Remove from history':'Aus Verlauf entfernen','No entries yet.':'Noch keine Einträge.',

@@ -8,8 +8,9 @@ int main(void) {
     const char *path="StreamerOC.ini";OcConfig c,original;
     assert(oc_settings_read(path,&c)==1 && c.enabled==0 && c.target==333);
     assert(c.app_control && c.report && c.overlay && !c.enforce_unlimited);
+    assert(!c.overlay_always);
     assert(!oc_settings_write(path,&c));original=c;
-    c.enabled=1;c.target=433;c.enforce=1;c.enforce_unlimited=1;
+    c.enabled=1;c.target=433;c.enforce=1;c.enforce_unlimited=1;c.overlay_always=1;
     assert(!oc_settings_write(path,&c));
     assert(!oc_settings_read("StreamerOC.ini.bak",&original));
     assert(original.enabled==0 && original.target==333);

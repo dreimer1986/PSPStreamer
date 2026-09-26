@@ -5,6 +5,7 @@
 static CaveScene *cave_scene;
 static CaveClip cave_frame_clip;
 #include "cave_ship_data.h"
+#include "cave_engine.h"
 int md_cave_control(int toggle,int x,int y,int throttle,int roll) {
     cave_flight_input(cave_scene,toggle,x,y,throttle,roll);
     return cave_scene && cave_scene->flight;
@@ -20,10 +21,12 @@ static void cave_draw_ship(int width,int height) {
     float center[3],right[3],up[3],forward[3];
     cave_ship_pose(cave_scene,center,right,up,forward);
     int used=0;
+    float glow=.15f+.65f*cave_scene->motion.bass+.12f*sinf(cave_scene->motion.phase*19.f);
     for(int i=0;i<CAVE_SHIP_VERTICES;i+=3) {
         MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
         for(int j=0;j<3;j++) {
             tri[j]=cave_ship_mesh[i+j];float p[3];
+            tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
             for(int k=0;k<3;k++)p[k]=center[k]+CAVE_SHIP_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
             tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];
         }

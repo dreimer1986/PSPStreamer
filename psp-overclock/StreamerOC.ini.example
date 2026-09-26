@@ -17,3 +17,5 @@ report=1
 # 0=off, 1=VBlank polling (default, no hooks), 2=framebuffer syscall hook.
 # Mode 2 is experimental; direct/kernel rendering may bypass it.
 overlay=1
+# 1=always visible; 0=timed (default). Requires overlay>0.
+overlay_always=0

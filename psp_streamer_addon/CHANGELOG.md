@@ -1,3 +1,10 @@
+# 0.1.58
+
+- Show current PSP playback across browser sessions, including playback started
+  on the PSP or another controller. Open its existing controls without sending Play.
+- Synchronize position when opening the currently playing library entry; follow
+  automatic media changes while viewing current playback, preserving other selections.
+
 # 0.1.57
 
 - Add bounded-rate stream transport diagnostics: FFmpeg output versus bytes sent

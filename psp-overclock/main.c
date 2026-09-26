@@ -45,6 +45,9 @@ static int journal_result;
 static volatile int pending_suspend_flags;
 static volatile unsigned long long suspend_tick;
 static int overlay_enabled=1;
+static int overlay_always;
+static int overlay_stopping;
+#include "overlay_lifetime.h"
 static int app_control=1, configured_target, control_registered;
 static volatile int control_ready, control_pending=-1, control_result;
 static volatile int control_active;
@@ -101,8 +104,7 @@ static void overlay_update(int toggle) {
     /* A resumed application may have reused VRAM: never restore stale pixels. */
     if(suspended){overlay.valid=0;overlay_until=0;oc_hook_publish(NULL,0);return;}
     unsigned long long now=sceKernelGetSystemTimeWide();
-    if(toggle)overlay_until=overlay_until?0:now+5000000ULL;
-    if(overlay_until && now>=overlay_until)overlay_until=0;
+    overlay_until=oc_overlay_deadline(overlay_until,now,toggle,overlay_always,running&&!overlay_stopping);
     if(oc_hook_installed && !overlay_until){
         int was_visible=oc_hook_visible;
         oc_hook_publish(NULL,0);
@@ -195,6 +197,7 @@ static void config(void) {
     app_control=parsed.app_control;
     enforce_unlimited=parsed.enforce_unlimited;
     overlay_enabled=parsed.overlay;
+    overlay_always=parsed.overlay_always;
     config_state="loaded";
 }
 static void snapshot(const char *event) {
@@ -392,6 +395,7 @@ static int thread_main(SceSize args,void *argp) {
     }
     snapshot("session_stopping");
     control_ready=0;
+    overlay_stopping=1;
     overlay_until=0;overlay_update(0);
     oc_hook_remove();
     if(changed)oc_diag_begin(OC_D_RESTORE,__LINE__);

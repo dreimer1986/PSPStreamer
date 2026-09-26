@@ -2,12 +2,12 @@
 #ifndef STREAMER_OC_CONFIG_PARSE_H
 #define STREAMER_OC_CONFIG_PARSE_H
 #include <string.h>
-typedef struct { int enabled, target, enforce, report, overlay, app_control, enforce_unlimited; } OcConfig;
+typedef struct { int enabled, target, enforce, report, overlay, app_control, enforce_unlimited, overlay_always; } OcConfig;
 /* No kernel-global strtok state; validate everything before enabling writes.
  * Accept UTF-8 BOM, LF/CRLF, whitespace and whole-line/inline comments. */
 static int oc_config_parse(char *text, int length, OcConfig *out, int *keys, int *error_line)
 {
-    OcConfig draft={0,333,0,1,1,1,0};
+    OcConfig draft={0,333,0,1,1,1,0,0};
     char *cursor=text, *limit=text+length;
     int line_number=0;
     *keys=0; *error_line=0;
@@ -58,6 +58,7 @@ static int oc_config_parse(char *text, int length, OcConfig *out, int *keys, int
             else if(!strcmp(line,"report"))draft.report=number;
             else if(!strcmp(line,"app_control"))draft.app_control=number;
             else if(!strcmp(line,"enforce_unlimited"))draft.enforce_unlimited=number;
+            else if(!strcmp(line,"overlay_always"))draft.overlay_always=number;
             else goto invalid;
         }
         ++*keys;

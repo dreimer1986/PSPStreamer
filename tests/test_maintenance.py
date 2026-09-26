@@ -257,7 +257,7 @@ static int parse(const char *input, OcConfig *out, int *keys, int *line) {
     return oc_config_parse(text,(int)n,out,keys,line);
 }
 int main(int argc,char **argv) {
-    OcConfig c={0,333,0,1,1,1,0}; int keys,line;
+    OcConfig c={0,333,0,1,1,1,0,0}; int keys,line;
     assert(parse("# header\nenabled=1\ntarget_mhz=383\nenforce=1\nreport=1\n",&c,&keys,&line)==0);
     assert(c.enabled==1 && c.target==383 && c.enforce==1 && c.report==1 && keys==4 && !line);
     assert(c.overlay==1 && c.app_control==1 && !c.enforce_unlimited);
@@ -265,6 +265,9 @@ int main(int argc,char **argv) {
     assert(c.enforce_unlimited==1&&!c.enforce&&!c.app_control&&!c.overlay);
     assert(parse("overlay=1",&c,&keys,&line)==0 && c.overlay==1 && !c.enabled);
     assert(parse("overlay=2",&c,&keys,&line)==0 && c.overlay==2 && !c.enabled);
+    assert(!c.overlay_always);
+    assert(parse("overlay_always=1",&c,&keys,&line)==0 && c.overlay_always==1);
+    assert(parse("overlay_always=2",&c,&keys,&line)<0);
     assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
     assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
     const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
@@ -280,7 +283,7 @@ int main(int argc,char **argv) {
     if(argc==2) {
         char file[1024]; FILE *f=fopen(argv[1],"rb");assert(f);
         int n=(int)fread(file,1,sizeof(file)-1,f);fclose(f);file[n]=0;
-        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==7);
+        assert(oc_config_parse(file,n,&c,&keys,&line)==0 && keys==8);
     }
     return 0;
 }

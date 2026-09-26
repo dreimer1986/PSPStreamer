@@ -63,7 +63,7 @@ main.o milkdrop_gu.o milkdrop_wave.o milkdrop_preset.o milkdrop_decor.o: milkdro
 milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o: milkdrop_profile.h
 milkdrop_gu.o: preset_fpu.h
-milkdrop_gu.o: cave_gu.h cave_visual.h
+milkdrop_gu.o: cave_gu.h cave_visual.h cave_engine.h
 milkdrop_gu.o: cave_clip.h cave_style.h cave_bend.h
 milkdrop_gu.o: cave_ship_data.h
 milkdrop_gu.o: cave_textures.h

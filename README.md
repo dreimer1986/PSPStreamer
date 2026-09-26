@@ -1,5 +1,16 @@
 # PSP Streamer
 
+Server **0.1.58** shows the PSP's current playback in every browser session,
+including playback started on the PSP or another controller. Open **Remote
+control** or **Control current playback** to load its position and controls
+without restarting it. Opening the same library entry also synchronizes its
+position. This view follows automatic episode/song changes; selecting another
+file deliberately keeps that selection. Playlist editing remains planned.
+
+StreamerOC optionally supports `overlay_always=1` in its INI (default `0`).
+The flight Easter egg now has two warm exhaust lights driven by filtered music
+bass; normal Monkey visualization is unchanged.
+
 Server **0.1.56** adds shared [favorites, history, resume and cross-source
 search](docs/WEB_COMFORT.md). Install the matching PSP pair and open **Comfort**
 once to synchronize its existing server-scoped shortcuts. No continuous sync

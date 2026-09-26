@@ -431,6 +431,15 @@ synthetic timed-loop benchmark is therefore deliberately not labelled “MHz”.
 No register readout proves performance or stability; both need real hardware
 tests. Host tests cover formula/model bounds, not physical PLL behavior.
 
+### Persistent display
+
+Set `overlay_always=1` in `StreamerOC.ini` to keep the overlay visible for the
+whole application session, including after resume. Default: `overlay_always=0`.
+This works with either `overlay=1` or `overlay=2`; `overlay=0` still disables it.
+The overlay chord does not hide it in persistent mode. Suspend and application
+shutdown still remove the display safely. The PSP Streamer settings editor
+preserves this INI option when saving. Restart the application to apply changes.
+
 ### Framebuffer hook: overlay=2
 
 Mode 2 hooks the standard user-mode `sceDisplaySetFrameBuf` syscall through

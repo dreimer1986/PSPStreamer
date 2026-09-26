@@ -20,8 +20,8 @@ static int oc_settings_read(const char *path,OcConfig *config) {
 static int oc_settings_write(const char *path,const OcConfig *c) {
     char data[512],check[512],temp[192],backup[192];OcConfig verified;int keys,line;
     int n=snprintf(data,sizeof(data),"# StreamerOC - applied on next application start\n"
-        "enabled=%d\ntarget_mhz=%d\nenforce=%d\nenforce_unlimited=%d\napp_control=%d\nreport=%d\noverlay=%d\n",
-        c->enabled,c->target,c->enforce,c->enforce_unlimited,c->app_control,c->report,c->overlay);
+        "enabled=%d\ntarget_mhz=%d\nenforce=%d\nenforce_unlimited=%d\napp_control=%d\nreport=%d\noverlay=%d\noverlay_always=%d\n",
+        c->enabled,c->target,c->enforce,c->enforce_unlimited,c->app_control,c->report,c->overlay,c->overlay_always);
     if(n<0 || n>=(int)sizeof(data))return -1;
     strcpy(check,data);if(oc_config_parse(check,n,&verified,&keys,&line))return -1;
     if(snprintf(temp,sizeof(temp),"%s.tmp",path)>=(int)sizeof(temp) ||
