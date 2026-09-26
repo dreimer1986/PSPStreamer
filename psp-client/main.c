@@ -645,19 +645,23 @@ void setup_callbacks(void) {
 }
 
 static int radio_connect_wait;
+static volatile int wifi_worker_cancel;
+static const char *wifi_worker_step;
+static int wifi_should_cancel(void) {return wifi_worker_cancel;}
 static int wifi_wait_tick(void) {
-    SceCtrlData pad;
-    sceCtrlPeekBufferPositive(&pad,1);
-    if(pad.Buttons & PSP_CTRL_CIRCLE || (radio_connect_wait && (pad.Buttons & PSP_CTRL_START)))return 1;
-    keep_awake();
     sceKernelDelayThreadCB(100000);
-    return 0;
+    return wifi_should_cancel();
 }
+#define failure_step wifi_worker_step
+#define wifi_associate wifi_associate_core
+#define wifi_initialize wifi_initialize_core
 #include "wifi_connection.h"
+#undef wifi_initialize
+#undef wifi_associate
+#undef failure_step
+#include "wifi_worker.h"
 static int wait_for_network(int connect_wifi) {
-    int result=wifi_initialize();
-    if(result<0)return result;
-    return connect_wifi?wifi_associate(0):-1;
+    return wifi_associate(connect_wifi?0:-1);
 }
 
 static int wait_for_network_restore(void) {
@@ -3580,21 +3584,19 @@ int main(void) {
             dirty=1;old_buttons=PSP_CTRL_SELECT|PSP_CTRL_START|PSP_CTRL_CIRCLE;continue;
         }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old_buttons & PSP_CTRL_SQUARE)) {
-            int state=0;
             tls_notice_clear();
             /* Remote worker was joined above. Only the idle browser may
              * explicitly tear down an association; no decoder/module reset. */
-            if((pad.Buttons & PSP_CTRL_LTRIGGER) || !network_ready ||
-               sceNetApctlGetState(&state)<0 || state!=PSP_NET_APCTL_STATE_GOT_IP) {
+            {
                 network_ready=http_ready=0;
+                input_remote_stop();
                 snprintf(status,sizeof(status),"%s",tr(TXT_CONNECTING_WIFI));show(selected);
                 result=wifi_associate((pad.Buttons & PSP_CTRL_LTRIGGER)!=0);
                 if(result==0) {
                     network_ready=http_ready=1;
-                    have_cached_server_address=0;
                     refresh_library();
                 } else snprintf(status,sizeof(status),tr(TXT_NETWORK_FAILED),failure_step,result);
-            } else refresh_library();
+            }
             if(selected>=item_count)selected=item_count?item_count-1:0;
             dirty=1;old_buttons=pad.Buttons;continue;
         }

@@ -24,6 +24,8 @@ static int media_request_worker(SceSize args, void *argp) {
 }
 
 static int media_request_get(const char *path,char *buffer,int capacity,int budget,int subtitles) {
+    /* A cancelled association may still own firmware networking. */
+    if(wifi_worker_thread>=0) {media_request_transient=0;return MEDIA_REQUEST_CANCELLED;}
     SceCtrlData pad;
     int thread,cancelled=0;
     unsigned long long started=sceKernelGetSystemTimeWide(),redraw=0,logged=started;

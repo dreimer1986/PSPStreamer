@@ -10,6 +10,7 @@ typedef struct {unsigned int Buttons;} SceCtrlData;
 #define PSP_CTRL_CIRCLE 1
 #define PSP_CTRL_START 2
 static int music_transition;
+static int wifi_worker_thread=-1;
 #define PSP_THREAD_ATTR_USER 0
 static pthread_t worker;
 static int (*entry)(SceSize,void *);
@@ -55,6 +56,9 @@ static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
 }
 int main(void) {
     char buffer[64];
+    wifi_worker_thread=1;
+    assert(media_request_get("",buffer,64,210000,1)==MEDIA_REQUEST_CANCELLED && !deleted);
+    wifi_worker_thread=-1;
     assert(media_request_get("/api/subtitles/test",buffer,sizeof(buffer),210000,1)>0);
     assert(draws>=2 && deleted==1 && strstr(buffer,"text"));
     cancel_input=1;

@@ -188,6 +188,9 @@ static int offline_download_worker(SceSize args,void *argp) {
     /* Re-associate only this offline worker; leave streaming timeouts alone. */
     download_stage=3;
     int connected=0;
+    if(wifi_worker_thread>=0) {
+        snprintf(download_error,sizeof(download_error),"%s",tr(TXT_WIFI_NOT_READY));goto done;
+    }
     for(int i=0;i<200 && download_running;i++) {
         int ap=0;
         if(sceNetApctlGetState(&ap)<0)break;

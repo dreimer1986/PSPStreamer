@@ -1,5 +1,29 @@
 # Playback recovery update — 2026-09-26
 
+WLAN association now runs in one dedicated worker, including firmware status,
+disconnect, connect and APCTL restart calls. START/Circle cancels the UI wait;
+after 60 seconds an unreturned call also releases the UI. The worker is never
+forcibly killed. While it remains pending, new WLAN attempts, media preparation
+and offline downloads are rejected; ordinary network polling stays disabled.
+Once it exits naturally, Square can reap it and retry. If firmware never
+returns, restarting the app is still necessary for network use. Local menu
+input is no longer waiting inside the firmware association call. Entry/return
+logs and ten-second worker-stage reports distinguish a stuck disconnect,
+status query or APCTL termination. Decoder/subtitle/stream budgets are unchanged.
+Built first; focused ownership/cancellation/deadline, association-state,
+recovery and media-preparation checks pass. On hardware, interrupt the AP for
+several minutes, try START/Circle during reconnect, then Square after AP return.
+
+Server inspection (HA 0.1.56 and Caddy, 2026-09-26): successful cached subtitle
+responses took about 5–8 ms at the proxy. The available stream failure logs
+include client-side writes failing with `no route to host`, connection reset
+and broken pipe. The latest such stream had delivered about 149 MB. This is
+evidence of a broken transport path, not proof of which network device caused
+it. Idle server resource use was low; it does not establish load at failure.
+Normal FFmpeg stderr is discarded and stdout reads have no inactivity deadline,
+so historical transcoder stalls cannot be excluded from these logs alone.
+No server configuration, production process or timeout was changed.
+
 Video startup/recovery keeps the menu display and a cancellable waiting indicator
 until the first decoded frame is ready. The TV video-mode switch now happens
 immediately before presenting that frame, not while waiting for stream data.

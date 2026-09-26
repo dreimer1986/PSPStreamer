@@ -14,16 +14,12 @@ static int playback_recovery_associate(void) {
     int force=recovery_failures>=3 &&
         (!recovery_reset_done || now-recovery_last_reset>=60000000ULL);
     recovery_log(force?"WLAN reset":"connection retry",recovery_failures,0,"association");
-    int state=0;
-    sceNetApctlGetState(&state);
-    playback_recovery_status(force || wifi_rebuild_pending || state!=PSP_NET_APCTL_STATE_GOT_IP?
-        TXT_STREAM_WIFI:TXT_STREAM_SERVER);
+    playback_recovery_status(TXT_STREAM_WIFI);
     /* Playback and media-remote workers are already joined. Also stop the
      * independent virtual-button request before disconnecting the AP. */
     input_remote_stop();
     network_ready=http_ready=0;
     radio_connect_wait=1;
-    wifi_allow_apctl_restart=1;
     int result;
     if(force) {
         recovery_last_reset=now;recovery_reset_done=1;recovery_failures=0;
@@ -31,7 +27,6 @@ static int playback_recovery_associate(void) {
         network_ready=http_ready=result==0;
     } else result=wait_for_network_restore();
     radio_connect_wait=0;
-    wifi_allow_apctl_restart=0;
     recovery_log("association finished",result,0,force?"forced":"normal");
     if(result==0)playback_recovery_status(TXT_STREAM_RESUME);
     return result;

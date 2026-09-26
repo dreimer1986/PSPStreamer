@@ -59,8 +59,6 @@ static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)
 #define TXT_STREAM_DECODER 4
 #define PSP_NET_APCTL_STATE_GOT_IP 4
 static int network_ready,http_ready,forced,inputs_stopped;
-static int wifi_rebuild_pending,wifi_allow_apctl_restart;
-static int sceNetApctlGetState(int *state){*state=4;return 0;}
 static void input_remote_stop(void){inputs_stopped++;}
 static int wifi_associate(int force){assert(force);forced++;return 0;}
 static int plex_paused,plex_started,tv_ui_active,music_remote_action,music_remote_seconds;

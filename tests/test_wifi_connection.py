@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WifiConnectionTests(unittest.TestCase):
+    def test_worker_cancel_deadline_and_exclusive_ownership(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'worker'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT/'psp-client'),
+                            str(ROOT/'tests/wifi_worker_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=3)
+
     def test_retry_state_machine(self):
         source = r'''
 #include <assert.h>
@@ -19,6 +27,7 @@ static int active_network_profile;
 static int calls[5],fail_stage=-1,state,ticks,connects,disconnects;
 static int stuck,join_after=2,cancel_after,profile_exists=1,read_error,connect_error;
 static int terminated;
+static int wifi_should_cancel(void){return 0;}
 static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
 static int sceNetApctlTerm(void){terminated++;state=0;stuck=0;return 0;}
 static int init(int stage){calls[stage]++;return stage==fail_stage?-99:0;}
@@ -45,9 +54,9 @@ int main(void){
     state=2;stuck=1;join_after=0;ticks=0;
     assert(wifi_associate(0)==-6 && ticks==100 && connects==3);
     stuck=0;state=0;ticks=0;
-    assert(wifi_associate(0)==-3 && ticks==300 && state==0 && connects==4);
+    assert(wifi_associate(0)==-3 && ticks==300 && state==1 && connects==4);
     ticks=0;cancel_after=3;
-    assert(wifi_associate(0)==-5 && ticks==3 && state==0);
+    assert(wifi_associate(0)==-5 && ticks==3 && state==1);
     cancel_after=0;join_after=2;ticks=0;
     assert(wifi_associate(0)==0 && state==4);
     read_error=-123;assert(wifi_associate(1)==-123);read_error=0;
