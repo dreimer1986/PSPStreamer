@@ -1,4 +1,13 @@
 static const HelpText help_de[HELP_PAGE_COUNT]={
+    [HELP_PAGE_PLAYLIST]={
+        .title="Gemeinsame Wiedergabeliste",
+        .step1_title="Bibliothek: Wiedergabeliste öffnen",
+        .step1_text="Medien auf der Webseite hinzufügen.",
+        .step2_title="X: Optionen, dann Liste starten",
+        .step2_text="Musik und Video in Listenreihenfolge.",
+        .step3_title="DREIECK: Verschieben / Löschen / Modus",
+        .step3_text="Server speichert; O geht zurück."
+    },
     [HELP_PAGE_TRAVEL]={
         .title="Bereit für die Reise?",
         .step1_title="Lokaler Speicher: L für Übersicht",

@@ -52,7 +52,7 @@ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dat
 function timeLabel(seconds){return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');}
 function selectionCount(){ $('#selectionCount').textContent=t('{n} selected',{n:checked.size});$('#prepareSelected').disabled=!checked.size;}
 function folderLabel(folder){
-  const system=[':files:',':plex:',':jellyfin:',':dlna:',':radio:',':plex:playlists',':jellyfin:playlists'].includes(folder.path)||
+  const system=[':queue:',':files:',':plex:',':jellyfin:',':dlna:',':radio:',':plex:playlists',':jellyfin:playlists'].includes(folder.path)||
     ((folder.path.startsWith(':plex:')||folder.path.startsWith(':jellyfin:')||folder.path.startsWith(':dlna:'))&&folder.path.includes('@')&&['Previous page','Next page'].includes(folder.name));
   return system?t(folder.name):folder.name;
 }
@@ -68,7 +68,7 @@ async function browse(next=''){
 function renderLibrary(){
   if(!listing)return;const d=listing;
   const box=$('#library');box.replaceChildren();box.classList.toggle('cover-grid',coverView);coverToggle.setAttribute('aria-pressed',String(coverView));
-  for(const f of d.folders){const b=button('▸ '+folderLabel(f),()=>browse(f.path));b.className='item folder';addCover(b,f.artwork);box.append(b);}
+  for(const f of d.folders){const b=button('▸ '+folderLabel(f),()=>{if(f.path===':queue:'){setView('playlist');return loadPlaylist()}return browse(f.path)});b.className='item folder';addCover(b,f.artwork);box.append(b);}
   for(const v of d.videos){const row=document.createElement('div');row.className='item';
     if(!v.live&&!v.id.startsWith('radio.')){const check=document.createElement('input');check.type='checkbox';check.checked=checked.has(v.id);check.setAttribute('aria-label',t('Select')+' '+v.name);check.onchange=()=>{if(check.checked)checked.set(v.id,v);else checked.delete(v.id);selectionCount()};row.append(check);}
     const b=button((v.kind==='audio'?'♫ ':'▶ ')+v.name+(activePlayer(playerSample)&&playerSample.id===v.id?' — '+t('Now playing'):''),()=>choose(v));addCover(b,v.artwork);row.append(b);box.append(row);

@@ -32,7 +32,9 @@ int main(void){
         unsigned b=cave_engine_color(v.x,v.y,v.z,v.color,1);
         if(a!=v.color){
             assert(v.y>0 && v.z>.3f && fabsf(v.x)<.112f);
-            assert(a!=b && (a&255)==255 && (b>>24)==255);
+            assert(a!=b && (a&255)==155 && (b&255)==255 && (b>>24)==255);
+            assert(((b>>8)&255)>((a>>8)&255)+140);
+            assert(((b>>16)&255)>((a>>16)&255)+120);
             if(v.x<0)left++;else right++;
             assert(cave_engine_color(v.x,v.y,v.z,v.color,NAN)==a);
         }else assert(b==v.color);

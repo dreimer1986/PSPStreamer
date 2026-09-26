@@ -16,6 +16,7 @@ static pthread_t worker;
 static int (*entry)(SceSize,void *);
 static atomic_int finished;
 static int cancel_input,draws,deleted,fail_create,fail_start;
+static const char *expected_body;
 static void nap(void) {struct timespec t={0,1000000};nanosleep(&t,NULL);}
 static unsigned long long sceKernelGetSystemTimeWide(void) {
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
@@ -44,7 +45,8 @@ typedef struct {int status,retryable;const char *stage;} RemoteHttpReport;
 static int resolve_server_address(struct in_addr *a){(void)a;return 0;}
 static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
 static int remote_http_request_policy(const char *path,char *buffer,int capacity,volatile int *running,int budget,const char *body,RemoteHttpReport *report) {
-    (void)body;report->status=200;report->retryable=1;report->stage="receive";
+    assert(expected_body?body && !strcmp(body,expected_body):body==NULL);
+    report->status=200;report->retryable=1;report->stage="receive";
     assert(!strcmp(path,"/api/subtitles/test"));assert(capacity==64 && budget==210000);
     for(int i=0;i<200 && *running;i++)nap();
     if(!*running)return -1005;
@@ -71,5 +73,9 @@ int main(void) {
     fail_create=1;assert(media_request_get("",buffer,64,210000,1)==-17);
     fail_create=0;fail_start=1;assert(media_request_get("",buffer,64,210000,1)==-18);
     assert(deleted==4);
+    fail_start=0;expected_body="{\"action\":\"enabled\"}";
+    assert(media_request_perform("/api/subtitles/test",buffer,64,210000,1,expected_body)>0);
+    expected_body=NULL;
+    assert(media_request_get("/api/subtitles/test",buffer,64,210000,1)>0);
     return 0;
 }

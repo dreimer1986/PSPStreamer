@@ -232,7 +232,7 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         tv_text(562, 209, 10, 2, TV_MUTED, tr(TXT_ENTRIES), item_count);
         tv_text(562, 244, 10, 3, TV_CYAN, "%s", status);
         }
-        tv_help(tr(TXT_LIBRARY_CONTROLS));
+        tv_help(tr(!strcmp(current_path,":queue:")?TXT_PLAYLIST_HINT:TXT_LIBRARY_CONTROLS));
     } else if (view == TV_VIEW_LOADING) {
         menu_art_draw(tv_canvas.pixels,TV_GUI_STRIDE,562,130,116,TV_RIGHT_B-130,1);
         tv_text(34, 67, 38, 2, TV_AMBER, "%s", tr(TXT_READING_MEDIA));

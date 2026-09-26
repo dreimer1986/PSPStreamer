@@ -3,6 +3,10 @@ import re
 
 
 def browse(server, root=0, path=''):
+    if path == ':queue:':
+        queue=server.playlist.snapshot()
+        return dict(root=0,path=path,parent='',folders=[],videos=queue['items'],
+                    revision=queue['revision'],enabled=queue['enabled'])
     if path.startswith(':versions:'):
         from .media_versions import browse_versions
         token = path[len(':versions:'):]
@@ -11,6 +15,7 @@ def browse(server, root=0, path=''):
     sources = server.plex.public()
     if path in ('', '.'):
         folders = []
+        if hasattr(server,'playlist'):folders.append({'name':'Playlist','path':':queue:'})
         if sources['files']:
             folders.append({'name': 'Files', 'path': ':files:'})
         if sources['enabled']:

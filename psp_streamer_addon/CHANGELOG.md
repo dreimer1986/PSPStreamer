@@ -1,3 +1,12 @@
+# 0.1.59
+
+- Persistent shared playlist: add selected library items or a configured media
+  entry in the web UI; play, reorder, remove and clear from the Playlist tab.
+- Matching PSP client browses, starts, reorders and removes entries; mixed
+  video/music continuation respects each entry's audio/subtitle selection.
+- Revision checks prevent stale clients overwriting a newer edit. Playlist
+  state uses the existing persistent state directory in Docker and HA.
+
 # 0.1.58
 
 - Show current PSP playback across browser sessions, including playback started

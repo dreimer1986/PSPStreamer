@@ -10,7 +10,8 @@ static unsigned int cave_engine_color(float x,float y,float z,unsigned int color
     /* Warm amber rim and brighter centre, always lit even during silence. */
     float dx=(x<0?x+.0666f:x-.0668f)/.044f,dy=(y-.037f)/.037f;
     float core=1.f-dx*dx-dy*dy;if(core<0)core=0;
-    unsigned int green=(unsigned int)(155+45*glow+30*core);
-    unsigned int blue=(unsigned int)(25+35*glow+75*core);
-    return 0xff0000ffU|(green<<8)|(blue<<16);
+    unsigned int red=(unsigned int)(155+100*glow);
+    unsigned int green=(unsigned int)(48+150*glow+35*core);
+    unsigned int blue=(unsigned int)(8+130*glow+70*core);
+    return 0xff000000U|red|(green<<8)|(blue<<16);
 }

@@ -6,6 +6,7 @@ static void media_wait_draw(int subtitles, unsigned int seconds, int cancelling)
 static volatile int media_request_running, media_request_done;
 static int media_request_result, media_request_budget, media_request_capacity;
 static const char *media_request_path;
+static const char *media_request_body;
 static char *media_request_buffer;
 static RemoteHttpReport media_request_report;
 static int media_request_transient;
@@ -17,14 +18,14 @@ static int media_request_worker(SceSize args, void *argp) {
     if(resolve_server_address(&address)<0)media_request_result=-1004;
     else if(!media_request_running)media_request_result=MEDIA_REQUEST_CANCELLED;
     else media_request_result=remote_http_request_policy(media_request_path,media_request_buffer,
-        media_request_capacity,&media_request_running,media_request_budget,NULL,&media_request_report);
+        media_request_capacity,&media_request_running,media_request_budget,media_request_body,&media_request_report);
     network_worker_finished("preparation");
     __sync_synchronize();
     media_request_done=1;
     return 0;
 }
 
-static int media_request_get(const char *path,char *buffer,int capacity,int budget,int subtitles) {
+static int media_request_perform(const char *path,char *buffer,int capacity,int budget,int subtitles,const char *body) {
     /* A cancelled association may still own firmware networking. */
     if(wifi_worker_thread>=0) {media_request_transient=0;return MEDIA_REQUEST_CANCELLED;}
     SceCtrlData pad;
@@ -34,6 +35,7 @@ static int media_request_get(const char *path,char *buffer,int capacity,int budg
     media_request_report=(RemoteHttpReport){0,1,"starting"};
     recovery_log(subtitles?"subtitles begin":"metadata begin",0,0,"starting");
     media_request_path=path;media_request_buffer=buffer;
+    media_request_body=body;
     media_request_capacity=capacity;media_request_budget=budget;
     media_request_running=1;media_request_done=0;
     thread=sceKernelCreateThread("media preparation",media_request_worker,
@@ -63,4 +65,7 @@ static int media_request_get(const char *path,char *buffer,int capacity,int budg
     recovery_log(cancelled?"preparation cancelled":media_request_transient?"preparation retry":"preparation finished",
         cancelled?MEDIA_REQUEST_CANCELLED:media_request_result,media_request_report.status,media_request_report.stage);
     return cancelled?MEDIA_REQUEST_CANCELLED:media_request_result;
+}
+static int media_request_get(const char *path,char *buffer,int capacity,int budget,int subtitles) {
+    return media_request_perform(path,buffer,capacity,budget,subtitles,NULL);
 }

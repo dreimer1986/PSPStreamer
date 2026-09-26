@@ -74,6 +74,7 @@ typedef struct {
     char value[ID_SIZE];
     int is_folder;
     int is_audio;
+    int queue_audio,queue_subtitle;
 } LibraryItem;
 
 typedef struct {
@@ -3036,6 +3037,7 @@ static void parse_library(void) {
         if (!object || !json_value(object, "name", items[item_count].title, TITLE_SIZE)) break;
         if (!json_value(object, "path", items[item_count].value, ID_SIZE)) break;
         if(!strcmp(items[item_count].value,":radio:"))snprintf(items[item_count].title,TITLE_SIZE,"%s",tr(TXT_RADIO));
+        if(!strcmp(items[item_count].value,":queue:"))snprintf(items[item_count].title,TITLE_SIZE,"%s",tr(TXT_PLAYLIST));
         items[item_count].is_folder = 1;
         item_count++;
         cursor = strchr(object, '}');
@@ -3049,6 +3051,8 @@ static void parse_library(void) {
         if (!object || !json_value(object, "name", items[item_count].title, TITLE_SIZE)) break;
         if (!json_value(object, "id", items[item_count].value, ID_SIZE)) break;
         items[item_count].is_folder = 0;
+        items[item_count].queue_audio=json_integer(object,"audio",0);
+        items[item_count].queue_subtitle=json_integer(object,"subtitle",-1);
         { char kind[12]; items[item_count].is_audio = json_value(object, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio"); }
         item_count++;
         cursor = strchr(object, '}');
@@ -3106,6 +3110,9 @@ static int next_media_index(int selected, int is_audio) {
 
 /* Remote playback has no relationship to the PSP's currently browsed folder.
  * Resolve successors from the media ID on the server, only after natural EOF. */
+static int remote_next_audio;
+static int remote_next_track,remote_next_subtitle;
+static int playlist_revision,playlist_enabled;
 static int remote_next_media(char *media_id, size_t capacity, int is_audio, int direction) {
     char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16];
     int result;
@@ -3115,8 +3122,11 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     if (result < 0) return result;
     if (!json_value(response, "id", next_id, sizeof(next_id))) return 0;
     if (!json_value(response, "kind", kind, sizeof(kind)) ||
-        strcmp(kind, is_audio ? "audio" : "video") || !strcmp(media_id, next_id) ||
+        (strcmp(kind,"audio") && strcmp(kind,"video")) || !strcmp(media_id, next_id) ||
         strlen(next_id) >= capacity) return 0;
+    int next_audio=!strcmp(kind,"audio");
+    int next_track=json_integer(response,"audio",selected_audio_track);
+    int next_subtitle=json_integer(response,"subtitle",selected_subtitle_track);
     /* A new Stop/Play during the transition takes precedence over autoplay.
      * Leave it for the normal command consumer; do not create commands here. */
     snprintf(path, sizeof(path), "/api/remote/next?after=%d", remote_control_sequence);
@@ -3124,6 +3134,8 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     if (result < 0) return result;
     if (!json_value(response, "action", kind, sizeof(kind)) || strcmp(kind, "idle")) return 0;
     strcpy(media_id, next_id);
+    remote_next_audio=next_audio;
+    remote_next_track=next_track;remote_next_subtitle=next_subtitle;
     return 1;
 }
 
@@ -3152,6 +3164,10 @@ static void refresh_library(void) {
 }
 
 static void finish_library_request(void) {
+    if(!strcmp(current_path,":queue:") && library_result>=0) {
+        playlist_revision=json_integer(response,"revision",0);
+        playlist_enabled=strstr(response,"\"enabled\":true")!=NULL || strstr(response,"\"enabled\": true")!=NULL;
+    }
     if (library_cancelled || library_result < 0) {
         if(library_cancelled)snprintf(status,sizeof(status),"%s",tr(TXT_LIBRARY_CANCELLED));
         else snprintf(status, sizeof(status), tr(TXT_SERVER_ERROR), library_result);
@@ -3272,7 +3288,7 @@ static void show(int selected) {
     if(tls_notice())gui_text(38,166,0x0000D8FF,"%s",tr((TextId)(TXT_TLS_FIRST+tls_notice()-1)));
     else if(!network_ready)gui_text(38,166,0x0000D8FF,"%.48s",status);
     else if(menu_art_has_cover())gui_text(38,166,0x008A9BAA,"%.48s",status);
-    gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_LIBRARY_CONTROLS));
+    gui_text(38, 177, 0x00FFFFFF, "%s", tr(!strcmp(current_path,":queue:")?TXT_PLAYLIST_HINT:TXT_LIBRARY_CONTROLS));
 }
 
 /* A real media-information screen rather than a second copy of the browser.
@@ -3420,6 +3436,48 @@ static int playback_options(int audio_only) {
 #include "comfort_ui.h"
 #include "offline_ui.h"
 
+/* Queue edits share the cancellable HTTP worker with metadata requests. No
+ * extra polling thread or network traffic is added during playback. */
+static int playlist_change(const char *action,int selected,int position,int enabled) {
+    char hex[ID_SIZE*2+1],body[ID_SIZE*2+160];
+    comfort_hex(hex,selected>=0?items[selected].value:"");
+    snprintf(body,sizeof(body),"{\"action\":\"%s\",\"revision\":%d,\"id_hex\":\"%s\",\"position\":%d,\"enabled\":%s}",
+        action,playlist_revision,hex,position,enabled?"true":"false");
+    int result=media_request_perform("/api/playlist",response,sizeof(response),15000,0,body);
+    if(result<0){snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),result);return 0;}
+    playlist_revision=json_integer(response,"revision",playlist_revision);
+    playlist_enabled=strstr(response,"\"enabled\":true")!=NULL || strstr(response,"\"enabled\": true")!=NULL;
+    return 1;
+}
+static void playlist_menu(int selected) {
+    int row=0,dirty=1;unsigned int old=~0U;
+    while(1) {
+        if(dirty){
+            settings_shell(tr(TXT_PLAYLIST));
+            settings_line(0,0,items[selected].title);
+            settings_line(2,row==0,tr(TXT_PLAYLIST_UP));
+            settings_line(3,row==1,tr(TXT_PLAYLIST_DOWN));
+            settings_line(4,row==2,tr(TXT_PLAYLIST_REMOVE));
+            settings_line(5,row==3,tr(playlist_enabled?TXT_PLAYLIST_DISABLE:TXT_PLAYLIST_ENABLE));
+            settings_help(tr(TXT_DOWNLOAD_BACK));dirty=0;
+        }
+        SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
+        unsigned int pressed=pad.Buttons&~old;
+        if(pressed&PSP_CTRL_CIRCLE)return;
+        if(pressed&PSP_CTRL_DOWN){row=(row+1)%4;dirty=1;}
+        if(pressed&PSP_CTRL_UP){row=(row+3)%4;dirty=1;}
+        if(pressed&PSP_CTRL_CROSS){
+            if(row==0 && selected==0)continue;
+            if(row==1 && selected==item_count-1)continue;
+            if(playlist_change(row<2?"move":row==2?"remove":"enabled",selected,
+                    selected+(row==0?-1:1),!playlist_enabled))refresh_library();
+            else {comfort_notice(status);refresh_library();}
+            return;
+        }
+        old=pad.Buttons;sceKernelDelayThread(20000);
+    }
+}
+
 int main(void) {
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
     SceCtrlData pad;
@@ -3551,6 +3609,8 @@ int main(void) {
                             video_file_direction?video_file_direction:1);
                         if (following < 0) { result = following; video_step = "Next media"; break; }
                         if (!following) break;
+                        remote_is_audio=remote_next_audio;
+                        remote_audio=remote_next_track;remote_subtitle=remote_next_subtitle;
                     }
                     stream_start_seconds = 0;
                     resume_pending = seek_requested = 0;
@@ -3628,6 +3688,9 @@ int main(void) {
         } else next_page_repeat_tick = 0;
         if ((pad.Buttons & PSP_CTRL_LEFT) && !(old_buttons & PSP_CTRL_LEFT) && current_path[0]) { parent_path(); selected = 0; refresh_library(); dirty = 1; }
         if (item_count && (pad.Buttons & PSP_CTRL_TRIANGLE) && !(old_buttons & PSP_CTRL_TRIANGLE) && !items[selected].is_folder) {
+            if(!strcmp(current_path,":queue:")) {
+                playlist_menu(selected);dirty=1;old_buttons=pad.Buttons;continue;
+            }
             /* Triangle is deliberately information-only: it performs the
              * same lightweight metadata request as X, but never begins a
              * transcode or subtitle preparation. */
@@ -3669,6 +3732,10 @@ int main(void) {
                 resume_pending = 0;
                 stream_start_seconds = 0;
                 show_metadata_loading();
+                if(!strcmp(current_path,":queue:")) {
+                    selected_audio_track=items[selected].queue_audio;
+                    selected_subtitle_track=items[selected].queue_subtitle;
+                }
                 if(load_media_metadata(items[selected].value)<0) {
                     show(selected);old_buttons=pad.Buttons;continue;
                 }
@@ -3680,6 +3747,9 @@ int main(void) {
                     offline_enqueue_play(items[selected].value,items[selected].is_audio);
                     dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
                 }
+            }
+            if(!strcmp(current_path,":queue:") && !playlist_change("enabled",-1,0,1)) {
+                comfort_notice(status);refresh_library();dirty=1;old_buttons=pad.Buttons;continue;
             }
             do {
                 int next;
@@ -3704,12 +3774,14 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                if((item_count==1 || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9) || !strncmp(items[selected].value,"dlna.",5)) && (playback_reached_end || video_file_direction)) {
+                if((!strcmp(current_path,":queue:") || item_count==1 || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9) || !strncmp(items[selected].value,"dlna.",5)) && (playback_reached_end || video_file_direction)) {
                     char following_id[ID_SIZE];
                     snprintf(following_id,sizeof(following_id),"%s",items[selected].value);
                     int following=remote_next_media(following_id,sizeof(following_id),items[selected].is_audio,video_file_direction);
                     if(following>0) {
                         snprintf(items[selected].value,sizeof(items[selected].value),"%s",following_id);
+                        items[selected].is_audio=remote_next_audio;
+                        selected_audio_track=remote_next_track;selected_subtitle_track=remote_next_subtitle;
                         stream_start_seconds=0;
                         if(load_media_metadata(following_id)<0)break;
                         snprintf(items[selected].title,sizeof(items[selected].title),"%s",current_media_name);
@@ -3738,7 +3810,7 @@ int main(void) {
                 if(!music_transition)show(selected);
                 if(load_media_metadata(items[selected].value)<0)break;
             } while (1);
-            if(!strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) {
+            if(!strcmp(current_path,":queue:") || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) {
                 refresh_library();
                 if(selected>=item_count)selected=item_count?item_count-1:0;
             }

@@ -1,11 +1,17 @@
 # PSP Streamer
 
+Server **0.1.59** adds a [shared playlist](docs/PLAYLIST.md), editable in the web
+UI and on the PSP. Update both server and the matching EBOOT/PRX pair. Entries
+and order survive server updates when the existing persistent volume is kept.
+The flight Easter egg's exhaust lights now have a wider, music-driven
+brightness and amber-to-pale-gold color range.
+
 Server **0.1.58** shows the PSP's current playback in every browser session,
 including playback started on the PSP or another controller. Open **Remote
 control** or **Control current playback** to load its position and controls
 without restarting it. Opening the same library entry also synchronizes its
 position. This view follows automatic episode/song changes; selecting another
-file deliberately keeps that selection. Playlist editing remains planned.
+file deliberately keeps that selection.
 
 StreamerOC optionally supports `overlay_always=1` in its INI (default `0`).
 The flight Easter egg now has two warm exhaust lights driven by filtered music
@@ -854,9 +860,15 @@ server API; no server/add-on update is needed.
 
 Commands are polled in background workers, not in the music drawing or DAC
 loop. Allow normal network/polling and teardown/startup time for a command to
-take effect. The existing server stores the latest command, not a playlist
-or a queue of rapid button presses. The browser's progress control is a seek
-target, not a live report of the PSP playback position.
+take effect. The command mailbox stores only the latest command; it is separate
+from the persistent playlist added in 0.1.59. Commands expire after 15 seconds.
+The browser displays the reported playback position and allows a seek target.
+
+An enabled shared playlist takes precedence for its entries when resolving
+remote playback or playback started from the PSP's Playlist folder. It can
+cross between music and video, uses saved per-entry tracks and stops at the
+list end. Ordinary folder playback remains available; disable playlist order
+in the Playlist view to restore the server's folder-based continuation.
 
 The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1` for shuffled music). It returns `{"id":"...","kind":"video"}` or `{"id":"...","kind":"audio"}`, and `{}` when there is no successor. It does not enqueue remote commands. Update both the server and PSP app to use remote continuation. The web page's selected-file details still describe the file selected in the browser, not a live report of the automatically selected successor.
 

@@ -269,4 +269,12 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_STREAM_DECODER_FAILED] = "AVC: 3 Neustarts erfolglos",
     [TXT_STREAM_START_WAIT] = "%us warten - START: Stopp",
     [TXT_STREAM_WAIT_DATA] = "Warte auf abspielbare Videodaten",
-    [TXT_RADIO_RECONNECT] = "Radio in 5s verbinden - START: Stopp"};
+    [TXT_RADIO_RECONNECT] = "Radio in 5s verbinden - START: Stopp",
+    [TXT_PLAYLIST] = "Wiedergabeliste",
+    [TXT_PLAYLIST_UP] = "Nach oben",
+    [TXT_PLAYLIST_DOWN] = "Nach unten",
+    [TXT_PLAYLIST_REMOVE] = "Eintrag entfernen",
+    [TXT_PLAYLIST_ENABLE] = "Listenreihenfolge nutzen",
+    [TXT_PLAYLIST_DISABLE] = "Ordnerreihenfolge nutzen",
+    [TXT_PLAYLIST_HINT] = "X: Start | Dreieck: Liste bearbeiten"
+};

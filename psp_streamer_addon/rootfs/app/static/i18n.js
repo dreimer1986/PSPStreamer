@@ -1,5 +1,13 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Playlist':'Wiedergabeliste','Use playlist instead of folder order':'Wiedergabeliste statt Ordnerreihenfolge verwenden',
+ 'Previous file':'Vorige Datei','Next file':'Nächste Datei','Clear playlist':'Liste leeren',
+ 'Clear playlist? Files are kept.':'Wiedergabeliste leeren? Dateien bleiben erhalten.',
+ 'Saved on the server. Add from the library or media details. Each media item appears once.':'Dauerhaft auf dem Server gespeichert. Medien in der Bibliothek oder Detailansicht hinzufügen. Jeder Eintrag kommt einmal vor.',
+ 'Added to playlist':'Zur Wiedergabeliste hinzugefügt','Add to playlist':'Zur Wiedergabeliste hinzufügen',
+ 'Add selected to playlist':'Auswahl zur Wiedergabeliste hinzufügen','Move up':'Nach oben','Move down':'Nach unten',
+ 'Playlist changed; refresh and try again':'Wiedergabeliste wurde geändert; aktualisiert – bitte erneut versuchen',
+ 'Playlist update in progress; try again':'Wiedergabeliste wird gespeichert; bitte gleich erneut versuchen',
   'Now playing':'Aktuelle Wiedergabe','Control current playback':'Aktuelle Wiedergabe steuern',
   'playing':'Wiedergabe läuft','paused':'Pausiert','buffering':'Wird geladen',
   'Favorites & history':'Favoriten & Verlauf','Favorites':'Favoriten','Recently played':'Zuletzt gespielt','Continue watching':'Weiterschauen',

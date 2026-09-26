@@ -21,7 +21,9 @@ static void cave_draw_ship(int width,int height) {
     float center[3],right[3],up[3],forward[3];
     cave_ship_pose(cave_scene,center,right,up,forward);
     int used=0;
-    float glow=.15f+.65f*cave_scene->motion.bass+.12f*sinf(cave_scene->motion.phase*19.f);
+    /* Keep headroom for transients: sustained loud bass must not pin the
+     * light at maximum and hide every following beat. */
+    float glow=.08f+.65f*cave_scene->motion.bass+1.5f*cave_scene->motion.pulse;
     for(int i=0;i<CAVE_SHIP_VERTICES;i+=3) {
         MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
         for(int j=0;j<3;j++) {

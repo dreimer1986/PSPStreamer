@@ -605,7 +605,11 @@ class AppHandler(BaseHTTPRequestHandler):
                     listing = {**listing, **{key: [{k:v for k,v in row.items() if k != 'artwork'}
                                for row in listing[key]] for key in ('folders','videos')}}
                 return self.send_json(listing)
+            if parsed.path == '/api/playlist':
+                return self.send_json(self.server.playlist.snapshot())
             if parsed.path.startswith("/api/media-next/"):
+                queued = self.server.playlist.next(parsed.path.rsplit('/', 1)[-1], query.get('direction',['next'])[0]=='previous')
+                if queued is not None:return self.send_json(queued)
                 if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
                     self.server.radio.get(parsed.path.rsplit('/', 1)[-1])
                     return self.send_json({})
@@ -707,6 +711,25 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_error_json(HTTPStatus.BAD_REQUEST,'Invalid comfort request size')
                 data=json.loads(self.rfile.read(length))
                 return self.send_json(self.server.comfort.sync(data) if parsed.path.endswith('/sync') else self.server.comfort.change(data))
+            if parsed.path == '/api/playlist':
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=200000:
+                    self.close_connection=True
+                    raise ValueError('Invalid playlist request size')
+                request=json.loads(self.rfile.read(length))
+                if not isinstance(request,dict):raise ValueError('Invalid playlist request')
+                if 'id_hex' in request:
+                    if not isinstance(request['id_hex'],str):raise ValueError('Invalid playlist identifier')
+                    request['id']=bytes.fromhex(request['id_hex']).decode('utf-8')
+                if request.get('action')=='play':
+                    with self.server.playlist.lock:
+                        queue=self.server.playlist.snapshot()
+                        row=next((r for r in queue['items'] if r['id']==request.get('id')),None)
+                        if not row:raise ValueError('Playlist item is unavailable')
+                        result=self.server.playlist.change({'action':'enabled','enabled':True,'revision':request.get('revision')},self.server.playlist_item)
+                        self.server.set_remote_command({**row,'action':'play','start':0})
+                    return self.send_json(result)
+                return self.send_json(self.server.playlist.change(request,self.server.playlist_item))
             if parsed.path.startswith('/api/dlna/'):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=8192:
@@ -1334,11 +1357,26 @@ class AppServer(ThreadingHTTPServer):
         self.remote_command: dict[str, object] = {"seq": 0, "action": "idle"}
         from .player_status import PlayerStatus
         self.player_status = PlayerStatus(self.plex.path.parent)
+        from .playlist import Playlist
+        self.playlist = Playlist(state_root)
         from .offline import OfflineQueue
         cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(state_root / 'downloads')
         self.offline = OfflineQueue(cache_root, library, ffmpeg_command, parse_srt_cues, self.transcode_slots)
         if self.offline.jobs:
             self.offline.start()
+
+    def playlist_item(self, item):
+        token=item.get('id')
+        if not isinstance(token,str) or not 0<len(token)<512:raise ValueError('Invalid media id')
+        if token.startswith('radio.'):raise ValueError('Live radio has no playlist end')
+        source=self.library.decode(token)[1]
+        name=item.get('name') or source.name
+        if not isinstance(name,str) or len(name)>200:raise ValueError('Invalid playlist name')
+        audio=item.get('audio',0);subtitle=item.get('subtitle',-1)
+        if type(audio) is not int or not 0<=audio<=7 or type(subtitle) is not int or not -1<=subtitle<=31:
+            raise ValueError('Invalid playlist tracks')
+        return {'id':token,'name':display_text(name),'kind':'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video',
+                'audio':audio,'subtitle':subtitle}
 
     def server_close(self):
         if hasattr(self,'dlna'):

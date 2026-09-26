@@ -4,6 +4,7 @@
 
 static int resume_pending,seek_requested,playback_reached_end,video_file_direction;
 static int stream_start_seconds,scenario,calls,first_calls,next_calls,metadata_calls;
+static int remote_next_audio,remote_next_track,remote_next_subtitle;
 static int comfort_play_video(const char *id) {
     assert(++calls<8);
     playback_reached_end=video_file_direction=0;
@@ -35,7 +36,9 @@ static int remote_next_media(char *id,size_t capacity,int audio,int direction) {
     assert(capacity>=7 && direction==1);
     next_calls++;
     if(!strcmp(id,"second"))return 0;
-    assert(!strcmp(id,"first"));strcpy(id,"second");return 1;
+    assert(!strcmp(id,"first"));strcpy(id,"second");
+    remote_next_audio=!audio;remote_next_track=1;remote_next_subtitle=0;
+    return 1;
 }
 int main(void) {
     for(scenario=0;scenario<6;scenario++) {

@@ -1,4 +1,13 @@
 static const HelpText help_en[HELP_PAGE_COUNT]={
+    [HELP_PAGE_PLAYLIST]={
+        .title="Shared playlist",
+        .step1_title="Open Playlist in the library",
+        .step1_text="Add media in the server web page.",
+        .step2_title="X: options, then play the list",
+        .step2_text="Music and video in saved order.",
+        .step3_title="TRIANGLE: move / remove / mode",
+        .step3_text="Changes shared; O goes back."
+    },
     [HELP_PAGE_TRAVEL]={
         .title="Ready for a trip?",
         .step1_title="Local storage: L opens overview",
