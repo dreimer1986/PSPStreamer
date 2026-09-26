@@ -43,4 +43,5 @@ embedded PRX, loose PRX and ZIP copies match; Docker/HA sources match.
 The older combined GU adapter harness does not compile against today's title
 API (`md_set_tv_title_bottom` removed; missing GU mock constants); it is not a
 passing graphics check. Real PSP LCD/TV rendering and live provider shelves
-still require user confirmation. No server was restarted during verification.
+were subsequently confirmed working by the user on 2026-09-27, including the
+0.1.61 cover views. No server was restarted during automated verification.

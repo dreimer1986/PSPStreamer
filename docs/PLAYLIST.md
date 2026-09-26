@@ -62,5 +62,5 @@ not ordinary folder playback or Internet radio.
 
 Build before focused tests: playlist persistence/conflicts, mixed HTTP queue,
 native POST cancellation/body ownership, music/video transition loop, browser
-add/reorder/play/reload/remove and subtitle index zero. Final confirmation on
-real PSP hardware remains necessary, especially mixed media and TV output.
+add/reorder/play/reload/remove and subtitle index zero. The user confirmed all
+newly delivered functionality working on 2026-09-27, including playlist modes.

@@ -39,8 +39,8 @@ flight wall recoil/blinking recovery, double-L/R barrel rolls and ship fade-in.
 These supersede their proposal descriptions below. Health and projectile
 protection remain future work; the barrel roll is currently a flight maneuver.
 
-1. **Finish testing the shared queue**, then add repeat off/one/all, a visible
-   current/next item, play-next and multiple named lists. Give duplicate entries
+1. **Shared queue and repeat/shuffle are confirmed working (2026-09-27).**
+   Future candidates: a next-item preview, play-next and multiple named lists. Give duplicate entries
    separate entry IDs before allowing the same file twice. Low-to-medium scope,
    negligible steady-state PSP rendering cost.
 2. **M3U8/PLS import/export and offline list bundles.** Resolve paths/URLs into
