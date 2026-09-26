@@ -6,7 +6,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="X: Optionen, dann Liste starten",
         .step2_text="Musik und Video in Listenreihenfolge.",
         .step3_title="DREIECK: Verschieben / Löschen / Modus",
-        .step3_text="Server speichert; O geht zurück."
+        .step3_text="Auch Wiederholung und Listen-Zufall."
     },
     [HELP_PAGE_TRAVEL]={
         .title="Bereit für die Reise?",
@@ -139,9 +139,9 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_title="L + R zusammen: Flug ein / aus",
         .step1_text="Analogstick: in Abzweige lenken.",
         .step2_title="L / R: rollen   HOCH/RUNTER: Tempo",
-        .step2_text="Nur vorwärts; Wände bremsen ab.",
+        .step2_text="Doppel-L / R: vollständige Fassrolle.",
         .step3_title="DREIECK: Vollbild   START: Stopp",
-        .step3_text="Flug-Y bei Bedarf in Optionen umkehren."
+        .step3_text="Wand: Blinken, Rückstoß, Befreiung."
     },
     [HELP_PAGE_DOWNLOAD]={
         .title="Direkt auf die PSP herunterladen",

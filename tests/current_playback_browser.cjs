@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
  const errors=[],commands=[];
- let queue={revision:0,enabled:false,items:[]};
+ let queue={revision:0,enabled:false,repeat:0,shuffle:false,items:[]};
  let current={online:true,age:0,id:'episode1',title:'Episode One',kind:'video',state:'playing',position:123,duration:1200};
  const files=[{id:'episode1',name:'Episode One',kind:'video'},{id:'song',name:'Song',kind:'audio'},{id:'other',name:'Other',kind:'video'}];
  try{
@@ -18,6 +18,13 @@ const assert=require('node:assert/strict');
    else if(path==='/api/comfort')data={records:[]};
    else if(path==='/api/player')data=current;
    else if(path.startsWith('/api/metadata/'))data={d:1200,a:[{n:0,l:'eng'}],s:[{n:0,l:'deu'}],chapters:[]};
+   else if(path.startsWith('/api/media-next/')){
+    const query=new URL(route.request().url()).searchParams;
+    assert.equal(query.get('folder'),'1');assert.equal(query.get('manual'),'1');
+    data=files[0];
+   }
+   else if(path==='/api/provider-view')data=new URL(route.request().url()).searchParams.get('view')==='sections'
+    ?{sections:[{id:'1',name:'Series'}]}:{folders:[],videos:[files[0]],next:null};
    else if(path==='/api/playlist'){
     if(route.request().method()==='POST'){
      const change=route.request().postDataJSON();assert.equal(change.revision,queue.revision);
@@ -25,6 +32,8 @@ const assert=require('node:assert/strict');
      if(change.action==='move'){const index=queue.items.findIndex(r=>r.id===change.id);queue.items.splice(change.position,0,...queue.items.splice(index,1))}
      if(change.action==='remove')queue.items=queue.items.filter(r=>r.id!==change.id);
      if(change.action==='enabled')queue.enabled=change.enabled;
+     if(change.action==='repeat')queue.repeat=change.repeat;
+     if(change.action==='shuffle')queue.shuffle=change.shuffle;
      if(change.action==='play'){queue.enabled=true;commands.push({action:'play',id:change.id})}
      if(change.action==='clear')queue.items=[];
      queue.revision++;
@@ -64,6 +73,21 @@ const assert=require('node:assert/strict');
   await page.locator('#subtitle').selectOption('0');
   await page.locator('#view-remote').getByRole('button',{name:'Add to playlist',exact:true}).click();
   await page.waitForFunction(()=>playlistState.items.length===1);
+  await page.locator('nav [data-view="playlist"]').click();
+  await page.getByRole('combobox',{name:'Playlist repeat',exact:true}).selectOption('2');
+  await page.waitForFunction(()=>playlistState.repeat===2);
+  await page.locator('#view-playlist input[type="checkbox"]').last().check();
+  await page.waitForFunction(()=>playlistState.shuffle);
+  const before=commands.length;
+  await page.locator('nav [data-view="library"]').click();
+  await page.getByRole('button',{name:'▶ Other',exact:true}).click();
+  await page.getByRole('button',{name:'Open next file',exact:true}).click();
+  await page.waitForFunction(()=>selected.id==='episode1');
+  assert.equal(commands.length,before);
+  await page.locator('nav [data-view="provider"]').click();
+  await page.locator('#view-provider').getByRole('button',{name:'Episode One',exact:true}).click();
+  await page.waitForFunction(()=>selected.id==='episode1');
+  assert.equal(commands.length,before);
   assert.equal(queue.items[0].subtitle,0);
   await page.locator('nav [data-view="library"]').click();
   await page.locator('#library').getByRole('button',{name:'Add to playlist',exact:true}).nth(1).click();

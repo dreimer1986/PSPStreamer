@@ -56,6 +56,10 @@ typedef struct {
     float flight_x,flight_y,flight_axis_x,flight_axis_y;
     float flight_yaw,flight_pitch,flight_roll,flight_speed;
     float flight_roll_velocity;
+    float flight_age,flight_impact,flight_stuck,flight_ghost,flight_ghost_age;
+    float flight_barrel_time;
+    int flight_barrel,flight_last_roll,flight_tap_roll;
+    unsigned long long flight_tap_time;
 } CaveScene;
 /* Model-space extents, scaled exactly like drawing, plus a small wall skin.
  * The narrow collision box rotates with the visible ship. */
@@ -67,6 +71,7 @@ typedef struct {
 void cave_ship_pose(const CaveScene *s,float center[3],float right[3],float up[3],float forward[3]);
 int cave_ship_contact(const CaveScene *s,float x,float y,float z,float normal[3]);
 void cave_flight_input(CaveScene *scene,int toggle,int analog_x,int analog_y,int throttle,int roll);
+float cave_ship_opacity(const CaveScene *scene);
 void cave_world_point(const CaveScene *scene,float x,float y,float z,float out[3]);
 void cave_material_sample(const CaveScene *scene,int profile,float x,float y,float fraction,float rgba[4],float normal[3]);
 /* Original beat choice and damping, independent of the PSP audio detector. */

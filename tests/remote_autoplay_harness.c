@@ -33,7 +33,7 @@ static int load_media_metadata(const char *id) {
 }
 static int remote_next_media(char *id,size_t capacity,int audio,int direction) {
     (void)audio;
-    assert(capacity>=7 && direction==1);
+    assert(capacity>=7 && direction==0);
     next_calls++;
     if(!strcmp(id,"second"))return 0;
     assert(!strcmp(id,"first"));strcpy(id,"second");

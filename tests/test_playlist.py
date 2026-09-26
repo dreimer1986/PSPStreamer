@@ -12,6 +12,31 @@ from psp_streamer.server import AppServer, Library, MediaItem
 
 
 class PlaylistTests(unittest.TestCase):
+    def test_repeat_and_independent_stable_shuffle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            queue=Playlist(directory)
+            def change(action,**values):return queue.change(dict(action=action,revision=queue.snapshot()['revision'],**values),dict)
+            change('add',items=[dict(id=x,kind='audio') for x in 'abcd'])
+            change('enabled',enabled=True);change('repeat',repeat=1)
+            self.assertEqual(queue.next('b')['id'],'b')
+            self.assertEqual(queue.next('b')['repeat_current'],1)
+            self.assertEqual(queue.next('b',manual=True)['id'],'c')
+            self.assertEqual(queue.next('b',True)['id'],'a')
+            change('repeat',repeat=2)
+            self.assertEqual(queue.next('d')['id'],'a')
+            self.assertEqual(queue.next('a',True)['id'],'d')
+            change('shuffle',shuffle=True)
+            order=['a']
+            for i in range(4):
+                following=queue.next(order[-1])
+                self.assertEqual(following,queue.next(order[-1]))
+                self.assertEqual(Playlist(directory).next(order[-1]),following)
+                order.append(following['id'])
+            self.assertEqual(order[-1],'a');self.assertEqual(set(order[:-1]),set('abcd'))
+            self.assertEqual([row['id'] for row in queue.snapshot()['items']],list('abcd'))
+            change('shuffle',shuffle=False);change('repeat',repeat=0)
+            self.assertEqual(queue.next('d'),{})
+
     def test_slow_provider_does_not_lock_playback_and_rechecks_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             queue=Playlist(directory);entered=threading.Event();release=threading.Event();errors=[]

@@ -1,5 +1,11 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Repeat off':'Wiederholung aus','Repeat one':'Eine Datei wiederholen','Repeat all':'Alle wiederholen',
+ 'Playlist repeat':'Listen-Wiederholung','Playlist shuffle (independent of folder shuffle)':'Listen-Zufall (unabhängig vom Ordner-Zufall)',
+ 'Provider library':'Medienserver-Ansichten','Provider':'Medienserver','View':'Ansicht',
+ 'Recently added':'Neu hinzugefügt','Collections':'Sammlungen','All libraries':'Alle Bibliotheken',
+ 'Select a provider library':'Bitte eine Bibliothek des Medienservers auswählen',
+ 'Open previous file':'Vorige Datei öffnen','Open next file':'Nächste Datei öffnen','No adjacent file.':'Keine benachbarte Datei vorhanden.',
  'Playlist':'Wiedergabeliste','Use playlist instead of folder order':'Wiedergabeliste statt Ordnerreihenfolge verwenden',
  'Previous file':'Vorige Datei','Next file':'Nächste Datei','Clear playlist':'Liste leeren',
  'Clear playlist? Files are kept.':'Wiedergabeliste leeren? Dateien bleiben erhalten.',

@@ -473,6 +473,35 @@ int main(void) {
     }
     cave_destroy(flight);
     assert((cave_effect_color(0,0,0,1,1)>>24)==0x58);
+    flight=cave_create();assert(flight);
+    cave_flight_input(flight,1,128,128,0,0);
+    assert(cave_ship_opacity(flight)==0);
+    flight->flight_age=.425f;assert(fabsf(cave_ship_opacity(flight)-.5f)<.001f);
+    flight->flight_age=1;assert(cave_ship_opacity(flight)==1);
+    flight->flight_impact=.5f;assert(cave_ship_opacity(flight)<1);
+    flight->flight_impact=0;
+    flight->motion.previous=1000000;
+    cave_flight_input(flight,0,128,128,0,1);
+    cave_flight_input(flight,0,128,128,0,0);
+    flight->motion.previous+=150000;
+    cave_flight_input(flight,0,128,128,0,1);
+    assert(flight->flight_barrel==1);
+    cave_flight_input(flight,0,128,128,0,0);
+    clock=flight->motion.previous;
+    for(int i=0;i<80;i++)cave_prepare(flight,bands,90,clock+=10000);
+    assert(!flight->flight_barrel && isfinite(flight->flight_roll));
+    for(int i=0;i<CAVE_PATH_CACHE;i++)for(int j=0;j<CAVE_PATHS;j++) {
+        flight->paths.frames[i].x[j]=flight->paths.frames[i].y[j]=.5f;
+        flight->paths.frames[i].radius[j]=.7f;
+    }
+    for(int i=0;i<CAVE_SLICES;i++)flight->slices[i].count=0;
+    flight->flight_x=flight->flight_y=flight->flight_yaw=flight->flight_pitch=0;
+    flight->flight_ghost=1;flight->flight_ghost_age=.5f;
+    cave_prepare(flight,bands,90,clock+=10000);
+    assert(!flight->flight_ghost && flight->flight_impact>0);
+    cave_flight_input(flight,1,128,128,0,0);
+    assert(!flight->flight_barrel && !flight->flight_ghost);
+    cave_destroy(flight);
     assert((cave_effect_color(0,0,1,1,1)>>24)==0x80);
     assert((cave_effect_color(0,0,0,1,0)>>24)==0xff);
     assert(clipped_visible>0);printf("Visible clipped triangles: %d\n",clipped_visible);

@@ -13,6 +13,8 @@ int md_cave_control(int toggle,int x,int y,int throttle,int roll) {
 static void cave_draw_ship(int width,int height) {
     (void)width;(void)height;
     if(!cave_scene || !cave_scene->flight)return;
+    float opacity=cave_ship_opacity(cave_scene);
+    if(opacity<=0)return;
     /* Draw the third-person ship in world space, inside the renderer's
      * reserved 64 KiB tail. No buffers, allocation or draw calls when off. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
@@ -29,6 +31,7 @@ static void cave_draw_ship(int width,int height) {
         for(int j=0;j<3;j++) {
             tri[j]=cave_ship_mesh[i+j];float p[3];
             tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
+            tri[j].color=(tri[j].color&0xffffffU)|((unsigned)(255*opacity)<<24);
             for(int k=0;k<3;k++)p[k]=center[k]+CAVE_SHIP_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
             tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];
         }
@@ -36,9 +39,12 @@ static void cave_draw_ship(int width,int height) {
         if(used+count>SHIP_CAPACITY)break;
         memcpy(ship+used,clipped,count*sizeof(MdVertex));used+=count;
     }
-    sceGuDisable(GU_TEXTURE_2D);sceGuDisable(GU_BLEND);sceGuDisable(GU_FOG);
+    sceGuDisable(GU_TEXTURE_2D);sceGuDisable(GU_FOG);
+    if(opacity<1){sceGuEnable(GU_BLEND);sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,0,0);}
+    else sceGuDisable(GU_BLEND);
     sceGuDepthMask(0);
     if(used)sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,used,NULL,ship);
+    sceGuDisable(GU_BLEND);
 }
 static uint32_t cave_pixels[7][CAVE_TEXTURE*CAVE_TEXTURE] __attribute__((aligned(64)));
 static int cave_texture_ready;

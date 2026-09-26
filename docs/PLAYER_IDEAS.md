@@ -33,6 +33,12 @@ The measured, timestamp-based A/V path must remain independent of new comforts.
 
 ## Recommended order — my assessment
 
+Implemented in 0.1.60: queue repeat off/one/all, independent persistent queue
+shuffle, provider-wide Continue Watching, recent/unwatched/collection web views,
+flight wall recoil/blinking recovery, double-L/R barrel rolls and ship fade-in.
+These supersede their proposal descriptions below. Health and projectile
+protection remain future work; the barrel roll is currently a flight maneuver.
+
 1. **Finish testing the shared queue**, then add repeat off/one/all, a visible
    current/next item, play-next and multiple named lists. Give duplicate entries
    separate entry IDs before allowing the same file twice. Low-to-medium scope,

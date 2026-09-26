@@ -607,8 +607,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(listing)
             if parsed.path == '/api/playlist':
                 return self.send_json(self.server.playlist.snapshot())
+            if parsed.path == '/api/provider-view':
+                from .provider_views import browse,sections
+                name=query.get('provider',[''])[0]
+                if name not in ('plex','jellyfin'):raise ValueError('Invalid provider')
+                provider=getattr(self.server,name)
+                view=query.get('view',['continue'])[0]
+                if view=='sections':return self.send_json({'sections':sections(provider,name)})
+                return self.send_json(browse(provider,name,view,query.get('section',[''])[0],int(query.get('offset',['0'])[0])))
             if parsed.path.startswith("/api/media-next/"):
-                queued = self.server.playlist.next(parsed.path.rsplit('/', 1)[-1], query.get('direction',['next'])[0]=='previous')
+                queued = None if query.get('folder',['0'])[0]=='1' else self.server.playlist.next(parsed.path.rsplit('/', 1)[-1], query.get('direction',['next'])[0]=='previous',query.get('manual',['0'])[0]=='1')
                 if queued is not None:return self.send_json(queued)
                 if parsed.path.rsplit('/', 1)[-1].startswith('radio.'):
                     self.server.radio.get(parsed.path.rsplit('/', 1)[-1])

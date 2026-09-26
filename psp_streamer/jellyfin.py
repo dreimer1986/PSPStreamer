@@ -267,7 +267,10 @@ class Jellyfin(Plex):
     def next_media(self, token, shuffle=False, previous=False):
         key, kind, parent, index = self.split(token)
         if not kind:
-            return {}
+            from .provider_views import natural_context
+            context=natural_context(self,token,False)
+            if not context:return {}
+            kind,parent,index=context
         index = int(index); data = self.listing(kind, parent, index); rows = data.get('Items', [])
         if not rows or identifier(rows[0]['Id']) != key:
             return {}

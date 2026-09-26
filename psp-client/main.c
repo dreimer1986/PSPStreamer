@@ -3112,17 +3112,17 @@ static int next_media_index(int selected, int is_audio) {
  * Resolve successors from the media ID on the server, only after natural EOF. */
 static int remote_next_audio;
 static int remote_next_track,remote_next_subtitle;
-static int playlist_revision,playlist_enabled;
+static int playlist_revision,playlist_enabled,playlist_repeat,playlist_shuffle;
 static int remote_next_media(char *media_id, size_t capacity, int is_audio, int direction) {
     char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16];
     int result;
-    snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d&direction=%s", media_id,
-             is_audio && audio_shuffle, direction<0?"previous":"next");
+    snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d&direction=%s&manual=%d", media_id,
+             is_audio && audio_shuffle, direction<0?"previous":"next",direction!=0);
     result = http_get(path, response, sizeof(response));
     if (result < 0) return result;
     if (!json_value(response, "id", next_id, sizeof(next_id))) return 0;
     if (!json_value(response, "kind", kind, sizeof(kind)) ||
-        (strcmp(kind,"audio") && strcmp(kind,"video")) || !strcmp(media_id, next_id) ||
+        (strcmp(kind,"audio") && strcmp(kind,"video")) || (!strcmp(media_id, next_id) && !json_integer(response,"repeat_current",0)) ||
         strlen(next_id) >= capacity) return 0;
     int next_audio=!strcmp(kind,"audio");
     int next_track=json_integer(response,"audio",selected_audio_track);
@@ -3166,6 +3166,8 @@ static void refresh_library(void) {
 static void finish_library_request(void) {
     if(!strcmp(current_path,":queue:") && library_result>=0) {
         playlist_revision=json_integer(response,"revision",0);
+        playlist_repeat=json_integer(response,"repeat",0);
+        playlist_shuffle=strstr(response,"\"shuffle\":true")!=NULL;
         playlist_enabled=strstr(response,"\"enabled\":true")!=NULL || strstr(response,"\"enabled\": true")!=NULL;
     }
     if (library_cancelled || library_result < 0) {
@@ -3441,11 +3443,13 @@ static int playback_options(int audio_only) {
 static int playlist_change(const char *action,int selected,int position,int enabled) {
     char hex[ID_SIZE*2+1],body[ID_SIZE*2+160];
     comfort_hex(hex,selected>=0?items[selected].value:"");
-    snprintf(body,sizeof(body),"{\"action\":\"%s\",\"revision\":%d,\"id_hex\":\"%s\",\"position\":%d,\"enabled\":%s}",
-        action,playlist_revision,hex,position,enabled?"true":"false");
+    snprintf(body,sizeof(body),"{\"action\":\"%s\",\"revision\":%d,\"id_hex\":\"%s\",\"position\":%d,\"repeat\":%d,\"shuffle\":%s,\"enabled\":%s}",
+        action,playlist_revision,hex,position,position,enabled?"true":"false",enabled?"true":"false");
     int result=media_request_perform("/api/playlist",response,sizeof(response),15000,0,body);
     if(result<0){snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),result);return 0;}
     playlist_revision=json_integer(response,"revision",playlist_revision);
+    playlist_repeat=json_integer(response,"repeat",0);
+    playlist_shuffle=strstr(response,"\"shuffle\":true")!=NULL;
     playlist_enabled=strstr(response,"\"enabled\":true")!=NULL || strstr(response,"\"enabled\": true")!=NULL;
     return 1;
 }
@@ -3459,18 +3463,20 @@ static void playlist_menu(int selected) {
             settings_line(3,row==1,tr(TXT_PLAYLIST_DOWN));
             settings_line(4,row==2,tr(TXT_PLAYLIST_REMOVE));
             settings_line(5,row==3,tr(playlist_enabled?TXT_PLAYLIST_DISABLE:TXT_PLAYLIST_ENABLE));
+            settings_line(6,row==4,tr((TextId)(TXT_QUEUE_REPEAT_OFF+playlist_repeat)));
+            settings_line(7,row==5,tr(playlist_shuffle?TXT_QUEUE_SHUFFLE_ON:TXT_QUEUE_SHUFFLE_OFF));
             settings_help(tr(TXT_DOWNLOAD_BACK));dirty=0;
         }
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;
         if(pressed&PSP_CTRL_CIRCLE)return;
-        if(pressed&PSP_CTRL_DOWN){row=(row+1)%4;dirty=1;}
-        if(pressed&PSP_CTRL_UP){row=(row+3)%4;dirty=1;}
+        if(pressed&PSP_CTRL_DOWN){row=(row+1)%6;dirty=1;}
+        if(pressed&PSP_CTRL_UP){row=(row+5)%6;dirty=1;}
         if(pressed&PSP_CTRL_CROSS){
             if(row==0 && selected==0)continue;
             if(row==1 && selected==item_count-1)continue;
-            if(playlist_change(row<2?"move":row==2?"remove":"enabled",selected,
-                    selected+(row==0?-1:1),!playlist_enabled))refresh_library();
+            if(playlist_change(row<2?"move":row==2?"remove":row==3?"enabled":row==4?"repeat":"shuffle",selected,
+                    row==4?(playlist_repeat+1)%3:selected+(row==0?-1:1),row==5?!playlist_shuffle:!playlist_enabled))refresh_library();
             else {comfort_notice(status);refresh_library();}
             return;
         }
@@ -3606,7 +3612,7 @@ int main(void) {
                     if (!video_file_direction && (!playback_reached_end || resume_pending)) break;
                     {
                         int following = remote_next_media(remote_media_id, sizeof(remote_media_id), remote_is_audio,
-                            video_file_direction?video_file_direction:1);
+                            video_file_direction);
                         if (following < 0) { result = following; video_step = "Next media"; break; }
                         if (!following) break;
                         remote_is_audio=remote_next_audio;

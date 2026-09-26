@@ -6,7 +6,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="X: options, then play the list",
         .step2_text="Music and video in saved order.",
         .step3_title="TRIANGLE: move / remove / mode",
-        .step3_text="Changes shared; O goes back."
+        .step3_text="Repeat / list shuffle here too."
     },
     [HELP_PAGE_TRAVEL]={
         .title="Ready for a trip?",
@@ -139,9 +139,9 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step1_title="L + R together: flight on / off",
         .step1_text="Analog stick steers into branches.",
         .step2_title="L / R: roll   UP / DOWN: speed",
-        .step2_text="Forward only; walls block the ship.",
+        .step2_text="Double L / R: full barrel roll.",
         .step3_title="TRIANGLE: fullscreen   START: stop",
-        .step3_text="Invert Y in Cave options if wanted."
+        .step3_text="Wall hit: blink, recoil, then escape."
     },
     [HELP_PAGE_DOWNLOAD]={
         .title="Download straight from the PSP",

@@ -1,5 +1,7 @@
 """One durable, explicitly enabled queue shared by the web and PSP clients."""
 import json
+import hashlib
+import secrets
 import os
 from pathlib import Path
 import tempfile
@@ -15,6 +17,9 @@ class Playlist:
         if self.path.exists():
             self.data = json.loads(self.path.read_text())
             self.gaps = self.data.pop('gaps', {})
+        self.data.setdefault('repeat',0)  # off / one / all
+        self.data.setdefault('shuffle',False)
+        self.data.setdefault('shuffle_seed','0')
 
     def snapshot(self):
         with self.lock:
@@ -71,6 +76,14 @@ class Playlist:
                 if type(request.get('enabled')) is not bool:
                     raise ValueError('Invalid playlist mode')
                 draft['enabled'] = request['enabled']
+            elif action == 'repeat':
+                value=request.get('repeat')
+                if type(value) is not int or value not in (0,1,2):raise ValueError('Invalid repeat mode')
+                draft['repeat']=value
+            elif action == 'shuffle':
+                if type(request.get('shuffle')) is not bool:raise ValueError('Invalid shuffle mode')
+                draft['shuffle']=request['shuffle']
+                draft['shuffle_seed']=secrets.token_hex(8)
             else:
                 raise ValueError('Invalid playlist action')
             draft['revision'] += 1
@@ -89,12 +102,21 @@ class Playlist:
             self.gaps = gaps
             return self.snapshot()
 
-    def next(self, token, previous=False):
+    def next(self, token, previous=False, manual=False):
         with self.lock:
             if not self.data['enabled']:return None
             rows = self.data['items']
+            if self.data['shuffle']:
+                def rank(value):return hashlib.sha256((self.data['shuffle_seed']+value).encode()).digest()
+                rows=sorted(rows,key=lambda row:rank(row['id']))
             index = next((i for i,r in enumerate(rows) if r['id'] == token), -1)
-            if index >= 0:index += -1 if previous else 1
-            elif token in self.gaps:index = self.gaps[token] - int(previous)
+            if index >= 0:
+                if self.data['repeat']==1 and not manual and not previous:
+                    return {**rows[index],'repeat_current':1}
+                index += -1 if previous else 1
+            elif token in self.gaps:
+                index=(sum(rank(row['id'])<rank(token) for row in rows) if self.data['shuffle'] else self.gaps[token])-int(previous)
             else:return None
-            return dict(rows[index]) if 0 <= index < len(rows) else {}
+            if rows and self.data['repeat']==2:index%=len(rows)
+            if not 0<=index<len(rows):return {}
+            return {**rows[index],'repeat_current':int(rows[index]['id']==token)}

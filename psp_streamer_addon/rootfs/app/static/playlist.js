@@ -16,11 +16,19 @@ async function changePlaylist(change){
  finally{playlistBusy=false;}
 }
 playlistMode.onchange=()=>changePlaylist({action:'enabled',enabled:playlistMode.checked}).catch(fail);
+const queueRepeat=document.createElement('select');
+for(const [value,label] of [[0,'Repeat off'],[1,'Repeat one'],[2,'Repeat all']])option(queueRepeat,value,t(label));
+queueRepeat.setAttribute('aria-label',t('Playlist repeat'));
+queueRepeat.onchange=()=>changePlaylist({action:'repeat',repeat:+queueRepeat.value}).catch(fail);
+const queueShuffle=document.createElement('input');queueShuffle.type='checkbox';
+const queueShuffleLabel=document.createElement('label');queueShuffleLabel.append(queueShuffle,t('Playlist shuffle (independent of folder shuffle)'));
+queueShuffle.onchange=()=>changePlaylist({action:'shuffle',shuffle:queueShuffle.checked}).catch(fail);
+playlistLabel.after(queueRepeat,queueShuffleLabel);
 const playlistTools=document.createElement('div');playlistTools.className='actions';
 for(const direction of [-1,1])playlistTools.append(button(t(direction<0?'Previous file':'Next file'),async()=>{
  await loadPlaylist();const index=playlistState.items.findIndex(item=>item.id===playerSample?.id);
- const item=index>=0?playlistState.items[index+direction]:null;
- if(item)await changePlaylist({action:'play',id:item.id});
+ const item=index>=0?await api('/api/media-next/'+encodeURIComponent(playerSample.id)+'?manual=1&direction='+(direction<0?'previous':'next')):null;
+ if(item?.id)await changePlaylist({action:'play',id:item.id});
 }));
 playlistTools.append(button(t('Clear playlist'),()=>{
  if(confirm(t('Clear playlist? Files are kept.')))return changePlaylist({action:'clear'});
@@ -28,6 +36,7 @@ playlistTools.append(button(t('Clear playlist'),()=>{
 async function addToPlaylist(items){await loadPlaylist();await changePlaylist({action:'add',items});message(t('Added to playlist'));}
 function renderPlaylist(){
  playlistRows.replaceChildren();playlistMode.checked=playlistState.enabled;
+ queueRepeat.value=playlistState.repeat||0;queueShuffle.checked=!!playlistState.shuffle;
  for(const [index,item] of playlistState.items.entries()){
   const row=document.createElement('div');row.className='item';
   const label=document.createElement('span');label.textContent=`${index+1}. ${item.name}${activePlayer(playerSample)&&playerSample.id===item.id?' — '+t('Now playing'):''}`;

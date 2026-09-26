@@ -1,5 +1,13 @@
 # PSP Streamer
 
+Server **0.1.60** adds playlist repeat and independent playlist shuffle,
+[provider library views and adjacent-file navigation](docs/PROVIDER_VIEWS.md).
+Update both server and PSP EBOOT/PRX. The flight Easter egg now fades in,
+blinks/recoils on wall contact and recovers from prolonged blocking. Double-tap
+**L** or **R** within 280 ms for a full barrel roll; **L+R** still toggles flight.
+Recovery temporarily relaxes collision only until a safe position is found;
+it does not implement health, enemies or projectile protection.
+
 Server **0.1.59** adds a [shared playlist](docs/PLAYLIST.md), editable in the web
 UI and on the PSP. Update both server and the matching EBOOT/PRX pair. Entries
 and order survive server updates when the existing persistent volume is kept.

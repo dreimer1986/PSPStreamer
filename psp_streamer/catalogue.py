@@ -6,7 +6,7 @@ def browse(server, root=0, path=''):
     if path == ':queue:':
         queue=server.playlist.snapshot()
         return dict(root=0,path=path,parent='',folders=[],videos=queue['items'],
-                    revision=queue['revision'],enabled=queue['enabled'])
+                    revision=queue['revision'],enabled=queue['enabled'],repeat=queue['repeat'],shuffle=queue['shuffle'])
     if path.startswith(':versions:'):
         from .media_versions import browse_versions
         token = path[len(':versions:'):]

@@ -187,7 +187,7 @@ class Plex:
         from .media_versions import split_version
         token, _ = split_version(token)
         self.require()
-        match = re.fullmatch(r'plex\.([0-9]{1,20})(?:\.(s|p|m)([0-9]{1,20})\.([0-9]{1,10}))?\.([0-9a-f]{12})', token)
+        match = re.fullmatch(r'plex\.([0-9]{1,20})(?:\.(s|p|m|c)([0-9]{1,20})\.([0-9]{1,10}))?\.([0-9a-f]{12})', token)
         if not match or match.group(5) != self.namespace():
             raise ValueError('Invalid Plex media identifier')
         return match.groups()[:4]
@@ -251,6 +251,7 @@ class Plex:
 
     def listing(self, kind, key, offset=0):
         endpoint = {'s': f'/library/sections/{key}/all', 'm': f'/library/metadata/{key}/children',
+                    'c': f'/library/collections/{key}/children',
                     'p': f'/playlists/{key}/items'}[kind]
         return self.request(endpoint + '?' + urlencode({'X-Plex-Container-Start': offset,
                               'X-Plex-Container-Size': 100})).get('MediaContainer', {})
@@ -269,7 +270,7 @@ class Plex:
             result.update(parent=':plex:', folders=[{'name': display_text(r['title']),
                 'path': ':plex:p' + str(r['ratingKey'])} for r in rows if r.get('playlistType') in ('audio', 'video')])
             return self.remember_parents(result)
-        match = re.fullmatch(r':plex:([smp])(\d+)(?:@(\d+))?', path)
+        match = re.fullmatch(r':plex:([smpc])(\d+)(?:@(\d+))?', path)
         if not match:
             raise ValueError('Invalid Plex folder')
         kind, key, offset = match.groups()
@@ -317,7 +318,10 @@ class Plex:
     def next_media(self, token, shuffle=False, previous=False):
         rating, kind, key, index = self.split(token)
         if not kind:
-            return {}
+            from .provider_views import natural_context
+            context=natural_context(self,token,True)
+            if not context:return {}
+            kind,key,index=context
         index = int(index)
         current = self.listing(kind, key, index).get('Metadata', [])
         if not current or str(current[0].get('ratingKey')) != rating:

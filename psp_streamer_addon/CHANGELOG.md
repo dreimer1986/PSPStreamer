@@ -1,3 +1,13 @@
+# 0.1.60
+
+- Persistent playlist repeat off/one/all and independent playlist shuffle, in
+  the web UI and matching PSP client. Manual Next leaves Repeat One.
+- Fresh Plex/Jellyfin Continue Watching, recently added, unwatched and
+  collections in the web Provider library. Continue Watching includes other
+  clients on the same provider account; Jellyfin also includes Next Up.
+- Open previous/next media details without starting or changing playback.
+- Docker and Home Assistant server/web implementations remain identical.
+
 # 0.1.59
 
 - Persistent shared playlist: add selected library items or a configured media

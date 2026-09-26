@@ -276,5 +276,10 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_PLAYLIST_REMOVE] = "Eintrag entfernen",
     [TXT_PLAYLIST_ENABLE] = "Listenreihenfolge nutzen",
     [TXT_PLAYLIST_DISABLE] = "Ordnerreihenfolge nutzen",
-    [TXT_PLAYLIST_HINT] = "X: Start | Dreieck: Liste bearbeiten"
+    [TXT_PLAYLIST_HINT] = "X: Start | Dreieck: Liste bearbeiten",
+    [TXT_QUEUE_REPEAT_OFF] = "Liste wiederholen: aus",
+    [TXT_QUEUE_REPEAT_ONE] = "Liste wiederholen: eine Datei",
+    [TXT_QUEUE_REPEAT_ALL] = "Liste wiederholen: alle",
+    [TXT_QUEUE_SHUFFLE_OFF] = "Listen-Zufall: aus",
+    [TXT_QUEUE_SHUFFLE_ON] = "Listen-Zufall: an"
 };

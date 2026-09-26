@@ -91,6 +91,7 @@ async function choose(v,follow=false){
   $('#play').disabled=$('#queue').disabled=true;
   try{
     const d=await api('/api/metadata/'+encodeURIComponent(v.id));if(generation!==chooseGeneration)return;media=d;
+    if(d.name){v={...v,name:d.name};$('#title').textContent=d.name;}
     setArtwork(d.artwork);
     const audio=v.kind==='audio',live=!!v.live||v.id.startsWith('radio.');selected={...v,live};
     for(const id of ['audioField','subtitleField','fpsField','profileField'])$('#'+id).hidden=audio;
@@ -116,6 +117,17 @@ async function choose(v,follow=false){
       }
     }
     $('#mediaOptions').hidden=false;$('#play').disabled=$('#queue').disabled=false;
+    if(!live)for(const direction of ['previous','next']){
+      const b=button(t(direction==='previous'?'Open previous file':'Open next file'),async()=>{
+        if(selected?.id!==v.id)return;b.disabled=true;
+        try{
+          const item=await api('/api/media-next/'+encodeURIComponent(v.id)+'?folder=1&manual=1&direction='+direction);
+          if(selected?.id!==v.id)return;
+          if(item.id)await choose({...item,name:item.name||t('Loading tracks…')});
+          else message(t('No adjacent file.'));
+        }finally{b.disabled=false;}
+      });$('#details').append(b);
+    }
     message(!audio&&(!a||!s)?t('Preferred track unavailable; check the selection.'):'');
     await refreshPlayer(false);
     if(generation===chooseGeneration){if(activePlayer(playerSample)&&playerSample.id===v.id)followPlayer=true;renderPosition();}
