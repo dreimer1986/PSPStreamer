@@ -1,5 +1,16 @@
 # Playback recovery update — 2026-09-26
 
+Wi-Fi disconnect recovery: a requested rebuild stays pending until a real
+disconnect/connect cycle reaches GOT_IP. A stale GOT_IP after a failed
+disconnect is no longer accepted as success on the next normal retry.
+Disconnect waits up to ten seconds with controller cancellation. After two
+disconnect timeouts, playback recovery may terminate/reinitialize APCTL alone,
+with network request workers already joined. Network Common, INET and AVC/audio
+are not reinitialized. A successful APCTL rebuild is not repeated in the same
+pending cycle. WLAN state transitions and APCTL results are logged.
+Compare the previously stable anime with identical quality/subtitle settings;
+the original reason for the repeated data interruptions remains unproven.
+
 Subtitle preparation recovery: playback reuses the known server IP instead of
 entering firmware DNS again after a link transition (observed to hang despite
 its nominal timeout). Server setting changes/app restart invalidate the cache.

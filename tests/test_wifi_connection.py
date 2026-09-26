@@ -18,6 +18,9 @@ static const char *failure_step;
 static int active_network_profile;
 static int calls[5],fail_stage=-1,state,ticks,connects,disconnects;
 static int stuck,join_after=2,cancel_after,profile_exists=1,read_error,connect_error;
+static int terminated;
+static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
+static int sceNetApctlTerm(void){terminated++;state=0;stuck=0;return 0;}
 static int init(int stage){calls[stage]++;return stage==fail_stage?-99:0;}
 static int sceUtilityLoadNetModule(int x){return init(x);}
 static int sceNetInit(int a,int b,int c,int d,int e){(void)a;(void)b;(void)c;(void)d;(void)e;return init(2);}
@@ -40,7 +43,7 @@ int main(void){
     ticks=0;assert(wifi_associate(1)==0 && connects==2 && disconnects==1);
     state=2;ticks=0;assert(wifi_associate(0)==0 && disconnects==2 && connects==3);
     state=2;stuck=1;join_after=0;ticks=0;
-    assert(wifi_associate(0)==-6 && ticks==30 && connects==3);
+    assert(wifi_associate(0)==-6 && ticks==100 && connects==3);
     stuck=0;state=0;ticks=0;
     assert(wifi_associate(0)==-3 && ticks==300 && state==0 && connects==4);
     ticks=0;cancel_after=3;
@@ -51,6 +54,15 @@ int main(void){
     profile_exists=0;assert(wifi_associate(1)==-4);profile_exists=1;
     state=0;connect_error=-77;assert(wifi_associate(0)==-77);
     assert(calls[0]==1 && calls[4]==1);
+    connect_error=0;state=4;stuck=1;join_after=0;ticks=0;
+    assert(wifi_associate(1)==-6 && wifi_rebuild_pending && ticks==100);
+    ticks=0;
+    assert(wifi_associate(0)==-6 && wifi_rebuild_pending && ticks==100 && !terminated);
+    wifi_allow_apctl_restart=1;join_after=101;ticks=0;
+    assert(wifi_associate(0)==0 && terminated==1 && !wifi_rebuild_pending);
+    assert(calls[0]==1 && calls[1]==1 && calls[2]==1 && calls[3]==2 && calls[4]==2);
+    state=4;stuck=1;join_after=0;ticks=0;cancel_after=3;
+    assert(wifi_associate(1)==-5 && wifi_rebuild_pending && terminated==1);
     return 0;
 }
 '''
