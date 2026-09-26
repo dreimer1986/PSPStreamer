@@ -562,8 +562,10 @@ static int resolve_server_address(struct in_addr *address) {
         have_cached_server_address = 1;
         return 0;
     }
-    /* gethostbyname() can outlive a cancelled playback worker after an
-     * uplink change. Use the same bounded firmware resolver as browsing. */
+    /* Firmware DNS can hang after a link transition despite its timeout.
+     * Browsing already resolved this host: reuse that address for playback
+     * and recovery. Settings/server changes explicitly invalidate the cache. */
+    if(have_cached_server_address) {*address=cached_server_address;return 0;}
     unsigned char workspace[1024];
     int resolver=-1,result=sceNetResolverCreate(&resolver,workspace,sizeof(workspace));
     if(result<0) {

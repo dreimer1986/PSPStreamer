@@ -1,6 +1,9 @@
 # Playback recovery update — 2026-09-26
 
-Subtitle preparation recovery: DNS is bounded and refreshed before preparation;
+Subtitle preparation recovery: playback reuses the known server IP instead of
+entering firmware DNS again after a link transition (observed to hang despite
+its nominal timeout). Server setting changes/app restart invalidate the cache.
+If the server itself changes IP during a session, restart the app to resolve it.
 TCP/TLS/request transmission has a separate 15-second budget. The existing
 210/630-second response budgets start after sending the request, preserving
 cold subtitle generation. Transport failures now return to stream recovery
@@ -11,6 +14,11 @@ preparation begin/progress/result and reconnection steps even before the video
 watchdog starts. It participates in the same rotation/24-hour retention policy;
 no media URLs or passwords are recorded. Test with selected subtitles and an
 uplink interruption during preparation/resume, plus one cold subtitle start.
+
+Once successful HTTP headers have arrived, a 30-second data-inactivity budget
+replaces the long cold-generation wait for missing response bytes. The long
+preparation allowance before the response is unchanged. The recovery log names
+this failure `response inactivity timeout`.
 
 AVC recovery: streaming errors 80628001/80628002 specifically from `AVC: Decode`
 now restart the stream after the old workers, queues and hardware decoder have

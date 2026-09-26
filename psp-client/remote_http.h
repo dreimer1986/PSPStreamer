@@ -14,6 +14,7 @@ static int remote_http_request_policy(const char *path,char *buffer,int capacity
     char request[2048];
     int fd=-1,result=-1005,nonblock=1,received=0,sent=0,header=-1,length=-1,tls_ready=0;
     int body_length=body?(int)strlen(body):0,body_sent=0;
+    unsigned long long response_progress=0;
     unsigned long long deadline=sceKernelGetSystemTimeWide()+(budget_ms?budget_ms*1000ULL:(server_https?15000000ULL:2000000ULL));
     remote_http_last_status=0;
     if(report) {
@@ -35,6 +36,11 @@ static int remote_http_request_policy(const char *path,char *buffer,int capacity
     if(sceNetInetSetsockopt(fd,SOL_SOCKET,SO_NONBLOCK,&nonblock,sizeof(nonblock))<0) goto done;
     int connected=sceNetInetConnect(fd,(struct sockaddr *)&server,sizeof(server))>=0;
     while((!running || *running) && (unsigned long long)sceKernelGetSystemTimeWide()<deadline) {
+        /* Before headers, the server may legitimately still prepare cold
+         * subtitles. After a successful header, this is data transfer. */
+        if(report && header>=0 && sceKernelGetSystemTimeWide()-response_progress>=30000000ULL) {
+            remote_http_phase(report,"response inactivity timeout");goto done;
+        }
         struct SceNetInetPollfd pollfd={fd,sent<wanted || body_sent<body_length?SCE_NET_INET_POLLOUT:SCE_NET_INET_POLLIN,0};
         int ready;
         if(tls_ready && sent==wanted && body_sent==body_length) {ready=1;pollfd.revents=SCE_NET_INET_POLLIN;}
@@ -83,6 +89,7 @@ static int remote_http_request_policy(const char *path,char *buffer,int capacity
         int n=server_https?tls_recv(fd,buffer+received,capacity-1-received,50):(int)sceNetInetRecv(fd,buffer+received,capacity-1-received,0);
         if(n==-2 && server_https)continue;
         if(n<=0) goto done;
+        response_progress=sceKernelGetSystemTimeWide();
         received+=n; buffer[received]=0;
         if(header<0) {
             char *body=strstr(buffer,"\r\n\r\n");
