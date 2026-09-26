@@ -27,6 +27,11 @@ preset_seconds=60
 preset_fade_ms=1500
 # 1 = sharper 512x512; 0 = faster original 512x256. No app restart needed.
 milkdrop_high_resolution=1
+# Music analysis: 0 = original light 12-band path; 1 = desktop MilkDrop FFT.
+spectrum_analysis=0
+# Analyzer bars in FFT mode: 12, 24, 32, 48 or 64. Light mode always uses 12.
+spectrum_bands_lcd=32
+spectrum_bands_tv=32
 volume=24
 shuffle=0
 language=en

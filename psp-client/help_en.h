@@ -123,7 +123,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="TRIANGLE: fullscreen on / off",
         .step2_text="X: show track title for five seconds.",
         .step3_title="O: visualization options",
-        .step3_text="Cave: effects. MilkDrop: presets."
+        .step3_text="Spectrum: FFT/bars. MilkDrop: presets."
     },
     [HELP_PAGE_PRESETS]={
         .title="Inside the preset list",

@@ -38,6 +38,11 @@ Upstream: https://libpng.org/pub/png/libpng.html and https://zlib.net/
 
 MilkDrop 2 warp equations
 ------------------------
+The optional desktop music analysis also adapts fft.cpp and
+CPlugin::DoCustomSoundAnalysis from plugin.cpp in the same MilkDrop 2 source.
+Implementation: psp-client/spectrum_analysis_impl.h. The BSD-3-Clause notice
+below and licenses/MilkDrop2.txt cover these audio equations as well.
+
 The optional music prototype adapts WarpedBlit_NoShaders UV calculations
 from vis_milk2/milkdropfs.cpp, Copyright 2005-2013 Nullsoft, Inc.
 Source: https://github.com/eef2697d62fbe08e2fd927278/milkdrop2

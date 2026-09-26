@@ -18,6 +18,7 @@ typedef uint32_t u32;
 #define SUBTITLE_FONT_CELL_WIDTH 16
 #define SUBTITLE_FONT_CELL_HEIGHT 20
 #define SPECTRUM_BANDS 12
+#include "spectrum_ui_stubs.h"
 #define PSP_CTRL_LTRIGGER 1
 #define PSP_CTRL_SELECT 2
 #define PSP_CTRL_RTRIGGER 4
@@ -27,7 +28,7 @@ static int tv_ui_active, tvout_video_active;
 static struct { int tv; } display_output;
 static int audio_running = 1, audio_start = 1, playback_volume = 24;
 static int vu_left, vu_right, vu_display_left, vu_display_right;
-static int spectrum_levels[12], spectrum_display[12];
+static int spectrum_levels[12], spectrum_display[64];
 static unsigned int receiver_flash_button;
 static unsigned long long clock_tick;
 static int framebuffer_calls;
@@ -82,7 +83,9 @@ int main(void) {
     assert(mmap(vram, FRAME_BYTES, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == vram);
     for (int i = 0; i < VIDEO_STRIDE * VIDEO_HEIGHT; i++) vram[i] = 0xdeadbeef;
-    for (int lang = 0; lang < 2; lang++) {
+    const int band_choices[]={12,24,32,48,64};
+    for(int choice=0;choice<5;choice++)for (int lang = 0; lang < 2; lang++) {
+        test_spectrum_count=band_choices[choice];
         language_set_code(lang ? "de" : "en");
         for (int fullscreen = 0; fullscreen < 2; fullscreen++) {
             unsigned long long max_bytes = 0;
@@ -93,7 +96,7 @@ int main(void) {
             lcd_draw_music("Music / Grüße aus München", fullscreen);
             assert(lcd_music.incremental_frames == 0);
             for (int frame = 0; frame < 180; frame++) {
-                int spectrum_before[12], left_before, right_before, calls;
+                int spectrum_before[64], left_before, right_before, calls;
                 unsigned long long before = lcd_music.restored_bytes, bytes;
                 clock_tick += 60000;
                 playback_volume = frame < 93 ? frame % 31 : 15;

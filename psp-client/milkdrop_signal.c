@@ -3,6 +3,7 @@
 #include "milkdrop_signal.h"
 #include <string.h>
 #include <math.h>
+#include "spectrum_analysis_impl.h"
 void md_signal_reset(MdSignalState *state) { memset(state, 0, sizeof(*state)); }
 void md_signal_update(MdSignalState *s, const unsigned char bands[12],
                       int level, unsigned long long now) {
@@ -38,5 +39,6 @@ void md_signal_update(MdSignalState *s, const unsigned char bands[12],
         s->signal.values[10+group] = baseline < .001f ? 1 : s->average[group]/baseline;
     }
     s->signal.values[3] = (float)(level < 0 ? 0 : level > 100 ? 100 : level)/100.0f;
+    if(spectrum_analysis_mode)memcpy(s->signal.values+7,spectrum_relative(),6*sizeof(float));
     s->tick = now; s->ready = 1;
 }

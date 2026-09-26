@@ -4,18 +4,23 @@
 #include <stdlib.h>
 typedef uint32_t u32;
 #define SPECTRUM_BANDS 12
-static int spectrum_display[SPECTRUM_BANDS];
+#define SPECTRUM_MAX_BANDS 64
+static int test_bands=12;
+static int spectrum_bar_count(void){return test_bands;}
+static int spectrum_display[SPECTRUM_MAX_BANDS];
 static int music_ui_envelope(int displayed,int target) {
     return target>displayed?displayed+(target-displayed+1)/2:displayed>3?displayed-3:0;
 }
 #include "spectrum_fullscreen.h"
 int main(void) {
     int tv,i,x,y;
-    for(tv=0;tv<2;tv++) {
+    const int choices[]={12,24,32,48,64};
+    for(int choice=0;choice<5;choice++)for(tv=0;tv<2;tv++) {
+        test_bands=choices[choice];
         int w=tv?720:480,h=tv?480:272,stride=tv?768:512;
         size_t count=(size_t)stride*h;
         u32 *memory=malloc((count+2)*4),*pixels=memory+1;
-        unsigned char levels[SPECTRUM_BANDS];
+        unsigned char levels[SPECTRUM_MAX_BANDS];
         for(i=0;i<(int)count+2;i++) memory[i]=0xDEADBEEF;
         memset(levels,100,sizeof(levels)); memset(spectrum_display,0,sizeof(spectrum_display));
         spectrum_fullscreen_reset();

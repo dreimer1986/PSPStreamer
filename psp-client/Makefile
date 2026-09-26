@@ -28,6 +28,7 @@ language.o: language.h lang_en.h lang_de.h
 main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h
 main.o milkdrop_gu.o milkdrop_preset.o: milkdrop_preset.h milkdrop_warp.h preset_math.h milkdrop_signal.h
 milkdrop_signal.o: milkdrop_signal.h
+milkdrop_signal.o main.o: spectrum_analysis.h spectrum_analysis_impl.h
 preset_math.o: preset_math.h preset_expression.h
 preset_math.o: preset_trig.h preset_math_cache.h
 preset_math.o: preset_clear_loop.h preset_local_memory.h

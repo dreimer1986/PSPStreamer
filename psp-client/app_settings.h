@@ -1,7 +1,7 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_OC,SET_COUNT};
+      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_OC,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
@@ -9,7 +9,7 @@ static void settings_capture(AppSettings *s) {
     int values[SET_COUNT]={0,server_port,0,server_https,!strcmp(language_code(),"de"),tv_ui_auto,
         selected_audio_track,selected_subtitle_track,selected_audio_quality,selected_video_fps,
         playback_volume,audio_shuffle,0,music_preset_auto,music_preset_seconds,music_preset_fade_ms,debug_enabled,
-        music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle,md_high_resolution};
+        music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle,md_high_resolution,spectrum_analysis_mode,spectrum_band_count,spectrum_tv_band_count};
     memcpy(s->value,values,sizeof(values));
 }
 static void settings_apply(const AppSettings *s) {
@@ -25,6 +25,9 @@ static void settings_apply(const AppSettings *s) {
     music_cpu_mhz=s->value[SET_CPU_MUSIC];video_cpu_mhz=s->value[SET_CPU_VIDEO];screen_idle=s->value[SET_SCREEN];
     milkdrop_cpu_mhz=s->value[SET_CPU_MILKDROP];idle_cpu_mhz=s->value[SET_CPU_IDLE];
     md_high_resolution=s->value[SET_RESOLUTION];
+    spectrum_analysis_mode=s->value[SET_ANALYSIS];spectrum_band_count=s->value[SET_BANDS];
+    spectrum_tv_band_count=s->value[SET_BANDS_TV];
+    spectrum_analysis_reset();
     server_auth_update();
 }
 static void settings_shell(const char *title) {
@@ -90,8 +93,8 @@ static int app_settings(void) {
     /* Help and immediate display action are not persisted CFG settings. */
     int selected=-2,dirty=1,result=0;
     unsigned int old=PSP_CTRL_SELECT;unsigned long long repeat=0;
-    static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0,0,0,0,0,0,0};
-    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1};
+    static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0,0,0,0,0,0,0,0,12,12};
+    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1,1,64,64};
     while(1) {
         keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;
@@ -108,6 +111,7 @@ static int app_settings(void) {
                 else if(i==SET_OC)strcpy(value,"[X]");
                 else if(i==SET_LANGUAGE)strcpy(value,draft.value[i]?"Deutsch":"English");
                 else if(i==SET_RESOLUTION)strcpy(value,draft.value[i]?"512x512":"512x256");
+                else if(i==SET_ANALYSIS)snprintf(value,sizeof(value),"%s",tr(draft.value[i]?TXT_ANALYSIS_FFT:TXT_ANALYSIS_LEGACY));
                 else if(i==SET_SCREEN)snprintf(value,sizeof(value),"%s",tr((TextId)(TXT_SCREEN_AWAKE+draft.value[i])));
                 else if(i>=SET_CPU_MUSIC&&i<=SET_CPU_IDLE) {
                     if(draft.value[i])snprintf(value,sizeof(value),"%d MHz",draft.value[i]);
@@ -179,6 +183,7 @@ static int app_settings(void) {
                 } else if(selected==SET_PASSWORD)strcpy(draft.password,input);
                 else {char *end;long value=strtol(input,&end,10);valid=input[0]&&!*end&&value>=minimum[selected]&&value<=maximum[selected];
                     if(valid&&selected>=SET_CPU_MUSIC&&selected<=SET_CPU_IDLE)valid=playback_clock_valid((int)value);
+                    if(valid&&(selected==SET_BANDS||selected==SET_BANDS_TV))valid=spectrum_band_valid((int)value);
                     if(valid)draft.value[selected]=value;}
                 if(!valid) {settings_shell(tr(TXT_INVALID_SETTING));settings_help(tr(TXT_INVALID_SETTING));sceKernelDelayThread(700000);}
             }
@@ -193,6 +198,7 @@ static int app_settings(void) {
                 int step=selected==SET_FADE?100:1;
                 int value=draft.value[selected]+((movement&PSP_CTRL_LEFT)?-step:step);
                 if(selected>=SET_CPU_MUSIC&&selected<=SET_CPU_IDLE)value=clock_choice(draft.value[selected],movement&PSP_CTRL_LEFT?-1:1);
+                if(selected==SET_BANDS||selected==SET_BANDS_TV)value=spectrum_band_choice(draft.value[selected],movement&PSP_CTRL_LEFT?-1:1);
                 if(value<minimum[selected])value=maximum[selected];
                 if(value>maximum[selected])value=minimum[selected];
                 draft.value[selected]=value;

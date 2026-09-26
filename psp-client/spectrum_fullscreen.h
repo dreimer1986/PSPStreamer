@@ -1,7 +1,7 @@
 /* Native LCD/TV spectrum. One clear on entry; thereafter only changed bar
  * strips are touched. No allocation, GU work or display-mode changes. */
 static struct {
-    int valid, width, height, bars[SPECTRUM_BANDS];
+    int valid, width, height, count, bars[SPECTRUM_MAX_BANDS];
     unsigned long long next_tick;
 } spectrum_fullscreen;
 
@@ -16,17 +16,18 @@ static void spectrum_fullscreen_rect(u32 *pixels,int stride,int x,int y,int w,in
 static void spectrum_fullscreen_render(u32 *pixels,int width,int height,int stride,
                                        const unsigned char *levels,int playing) {
     int band,margin=width/30,base=height-height/30,top=height/30;
-    int step=(width-2*margin)/SPECTRUM_BANDS,bar_width=step*3/4;
-    if(!spectrum_fullscreen.valid || spectrum_fullscreen.width!=width || spectrum_fullscreen.height!=height) {
+    int count=spectrum_bar_count(),step=(width-2*margin)/count,bar_width=step*3/4;
+    if(!spectrum_fullscreen.valid || spectrum_fullscreen.width!=width || spectrum_fullscreen.height!=height || spectrum_fullscreen.count!=count) {
         spectrum_fullscreen_rect(pixels,stride,0,0,width,height,0x00080E14);
         memset(spectrum_fullscreen.bars,0,sizeof(spectrum_fullscreen.bars));
         spectrum_fullscreen.valid=1;
         spectrum_fullscreen.width=width; spectrum_fullscreen.height=height;
+        spectrum_fullscreen.count=count;
     }
-    for(band=0;band<SPECTRUM_BANDS;band++) {
+    for(band=0;band<count;band++) {
         int target=playing?levels[band]:0;
         int previous=spectrum_fullscreen.bars[band],h,x=margin+band*step;
-        u32 color=band<4?0x0000D8FF:band<8?0x00B070FF:0x00FFB000;
+        u32 color=band<count/3?0x0000D8FF:band<2*count/3?0x00B070FF:0x00FFB000;
         if(target>100) target=100;
         spectrum_display[band]=music_ui_envelope(spectrum_display[band],target);
         h=spectrum_display[band]*(base-top)/100;

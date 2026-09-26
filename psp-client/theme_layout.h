@@ -14,6 +14,15 @@ static inline int theme_spectrum_x(int tv,int bin) {
 static inline int theme_spectrum_width(int tv) {
     return (tv?TV_LEFT_R-TV_LEFT_X:LCD_LEFT_R-LCD_LEFT_X)/12-6;
 }
+static inline int theme_analyzer_x(int tv,int full,int bin,int count){
+    if(full)return (tv?37:24)+bin*(tv?648:432)/count;
+    return (tv?TV_LEFT_X:LCD_LEFT_X)+3+bin*((tv?510:320)-(count==12?0:6))/count;
+}
+static inline int theme_analyzer_width(int tv,int full,int count){
+    if(full)return count==12?(tv?38:25):((tv?648:432)/count)*3/4;
+    int step=((tv?510:320)-(count==12?0:6))/count,gap=count<=24?6:count<=48?3:2;
+    return step-gap;
+}
 static inline int theme_text_edges(int tv,int x,int y,int *right,int *bottom) {
     int lx=tv?TV_LEFT_X:LCD_LEFT_X,ly=tv?TV_LEFT_Y:LCD_LEFT_Y;
     int lr=tv?TV_LEFT_R:LCD_LEFT_R,lb=tv?TV_LEFT_B:LCD_LEFT_B;

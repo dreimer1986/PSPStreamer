@@ -25,6 +25,7 @@ typedef struct { unsigned int Buttons; } SceCtrlData;
 #define PSP_DISPLAY_PIXEL_FORMAT_8888 3
 #define PSP_DISPLAY_SETBUF_NEXTVSYNC 1
 #define SPECTRUM_BANDS 12
+#include "spectrum_ui_stubs.h"
 static TvCanvas tv_canvas;
 static int tv_ui_auto, tv_ui_active, tvout_video_active, cable = 2;
 static int music_transition;
@@ -49,7 +50,7 @@ static int audio_running = 1, audio_start = 1;
 static float current_duration_seconds = 1442.0f;
 static char current_media_title[192],current_media_artist[192],current_media_album[192];
 static int current_media_plex;
-static int spectrum_levels[12], spectrum_display[12];
+static int spectrum_levels[12], spectrum_display[64];
 static char current_path[512] = "/Series/Fullmetal Alchemist Brotherhood/Season 1";
 static char status[160] = "MP3 start: 807F00F0";
 static struct { char title[128]; int is_folder, is_audio; } items[64];
@@ -228,7 +229,9 @@ int main(int argc, char **argv) {
     /* Compare every incremental music frame to the production full renderer.
      * Include rising/falling bars, silence, all volume detents, both VUs,
      * changing/pressed indicators and both fullscreen layouts. */
-    for (int fullscreen = 0; fullscreen < 2; fullscreen++) {
+    const int band_choices[]={12,24,32,48,64};
+    for(int choice=0;choice<5;choice++)for (int fullscreen = 0; fullscreen < 2; fullscreen++) {
+        test_spectrum_count=band_choices[choice];
         u32 *incremental = malloc(TV_GUI_BYTES);
         unsigned long long start_bytes, max_bytes = 0;
         assert(incremental);
@@ -239,7 +242,7 @@ int main(int argc, char **argv) {
         tv_draw_music("Music / Grüße aus München", fullscreen);
         assert(tv_music.incremental_frames == 0); /* budget guard, no redundant draw */
         for (int frame = 0; frame < 90; frame++) {
-            int previous_spectrum[12];
+            int previous_spectrum[64];
             unsigned long long bytes = tv_music.copied_bytes;
             clock_tick += 60000;
             playback_volume = frame % 31;

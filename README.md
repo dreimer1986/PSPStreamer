@@ -2,9 +2,15 @@
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
+Music analysis now offers an optional [desktop MilkDrop FFT mode](docs/SPECTRUM_ANALYSIS.md)
+and 12/24/32/48/64 analyzer bars. The original light 12-band mode remains the
+default. Configure it in PSP Settings or press Circle while using the spectrum.
+No server update is required.
+
 Server **0.1.61** adds a **Cover view** switch to all new Plex/Jellyfin provider
 views, sharing the library's saved preference. Server/web update only; the PSP
-build from 0.1.60 remains current.
+build does not need changing for that web-only update. The newer optional
+music-analysis build above remains compatible with this server version.
 
 Server **0.1.60** adds playlist repeat and independent playlist shuffle,
 [provider library views and adjacent-file navigation](docs/PROVIDER_VIEWS.md).
@@ -927,6 +933,9 @@ preset_seconds=60
 preset_fade_ms=1500
 preset_live_transitions=1
 milkdrop_high_resolution=1
+spectrum_analysis=0
+spectrum_bands_lcd=32
+spectrum_bands_tv=32
 volume=24
 shuffle=0
 language=en

@@ -4,7 +4,8 @@
 enum { MD_SIGNAL_COUNT = 13 };
 /* First seven: native low,mid,high,level and three smooth values, all 0..1.
  * Next six: bass,mid,treb,bass_att,mid_att,treb_att, relative to history.
- * The measurement source is PSP display bins, not MilkDrop's FFT. */
+ * Default: PSP display bins. Optional desktop analysis replaces only the six
+ * standard MilkDrop values; native extension variables retain their meaning. */
 typedef struct { float values[MD_SIGNAL_COUNT]; } MdSignal;
 typedef struct {
     MdSignal signal;

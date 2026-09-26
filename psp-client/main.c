@@ -316,6 +316,7 @@ static char audio_media_id[ID_SIZE];
 #define AUDIO_MUSIC_PREFILL_BLOCKS 4
 #define AUDIO_QUEUE_BLOCKS 8
 #define SPECTRUM_BANDS 12
+#include "spectrum_analysis.h"
 #define MP3_INPUT_BUFFER_BYTES 4096
 /* MPEG-1 Layer III, 320 kbit/s at 44.1 kHz, including padding. */
 #define MP3_MAX_FRAME_BYTES 1045
@@ -352,7 +353,7 @@ static int vu_display_left, vu_display_right;
 /* A compact real frequency view.  The DAC worker measures the PCM it is
  * about to play; the GUI merely smooths and draws these values. */
 static volatile unsigned char spectrum_levels[SPECTRUM_BANDS];
-static unsigned char spectrum_display[SPECTRUM_BANDS];
+static unsigned char spectrum_display[SPECTRUM_MAX_BANDS];
 static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
@@ -1450,6 +1451,7 @@ static int prepare_timed_video(TimedPacket *packet) {
 
 #include "milkdrop_wave.h"
 static void audio_measure_pcm(const short *pcm, int frames) {
+    spectrum_pcm_publish(pcm,frames);
     visualization_pcm_publish(pcm, frames);
     int sample, left_peak = 0, right_peak = 0;
     for (sample = 0; sample < frames * 2; sample += 64) {
@@ -1464,6 +1466,7 @@ static void audio_measure_pcm(const short *pcm, int frames) {
 }
 
 static void audio_queue_destroy(void) {
+    spectrum_analysis_reset();
     if (audio_queue_free_sema >= 0) {
         sceKernelDeleteSema(audio_queue_free_sema);
         audio_queue_free_sema = -1;
@@ -1794,12 +1797,12 @@ cleanup:
 #include "video_controls.h"
 
 static void draw_fullscreen_spectrum(void) {
-    unsigned char bands[SPECTRUM_BANDS];
+    unsigned char bands[SPECTRUM_MAX_BANDS];
     int i,tv=tv_ui_active;
     unsigned long long now=sceKernelGetSystemTimeWide();
     if(tvout_video_active || display_output.tv!=tv) return;
     if(spectrum_fullscreen.valid && now<spectrum_fullscreen.next_tick) return;
-    for(i=0;i<SPECTRUM_BANDS;i++) bands[i]=spectrum_levels[i];
+    for(i=0;i<spectrum_bar_count();i++) bands[i]=spectrum_bar_level(i,spectrum_levels[i%12]);
     sceDisplayWaitVblankStart();
     spectrum_fullscreen_render((u32 *)0x44000000,tv?720:480,tv?480:272,
         tv?TV_GUI_STRIDE:VIDEO_STRIDE,bands,audio_running && audio_start);
@@ -1900,6 +1903,7 @@ static void music_visual_trace(const char *stage,int persist) {
     }
 }
 static int play_audio_once(const char *media_id, const char *title) {
+    spectrum_analysis_output(tv_ui_active);
     music_network_failed=0;
     plex_report_begin(media_id);
     md_profile_reset(debug_enabled);
@@ -1945,6 +1949,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     audio_queue_primed = audio_blocks_published = 0;
     vu_left = vu_right = vu_display_left = vu_display_right = 0;
     memset((void *)spectrum_levels, 0, sizeof(spectrum_levels));
+    spectrum_analysis_reset();
     memset(spectrum_display, 0, sizeof(spectrum_display));
     audio_output_thread_id = -1;
     audio_prefill_target = AUDIO_MUSIC_PREFILL_BLOCKS;
@@ -2040,6 +2045,8 @@ static int play_audio_once(const char *media_id, const char *title) {
             if(now-radio_progress>30000000ULL)break;
         }
         keep_awake();
+        spectrum_analysis_output(tv_ui_active);
+        spectrum_analysis_step(sceKernelGetSystemTimeWide(),visual_preset==0||visual_preset==4,audio_running&&audio_start);
         /* A true visualizer fullscreen owns all visible pixels. Do not draw
          * receiver controls between GU frames (including throttled frames). */
         if (fullscreen && !music_visual_active) {
@@ -2114,6 +2121,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             md_stop(); music_visual_active=0;
             int preset_changed=0;
             if(visual_preset==6)music_visual_options(1);
+            else if(visual_preset==0)music_visual_options(2);
             else preset_changed=music_choose_preset();
             if(preset_changed) {
                 preset_result=music_load_selected(&preset_error);

@@ -4,6 +4,7 @@
 #include "cave_visual.h"
 #include "language.h"
 #include "milkdrop_signal.h"
+#include "spectrum_analysis.h"
 #include <math.h>
 static int preset_random_seconds=10,preset_hard_cuts=0,preset_hard_threshold=250,preset_hard_seconds=60;
 typedef struct {const char *key;TextId label;int *value,minimum,maximum,step;} VisualOption;
@@ -25,7 +26,10 @@ static VisualOption visual_options[]={
     {"preset_random_seconds",TXT_PRESET_RANDOM,&preset_random_seconds,0,120,5},
     {"preset_hard_cuts",TXT_PRESET_HARD,&preset_hard_cuts,0,1,1},
     {"preset_hard_threshold",TXT_PRESET_THRESHOLD,&preset_hard_threshold,125,400,10},
-    {"preset_hard_seconds",TXT_PRESET_HALFLIFE,&preset_hard_seconds,5,180,5}
+    {"preset_hard_seconds",TXT_PRESET_HALFLIFE,&preset_hard_seconds,5,180,5},
+    {"spectrum_analysis",TXT_SETTINGS_ANALYSIS,&spectrum_analysis_mode,0,1,1},
+    {"spectrum_bands_lcd",TXT_SETTINGS_BANDS,&spectrum_band_count,12,64,1},
+    {"spectrum_bands_tv",TXT_SETTINGS_BANDS_TV,&spectrum_tv_band_count,12,64,1}
 };
 #define VISUAL_OPTION_COUNT ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
 #define VISUAL_CAVE_OPTIONS 13
@@ -37,6 +41,7 @@ static int visual_option_parse(const char *line) {
         if(end==line+n+1 || *end)return 1;
         if(value<o->minimum)value=o->minimum;
         if(value>o->maximum)value=o->maximum;
+        if((o->value==&spectrum_band_count || o->value==&spectrum_tv_band_count) && !spectrum_band_valid((int)value))return 1;
         *o->value=(int)value;return 1;
     }
     return 0;

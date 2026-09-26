@@ -1,6 +1,7 @@
 /* Music workers keep running; caller has released the GU. */
 static void music_visual_options(int cave) {
-    int first=cave?0:VISUAL_CAVE_OPTIONS,count=cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
+    int first=cave==2?VISUAL_OPTION_COUNT-3:cave?0:VISUAL_CAVE_OPTIONS;
+    int count=cave==2?3:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
     unsigned old=PSP_CTRL_CIRCLE|PSP_CTRL_SELECT;unsigned long long repeat=0;
     while(audio_running && music_remote_action<MUSIC_REMOTE_STOP) {
         keep_awake();video_watch_ping("visual options");
@@ -12,7 +13,8 @@ static void music_visual_options(int cave) {
             if(tv_ui_active)tv_shell(tr(TXT_VISUAL_OPTIONS));else gui_library_shell(tr(TXT_VISUAL_OPTIONS));
             for(int i=top;i<count && i<top+8;i++) {
                 VisualOption *o=&visual_options[first+i];char line[96],value[20];
-                if(o->maximum==1)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_SETTINGS_ON:TXT_OFF));
+                if(o->value==&spectrum_analysis_mode)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_ANALYSIS_FFT:TXT_ANALYSIS_LEGACY));
+                else if(o->maximum==1)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_SETTINGS_ON:TXT_OFF));
                 else snprintf(value,sizeof(value),"%d",*o->value);
                 snprintf(line,sizeof(line),"%s: %s",tr(o->label),value);
                 if(tv_ui_active)tv_text(34,72+(i-top)*22,48,1,i==row?TV_AMBER:TV_WHITE,"%s",line);
@@ -36,7 +38,8 @@ static void music_visual_options(int cave) {
             if(move&PSP_CTRL_UP)row=(row+count-1)%count;
             else if(move&PSP_CTRL_DOWN)row=(row+1)%count;
             else {
-                *o->value+=(move&PSP_CTRL_LEFT)?-o->step:o->step;
+                if(o->value==&spectrum_band_count || o->value==&spectrum_tv_band_count)*o->value=spectrum_band_choice(*o->value,(move&PSP_CTRL_LEFT)?-1:1);
+                else *o->value+=(move&PSP_CTRL_LEFT)?-o->step:o->step;
                 if(*o->value<o->minimum)*o->value=o->minimum;
                 if(*o->value>o->maximum)*o->value=o->maximum;
             }
@@ -44,5 +47,6 @@ static void music_visual_options(int cave) {
         }
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
+    spectrum_analysis_reset();
     if(save_playback_settings()<0)snprintf(status,sizeof(status),"%s",tr(TXT_SETTINGS_FAILED));
 }

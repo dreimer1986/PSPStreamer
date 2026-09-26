@@ -123,7 +123,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="DREIECK: Vollbild ein / aus",
         .step2_text="X: Titel für fünf Sekunden zeigen.",
         .step3_title="O: Visualisierungsoptionen",
-        .step3_text="Höhle: Effekte. MilkDrop: Presets."
+        .step3_text="Spektrum: FFT/Balken. MilkDrop: Presets."
     },
     [HELP_PAGE_PRESETS]={
         .title="In der Preset-Auswahl",

@@ -84,6 +84,11 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_VIDEO] = "Video CPU (plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD idle",
     [TXT_SETTINGS_RESOLUTION] = "MilkDrop resolution",
+    [TXT_SETTINGS_ANALYSIS] = "Music analysis",
+    [TXT_SETTINGS_BANDS] = "FFT bars LCD",
+    [TXT_SETTINGS_BANDS_TV] = "FFT bars TV",
+    [TXT_ANALYSIS_LEGACY] = "Light (12)",
+    [TXT_ANALYSIS_FFT] = "Desktop FFT",
     [TXT_SETTINGS_OC] = "StreamerOC plugin",
 
     [TXT_OC_TITLE] = "STREAMEROC SETTINGS",

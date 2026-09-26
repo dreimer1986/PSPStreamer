@@ -1,5 +1,11 @@
 # Changelog
 
+## Additional unreleased changes
+
+- Optional desktop MilkDrop music analysis; retain the light 12-band default.
+- Select 12/24/32/48/64 FFT analyzer bars independently for LCD and TV, windowed or fullscreen,
+  with persistent in-app settings and no restart required.
+
 ## Unreleased — since 1.8
 
 Summary of 36 commits after tag `1.8`, through `9011a1d` (server/add-on 0.1.61).

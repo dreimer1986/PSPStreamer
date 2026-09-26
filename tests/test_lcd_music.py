@@ -27,7 +27,7 @@ class LcdMusicTests(unittest.TestCase):
             binary = Path(directory) / "lcd_music"
             c_file.write_text(harness)
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-fsanitize=undefined", "-I", str(ROOT / "psp-client"),
+                            "-fsanitize=undefined", "-I", str(ROOT / "psp-client"), "-I", str(ROOT / "tests"),
                             str(c_file), str(ROOT / "psp-client/language.c"),
                             "-o", str(binary)], check=True, cwd=ROOT / "psp-client")
             subprocess.run([str(binary)], check=True, cwd=ROOT / "psp-client", timeout=15)

@@ -20,6 +20,14 @@ int main(void) {
         assert(visual_option_parse(line) && *o->value==o->minimum);
     }
     preset_random_seconds=10;
+    assert(visual_option_parse("spectrum_bands_lcd=13") && spectrum_band_count==12);
+    assert(visual_option_parse("spectrum_bands_lcd=48") && spectrum_band_count==48);
+    assert(spectrum_bar_count()==12);
+    assert(visual_option_parse("spectrum_analysis=1") && spectrum_bar_count()==48);
+    assert(visual_option_parse("spectrum_bands_tv=64") && spectrum_bar_count()==48);
+    spectrum_analysis_output(1);assert(spectrum_bar_count()==64);
+    spectrum_analysis_output(0);assert(spectrum_bar_count()==48);
+    assert(visual_option_parse("spectrum_analysis=0") && spectrum_bar_count()==12);
     for(int i=0;i<1000;i++){unsigned long long t=preset_interval_us();assert(t>=60000000 && t<70000000);}
     preset_hard_threshold=250;preset_hard_seconds=60;
     PresetCuts cuts={0};unsigned char bands[12];memset(bands,20,sizeof(bands));
