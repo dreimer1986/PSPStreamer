@@ -4,7 +4,7 @@
 static const char *const diagnostic_names[]={
     "PSPStreamer-watch-music.txt","PSPStreamer-watch-video.txt",
     "PSPStreamer-stream-error.txt","PSPStreamer-sync-tv.csv",
-    "PSPStreamer-sync-lcd.csv"
+    "PSPStreamer-sync-lcd.csv","PSPStreamer-recovery.txt"
 };
 static int diagnostic_name_owned(const char *name) {
     for(unsigned int i=0;i<sizeof(diagnostic_names)/sizeof(*diagnostic_names);i++) {

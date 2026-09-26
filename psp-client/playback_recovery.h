@@ -13,6 +13,7 @@ static int playback_recovery_associate(void) {
     unsigned long long now=sceKernelGetSystemTimeWide();
     int force=recovery_failures>=3 &&
         (!recovery_reset_done || now-recovery_last_reset>=60000000ULL);
+    recovery_log(force?"WLAN reset":"connection retry",recovery_failures,0,"association");
     int state=0;
     sceNetApctlGetState(&state);
     playback_recovery_status(force || state!=PSP_NET_APCTL_STATE_GOT_IP?
@@ -29,6 +30,7 @@ static int playback_recovery_associate(void) {
         network_ready=http_ready=result==0;
     } else result=wait_for_network_restore();
     radio_connect_wait=0;
+    recovery_log("association finished",result,0,force?"forced":"normal");
     if(result==0)playback_recovery_status(TXT_STREAM_RESUME);
     return result;
 }
@@ -47,7 +49,7 @@ static int playback_recover_wait(int network) {
         int action=music_remote_action;
         if(comfort_expired() || action==MUSIC_REMOTE_STOP || action==MUSIC_REMOTE_PLAY ||
            (pressed & (PSP_CTRL_START|PSP_CTRL_CIRCLE))) {
-            music_remote_stop();return 0;
+            recovery_log("recovery cancelled",action,0,"waiting");music_remote_stop();return 0;
         }
         if(action==MUSIC_REMOTE_PAUSE)paused=1;
         if(action==MUSIC_REMOTE_SEEK) {

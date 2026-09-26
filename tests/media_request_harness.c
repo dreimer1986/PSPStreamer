@@ -38,7 +38,12 @@ static void sceKernelDeleteThread(int id) {(void)id;deleted++;}
 static void keep_awake(void) {}
 static void sceCtrlReadBufferPositive(SceCtrlData *pad,int n) {(void)n;pad->Buttons=cancel_input?1:0;}
 static void sceKernelDelayThread(int us) {(void)us;nap();}
-static int remote_http_get_budget(const char *path,char *buffer,int capacity,volatile int *running,int budget) {
+struct in_addr {int unused;};
+typedef struct {int status,retryable;const char *stage;} RemoteHttpReport;
+static int resolve_server_address(struct in_addr *a){(void)a;return 0;}
+static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
+static int remote_http_request_policy(const char *path,char *buffer,int capacity,volatile int *running,int budget,const char *body,RemoteHttpReport *report) {
+    (void)body;report->status=200;report->retryable=1;report->stage="receive";
     assert(!strcmp(path,"/api/subtitles/test"));assert(capacity==64 && budget==210000);
     for(int i=0;i<200 && *running;i++)nap();
     if(!*running)return -1005;

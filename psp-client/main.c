@@ -592,6 +592,7 @@ static int prepare_server(struct sockaddr_in *server) {
 
 #include "server_connection.h"
 #include "diagnostic_history.h"
+#include "recovery_log.h"
 #include "playback_transport.h"
 
 /* Used only after HTTP headers arrived.  A timeout is not an error: it lets
@@ -2324,6 +2325,9 @@ static int play_h264(const char *media_id) {
     result=prepare_client_subtitles(media_id,subtitle_tv_profile);
     if(result<0) {
         subtitle_release();video_step="Subtitles";
+        if(media_request_transient && result!=MEDIA_REQUEST_CANCELLED) {
+            timed_network_failed=1;return -1320;
+        }
         return result==MEDIA_REQUEST_CANCELLED?0:result;
     }
     tvout_video_active = tvout_begin_video() == 0;

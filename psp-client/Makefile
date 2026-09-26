@@ -38,7 +38,7 @@ main.o: menu_artwork.h
 main.o: preset_catalog.h preset_browser.h
 main.o: preset_sequence.h
 main.o tls_transport.o: tls_transport.h
-main.o: server_connection.h playback_transport.h playback_recovery.h diagnostic_history.h app_settings.h
+main.o: server_connection.h playback_transport.h playback_recovery.h diagnostic_history.h recovery_log.h app_settings.h
 LIBS += -lpsprtc
 main.o: oc_settings_ui.h oc_settings_io.h ../psp-overclock/config_parse.h
 main.o: offline_source.h offline_ui.h offline_filename.h

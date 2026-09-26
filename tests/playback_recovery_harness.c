@@ -52,6 +52,7 @@ typedef struct {unsigned int Buttons;} SceCtrlData;
 #define MUSIC_REMOTE_SEEK 5
 #define TXT_STREAM_RECONNECT 0
 typedef int TextId;
+static void recovery_log(const char *e,int r,int s,const char *p){(void)e;(void)r;(void)s;(void)p;}
 #define TXT_STREAM_WIFI 1
 #define TXT_STREAM_SERVER 2
 #define TXT_STREAM_RESUME 3
