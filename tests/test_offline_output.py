@@ -81,8 +81,8 @@ int main(void) {
 
     def test_profile_guard_distinguishes_output_from_decoder_errors(self):
         source = (ROOT / 'psp-client/main.c').read_text()
-        start = source.index('    tvout_video_active = tvout_begin_video() == 0;')
-        end = source.index('    if (tvout_video_active) memset', start)
+        start = source.index('    tvout_video_active = subtitle_tv_profile;')
+        end = source.index('    startup_tick=', start)
         guard = source[start:end]
         harness = '''
 #include <assert.h>
@@ -91,10 +91,10 @@ static int offline_active, offline_profile_tv, tvout_video_active, cable, restor
 static const char *video_step;
 #define TXT_DOWNLOAD_PROFILE 1
 static const char *tr(int id) {(void)id;return "profile mismatch";}
-static int tvout_begin_video(void) {return cable?0:-1;}
 static void tvout_end_video(void) {restored++;}
 static void subtitle_release(void) {released++;}
 static int check(void) {
+int subtitle_tv_profile=cable;
 ''' + guard + '''
 return 0;
 }

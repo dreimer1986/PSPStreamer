@@ -260,4 +260,6 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_STREAM_RESUME] = "Resuming playback - START: stop",
     [TXT_STREAM_DECODER] = "Decoder restart in 5s. START: stop",
     [TXT_STREAM_DECODER_FAILED] = "AVC: 3 restarts failed",
+    [TXT_STREAM_START_WAIT] = "Waiting %us - START: stop",
+    [TXT_STREAM_WAIT_DATA] = "Waiting for playable video data",
     [TXT_RADIO_RECONNECT] = "Radio retry in 5s - START: stop"};

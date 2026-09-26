@@ -2286,6 +2286,7 @@ static int play_audio(const char *media_id,const char *title) {
     } while(1);
 }
 
+static void video_start_wait_draw(unsigned int seconds);
 static int play_h264(const char *media_id) {
     timed_network_failed=0;
     music_transition_end();
@@ -2296,6 +2297,7 @@ static int play_h264(const char *media_id) {
     video_file_direction=0;
     int frames = 0, result = 0, buffered = 0, duration = 0, tail_clock = 0;
     int stopped_by_user=0;
+    unsigned long long startup_tick=sceKernelGetSystemTimeWide(),startup_draw=0,startup_log=0;
     int prepared = 0, trace_start_seconds = stream_start_seconds;
     int watch_started = 0;
     int video_only_origin = 0;
@@ -2324,6 +2326,10 @@ static int play_h264(const char *media_id) {
     /* Preparation is still a menu operation, not a video framebuffer. Keep
      * native LCD/TV UI visible and cancellable until its HTTP worker exits. */
     int subtitle_tv_profile=tvout_load_manager()>=0 && pspDveMgrCheckVideoOut()==2;
+    if(!subtitle_tv_profile && display_output.tv) {
+        result=tv_menu_select(0);
+        if(result<0) {video_step="Video output switch";return result;}
+    }
     result=prepare_client_subtitles(media_id,subtitle_tv_profile);
     if(result<0) {
         subtitle_release();video_step="Subtitles";
@@ -2332,7 +2338,9 @@ static int play_h264(const char *media_id) {
         }
         return result==MEDIA_REQUEST_CANCELLED?0:result;
     }
-    tvout_video_active = tvout_begin_video() == 0;
+    /* Select decoder/profile dimensions now, but keep the existing menu
+     * scanout until the first frame has actually decoded into staging RAM. */
+    tvout_video_active = subtitle_tv_profile;
     if(offline_active && offline_profile_tv!=tvout_video_active) {
         video_step=tr(TXT_DOWNLOAD_PROFILE);
         subtitle_release();
@@ -2340,7 +2348,8 @@ static int play_h264(const char *media_id) {
         tvout_video_active=0;
         return -1401;
     }
-    if (tvout_video_active) memset((void *)0x44000000, 0, TVOUT_STRIDE * 480 * 4);
+    startup_tick=sceKernelGetSystemTimeWide();
+    video_start_wait_draw(0);
     playback_clock(video_cpu_mhz);
     /* PGS sprites are comparatively large.  The LCD path caches and fetches
      * them on demand, which is acceptable at 480x272 but stalls the video
@@ -2416,6 +2425,15 @@ static int play_h264(const char *media_id) {
     while (1) {
         SceCtrlData pad;
         video_watch_ping("video loop");
+        if(!video_first_presented) {
+            unsigned long long now=sceKernelGetSystemTimeWide();
+            unsigned int seconds=(unsigned int)((now-startup_tick)/1000000ULL);
+            if(now>=startup_draw) {video_start_wait_draw(seconds);startup_draw=now+250000ULL;}
+            if(now>=startup_log) {
+                recovery_log("stream startup",(int)seconds,0,stream_diag.stage?stream_diag.stage:"reader starting");
+                startup_log=now+10000000ULL;
+            }
+        }
         if(comfort_expired()){stopped_by_user=1;result=frames;break;}
         playback_clock(video_cpu_mhz);
         plex_position_ms=playback_position_ms;
@@ -2638,6 +2656,10 @@ static int play_h264(const char *media_id) {
                 if (!sync) continue;
                 if (sync == 1) {
                     unsigned long long copy_start = debug_enabled ? sceKernelGetSystemTimeWide() : 0;
+                    if(!video_first_presented && tvout_video_active) {
+                        result=tvout_begin_video();
+                        if(result<0) {video_step="Video output switch";break;}
+                    }
                     memcpy((void *)0x44000000, video_staging, video_staging_bytes);
                     video_controls_present(paused);
                     result = sceDisplaySetFrameBuf((void *)0x04000000,
@@ -2646,6 +2668,7 @@ static int play_h264(const char *media_id) {
                     if(debug_enabled) copy_us = (unsigned int)(sceKernelGetSystemTimeWide() - copy_start);
                     if (result < 0) { video_step = "Video display"; break; }
                     if (!video_first_presented) {
+                        recovery_log("first video frame",current.pts,0,"presented");
                         video_only_tick = sceKernelGetSystemTimeWide();
                         video_only_origin = current.pts;
                     }
@@ -2952,6 +2975,16 @@ static int remote_control_thread(SceSize args, void *argp) {
 }
 
 static void gui_library_shell(const char *section);
+
+static void video_start_wait_draw(unsigned int seconds) {
+    snprintf(status,sizeof(status),tr(TXT_STREAM_START_WAIT),seconds);
+    if(tv_ui_active) {tv_draw_view(TV_VIEW_LOADING,0,0,0,tr(TXT_STARTING_VIDEO),0);return;}
+    gui_library_shell(tr(TXT_PREPARING_MEDIA));
+    gui_text(38,47,0x0000D8FF,"%s",tr(TXT_STARTING_VIDEO));
+    gui_text(38,76,0x00FFFFFF,"%s",tr(TXT_STREAM_WAIT_DATA));
+    gui_text(38,116,0x008A9BAA,"%s",status);
+    gui_text(376,47,0x00FFB000,"%s",tr(TXT_PLEASE_WAIT));
+}
 
 static void media_wait_draw(int subtitles,unsigned int seconds,int cancelling) {
     if(music_transition && !cancelling){music_transition_frame();return;}

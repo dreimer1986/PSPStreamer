@@ -1,5 +1,15 @@
 # Playback recovery update — 2026-09-26
 
+Video startup/recovery keeps the menu display and a cancellable waiting indicator
+until the first decoded frame is ready. The TV video-mode switch now happens
+immediately before presenting that frame, not while waiting for stream data.
+Removing the cable before starting falls back to the LCD menu. Debug recovery
+logs record the startup reader phase every ten seconds and first-frame delivery.
+This makes an empty stream queue visible; it does not fix the underlying network
+outage. Decoder settings, PTS sync, frame rate and network budgets are unchanged.
+Hardware check: start/resume on LCD and TV, cancel a stalled startup with START,
+and confirm picture/audio return together after reconnecting.
+
 Wi-Fi disconnect recovery: a requested rebuild stays pending until a real
 disconnect/connect cycle reaches GOT_IP. A stale GOT_IP after a failed
 disconnect is no longer accepted as success on the next normal retry.
@@ -46,8 +56,8 @@ is not yet established. Hardware test: repeat the interruption/recovery scenario
 Recovery escalation: after two unsuccessful stream reconnection attempts,
 disconnect and rejoin the configured Wi-Fi profile. Full re-association is
 limited to once per minute. Playback, media remote and virtual-button workers
-are stopped before re-association. Playback DNS is resolved again on the next
-request. Thirty seconds of successful playback resets the consecutive-failure
+are stopped before re-association. The known server address is reused rather
+than re-entering firmware DNS. Thirty seconds of playback resets the failure
 count. This also applies to radio, which resumes at its live edge.
 
 Diagnostic history: existing watch, stream-error and sync CSV files are renamed

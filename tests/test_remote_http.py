@@ -29,8 +29,12 @@ class RemoteHttpTests(unittest.TestCase):
     def test_subtitles_finish_before_video_framebuffer_switch(self):
         source = (ROOT / 'psp-client/main.c').read_text()
         start = source.index('result=prepare_client_subtitles(media_id,subtitle_tv_profile);')
-        switch = source.index('tvout_video_active = tvout_begin_video() == 0;', start)
+        switch = source.index('result=tvout_begin_video();', start)
         self.assertIn('return result==MEDIA_REQUEST_CANCELLED?0:result;', source[start:switch])
+        self.assertIn('video_start_wait_draw(0);', source[start:switch])
+        self.assertIn('if(!video_first_presented && tvout_video_active)', source[start:switch])
+        self.assertLess(switch, source.index('memcpy((void *)0x44000000, video_staging', switch))
+        self.assertLess(switch, source.index('video_first_presented = 1;', switch))
         bitmap = source.index('if(tv_profile && !offline_active)return 0;')
         self.assertLess(bitmap, source.index('"/api/bitmap-subtitles/', bitmap))
         self.assertIn('if (result < 0) return offline_active ? 0 : result;', source)
