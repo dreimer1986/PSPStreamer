@@ -11,6 +11,10 @@ static int music_remote_thread_id = -1;
 /* One-slot metadata mailbox. The worker never touches GUI memory. */
 static char music_radio_id[48], music_radio_station[192], music_radio_title[192];
 static volatile int music_radio_ready;
+/* Keep cancellation latency at the previous 500 ms while reducing TCP churn. */
+static void remote_poll_wait(volatile int *running) {
+    for(int i=0;i<4 && *running;i++)sceKernelDelayThread(500000);
+}
 
 static int music_remote_worker(SceSize args, void *argp) {
     int sequence = remote_control_sequence;
@@ -59,7 +63,7 @@ static int music_remote_worker(SceSize args, void *argp) {
                 music_remote_action = event;
             }
         }
-        sceKernelDelayThread(500000);
+        remote_poll_wait(&music_remote_running);
     }
 #ifdef PSPSTREAMER_PLEX_REPORT
     plex_report_stop(sequence);

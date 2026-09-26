@@ -592,9 +592,10 @@ static int prepare_server(struct sockaddr_in *server) {
     return resolve_server_address(&server->sin_addr);
 }
 
-#include "server_connection.h"
 #include "diagnostic_history.h"
 #include "recovery_log.h"
+#include "socket_diagnostics.h"
+#include "server_connection.h"
 #include "wifi_events.h"
 #include "playback_transport.h"
 
@@ -615,6 +616,7 @@ static int stream_recv(int socket_fd, void *buffer, int length, int timeout_ms) 
  * blocking recv().  Callers treat a timeout exactly like a dropped stream. */
 
 static void keep_awake(void) {
+    socket_snapshot_tick();
     wifi_events_drain();
     static unsigned long long last_tick;
     unsigned long long now = sceKernelGetSystemTimeWide();
@@ -2954,7 +2956,7 @@ static int remote_control_thread(SceSize args, void *argp) {
             field = strstr(reply, "\"seq\":");
             if (!field || atoi(field + 6) <= sequence) {
                 subtitle_page_prefetch(&subtitle_retry);
-                sceKernelDelayThread(500000); continue;
+                remote_poll_wait(&remote_control_running); continue;
             }
             if (remote_control_running && field && atoi(field + 6) > sequence &&
                 !strcmp(action, "play")) {
@@ -2974,7 +2976,7 @@ static int remote_control_thread(SceSize args, void *argp) {
         }
         if(!remote_control_action && remote_control_seek_seconds<0)
             subtitle_page_prefetch(&subtitle_retry);
-        sceKernelDelayThread(500000);
+        remote_poll_wait(&remote_control_running);
     }
     plex_report_stop(sequence);
     return 0;

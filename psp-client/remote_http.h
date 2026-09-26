@@ -31,8 +31,10 @@ static int remote_http_request_policy(const char *path,char *buffer,int capacity
     int wanted=body?snprintf(request,sizeof(request),"POST %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: %d\r\n%s\r\n",path,server_host,body_length,server_auth_header):
         snprintf(request,sizeof(request),"GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",path,server_host, server_auth_header);
     if(wanted<0 || wanted>=(int)sizeof(request)) { result=-1002; goto done; }
+    remote_http_phase(report,"socket allocation");
     fd=sceNetInetSocket(AF_INET,SOCK_STREAM,0);
     if(fd<0) { result=fd; goto done; }
+    remote_http_phase(report,"connect");
     if(sceNetInetSetsockopt(fd,SOL_SOCKET,SO_NONBLOCK,&nonblock,sizeof(nonblock))<0) goto done;
     int connected=sceNetInetConnect(fd,(struct sockaddr *)&server,sizeof(server))>=0;
     while((!running || *running) && (unsigned long long)sceKernelGetSystemTimeWide()<deadline) {

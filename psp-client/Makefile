@@ -45,6 +45,7 @@ main.o: offline_source.h offline_ui.h offline_filename.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h
 main.o: wifi_connection.h
+main.o: socket_diagnostics.h
 main.o: help_pages.h help_ui.h help_en.h help_de.h
 main.o: library_fetch.h
 main.o: power_policy.h ../psp-overclock/control_api.h

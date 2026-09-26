@@ -27,4 +27,4 @@ static int connection_recv(int fd,void *data,int size,int flags) {
     do {n=tls_recv(fd,data,size,100);} while(n==-2 && sceKernelGetSystemTimeWide()-last<180000000ULL);
     return n;
 }
-static int connection_close(int fd) {return tls_close(fd);}
+static int connection_close(int fd) {return socket_tracked_close(fd);}

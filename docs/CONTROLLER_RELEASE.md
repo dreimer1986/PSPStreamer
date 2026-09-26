@@ -1,5 +1,21 @@
 # Playback recovery update — 2026-09-26
 
+Socket-resource diagnosis: every application socket allocation and owner-close
+is counted, including failures, current outstanding balance and peak. With debug
+enabled, the recovery log records the original errno immediately on allocation
+or close failure, plus `sceNetGetMallocStat` pool/maximum/free values. Periodic
+snapshots every 30 seconds show whether the balance or pool use grows during
+playback. These counters do not cover firmware-internal sockets or prove that
+closed TCP connections have already released all internal resources. A failed
+close remains in the outstanding balance. No descriptor is forcibly reclaimed.
+Preparation now labels allocation failure separately from TCP connect failure.
+No definite application socket leak was found in the audited owner paths.
+Music/video remote polling waits two seconds instead of half a second between
+requests; cancellable 500-ms slices preserve the previous shutdown latency.
+This reduces connection churn but can delay remote commands by roughly two
+seconds plus network time. Stream data, PTS, subtitles and their timeouts are
+unchanged. Test local HTTP playback first and preserve recovery/stream logs.
+
 APCTL event diagnostics: with debug enabled, `PSPStreamer-recovery.txt` now
 records firmware events, event-time milliseconds, old/new state and the raw
 eight-digit hexadecimal error. In these `APCTL event` lines, the legacy `http`
