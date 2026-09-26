@@ -1,5 +1,17 @@
 # Playback recovery update — 2026-09-26
 
+AVC recovery: streaming errors 80628001/80628002 specifically from `AVC: Decode`
+now restart the stream after the old workers, queues and hardware decoder have
+been shut down normally. The new transcode starts at the last presented second
+with a fresh decoder and reference frames. The wait is five seconds and remains
+cancellable; this path does not count as a Wi-Fi failure or force re-association.
+At most three restarts are attempted without 30 seconds of playback progress.
+Repeated failures then return the error to the browser instead of looping.
+Local files and other decoder/format errors retain their existing handling.
+Decoder-failure logs now include packet PTS/size, basic packet validity, queue
+depths and free memory before teardown. Root cause of the observed AVC failures
+is not yet established. Hardware test: repeat the interruption/recovery scenario.
+
 Recovery escalation: after two unsuccessful stream reconnection attempts,
 disconnect and rejoin the configured Wi-Fi profile. Full re-association is
 limited to once per minute. Playback, media remote and virtual-button workers

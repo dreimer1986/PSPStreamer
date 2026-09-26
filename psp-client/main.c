@@ -1396,7 +1396,22 @@ static int prepare_timed_video(TimedPacket *packet) {
     result = h264_hw_decode_avcc((const AvcPacket *)packet->data, packet->size, video_staging);
     codec_leave();
     if(debug_enabled) sync_decode_us = (unsigned int)(sceKernelGetSystemTimeWide() - start);
-    if (result < 0) { video_step = h264_hw_last_step(); return result; }
+    if (result < 0) {
+        video_step = h264_hw_last_step();
+        if(debug_enabled) {
+            const AvcPacket *avc=(const AvcPacket *)packet->data;
+            char diagnostic[384];
+            snprintf(diagnostic,sizeof(diagnostic),
+                "decoder failure: code=%08X stage=%s pts=%d bytes=%d position_ms=%d "
+                "packet_valid=%d free=%u largest=%u video_queue=%u audio_queue=%u\n",
+                (unsigned int)result,video_step,packet->pts,packet->size,playback_position_ms,
+                avc && avcc_packet_valid(avc,packet->size),
+                (unsigned int)sceKernelTotalFreeMemSize(),(unsigned int)sceKernelMaxFreeMemSize(),
+                timed_video.write-timed_video.read,timed_audio.write-timed_audio.read);
+            video_watch_write(diagnostic,0);
+        }
+        return result;
+    }
     if (result > 0) {
         video_watch_ping("subtitle/overlay");
         cue_ms = offline_active ? packet->pts : stream_start_seconds * 1000 + packet->pts - timed_video_origin;
@@ -2731,13 +2746,17 @@ static int comfort_play_video(const char *id) {
     playback_recovery_reset();
     comfort_timer_stopped=0;playback_reached_end=0;
     playback_position_ms=stream_start_seconds*1000;
-    int result;
+    int result,decoder_failures=0;
     do {
         int recovery_start=stream_start_seconds;
         result=play_h264(id);
-        if(offline_active || result!=-1320 || !timed_network_failed || seek_requested || video_file_direction)break;
+        if(offline_active || seek_requested || video_file_direction)break;
+        int decoder=playback_decoder_retry(result,video_step,
+            playback_position_ms-recovery_start*1000,&decoder_failures);
+        if(decoder<0) {video_step=tr(TXT_STREAM_DECODER_FAILED);break;}
+        if(!decoder && (result!=-1320 || !timed_network_failed))break;
         if(playback_position_ms-recovery_start*1000>=30000)recovery_failures=0;
-        if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
+        if(!playback_recover_wait(!decoder)) {playback_recovery_cancel();result=0;break;}
         stream_start_seconds=playback_recovery_position(playback_position_ms);
         resume_pending=seek_requested=0;
     } while(1);

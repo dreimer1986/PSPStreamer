@@ -1,4 +1,4 @@
-/* Retry only transport failures, never local media, codec or format errors.
+/* Transport recovery and explicitly bounded AVC decoder recovery.
  * Called after playback has joined all workers and released its buffers. */
 static int recovery_failures,recovery_reset_done;
 static unsigned long long recovery_last_reset;
@@ -32,13 +32,13 @@ static int playback_recovery_associate(void) {
     if(result==0)playback_recovery_status(TXT_STREAM_RESUME);
     return result;
 }
-static int playback_reconnect_wait(void) {
-    recovery_failures++;
+static int playback_recover_wait(int network) {
+    if(network)recovery_failures++;
     unsigned int old=~0U;
     int paused=0;
     unsigned long long retry=sceKernelGetSystemTimeWide()+5000000ULL;
     plex_paused=1;plex_started=0;
-    playback_recovery_status(TXT_STREAM_RECONNECT);
+    playback_recovery_status(network?TXT_STREAM_RECONNECT:TXT_STREAM_DECODER);
     if(music_remote_start()<0)return 0;
     for(;;) {
         SceCtrlData pad;
@@ -59,6 +59,7 @@ static int playback_reconnect_wait(void) {
         if((pressed & (PSP_CTRL_CROSS|PSP_CTRL_SQUARE)) ||
            (!paused && (unsigned long long)sceKernelGetSystemTimeWide()>=retry)) {
             music_remote_stop();
+            if(!network)return 1; /* Decoder retry must not reset Wi-Fi. */
             int connected=playback_recovery_associate();
             if(connected==0)return 1;
             if(connected==-5)return 0;
@@ -69,6 +70,15 @@ static int playback_reconnect_wait(void) {
         }
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
+}
+static int playback_reconnect_wait(void) {return playback_recover_wait(1);}
+static int playback_decoder_retry(int result,const char *stage,int progress_ms,int *failures) {
+    if(strcmp(stage,"AVC: Decode") ||
+       ((unsigned int)result!=0x80628001U && (unsigned int)result!=0x80628002U))return 0;
+    if(progress_ms>=30000)*failures=0;
+    if(*failures>=3)return -1;
+    ++*failures;
+    return 1;
 }
 static int playback_recovery_position(int position_ms) {
     return position_ms>0?position_ms/1000:0;

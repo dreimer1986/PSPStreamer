@@ -265,4 +265,6 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_STREAM_WIFI] = "WLAN neu verbinden - START: Stopp",
     [TXT_STREAM_SERVER] = "Server verbinden - START: Stopp",
     [TXT_STREAM_RESUME] = "Wiedergabe fortsetzen - START: Stopp",
+    [TXT_STREAM_DECODER] = "Decoder-Neustart in 5s. START: Stopp",
+    [TXT_STREAM_DECODER_FAILED] = "AVC: 3 Neustarts erfolglos",
     [TXT_RADIO_RECONNECT] = "Radio in 5s verbinden - START: Stopp"};

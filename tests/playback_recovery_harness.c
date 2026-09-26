@@ -55,6 +55,7 @@ typedef int TextId;
 #define TXT_STREAM_WIFI 1
 #define TXT_STREAM_SERVER 2
 #define TXT_STREAM_RESUME 3
+#define TXT_STREAM_DECODER 4
 #define PSP_NET_APCTL_STATE_GOT_IP 4
 static int network_ready,http_ready,forced,inputs_stopped;
 static int sceNetApctlGetState(int *state){*state=4;return 0;}
@@ -115,6 +116,18 @@ int main(void){
     tick=60000000;
     assert(playback_recovery_associate()==0 && forced==2);
     assert(playback_recovery_position(456789)==456 && playback_recovery_position(-1)==0);
+    int faults=0;
+    assert(!playback_decoder_retry(-1320,"AVC: Decode",0,&faults));
+    assert(!playback_decoder_retry((int)0x80628001U,"AVC: GetNalAu",0,&faults));
+    assert(playback_decoder_retry((int)0x80628001U,"AVC: Decode",0,&faults)==1);
+    assert(playback_decoder_retry((int)0x80628002U,"AVC: Decode",100,&faults)==1);
+    assert(playback_decoder_retry((int)0x80628001U,"AVC: Decode",200,&faults)==1);
+    assert(playback_decoder_retry((int)0x80628001U,"AVC: Decode",200,&faults)==-1);
+    assert(playback_decoder_retry((int)0x80628001U,"AVC: Decode",30000,&faults)==1 && faults==1);
+    scenario=0;tick=0;peeks=0;connections=0;
+    int saved_forced=forced,saved_failures=recovery_failures;
+    assert(playback_recover_wait(0)==1 && !connections && forced==saved_forced && recovery_failures==saved_failures);
+    scenario=1;tick=0;peeks=0;assert(playback_recover_wait(0)==0);
     playback_reached_end=resume_pending=seek_requested=video_file_direction=1;
     playback_recovery_cancel();assert(!playback_reached_end && !resume_pending && !seek_requested && !video_file_direction);
     puts("transport deadlines, cancellation, partial sends, TLS, retries, stop, remote play/seek: OK");
