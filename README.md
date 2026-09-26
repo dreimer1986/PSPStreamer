@@ -14,7 +14,7 @@ position. This view follows automatic episode/song changes; selecting another
 file deliberately keeps that selection.
 
 StreamerOC optionally supports `overlay_always=1` in its INI (default `0`).
-The flight Easter egg now has two warm exhaust lights driven by filtered music
+The flight Easter egg now has four warm exhaust outlets driven by filtered music
 bass; normal Monkey visualization is unchanged.
 
 Server **0.1.56** adds shared [favorites, history, resume and cross-source
