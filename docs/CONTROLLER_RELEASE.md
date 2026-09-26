@@ -1,5 +1,25 @@
 # Playback recovery update — 2026-09-26
 
+Socket teardown: after freeing its own TLS context, each socket owner now uses
+the PSP `sceNetInetCloseWithRST` export instead of normal close. This applies
+only after the required response is consumed or the operation is abandoned;
+it never interrupts another worker's socket. No close is retried, since a failed
+return does not establish that the descriptor remains valid. Direct close return
+code, fd and errno are now recorded separately on failure; an errno value alone
+may be stale and did not establish the cause of the previous two close failures.
+The aim is to avoid accumulating TCP teardown state for disposable connections.
+Whether this resolves the measured network-pool depletion requires hardware
+validation, not just host tests. Pool size, polling cadence, network recovery,
+decoder and playback timeouts remain unchanged from the previous build.
+
+Reference: the PSPSDK import table exports CloseWithRST as NID `0x805502DD`
+(https://github.com/pspdev/pspsdk/blob/master/src/net/sceNetInet.S). PPSSPP models
+it using zero-time SO_LINGER and close
+(https://github.com/hrydgard/ppsspp/blob/master/Core/HLE/sceNetInet.cpp); this is
+supporting implementation evidence, not a guarantee about physical PSP firmware.
+Test direct HTTP for at least two episodes, including episode change and Stop;
+compare the recovery log's `free` pool trend, close errors and socket failures.
+
 Socket-resource diagnosis: every application socket allocation and owner-close
 is counted, including failures, current outstanding balance and peak. With debug
 enabled, the recovery log records the original errno immediately on allocation

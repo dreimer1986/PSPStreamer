@@ -10,6 +10,9 @@
 #include <mbedtls/sha256.h>
 #include "tls_transport.h"
 
+/* Exported by libpspnet_inet (NID 0x805502DD), omitted from the SDK header. */
+extern int sceNetInetCloseWithRST(int fd);
+
 typedef struct {
     int fd;
     mbedtls_ssl_context ssl;
@@ -181,5 +184,9 @@ int tls_close(int fd) {
         /* No blocking close-notify during cancellation. */
         destroy(c);
     }
-    return sceNetInetClose(fd);
+    /* The owner has consumed the required response, or explicitly abandoned
+     * it on cancellation/error. No other worker may use this fd now. Avoid
+     * retaining a TCP FIN/linger tail for these disposable HTTP connections.
+     * Never retry a close: an error need not imply the fd is still owned. */
+    return sceNetInetCloseWithRST(fd);
 }

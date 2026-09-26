@@ -13,6 +13,12 @@
 #define sceNetInetRecv recv
 #define sceNetInetPoll poll
 #define sceNetInetClose close
+/* Match the abortive-close semantics used by the PSP export. */
+static inline int sceNetInetCloseWithRST(int fd) {
+    struct linger mode={1,0};
+    if(setsockopt(fd,SOL_SOCKET,SO_LINGER,&mode,sizeof(mode))<0)return -1;
+    return close(fd);
+}
 static inline int sceNetInetGetErrno(void) {return errno==EAGAIN?35:errno;}
 static inline int sceNetInetSetsockopt(int fd,int level,int option,const void *value,int size) {
     (void)level;(void)size;

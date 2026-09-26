@@ -33,6 +33,10 @@ static int socket_tracked_close(int fd) {
     if(result<0) {
         int error=sceNetInetGetErrno();
         __sync_fetch_and_add(&socket_close_failures,1);
+        char detail[112];
+        snprintf(detail,sizeof(detail),"fd=%d rc=0x%08X errno=%d errno_hex=0x%08X close=RST",
+            fd,(unsigned int)result,error,(unsigned int)error);
+        recovery_log("socket close result",result,0,detail);
         socket_snapshot("socket close failed",error);
     } else {
         __sync_fetch_and_add(&socket_closes,1);
