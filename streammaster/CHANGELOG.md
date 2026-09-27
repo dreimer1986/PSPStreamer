@@ -4,6 +4,33 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.1 — 2026-09-27
+
+- Enabled ESP-IDF's supported performance build (`-O2`), replacing the debug
+  optimization level (`-Og`) actually used by the firmware sources.
+- Matching PSP app: readable polling now fetches the next data block directly,
+  removing a separate full-size USB status exchange before each block.
+- Added adaptive empty-read backoff (5–100 ms) to avoid flooding USB while a
+  server prepares a response. Successful reads clear the backoff immediately;
+  subtitle/server response deadlines are unchanged.
+- Matching PSP app: a temporarily full channel pool is retried within the
+  caller's connection deadline instead of immediately failing the request.
+- Matching PSP app: isolated socket errors per worker, independent of the PSP
+  C library's shared errno; release these fixed error slots when workers exit,
+  including failed audio socket allocation.
+- Failed audio socket allocation now also releases native PSP network-thread
+  bookkeeping; cleanup no longer depends on obtaining a valid descriptor.
+- Reject old queued USB work after disconnect and release connections created
+  by work that completed after its USB session ended.
+- Retain USB device/interface handles until release succeeds; preserve quick
+  reattach notifications received during old-device cleanup.
+- Abort cancelled/failed TCP connections with zero linger so dead peers cannot
+  retain send queues and TCP control blocks. Clean EOF still drains normally.
+- Focused sanitizer tests include 10,000 PSP connection/worker cycles, 4,000 ESP
+  owner runs (EOF, cancellation, handshake failure and read failure), partial
+  TLS-write retries, empty-poll traffic and stale USB work. These are host tests
+  with mocked USB/TLS I/O, not a measured hardware-throughput claim.
+
 ## 0.2.0 — 2026-09-27
 
 - Added six independent TCP/TLS channels for concurrent media, metadata,

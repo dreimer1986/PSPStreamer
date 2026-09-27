@@ -9,6 +9,7 @@ static volatile int socket_snapshot_lock;
  * the GUI polling worker is recreated every two seconds. Release its net data
  * on the owner thread after its LAST network call, before publishing done. */
 static void network_worker_finished(const char *name) {
+    stm_thread_finished();
     int tid=sceKernelGetThreadId();
     SceNetMallocStat before={0},after={0};
     if(debug_enabled)sceNetGetMallocStat(&before);

@@ -1590,7 +1590,7 @@ static void gui_library_shell(const char *section);
 static int audio_thread(SceSize args, void *argp) {
     struct sockaddr_in server;
     char request[2048], header[4096], *body = NULL;
-    int socket_fd = -1, header_size = 0, received, output_thread_id = -1;
+    int socket_fd = -1, network_attempted=0, header_size = 0, received, output_thread_id = -1;
     SceUID local_fd = -1;
     TimedPacket timed_packet = {0};
     unsigned int block_pts = 0;
@@ -1621,6 +1621,7 @@ static int audio_thread(SceSize args, void *argp) {
     } else if (!timed_active) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
+    network_attempted=1;
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { audio_state = -11; goto cleanup; }
@@ -1797,7 +1798,8 @@ cleanup:
         sceKernelSignalSema(audio_queue_free_sema, 1);
     if (audio_socket_fd == socket_fd) { audio_socket_fd = -1; if (socket_fd >= 0) connection_close(socket_fd); }
     if (mp3_codec_work) { free(mp3_codec_work); mp3_codec_work = NULL; }
-    if(socket_fd>=0)network_worker_finished("audio reader");
+    if(network_attempted)network_worker_finished("audio reader");
+    else stm_thread_finished(); /* Socket allocation failure also owns an error slot. */
     return 0;
 }
 

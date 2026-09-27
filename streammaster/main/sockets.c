@@ -89,7 +89,19 @@ static void socket_worker(void *arg) {
             }
             vTaskDelay(1); /* Explicitly yield even under continuous traffic. */
         }
-        if(tls)esp_tls_conn_destroy(tls);
+        if(tls) {
+            xSemaphoreTake(c->lock,portMAX_DELAY);
+            int abort_connection=c->cancel || c->state!=SM_SOCKET_EOF;
+            xSemaphoreGive(c->lock);
+            /* Explicit cancellation must not retain TCP send queues/PCBs while
+             * a vanished peer never acknowledges them. Only the owner closes. */
+            int closing_fd=-1;
+            if(abort_connection && esp_tls_get_conn_sockfd(tls,&closing_fd)==ESP_OK && closing_fd>=0) {
+                struct linger immediate={1,0};
+                setsockopt(closing_fd,SOL_SOCKET,SO_LINGER,&immediate,sizeof(immediate));
+            }
+            esp_tls_conn_destroy(tls);
+        }
         memset(block,0,4096);
         memset(c->write_block,0,4096);
         xSemaphoreTake(c->lock,portMAX_DELAY);

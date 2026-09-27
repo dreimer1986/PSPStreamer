@@ -8,17 +8,35 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include "streammaster_transport.h"
 #define FD_BASE 0x60000000
 #define LOCAL_SOCKETS 12
 typedef struct {
-    int fd,nonblock,opened,eof,dead;
+    int fd,nonblock,opened,eof,dead,opening,connected;
     unsigned token,epoch,pos,end;
+    unsigned read_backoff;
+    SceInt64 read_retry,open_retry;
     SmSocketOpen destination;
     unsigned char cache[SM_PAYLOAD_SIZE];
 } LocalSocket;
 static LocalSocket sockets[LOCAL_SOCKETS];
+/* PSP newlib's __errno uses the shared _impure_ptr in this toolchain.
+ * Do not let the remote-control worker replace a media owner's EWOULDBLOCK.
+ * No per-request allocation: owners release these bounded slots on exit. */
+static struct {volatile int tid,code;} thread_errors[32];
+static void socket_error(int code) {
+    int tid=sceKernelGetThreadId();
+    for(unsigned i=0;i<32;i++)if(thread_errors[i].tid==tid){thread_errors[i].code=code;return;}
+    for(unsigned i=0;i<32;i++)if(__sync_bool_compare_and_swap(&thread_errors[i].tid,0,tid)) {
+        thread_errors[i].code=code;return;
+    }
+}
+void stm_thread_finished(void) {
+    int tid=sceKernelGetThreadId();
+    for(unsigned i=0;i<32;i++)if(thread_errors[i].tid==tid) {
+        thread_errors[i].code=0;__sync_synchronize();thread_errors[i].tid=0;return;
+    }
+}
 static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
 static volatile int selected,broken=1,wifi_state;
 static unsigned capable_generation;
@@ -54,7 +72,9 @@ int stm_init(int enabled,const char *host,int port,int https) {
 int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capacity,unsigned *length,volatile int *running) {
     if(length)*length=0;
     if(size>SM_PAYLOAD_SIZE || rpc_lock<0 || (op>=SM_SOCKET_OPEN && broken))return SM_OFFLINE;
-    if(lock(rpc_lock,1000,running)<0)return SM_BUSY;
+    /* Data/control pollers yield promptly to the current owner. Closing must
+     * get a longer chance to release its remote slot before declaring failure. */
+    if(lock(rpc_lock,op>=SM_SOCKET_OPEN && op!=SM_SOCKET_CLOSE?30:1000,running)<0)return SM_BUSY;
     if(module<0 || (op>=SM_SOCKET_OPEN && broken)){sceKernelSignalSema(rpc_lock,1);return SM_OFFLINE;}
     memset(&request,0,sizeof(request));memset(&response,0,sizeof(response));
     request.op=op;request.sequence=++sequence;request.length=size;
@@ -75,7 +95,7 @@ static int load_driver(void) {
     int m=kuKernelLoadModule("flash0:/kd/usb.prx",0,NULL),status=0,rc;
     if(m>=0) {
         phase="start Sony USB";rc=sceKernelStartModule(m,0,NULL,&status,NULL);
-        if(rc<0 || status<0)return rc<0?rc:status;
+        if(rc<0 || status<0){sceKernelUnloadModule(m);return rc<0?rc:status;}
     } else if((unsigned)m!=0x80020139U)return m;
     char cwd[192],path[256];
     if(!getcwd(cwd,sizeof(cwd)))snprintf(cwd,sizeof(cwd),"ms0:/PSP/GAME/PSPStreamer");
@@ -155,7 +175,7 @@ static LocalSocket *get(int fd) {
 static int virtual_fd(int fd){return fd>=FD_BASE;}
 int stm_socket(int domain,int type,int protocol) {
     if(!selected)return sceNetInetSocket(domain,type,protocol);
-    if(domain!=AF_INET || type!=SOCK_STREAM || broken || lock(slots_lock,100,NULL)<0){errno=5;return -1;}
+    if(domain!=AF_INET || type!=SOCK_STREAM || broken || lock(slots_lock,100,NULL)<0){socket_error(5);return -1;}
     int fd=-1;
     for(int i=0;i<LOCAL_SOCKETS;i++)if(!sockets[i].fd) {
         LocalSocket *s=&sockets[i];memset(s,0,sizeof(*s));
@@ -163,24 +183,54 @@ int stm_socket(int domain,int type,int protocol) {
         s->epoch=generation;s->destination.token=s->token;s->destination.port=target_port;s->destination.tls=target_tls;
         snprintf(s->destination.host,sizeof(s->destination.host),"%s",target_host);break;
     }
-    sceKernelSignalSema(slots_lock,1);errno=fd<0?24:0;return fd;
+    sceKernelSignalSema(slots_lock,1);socket_error(fd<0?24:0);return fd;
+}
+static int socket_open_pending(LocalSocket *s) {
+    if(!s || s->dead || s->epoch!=generation || broken)return -1;
+    if(s->opened)return 1;
+    if(!s->opening)return -1;
+    if(sceKernelGetSystemTimeWide()<s->open_retry)return 0;
+    int rc=stm_rpc(SM_SOCKET_OPEN,&s->destination,sizeof(s->destination),NULL,0,NULL,NULL);
+    if(rc==SM_BUSY){s->open_retry=sceKernelGetSystemTimeWide()+20000;return 0;}
+    if(rc<0){s->dead=1;return -1;}
+    s->opened=1;s->opening=0;return 1;
 }
 static int socket_status(LocalSocket *s,SmSocketStatus *status) {
     if(!s || !s->opened || s->dead || s->epoch!=generation || broken)return -1;
     SmSocketRequest r={s->token,0};unsigned length;
     int rc=stm_rpc(SM_SOCKET_STATUS,&r,sizeof(r),status,sizeof(*status),&length,NULL);
     if(rc==SM_BUSY)return 0;
-    return rc<0 || length!=sizeof(*status)?-1:1;
+    if(rc<0 || length!=sizeof(*status))return -1;
+    if(status->state==SM_SOCKET_READY)s->connected=1;
+    return 1;
+}
+/* A read probe also collects the data. Previously POLLIN used a full STATUS
+ * exchange followed by a second full READ exchange for the same 4 KiB block. */
+static int socket_refill(LocalSocket *s) {
+    if(s->end>s->pos || s->eof)return 1;
+    if(sceKernelGetSystemTimeWide()<s->read_retry)return 0;
+    SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
+    int rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
+    if(rc==SM_BUSY) {
+        s->read_backoff=s->read_backoff?s->read_backoff*2:5000;
+        if(s->read_backoff>100000)s->read_backoff=100000;
+        s->read_retry=sceKernelGetSystemTimeWide()+s->read_backoff;return 0;
+    }
+    if(rc<0){s->dead=1;return -1;}
+    s->read_backoff=0;s->read_retry=0;s->pos=0;s->end=length;
+    if(!length)s->eof=1;
+    return 1;
 }
 int stm_connect(int fd,const struct sockaddr *address,socklen_t size) {
     if(!virtual_fd(fd))return sceNetInetConnect(fd,address,size);
-    LocalSocket *s=get(fd);if(!s || s->dead || broken){errno=5;return -1;}
-    int rc=stm_rpc(SM_SOCKET_OPEN,&s->destination,sizeof(s->destination),NULL,0,NULL,NULL);
-    if(rc<0){errno=rc==SM_BUSY?35:5;return -1;}
-    s->opened=1;
-    if(s->nonblock){errno=119;return -1;}
+    LocalSocket *s=get(fd);if(!s || s->dead || broken){socket_error(5);return -1;}
+    s->opening=1;
+    int rc=socket_open_pending(s);
+    if(rc<0){socket_error(5);return -1;}
+    if(s->nonblock){socket_error(119);return -1;}
     struct SceNetInetPollfd p={fd,SCE_NET_INET_POLLOUT,0};
-    return stm_poll(&p,1,15000)>0 && (p.revents&SCE_NET_INET_POLLOUT)?0:-1;
+    rc=stm_poll(&p,1,15000)>0 && (p.revents&SCE_NET_INET_POLLOUT)?0:-1;
+    socket_error(rc<0?5:0);return rc;
 }
 int stm_poll(struct SceNetInetPollfd *fds,size_t count,int timeout) {
     int any=0;for(size_t i=0;i<count;i++)if(virtual_fd(fds[i].fd))any=1;
@@ -193,14 +243,23 @@ int stm_poll(struct SceNetInetPollfd *fds,size_t count,int timeout) {
             if(!virtual_fd(p->fd)){if(sceNetInetPoll(p,1,0)>0)ready++;continue;}
             LocalSocket *s=get(p->fd);
             if(!s || s->epoch!=generation || s->dead || broken)p->revents=SCE_NET_INET_POLLERR;
-            else if(s->end>s->pos && (p->events&SCE_NET_INET_POLLIN))p->revents|=SCE_NET_INET_POLLIN;
             else {
-                SmSocketStatus status={0};int rc=socket_status(s,&status);
+                int rc=socket_open_pending(s);
                 if(rc<0)p->revents=SCE_NET_INET_POLLERR;
                 else if(rc>0) {
-                    if((p->events&SCE_NET_INET_POLLIN) && (status.available || status.state==SM_SOCKET_EOF))p->revents|=SCE_NET_INET_POLLIN;
-                    if((p->events&SCE_NET_INET_POLLOUT) && status.state==SM_SOCKET_READY && status.space>=SM_PAYLOAD_SIZE)p->revents|=SCE_NET_INET_POLLOUT;
-                    if(status.state==SM_SOCKET_ERROR && !status.available)p->revents|=SCE_NET_INET_POLLERR;
+                    if(p->events&SCE_NET_INET_POLLIN) {
+                        rc=socket_refill(s);
+                        if(rc>0)p->revents|=SCE_NET_INET_POLLIN;
+                        else if(rc<0)p->revents|=SCE_NET_INET_POLLERR;
+                    }
+                    if(p->events&SCE_NET_INET_POLLOUT) {
+                        SmSocketStatus status={0};rc=socket_status(s,&status);
+                        if(rc<0)p->revents|=SCE_NET_INET_POLLERR;
+                        else if(rc>0) {
+                            if(status.state==SM_SOCKET_READY && status.space>=SM_PAYLOAD_SIZE)p->revents|=SCE_NET_INET_POLLOUT;
+                            if(status.state==SM_SOCKET_ERROR || status.state==SM_SOCKET_EOF)p->revents|=SCE_NET_INET_POLLERR;
+                        }
+                    }
                 }
             }
             if(p->revents)ready++;
@@ -220,12 +279,13 @@ int stm_setsockopt(int fd,int level,int option,const void *value,socklen_t size)
 int stm_getsockopt(int fd,int level,int option,void *value,socklen_t *size) {
     if(!virtual_fd(fd))return sceNetInetGetsockopt(fd,level,option,value,size);
     if(level!=SOL_SOCKET || option!=SO_ERROR || !size || *size<sizeof(int))return -1;
-    SmSocketStatus status={0};int rc=socket_status(get(fd),&status);
-    *(int *)value=rc>0 && status.state==SM_SOCKET_READY?0:5;*size=sizeof(int);return 0;
+    LocalSocket *s=get(fd);
+    *(int *)value=s && s->connected && !s->dead && !broken && s->epoch==generation?0:5;
+    *size=sizeof(int);return 0;
 }
 size_t stm_send(int fd,const void *data,size_t size,int flags) {
     if(!virtual_fd(fd))return sceNetInetSend(fd,data,size,flags);
-    LocalSocket *s=get(fd);if(!s || s->dead || broken || s->epoch!=generation){errno=5;return (size_t)-1;}
+    LocalSocket *s=get(fd);if(!s || s->dead || broken || s->epoch!=generation){socket_error(5);return (size_t)-1;}
     if(size>SM_PAYLOAD_SIZE-sizeof(SmSocketRequest))size=SM_PAYLOAD_SIZE-sizeof(SmSocketRequest);
     unsigned char buffer[SM_PAYLOAD_SIZE];SmSocketRequest r={s->token,size};
     memcpy(buffer,&r,sizeof(r));memcpy(buffer+sizeof(r),data,size);
@@ -236,24 +296,27 @@ size_t stm_send(int fd,const void *data,size_t size,int flags) {
         sceKernelDelayThread(1000);
         rc=stm_rpc(SM_SOCKET_WRITE,buffer,sizeof(r)+size,NULL,0,NULL,NULL);
     }
-    errno=rc==SM_BUSY?35:rc<0?5:0;
+    socket_error(rc==SM_BUSY?35:rc<0?5:0);
     return rc<0?(size_t)-1:(size_t)rc;
 }
 size_t stm_recv(int fd,void *data,size_t size,int flags) {
     if(!virtual_fd(fd))return sceNetInetRecv(fd,data,size,flags);
-    LocalSocket *s=get(fd);if(!s || s->dead || broken || s->epoch!=generation){errno=5;return (size_t)-1;}
+    LocalSocket *s=get(fd);if(!s || s->dead || broken || s->epoch!=generation){socket_error(5);return (size_t)-1;}
     if(!size)return 0;
     if(s->pos==s->end) {
+        int rc=socket_refill(s);
+        if(rc<=0){socket_error(rc==0?35:5);return (size_t)-1;}
         if(s->eof)return 0;
-        SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
-        int rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
-        if(rc<0){errno=rc==SM_BUSY?35:5;return (size_t)-1;}
-        s->pos=0;s->end=length;if(!length){s->eof=1;return 0;}
     }
     if(size>s->end-s->pos)size=s->end-s->pos;
     memcpy(data,s->cache+s->pos,size);s->pos+=size;return size;
 }
-int stm_errno(void){return selected?errno:sceNetInetGetErrno();}
+int stm_errno(void){
+    if(!selected)return sceNetInetGetErrno();
+    int tid=sceKernelGetThreadId();
+    for(unsigned i=0;i<32;i++)if(thread_errors[i].tid==tid)return thread_errors[i].code;
+    return 5;
+}
 int stm_apstate(int *state) {
     if(!selected)return sceNetApctlGetState(state);
     *state=!broken && wifi_state==SM_WIFI_READY?PSP_NET_APCTL_STATE_GOT_IP:0;return 0;
@@ -268,7 +331,7 @@ int stm_tls_recv(int fd,void *data,int size,int timeout) {
     if(!rc)return -2;
     if(rc<0 || !(p.revents&SCE_NET_INET_POLLIN))return -1;
     int n=(int)stm_recv(fd,data,size,0);
-    return n<0 && errno==35?-2:n;
+    return n<0 && stm_errno()==35?-2:n;
 }
 int stm_tls_send(int fd,const void *data,int size,volatile int *running,int timeout) {
     if(!virtual_fd(fd))return tls_send(fd,data,size,running,timeout);
@@ -278,7 +341,7 @@ int stm_tls_send(int fd,const void *data,int size,volatile int *running,int time
         if(rc<0 || (p.revents&SCE_NET_INET_POLLERR))return -1;
         if(!rc)continue;
         int n=(int)stm_send(fd,(const char *)data+sent,size-sent,0);
-        if(n<0 && errno==35)continue;
+        if(n<0 && stm_errno()==35)continue;
         if(n<=0)return -1;
         sent+=n;
     }

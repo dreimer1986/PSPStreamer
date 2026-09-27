@@ -20,6 +20,7 @@ int stm_getsockopt(int fd,int level,int option,void *value,socklen_t *size);
 size_t stm_send(int fd,const void *data,size_t size,int flags);
 size_t stm_recv(int fd,void *data,size_t size,int flags);
 int stm_errno(void);
+void stm_thread_finished(void);
 int stm_apstate(int *state);
 int stm_tls_open(int fd,const char *host,int port,volatile int *running,int timeout);
 int stm_tls_send(int fd,const void *data,int size,volatile int *running,int timeout);

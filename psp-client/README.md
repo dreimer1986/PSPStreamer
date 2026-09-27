@@ -22,7 +22,7 @@ make
 The presentation refinement uses a RAM staging frame, serializes ME codec/cache transactions and retains the most recently submitted PCM buffer until the next successful DAC submission or drain. `audio_lease.h` defines that ownership rule. `sync_trace.h` writes per-output CSV measurements after playback stops; see the project README for paths and field meanings. This client refinement works with the existing FLV server; it does not require an additional add-on update.
 # StreamMaster USB transport
 
-Optional Onju Voice V3 firmware **0.2.0** provides six independent TCP/TLS
+Optional Onju Voice V3 firmware **0.2.1** provides six independent TCP/TLS
 channels for browsing, playback, subtitles, downloads and remote control.
 Copy the matching `EBOOT.PBP`, `PSPStreamer.prx` and `StreamMasterUSB.prx`.
 Configure Onju under **Select → Settings → StreamMaster USB**, then select

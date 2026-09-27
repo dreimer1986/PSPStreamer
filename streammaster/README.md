@@ -3,7 +3,7 @@
 See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
 including matching PSP-side changes and work not yet released.
 
-Version **0.2.0** adds an opt-in USB network transport for PSPStreamer, with
+Version **0.2.1** provides an opt-in USB network transport for PSPStreamer, with
 six independent TCP/TLS channels. Library browsing, media, subtitles, remote
 control and downloads can use Onju's Wi-Fi instead of the PSP's Wi-Fi.
 Native PSP Wi-Fi remains the default. This is the first media-transport build:
@@ -170,9 +170,9 @@ out of screenshots/logs. If USB initialization fails, include the full hexadecim
 code. `FFFFFFFC` is a timeout, `FFFFFFFB` means busy, `FFFFFFFD` is a transport
 or HTTP I/O failure. Other values can be original PSP module/USB errors.
 
-## Enable USB playback (0.2.0)
+## Enable USB playback (0.2.1)
 
-1. Flash firmware **0.2.0** and copy all three matching PSP files listed above.
+1. Flash firmware **0.2.1** and copy all three matching PSP files listed above.
    Updating only Onju or only the app/PRX is insufficient.
 2. Configure Onju and verify **Test saved server** succeeds. The server address
    must be reachable from Onju's network. HTTP is a useful first transport test.
@@ -220,6 +220,14 @@ unmodified.
   PSRAM; a full ring applies backpressure rather than dropping stream bytes.
   TLS allocations use PSRAM too. PSP reads cache up to 4064 bytes per socket,
   avoiding a USB transaction for every HTTP-header byte or small FLV field.
+- Readable polling fetches into that cache directly: one USB request/reply per
+  data block rather than an extra status request/reply. Empty reads back off
+  from 5 to at most 100 ms; data arrival clears the backoff. This reduces idle
+  USB traffic without changing cold-subtitle timeouts. Physical throughput
+  still depends on the PSP, adapter, Wi-Fi and server and must be measured.
+- Firmware uses ESP-IDF's `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (`-O2`).
+  Assertions and protocol validation remain enabled. The build-system message
+  `USING O3` from mbedTLS alone does not describe the whole firmware's flags.
 - Socket commands return promptly; pending reads/writes report busy. The
   kernel driver waits at most 500 ms per USB transfer for these commands;
   slower setup diagnostics retain their separate timeout. This does not shorten
@@ -227,10 +235,16 @@ unmodified.
 - Closing/resetting a channel asks its owner to stop. A slot cannot be reused
   until that owner has destroyed its connection. USB generations invalidate
   stale PSP handles and buffered data after transport failure.
+- Cancelled/error connections use zero TCP linger; normal EOF keeps buffered
+  response bytes. Stale USB commands cannot leave orphaned connections behind.
+  PSP worker errors use a fixed, explicitly released per-thread table rather
+  than the C library's shared errno storage.
 
 Validation: ESP32-S3 firmware, PSP driver and PSP app compile; host tests cover
 frame corruption/bounds, configuration, six-channel isolation, ring wraparound,
 PSP read caching, EOF/error draining, cancellation, stale handles, old-firmware
 rejection, native fallback and settings under sanitizers.
+The transport test runs 10,000 PSP connection/worker cycles and 4,000 ESP owner
+lifecycles with mocked network/TLS I/O, checking cleanup and retry semantics.
 Those tests do not emulate USB enumeration, kernel driver timing or physical
 adapter behavior. No hardware success is claimed until the above test is run.

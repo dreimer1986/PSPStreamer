@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <setjmp.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include "streammaster/protocol.h"
 typedef int SceUID;
@@ -16,7 +18,7 @@ typedef int64_t SceInt64;
 typedef int *SemaphoreHandle_t;
 typedef void *TaskHandle_t;
 typedef struct {int timeout_ms,is_plain_tcp;void *crt_bundle_attach;} esp_tls_cfg_t;
-typedef struct {int unused;} esp_tls_t;
+typedef struct {int fd;} esp_tls_t;
 #define ESP_OK 0
 #define ESP_TLS_ERR_SSL_WANT_READ -100
 #define ESP_TLS_ERR_SSL_WANT_WRITE -101
@@ -34,19 +36,57 @@ static int xTaskCreate(void (*fn)(void *),const char *n,int size,void *p,int pri
     (void)fn;(void)n;(void)size;(void)p;(void)prio;*out=(void *)1;return 1;
 }
 static void *heap_caps_malloc(size_t n,int flags){(void)flags;return malloc(n);}
-static void ulTaskNotifyTake(int clear,unsigned wait){(void)clear;(void)wait;}
-static void xTaskNotifyGive(TaskHandle_t t){(void)t;}
-static void vTaskDelay(int ticks){(void)ticks;}
-static esp_tls_t *esp_tls_init(void){return NULL;}
-static int esp_tls_conn_new_sync(const char *host,int n,int port,const esp_tls_cfg_t *cfg,esp_tls_t *t){
-    (void)host;(void)n;(void)port;(void)cfg;(void)t;return 0;
+static jmp_buf owner_exit;
+static int owner_notifications,owner_mode,owner_live,owner_reads,owner_writes,owner_delays;
+static unsigned owner_write_size;
+static unsigned char owner_write_copy[4096];
+static void cancel_test_owner(void);
+static void ulTaskNotifyTake(int clear,unsigned wait){
+    (void)clear;(void)wait;if(owner_notifications++)longjmp(owner_exit,1);
 }
-static int esp_tls_get_conn_sockfd(esp_tls_t *t,int *fd){(void)t;*fd=-1;return -1;}
-static int esp_tls_conn_read(esp_tls_t *t,void *b,unsigned n){(void)t;(void)b;(void)n;return -1;}
-static int esp_tls_conn_write(esp_tls_t *t,const void *b,unsigned n){(void)t;(void)b;(void)n;return -1;}
-static void esp_tls_conn_destroy(esp_tls_t *t){(void)t;}
+static void xTaskNotifyGive(TaskHandle_t t){(void)t;}
+static void vTaskDelay(int ticks){(void)ticks;assert(++owner_delays<20);}
+static esp_tls_t *esp_tls_init(void){
+    esp_tls_t *t=malloc(sizeof(*t));assert(t);t->fd=socket(AF_INET,SOCK_STREAM,0);assert(t->fd>=0);owner_live++;return t;
+}
+static int esp_tls_conn_new_sync(const char *host,int n,int port,const esp_tls_cfg_t *cfg,esp_tls_t *t){
+    (void)host;(void)n;(void)port;(void)cfg;(void)t;return owner_mode==3?0:1;
+}
+static int esp_tls_get_conn_sockfd(esp_tls_t *t,int *fd){*fd=t->fd;return 0;}
+static int esp_tls_conn_read(esp_tls_t *t,void *b,unsigned n){
+    (void)t;owner_reads++;
+    if(owner_mode==2){cancel_test_owner();return ESP_TLS_ERR_SSL_WANT_READ;}
+    if(owner_reads==1){assert(n>=5);memcpy(b,"hello",5);return 5;}
+    if(owner_mode==4)return -999;
+    if(owner_reads==2)return ESP_TLS_ERR_SSL_WANT_READ;
+    return 0;
+}
+static int esp_tls_conn_write(esp_tls_t *t,const void *b,unsigned n){
+    (void)t;owner_writes++;
+    if(owner_writes==1){owner_write_size=n;memcpy(owner_write_copy,b,n);return ESP_TLS_ERR_SSL_WANT_WRITE;}
+    if(owner_writes==2){assert(n==owner_write_size && !memcmp(b,owner_write_copy,n));return n/2;}
+    return n;
+}
+static void esp_tls_conn_destroy(esp_tls_t *t){
+    if(owner_mode!=1){struct linger l={0};socklen_t n=sizeof(l);assert(!getsockopt(t->fd,SOL_SOCKET,SO_LINGER,&l,&n)&&l.l_onoff&&l.l_linger==0);}
+    assert(!close(t->fd));free(t);owner_live--;
+}
 static unsigned sm_network_state(void){return SM_WIFI_READY;}
 /* ACTUAL_ESP_SOCKETS */
+static void cancel_test_owner(void){channels[0].cancel=1;}
+static void exercise_owner(int mode){
+    Channel *c=&channels[0];
+    c->state=SM_SOCKET_CONNECTING;c->done=c->cancel=0;c->open.token=1;
+    strcpy(c->open.host,"example.test");c->open.port=443;c->open.tls=1;
+    c->rx_read=c->rx_write=c->tx_read=0;c->tx_write=16;memset(c->tx,42,16);
+    owner_mode=mode;owner_notifications=owner_reads=owner_writes=owner_delays=0;
+    if(!setjmp(owner_exit))socket_worker(c);
+    assert(c->done && !owner_live);
+    if(mode==1){assert(c->state==SM_SOCKET_EOF && c->tx_read==16 && c->rx_write==5 && owner_writes==3);}
+    else if(mode==2)assert(c->state==SM_SOCKET_FREE);
+    else assert(c->state==SM_SOCKET_ERROR);
+    c->state=SM_SOCKET_FREE;c->cancel=0;
+}
 
 #define SO_NONBLOCK 0x1009
 #define PSP_NET_APCTL_STATE_GOT_IP 4
@@ -57,6 +97,8 @@ struct SceNetInetPollfd {int fd;short events,revents;};
 static int64_t clock_us;
 static unsigned rpc_count,held_token;
 static int injected_error,old_firmware;
+static int test_tid=1;
+static int sceKernelGetThreadId(void){return test_tid;}
 static SceInt64 sceKernelGetSystemTimeWide(void){return clock_us;}
 static void sceKernelDelayThread(int us){clock_us+=us;}
 static int sceKernelCreateSema(const char *n,int attr,int initial,int max,void *v){
@@ -116,7 +158,10 @@ static int open_socket(void){
     assert(stm_connect(fd,NULL,0)==0);return fd;
 }
 int main(void){
-    sm_sockets_init();assert(stm_init(0,"example.test",443,1)==0);
+    sm_sockets_init();
+    for(int cycle=0;cycle<1000;cycle++)for(int mode=1;mode<=4;mode++)exercise_owner(mode);
+    assert(!owner_live);
+    assert(stm_init(0,"example.test",443,1)==0);
     assert(stm_socket(AF_INET,SOCK_STREAM,0)==7 && stm_errno()==123);
     assert(stm_init(1,"example.test",443,1)==0);
     volatile int running=1;old_firmware=1;
@@ -142,6 +187,7 @@ int main(void){
         assert((int)stm_recv(fds[i],got,1,0)==-1 && stm_errno()==35);
     }
     /* One slow connection must not prevent another from reading. */
+    clock_us+=100000; /* Let the previous empty-read backoff expire. */
     Channel *c=channel(fds[0]);c->state=SM_SOCKET_CONNECTING;held_token=c->open.token;
     c=channel(fds[1]);copy_in(c->rx,RX_SIZE,c->rx_write,(const unsigned char *)"last",4);c->rx_write+=4;c->state=SM_SOCKET_ERROR;
     struct SceNetInetPollfd p[2]={{fds[0],SCE_NET_INET_POLLOUT,0},{fds[1],SCE_NET_INET_POLLIN,0}};
@@ -149,6 +195,7 @@ int main(void){
     char got[8];assert(stm_recv(fds[1],got,8,0)==4 && !memcmp(got,"last",4));
     assert(stm_poll(p+1,1,0)==1 && (p[1].revents&SCE_NET_INET_POLLERR));
     /* Buffered bytes cannot survive transport cancellation/re-enumeration. */
+    clock_us+=100000;
     c=channel(fds[2]);copy_in(c->rx,RX_SIZE,c->rx_write,(const unsigned char *)"abc",3);c->rx_write+=3;
     assert(stm_recv(fds[2],got,1,0)==1);
     stm_driver_cancel();p[0]=(struct SceNetInetPollfd){fds[2],SCE_NET_INET_POLLIN,0};
@@ -161,9 +208,30 @@ int main(void){
     assert(stm_poll(&(struct SceNetInetPollfd){fd,SCE_NET_INET_POLLIN,0},1,0)==1 && broken);
     assert(stm_close(fd)==0);injected_error=0;
     assert(stm_associate(&running,1)==0);
+    /* Poll now fetches data: one exchange, not STATUS plus READ. */
+    fd=open_socket();c=channel(fd);
+    copy_in(c->rx,RX_SIZE,c->rx_write,(const unsigned char *)"xyz",3);c->rx_write+=3;
+    unsigned before=rpc_count;
+    p[0]=(struct SceNetInetPollfd){fd,SCE_NET_INET_POLLIN,0};
+    assert(stm_poll(p,1,0)==1 && stm_recv(fd,got,3,0)==3 && rpc_count==before+1);
+    before=rpc_count;assert(stm_poll(p,1,1000)==0);
+    assert(rpc_count-before<20); /* Empty channel cannot flood the USB bus. */
+    assert(stm_close(fd)==0);
+    /* Repeated short-lived remote owners cannot exhaust either fixed pool. */
+    for(int cycle=0;cycle<10000;cycle++) {
+        test_tid=cycle+2;fd=open_socket();c=channel(fd);c->state=SM_SOCKET_EOF;c->done=1;
+        assert(stm_recv(fd,got,1,0)==0);assert(stm_close(fd)==0);
+        socket_error(35);assert(stm_errno()==35);stm_thread_finished();
+    }
+    test_tid=1;socket_error(35);test_tid=2;socket_error(5);
+    assert(stm_errno()==5);test_tid=1;assert(stm_errno()==35);stm_thread_finished();
+    test_tid=2;stm_thread_finished();
+    for(int i=0;i<32;i++)assert(!thread_errors[i].tid);
+    for(int i=0;i<LOCAL_SOCKETS;i++)assert(!sockets[i].fd);
+    for(int i=0;i<SM_SOCKET_COUNT;i++)assert(channels[i].state==SM_SOCKET_FREE);
     running=0;clock_us=0;semaphores[rpc_lock]=0;
     assert(stm_rpc(SM_INFO,NULL,0,NULL,0,NULL,&running)==SM_BUSY && clock_us==0);
     semaphores[rpc_lock]=1;stm_driver_stop();
     for(int i=0;i<SM_SOCKET_COUNT;i++){free(channels[i].rx);free(channels[i].tx);free(channels[i].block);free(channels[i].write_block);}
-    puts("StreamMaster: six isolated channels, wrap/cache/EOF, cancellation, retry and native fallback OK");
+    puts("StreamMaster: 10000 PSP cycles + 4000 ESP owner runs; isolation, one-RPC reads, idle backoff, cleanup and fallback OK");
 }
