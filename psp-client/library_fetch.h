@@ -5,7 +5,11 @@ static int library_fetch(const char *path,volatile int *running) {
     if(!*running)return -1005;
     if(!have_cached_server_address) {
         struct in_addr address;
-        if(!inet_aton(server_host,&address)) {
+        if(stm_enabled()) {
+            /* The ESP resolves the configured hostname when opening TCP.
+             * Native PSP DNS has no associated WLAN in USB mode. */
+            if(resolve_server_address(&address)<0)return -1004;
+        } else if(!inet_aton(server_host,&address)) {
             unsigned char workspace[1024];
             int resolver=-1,result=sceNetResolverCreate(&resolver,workspace,sizeof(workspace));
             if(result<0) {

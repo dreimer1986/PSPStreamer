@@ -4,6 +4,14 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## PSP client follow-up — 2026-09-27
+
+- Route library hostname resolution through StreamMaster instead of attempting
+  native PSP DNS without a PSP WLAN connection. Firmware 0.2.1 is unchanged.
+- Reload saved ESP configuration and current DHCP information automatically
+  when reopening StreamMaster settings; leaving the menu only clears the local
+  configuration draft, not the ESP's saved settings.
+
 ## 0.2.1 — 2026-09-27
 
 - Enabled ESP-IDF's supported performance build (`-O2`), replacing the debug

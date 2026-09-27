@@ -6,6 +6,11 @@ static int have_cached_server_address,remote_http_last_status,dns_calls,closed,h
 static unsigned long long tick;
 static char response[2048];
 static const char *server_host="example.test";
+static int usb_enabled,usb_resolves;
+static int stm_enabled(void){return usb_enabled;}
+static int resolve_server_address(struct in_addr *address){
+    assert(usb_enabled);usb_resolves++;address->s_addr=0;return 0;
+}
 static unsigned long long sceKernelGetSystemTimeWide(void){return tick;}
 static int inet_aton(const char *name,struct in_addr *address){(void)name;(void)address;return 0;}
 static int sceNetResolverCreate(int *id,void *work,int size){assert(work&&size==1024);*id=3;return 0;}
@@ -32,4 +37,9 @@ int main(void){
     assert(library_fetch("/api/library",&running)==-1004&&closed==2&&!have_cached_server_address);
     int before=http_calls;running=0;
     assert(library_fetch("/api/library",&running)==-1005&&http_calls==before&&dns_calls==2);
+    /* USB succeeds even when native PSP DNS is unavailable. */
+    running=1;usb_enabled=1;http_error=0;remote_http_last_status=200;
+    assert(library_fetch("/api/library",&running)==0);
+    assert(usb_resolves==1&&dns_calls==2&&budget==15000&&have_cached_server_address);
+    assert(library_fetch("/api/library",&running)==0&&usb_resolves==1&&dns_calls==2);
 }

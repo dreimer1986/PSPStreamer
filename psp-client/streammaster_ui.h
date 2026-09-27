@@ -190,6 +190,11 @@ static void streammaster_settings(void) {
         TXT_SM_SAVE,TXT_SM_CONNECT,TXT_SM_BENCH,TXT_SM_SERVER};
     int selected=0,dirty=1,rc=0,ready=0;char detail[80]="";
     unsigned old=PSP_CTRL_CROSS;unsigned long long repeat=0;
+    /* Reload the ESP's persisted configuration and current DHCP lease on
+     * every visit; clearing the local password draft on exit is intentional. */
+    rc=sm_run(SM_JOB_ATTACH);
+    if(rc>=0)ready=1;
+    else snprintf(detail,sizeof(detail),"%s",sm_stage);
     while(1) {
         keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);unsigned pressed=pad.Buttons&~old;
         if(dirty) {
