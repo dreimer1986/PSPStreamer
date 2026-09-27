@@ -43,6 +43,7 @@ static void set_dns(void) {
 }
 static int connect_wifi(void) {
     if(!sm_config_valid(&config,0))return SM_INVALID;
+    sm_sockets_reset();
     close_http();reconnect=0;esp_wifi_disconnect();atomic_store(&disconnect_requested,false);
     wifi_config_t wifi={0};
     memcpy(wifi.sta.ssid,config.ssid,strlen(config.ssid));
@@ -65,6 +66,7 @@ static int connect_wifi(void) {
     return esp_wifi_connect()==ESP_OK?SM_OK:SM_IO;
 }
 void sm_network_idle(void) {
+    sm_sockets_idle();
     if(atomic_exchange(&drop_http,false))close_http();
     unsigned status=atomic_load(&state);
     if(status==SM_WIFI_READY){retries=0;if(!was_ready){set_dns();esp_netif_sntp_start();}was_ready=1;return;}
@@ -104,7 +106,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     switch(r->op) {
     case SM_INFO:
     case SM_NETWORK_INFO: {
-        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.1.2");
+        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.2.0");
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);
@@ -182,7 +184,10 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
         break;
     }
     case SM_HTTP_CLOSE:close_http();break;
-    default:out->result=SM_INVALID;break;
+    default:
+        if(r->op>=SM_SOCKET_OPEN && r->op<=SM_SOCKET_RESET)sm_sockets_command(r,out);
+        else out->result=SM_INVALID;
+        break;
     }
 done:sm_seal(out);
 }

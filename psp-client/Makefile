@@ -2,6 +2,7 @@ TARGET = PSPStreamer
 OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o milkdrop_warp.o milkdrop_gu.o milkdrop_preset.o preset_math.o milkdrop_signal.o milkdrop_wave.o milkdrop_wave_extra.o milkdrop_decor.o tls_transport.o milkdrop_texture.o
 PSP_FW_VERSION = 661
 OBJS += cave_visual.o cave_paths.o
+OBJS += streammaster_transport.o
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
@@ -18,6 +19,9 @@ LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg m
 EXTRA_TARGETS = EBOOT.PBP
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+main.o: streammaster_redirect.h streammaster_transport.h
+streammaster_transport.o: streammaster_transport.h ../streammaster/protocol.h
 
 # mpeg_extra must remain at its historical position between libmpeg and
 # libmpegbase: moving it into OBJS makes PSP import stubs non-contiguous on

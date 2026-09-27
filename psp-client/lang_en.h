@@ -104,6 +104,8 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_OC] = "StreamerOC plugin",
 
     [TXT_SETTINGS_STREAMMASTER] = "StreamMaster USB",
+    [TXT_SETTINGS_TRANSPORT] = "Network transport",
+    [TXT_TRANSPORT_RESTART] = "Save, then restart app to change transport.",
     [TXT_SM_ATTACH] = "Connect / retry USB",
     [TXT_SM_INFO] = "Network status",
     [TXT_SM_SCAN] = "Find Wi-Fi networks",

@@ -399,6 +399,8 @@ static int seek_requested;
 #define SETTINGS_PATH "ms0:/PSP/SYSTEM/PSPStreamer.cfg"
 static char server_host[64] = PSP_STREAMER_HOST;
 static int server_https;
+static int network_transport;
+#include "streammaster_transport.h"
 static int server_port = PSP_STREAMER_PORT;
 #include "server_auth.h"
 static struct in_addr cached_server_address;
@@ -447,7 +449,7 @@ static const char *audio_quality_name(void) {
 
 static void load_playback_settings(void) {
     SceUID file = sceIoOpen(SETTINGS_PATH, PSP_O_RDONLY, 0);
-    char data[1024], *line;
+    char data[2048], *line;
     int count;
     if (file < 0) return;
     count = sceIoRead(file, data, sizeof(data) - 1);
@@ -479,6 +481,7 @@ static void load_playback_settings(void) {
                 }
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
             else if (!strncmp(line,"https=",6)) server_https=atoi(line+6)!=0;
+            else if (!strncmp(line,"network_transport=",18)) network_transport=!strcmp(line+18,"streammaster");
             else if (!strncmp(line,"debug=",6)) debug_enabled=!strcmp(line+6,"1");
             else if (!strncmp(line, "server_password=", 16)) {
                 strncpy(server_password,line+16,sizeof(server_password)-1);
@@ -535,6 +538,7 @@ static int save_playback_settings(void) {
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_high_resolution=%d\n",md_high_resolution);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
+    length += snprintf(data+length,sizeof(data)-length,"network_transport=%s\n",network_transport?"streammaster":"wifi");
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_cpu_mhz=%d\nidle_cpu_mhz=%d\n",milkdrop_cpu_mhz,idle_cpu_mhz);
@@ -560,6 +564,9 @@ static int save_playback_settings(void) {
 }
 
 static int resolve_server_address(struct in_addr *address) {
+    if(stm_enabled()) {
+        address->s_addr=0;cached_server_address=*address;have_cached_server_address=1;return 0;
+    }
     if (inet_aton(server_host, address)) {
         cached_server_address = *address;
         have_cached_server_address = 1;
@@ -597,6 +604,7 @@ static int prepare_server(struct sockaddr_in *server) {
 
 #include "diagnostic_history.h"
 #include "recovery_log.h"
+#include "streammaster_redirect.h"
 #include "socket_diagnostics.h"
 #include "server_connection.h"
 #include "wifi_events.h"
@@ -612,7 +620,8 @@ static int stream_recv(int socket_fd, void *buffer, int length, int timeout_ms) 
     if (ready < 0) return 0;
     /* EOF may arrive together with the last readable bytes. Drain them. */
     if (!(pollfd.revents & SCE_NET_INET_POLLIN)) return 0;
-    return (int)connection_recv(socket_fd, buffer, length, 0);
+    int n=(int)connection_recv(socket_fd, buffer, length, 0);
+    return stm_enabled() && n<0 && stm_errno()==35?-2:n;
 }
 
 /* Never let a lost hotspot leave the UI or playback thread in a permanent
@@ -634,6 +643,7 @@ int exit_callback(int arg1, int arg2, void *common) {
     (void)arg1; (void)arg2; (void)common;
     prepare_oc_exit();
     streammaster_cleanup();
+    stm_driver_stop();
     sceKernelExitGame();
     return 0;
 }
@@ -3527,6 +3537,7 @@ int main(void) {
     setup_callbacks();
     tls_init();
     load_playback_settings();
+    stm_init(network_transport,server_host,server_port,server_https);
     diagnostic_history_start();
     comfort_load_file(COMFORT_PATH,&comfort_store);
     pspDebugScreenInit();

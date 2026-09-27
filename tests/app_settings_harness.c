@@ -19,6 +19,8 @@ enum {PSP_CTRL_UP=1,PSP_CTRL_DOWN=2,PSP_CTRL_LEFT=4,PSP_CTRL_RIGHT=8,
 static char server_host[64]="example.test",server_password[129]="ä:test",music_preset_file[256]="active.milk";
 static char current_path[512]="folder",remote_session[40]="session",status[256],language[3]="en";
 static int server_port=8091,server_https,tv_ui_auto,selected_audio_track,selected_subtitle_track=-1;
+static int network_transport;
+static void stm_server(const char *host,int port,int https){(void)host;(void)port;(void)https;}
 static int selected_audio_quality=2,selected_video_fps,playback_volume=24,audio_shuffle;
 static int music_preset_auto,music_preset_seconds=60,music_preset_fade_ms=1500;
 static int debug_enabled;
@@ -129,11 +131,14 @@ int main(void) {
     assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
     /* Both submenus are reachable without audio running. OC cancel has no
      * filesystem side effects. A preset remains a draft until outer START. */
-    const unsigned int usb_open[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
-    sequence(usb_open,7);assert(app_settings()==0&&streammaster_visits==1);
+    const unsigned int usb_open[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
+    sequence(usb_open,9);assert(app_settings()==0&&streammaster_visits==1);
     assert(TXT_SETTINGS_STREAMMASTER-TXT_SETTINGS_HOST==SET_STREAMMASTER);
-    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
-    sequence(oc_cancel,11);assert(app_settings()==0);
+    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(oc_cancel,13);assert(app_settings()==0);
+    assert(TXT_SETTINGS_TRANSPORT-TXT_SETTINGS_HOST==SET_TRANSPORT);
+    const unsigned int transport[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_START};
+    sequence(transport,7);assert(app_settings()==1 && network_transport==1);
     for(int accept=0;accept<2;accept++) {
         n=0;held[n++]=0;
         for(int i=0;i<SET_PRESET+2;i++){held[n++]=PSP_CTRL_DOWN;held[n++]=0;}

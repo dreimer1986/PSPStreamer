@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * First hardware bring-up: USB diagnostics are deliberately not a playback
- * transport yet. One worker owns RPC buffers; the UI never blocks in USB. */
+ * Setup/diagnostics share transport ownership with the app. The UI never
+ * blocks in USB, and leaving this menu keeps an active USB transport alive. */
 #include "../streammaster/protocol.h"
 #include "streammaster_fields.h"
 enum {SM_JOB_ATTACH=100,SM_JOB_BENCH,SM_JOB_SERVER};
-static int sm_module=-1,sm_thread=-1;
+static int sm_thread=-1;
+static volatile int sm_running;
 static volatile int sm_cancel,sm_finished,sm_result,sm_progress;
 static int sm_job,sm_http_status;
-static unsigned sm_sequence,sm_rate,sm_bytes;
-static SmFrame sm_request,sm_response;
+static unsigned sm_rate,sm_bytes;
+static SmFrame sm_response;
 static SmConfig sm_draft;
 static SmInfo sm_info;
 static SmNetworkInfo sm_network;
@@ -24,15 +25,11 @@ static int sm_step(const char *stage,int rc) {
 static int sm_rpc(unsigned op,const void *data,unsigned size) {
     if(sm_cancel)return SM_TIMEOUT;
     if(size>SM_PAYLOAD_SIZE)return SM_INVALID;
-    memset(&sm_request,0,sizeof(sm_request));memset(&sm_response,0,sizeof(sm_response));
-    sm_request.op=op;sm_request.sequence=++sm_sequence;sm_request.length=size;
-    if(size)memcpy(sm_request.payload,data,size);
-    sm_seal(&sm_request);
+    memset(&sm_response,0,sizeof(sm_response));
     sm_stage="USB exchange";
-    int rc=sceIoDevctl("stm:",SM_DEV_EXCHANGE,&sm_request,sizeof(sm_request),&sm_response,sizeof(sm_response));
-    memset(&sm_request,0,sizeof(sm_request));
-    if(rc<0)return rc;
-    return sm_response.result;
+    unsigned length=0;
+    int rc=stm_rpc(op,data,size,sm_response.payload,sizeof(sm_response.payload),&length,&sm_running);
+    sm_response.length=length;return rc;
 }
 static int sm_read_info(void) {
     int rc=sm_rpc(SM_NETWORK_INFO,NULL,0);
@@ -47,35 +44,9 @@ static int sm_read_info(void) {
     return 0;
 }
 static int sm_load(void) {
-    if(sm_module<0) {
-        int module=sm_step("load Sony USB",kuKernelLoadModule("flash0:/kd/usb.prx",0,NULL)),result=0;
-        if(module>=0) {
-            int rc=sm_step("start Sony USB",sceKernelStartModule(module,0,NULL,&result,NULL));
-            if(rc<0)return rc;
-            sm_step("Sony USB module result",result);if(result<0)return result;
-        } else if((unsigned)module!=0x80020139U)return module;
-        char path[256],cwd[192];
-        if(!getcwd(cwd,sizeof(cwd)))snprintf(cwd,sizeof(cwd),"%s",PSP_STREAMER_INSTALL_DIR);
-        snprintf(path,sizeof(path),"%s/StreamMasterUSB.prx",cwd);
-        module=sm_step("load bridge PRX",kuKernelLoadModule(path,0,NULL));if(module<0)return module;
-        int rc=sm_step("start bridge PRX",sceKernelStartModule(module,0,NULL,&result,NULL));
-        if(rc>=0)sm_step("bridge module result",result);
-        if(rc<0 || result<0){sceKernelUnloadModule(module);return rc<0?rc:result;}
-        sm_module=module;
-    }
-    int rc=sm_step("reset USB driver",sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0));
-    if(rc<0)return rc;
-    rc=sm_step("activate USB driver",sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0));if(rc<0)return rc;
-    sm_stage="wait USB attach";
-    SceInt64 deadline=sceKernelGetSystemTimeWide()+10000000;
-    do {
-        if(sm_cancel)return SM_TIMEOUT;
-        rc=sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0);
-        if(rc>0){sm_step("USB attached",rc);return sm_read_info();}
-        if(rc<0)return sm_step("USB attach status",rc);
-        sceKernelDelayThread(20000);
-    }while(sceKernelGetSystemTimeWide()<deadline);
-    return SM_TIMEOUT;
+    int rc=stm_driver_start(0,&sm_running);
+    sm_step(stm_stage(),rc);
+    return rc<0?rc:sm_read_info();
 }
 static int sm_worker(SceSize size,void *args) {
     (void)size;(void)args;int rc=0;
@@ -145,20 +116,17 @@ static int sm_reap(void) {
 }
 static void streammaster_cleanup(void) {
     sm_cancel=1;
-    if(sm_module>=0)sceIoDevctl("stm:",SM_DEV_CANCEL,NULL,0,NULL,0);
+    sm_running=0;
+    if(sm_thread>=0)stm_driver_cancel();
     /* Never terminate a worker or free kernel DMA storage while it is owned
      * by USB. On an abnormal driver timeout keep the module until app exit. */
     for(int i=0;i<25 && sm_reap()<0;i++)sceKernelDelayThread(10000);
-    if(sm_module>=0 && sm_thread<0) {
-        int rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0),result=0;
-        if(rc>=0 && sceKernelStopModule(sm_module,0,NULL,&result,NULL)>=0 && result>=0) {
-            if(sceKernelUnloadModule(sm_module)>=0)sm_module=-1;
-        }
-    }
+    if(!stm_enabled() && sm_thread<0)stm_driver_stop();
 }
 static int sm_run(int job) {
     if(sm_reap()<0)return SM_BUSY;
     sm_job=job;sm_cancel=sm_finished=sm_progress=0;sm_bytes=sm_rate=0;sm_http_status=0;
+    sm_running=1;
     if(job==SM_JOB_SERVER) {
         memset(&sm_server,0,sizeof(sm_server));
         snprintf(sm_server.url,sizeof(sm_server.url),"%s://%s:%d/api/health",server_https?"https":"http",server_host,server_port);
@@ -176,7 +144,7 @@ static int sm_run(int job) {
         unsigned long long now=sceKernelGetSystemTimeWide();
         if((pad.Buttons&~old)&PSP_CTRL_CIRCLE) {
             sm_cancel=1;cancel_deadline=now+1000000ULL;
-            if(sm_module>=0)sceIoDevctl("stm:",SM_DEV_CANCEL,NULL,0,NULL,0);
+            sm_running=0;stm_driver_cancel();
         }
         if(cancel_deadline && now>=cancel_deadline)return SM_TIMEOUT;
         if(now>=next) {

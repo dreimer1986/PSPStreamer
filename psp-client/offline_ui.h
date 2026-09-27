@@ -191,7 +191,8 @@ static int offline_download_worker(SceSize args,void *argp) {
     if(wifi_worker_thread>=0) {
         snprintf(download_error,sizeof(download_error),"%s",tr(TXT_WIFI_NOT_READY));goto done;
     }
-    for(int i=0;i<200 && download_running;i++) {
+    if(stm_enabled())connected=stm_associate(&download_running,0)>=0;
+    for(int i=0;!stm_enabled() && i<200 && download_running;i++) {
         int ap=0;
         if(sceNetApctlGetState(&ap)<0)break;
         if(ap==PSP_NET_APCTL_STATE_GOT_IP){connected=1;break;}

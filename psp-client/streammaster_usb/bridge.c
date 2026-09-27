@@ -62,7 +62,7 @@ static int user_buffer(void *p,int bytes) {
     return bytes>=0 && a>=0x08800000U && a<0x0c000000U && (unsigned)bytes<=0x0c000000U-a;
 }
 static int wait_request(struct UsbdDeviceReq *request,int bit) {
-    SceUInt timeout=15000000;u32 bits=0;
+    SceUInt timeout=send_frame.op>=SM_SOCKET_OPEN?500000:15000000;u32 bits=0;
     int rc=sceKernelWaitEventFlag(event_id,bit|4,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,&bits,&timeout);
     if(rc<0 || (bits&4) || cancelled)return SM_TIMEOUT;
     if(request->retcode || request->recvsize!=SM_FRAME_SIZE)return SM_IO;

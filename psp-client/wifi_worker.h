@@ -3,9 +3,17 @@
 static volatile int wifi_worker_thread=-1;
 static int wifi_worker_force,wifi_worker_result;
 static volatile int wifi_worker_done;
+static volatile int wifi_usb_running;
 static int wifi_worker_main(SceSize args,void *argp) {
     (void)args;(void)argp;
-    wifi_worker_result=wifi_worker_force<0?wifi_initialize_core():wifi_associate_core(wifi_worker_force);
+    if(stm_enabled()) {
+        wifi_worker_result=wifi_initialize_core();
+        if(wifi_worker_result>=0 && wifi_worker_force>=0)wifi_worker_result=stm_associate(&wifi_usb_running,wifi_worker_force);
+        /* -5 means explicit cancellation to the playback recovery loop. */
+        if(!wifi_usb_running)wifi_worker_result=-5;
+        else if(wifi_worker_result==-5)wifi_worker_result=-6;
+        wifi_worker_step=stm_stage();
+    } else wifi_worker_result=wifi_worker_force<0?wifi_initialize_core():wifi_associate_core(wifi_worker_force);
     __sync_synchronize();wifi_worker_done=1;
     return 0;
 }
@@ -21,6 +29,7 @@ static int wifi_associate(int force) {
         sceKernelDeleteThread(wifi_worker_thread);wifi_worker_thread=-1;
     }
     wifi_worker_cancel=wifi_worker_done=0;wifi_worker_force=force;
+    wifi_usb_running=1;
     wifi_worker_step="WLAN worker";
     wifi_allow_apctl_restart=radio_connect_wait;
     wifi_worker_thread=sceKernelCreateThread("WLAN association",wifi_worker_main,0x41,0x6000,PSP_THREAD_ATTR_USER,NULL);
@@ -36,6 +45,8 @@ static int wifi_associate(int force) {
         unsigned long long now=sceKernelGetSystemTimeWide();
         if((pad.Buttons & (PSP_CTRL_CIRCLE|PSP_CTRL_START)) || app_exit_requested || now-started>=60000000ULL) {
             wifi_worker_cancel=1;network_ready=http_ready=0;
+            wifi_usb_running=0;
+            if(stm_enabled())stm_driver_cancel();
             failure_step="WLAN cancelled - worker pending";
             recovery_log("WLAN worker detached",-5,0,
                 app_exit_requested?"app exit":(pad.Buttons & (PSP_CTRL_CIRCLE|PSP_CTRL_START))?"user cancellation":"60s deadline");

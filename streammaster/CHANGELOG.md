@@ -4,13 +4,24 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
-## Unreleased — transport integration in progress
+## 0.2.0 — 2026-09-27
 
-- Work in progress: independent TCP/TLS channels for concurrent media,
-  metadata, subtitle and remote-control requests over USB.
-- Work in progress: PSP transport selection, cancellation and reconnection.
-- These changes are not part of firmware 0.1.2. That version provides setup
-  and diagnostics, not USB media playback.
+- Added six independent TCP/TLS channels for concurrent media, metadata,
+  subtitle, download and remote-control requests over USB.
+- Moved connection setup, DNS and TLS handshakes into independent channel
+  workers. Slow responses do not block the USB command handler or other channels.
+- Added bounded per-channel PSRAM buffers, backpressure, clean EOF draining
+  and owner-only socket/TLS cleanup. TLS allocations also use PSRAM.
+- Added channel cancellation/reset and generation checks to reject stale
+  connections after USB interruption or reconnection.
+- Matching PSP app: selectable `wifi` or `streammaster` network transport in
+  settings and CFG; changes take effect after saving and restarting the app.
+- Matching PSP app: shared USB access for diagnostics and playback, buffered
+  reads, short socket-command USB waits and integration with playback recovery.
+- Native PSP Wi-Fi remains the default; USB does not install global network
+  hooks. Decoder and audio/video timing are unchanged.
+- Matching firmware, PSP app and USB driver are required. Firmware 0.1.2 does
+  not support this media transport. Hardware playback validation is pending.
 
 ## 0.1.2 — 2026-09-27
 
@@ -66,4 +77,3 @@ not mean that the feature is available in the current firmware ZIP.
 - Added build/flash documentation and a firmware package with split update
   binaries, a factory image, checksums and license notices. Split updates
   preserve NVS with the same partition layout; the factory image resets it.
-

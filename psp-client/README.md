@@ -20,3 +20,15 @@ make
 `flv.h` contains portable framing and PTS comparison helpers, and `timed_stream.h` contains the bounded network packet queues. Both display outputs share `play_h264()` in `main.c`. Video timing comes from container PTS and the output audio buffer timestamp; no LCD/TV frame-rate calibration is used. Update the server/add-on together with the client.
 
 The presentation refinement uses a RAM staging frame, serializes ME codec/cache transactions and retains the most recently submitted PCM buffer until the next successful DAC submission or drain. `audio_lease.h` defines that ownership rule. `sync_trace.h` writes per-output CSV measurements after playback stops; see the project README for paths and field meanings. This client refinement works with the existing FLV server; it does not require an additional add-on update.
+# StreamMaster USB transport
+
+Optional Onju Voice V3 firmware **0.2.0** provides six independent TCP/TLS
+channels for browsing, playback, subtitles, downloads and remote control.
+Copy the matching `EBOOT.PBP`, `PSPStreamer.prx` and `StreamMasterUSB.prx`.
+Configure Onju under **Select → Settings → StreamMaster USB**, then select
+**Network transport → StreamMaster USB**, save with Start and restart the app.
+The CFG setting is `network_transport=streammaster`; `network_transport=wifi`
+restores the default PSP Wi-Fi route after restarting. URL, port and password
+remain the normal server settings. USB HTTPS uses Onju's trusted roots and
+clock, not the PSP's certificate cache. See the bundled `StreamMaster-README.md`
+or [firmware guide](../streammaster/README.md) for setup and hardware tests.

@@ -105,6 +105,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_OC] = "StreamerOC-Plugin",
 
     [TXT_SETTINGS_STREAMMASTER] = "StreamMaster USB",
+    [TXT_SETTINGS_TRANSPORT] = "Netzwerkweg",
+    [TXT_TRANSPORT_RESTART] = "Speichern, dann App für Wechsel neu starten.",
     [TXT_SM_ATTACH] = "USB verbinden / erneut",
     [TXT_SM_INFO] = "Netzwerkstatus",
     [TXT_SM_SCAN] = "WLAN-Netze suchen",

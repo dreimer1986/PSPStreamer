@@ -91,6 +91,7 @@ void sm_usb_task(void *unused) {
         usb_host_client_handle_events(client,pdMS_TO_TICKS(20));
         if(new_address && !device){int address=new_address;new_address=0;open_psp(address);}
         if(gone) {
+            sm_sockets_reset();
             sm_led_usb(0);
             sm_network_drop_http();
             flush_endpoints();

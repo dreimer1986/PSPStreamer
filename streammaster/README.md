@@ -3,11 +3,11 @@
 See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
 including matching PSP-side changes and work not yet released.
 
-Version 0.1.2 is the **hardware bring-up build**. It includes a native ESP-IDF
-firmware, a PSP USB device driver, and a PSP settings/diagnostics menu. It does
-**not yet route media playback, library browsing or remote control through
-USB**. Existing playback continues to use the PSP's Wi-Fi. Test USB enumeration,
-data integrity and Onju's server connection before enabling it as a transport.
+Version **0.2.0** adds an opt-in USB network transport for PSPStreamer, with
+six independent TCP/TLS channels. Library browsing, media, subtitles, remote
+control and downloads can use Onju's Wi-Fi instead of the PSP's Wi-Fi.
+Native PSP Wi-Fi remains the default. This is the first media-transport build:
+compilation and host checks pass, but physical playback validation is pending.
 
 ## Hardware
 
@@ -53,8 +53,9 @@ Signal bars: 1 below −80 dBm, 2 from −80, 3 from −70, 4 from −60 dBm.
 One or two bars are amber/yellow; three or four are green. A 3 dB downward
 hysteresis and one RSSI reading per second prevent rapid threshold flicker.
 This indicates the **access-point signal**, not server/Internet reachability
-or measured throughput. The USB LED goes out when the PSP leaves the
-StreamMaster submenu and releases its USB interface.
+or measured throughput. With native PSP Wi-Fi selected, the USB LED goes out
+when leaving the StreamMaster submenu. With USB transport selected, the
+interface stays active for browsing/playback until app exit or disconnection.
 
 Brightness is deliberately low (maximum 24/255 per colour). An independent
 low-priority task checks display state four times per second and sends only
@@ -124,7 +125,8 @@ are not included in this initial firmware.
 
 1. Copy the matching `EBOOT.PBP`, `PSPStreamer.prx` and **`StreamMasterUSB.prx`**
    beside the existing files in `ms0:/PSP/GAME/PSPStreamer/`. Do not add the USB
-   driver to ARK's global plugin list. It is loaded only from this menu.
+   driver to ARK's global plugin list. It is loaded by this app only, either
+   from this menu or at startup when USB transport is selected.
 2. Boot Onju normally, connect its USB host data connection to the PSP, launch
    PSPStreamer. Do **not** enter the XMB's USB mass-storage mode or run USBHostFS.
 3. Open **Select → Settings → StreamMaster USB → Connect / retry USB**. On first
@@ -168,16 +170,43 @@ out of screenshots/logs. If USB initialization fails, include the full hexadecim
 code. `FFFFFFFC` is a timeout, `FFFFFFFB` means busy, `FFFFFFFD` is a transport
 or HTTP I/O failure. Other values can be original PSP module/USB errors.
 
+## Enable USB playback (0.2.0)
+
+1. Flash firmware **0.2.0** and copy all three matching PSP files listed above.
+   Updating only Onju or only the app/PRX is insufficient.
+2. Configure Onju and verify **Test saved server** succeeds. The server address
+   must be reachable from Onju's network. HTTP is a useful first transport test.
+3. In the parent settings menu select **Network transport → StreamMaster USB**,
+   save with Start, then exit and restart PSPStreamer. In German the setting is
+   **Netzwerkweg**. The saved CFG line is `network_transport=streammaster`.
+4. Browse folders, play music, then video with subtitles. While media plays,
+   test the web remote, pause/resume, stop, and selecting another file.
+5. Test a brief USB interruption and reconnect. The existing recovery flow
+   attempts to restore playback; Circle/Start can cancel it. Square retries
+   from the browser; L+Square requests a full reconnect, including Onju Wi-Fi.
+6. To return to native PSP Wi-Fi, select **PSP Wi-Fi**, save and restart. Or edit
+   `ms0:/PSP/SYSTEM/PSPStreamer.cfg` to `network_transport=wifi`.
+
+The transport setting deliberately does not switch live workers mid-session.
+Server URL, port and password remain the existing app settings. Onju resolves
+the hostname and performs TLS. HTTPS requires a certificate trusted by its root
+bundle and a synchronized clock; the PSP's certificate-pinning cache is not
+used and self-signed certificates are not silently accepted. The server does
+not require changes. LCD/TV decoding and container-PTS synchronization are
+unmodified.
+
 ## Architecture and current boundaries
 
 - A small **kernel PRX**, using SDK padded USB descriptors, exposes `stm:` I/O
   control calls. No global WLAN hooks and no changes to MPEG import order.
-- One cancellable PSP worker serializes requests. DMA buffers remain allocated
+- A shared PSP transport serializes USB requests from independent socket owners
+  and the diagnostics worker. DMA buffers remain allocated
   until both USB completion callbacks have returned; they are not recycled after
   a timeout. Retry deactivates/re-enumerates USB. The PRX refuses to take over an
   already active PSP USB application.
-- ESP-IDF's USB client task owns transfers; a separate worker handles Wi-Fi,
-  NVS and HTTP so connection setup never blocks USB event processing. Device
+- ESP-IDF's USB client task owns transfers; a command worker handles Wi-Fi,
+  NVS and diagnostics. Each of six TCP/TLS channels has an independent owner
+  for DNS/connect/handshake and socket I/O. Device
   generation numbers reject responses from an earlier cable connection.
 - Fixed 4096-byte little-endian messages have bounded payloads, sequence numbers
   and a checksum. These detect corruption; they are not encryption or an
@@ -187,11 +216,21 @@ or HTTP I/O failure. Other values can be original PSP module/USB errors.
 - No passwords are deliberately logged. NVS is not encrypted: physical flash
   access can recover saved credentials. HTTPS validates server certificates,
   does not silently downgrade and does not forward credentials across redirects.
-- One HTTP GET stream is available to diagnostics. Multiplexed media/metadata
-  requests, the actual player transport switch and long playback/recovery tests
-  remain the next integration step **after this hardware check**.
+- Each channel has a bounded 64 KiB receive ring and 8 KiB transmit ring in
+  PSRAM; a full ring applies backpressure rather than dropping stream bytes.
+  TLS allocations use PSRAM too. PSP reads cache up to 4064 bytes per socket,
+  avoiding a USB transaction for every HTTP-header byte or small FLV field.
+- Socket commands return promptly; pending reads/writes report busy. The
+  kernel driver waits at most 500 ms per USB transfer for these commands;
+  slower setup diagnostics retain their separate timeout. This does not shorten
+  server-side subtitle preparation deadlines.
+- Closing/resetting a channel asks its owner to stop. A slot cannot be reused
+  until that owner has destroyed its connection. USB generations invalidate
+  stale PSP handles and buffered data after transport failure.
 
 Validation: ESP32-S3 firmware, PSP driver and PSP app compile; host tests cover
-frame corruption/bounds and network configuration validation under sanitizers.
+frame corruption/bounds, configuration, six-channel isolation, ring wraparound,
+PSP read caching, EOF/error draining, cancellation, stale handles, old-firmware
+rejection, native fallback and settings under sanitizers.
 Those tests do not emulate USB enumeration, kernel driver timing or physical
 adapter behavior. No hardware success is claimed until the above test is run.

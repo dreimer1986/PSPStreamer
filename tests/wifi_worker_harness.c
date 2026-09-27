@@ -14,6 +14,11 @@ static unsigned long long now;
 static int (*entry)(SceSize,void *);
 static int wifi_initialize_core(void){return core_result;}
 static int wifi_associate_core(int force){(void)force;return core_result;}
+static int usb_enabled,usb_calls,usb_cancelled;
+static int stm_enabled(void){return usb_enabled;}
+static int stm_associate(volatile int *running,int force){(void)force;assert(*running);usb_calls++;return core_result;}
+static const char *stm_stage(void){return "USB test";}
+static void stm_driver_cancel(void){usb_cancelled++;}
 static int sceKernelCreateThread(const char *name,int (*fn)(SceSize,void *),int p,int s,int a,void *v){
     (void)name;(void)p;(void)s;(void)a;(void)v;
     if(create_error)return create_error;
@@ -50,5 +55,10 @@ int main(void){
     core_result=0;assert(wifi_associate(-1)==-1);
     create_error=-9;assert(wifi_associate(0)==-9);create_error=0;
     start_error=-8;assert(wifi_associate(0)==-8 && wifi_worker_thread==-1);
+    start_error=0;usb_enabled=1;
+    assert(wifi_associate(0)==0 && usb_calls==1);
+    assert(!strcmp(failure_step,"USB test"));
+    blocked=1;now=0;cancel_at=60000;
+    assert(wifi_associate(1)==-5 && usb_cancelled==1 && !wifi_usb_running);
     return 0;
 }

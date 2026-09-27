@@ -897,13 +897,21 @@ The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1
 
 ## Install and configure the PSP app
 
-### StreamMaster USB / Onju Voice V3 (hardware test)
+### StreamMaster USB / Onju Voice V3
 
 An optional ESP32-S3 bridge and PSP USB driver are available for the original
 Onju Voice PCB V3. **Select → Settings → StreamMaster USB** configures its Wi-Fi,
 DHCP/static IPv4 and DNS, and provides USB integrity/throughput and server tests.
-Network credentials are saved on Onju. This initial build is for hardware
-verification: **playback and browsing still use the PSP's existing Wi-Fi**.
+Network credentials are saved on Onju. With firmware **0.2.0** and the matching
+PSP app/USB driver, **Settings → Network transport → StreamMaster USB** routes
+browsing, playback, subtitles, downloads and remote control through Onju.
+Save and restart the app to switch transports. The CFG equivalent is
+`network_transport=streammaster`; `network_transport=wifi` is the default and
+restores native PSP Wi-Fi. The existing server URL, port and password apply to
+both transports. USB HTTPS uses Onju's trusted certificate bundle and clock;
+it does not import the PSP's certificate cache or accept untrusted certificates.
+Six independent TCP/TLS channels share the USB link; hardware playback and
+throughput still require testing on the actual adapter.
 Onju's status LEDs indicate firmware operation, Wi-Fi connection/signal strength
 and the claimed PSP USB connection; see the LED legend in the firmware guide.
 See [firmware, flashing and first-test instructions](streammaster/README.md).

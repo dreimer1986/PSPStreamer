@@ -73,4 +73,5 @@ static void socket_snapshot_tick(void) {
 }
 /* All application socket creation in main.c and its included modules passes
  * here. tls_transport.c still owns the actual close and TLS destruction. */
+#undef sceNetInetSocket
 #define sceNetInetSocket socket_tracked_open
