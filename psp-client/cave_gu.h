@@ -3,12 +3,20 @@
 #include "cave_style.h"
 #include "cave_textures.h"
 static CaveScene *cave_scene;
+/* Extra HUD/particle space only while playing; normal Monkey is unchanged. */
+#define CAVE_GU_TAIL (cave_scene->game.phase==CAVE_GAME_OFF?65536:98304)
 static CaveClip cave_frame_clip;
 #include "cave_ship_data.h"
 #include "cave_engine.h"
-int md_cave_control(int toggle,int x,int y,int throttle,int roll) {
-    cave_flight_input(cave_scene,toggle,x,y,throttle,roll);
-    return cave_scene && cave_scene->flight;
+static CaveExitHold cave_exit_hold;
+int md_cave_control(int shoulders,int x,int y,int throttle,int roll,unsigned long long now) {
+    if(!cave_scene)return 0;
+    CaveGame *g=&cave_scene->game;
+    int action=cave_game_shoulders(&cave_exit_hold,shoulders,g->phase!=CAVE_GAME_OFF,now,&g->exit_hold);
+    if(action==1){memset(g,0,sizeof(*g));g->phase=CAVE_GAME_INTRO;}
+    else if(action==-1){g->phase=CAVE_GAME_OFF;cave_scene->flight=0;}
+    if(g->phase==CAVE_GAME_ALIVE)cave_flight_input(cave_scene,0,x,y,throttle,roll);
+    return cave_scene && cave_scene->game.phase!=CAVE_GAME_OFF;
 }
 static void cave_draw_ship(int width,int height) {
     (void)width;(void)height;
@@ -16,7 +24,7 @@ static void cave_draw_ship(int width,int height) {
     float opacity=cave_ship_opacity(cave_scene);
     if(opacity<=0)return;
     /* Draw the third-person ship in world space, inside the renderer's
-     * reserved 64 KiB tail. No buffers, allocation or draw calls when off. */
+     * reserved game tail (96 KiB including HUD). No ship allocation when off. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
     enum {SHIP_CAPACITY=61440/sizeof(MdVertex)};
     MdVertex *ship=sceGuGetMemory(SHIP_CAPACITY*sizeof(MdVertex));
@@ -171,7 +179,7 @@ static void cave_draw(int width,int height) {
             }
             if(at>begin) {
                 unsigned cost=384+(at-begin)*sizeof(MdVertex)*4;
-                if(budget+cost>MD_LIST_BYTES-65536)return;
+                if(budget+cost>MD_LIST_BYTES-CAVE_GU_TAIL)return;
                 budget+=cost;
                 cave_draw_batch(at-begin,slice->vertices+begin,slice->secondary+begin,slice);
             }
@@ -186,7 +194,7 @@ static void cave_draw(int width,int height) {
             unsigned bytes=count*sizeof(MdVertex);
             /* Reserve command/presentation headroom even at pathological
              * geometry density. Scratch belongs to this GU list until sync. */
-            if(budget+bytes*5+464>MD_LIST_BYTES-65536)return;
+            if(budget+bytes*5+464>MD_LIST_BYTES-CAVE_GU_TAIL)return;
             budget+=bytes*5+464;
             unsigned char *memory=sceGuGetMemory(bytes+63);
             MdVertex *vertices=(MdVertex *)(((uintptr_t)memory+63)&~(uintptr_t)63);
@@ -200,7 +208,7 @@ static void cave_draw(int width,int height) {
         for(int i=0;i<CAVE_SLICES;i++) {
             CaveSlice *slice=&cave_scene->slices[i];if(slice->index<first || !slice->count)continue;
             unsigned cost=slice->count*2*sizeof(MdVertex)+256;
-            if(budget+cost>MD_LIST_BYTES-65536)break;
+            if(budget+cost>MD_LIST_BYTES-CAVE_GU_TAIL)break;
             budget+=cost;
             MdVertex *lines=sceGuGetMemory(slice->count*2*sizeof(*lines));int count=0;
             for(int j=0;j<slice->count;j+=3)for(int k=0;k<3;k++) {
@@ -219,7 +227,7 @@ static void cave_draw(int width,int height) {
         for(int i=0;i<CAVE_SLICES;i++) {
             CaveSlice *slice=&cave_scene->slices[i];if(slice->index<first)continue;
             unsigned cost=slice->hair_count*sizeof(MdVertex)+256;
-            if(budget+cost>MD_LIST_BYTES-65536)break;
+            if(budget+cost>MD_LIST_BYTES-CAVE_GU_TAIL)break;
             budget+=cost;
             MdVertex *lines=sceGuGetMemory(slice->hair_count*sizeof(*lines));int count=0;
             for(int j=0;j<slice->hair_count;j+=2) {

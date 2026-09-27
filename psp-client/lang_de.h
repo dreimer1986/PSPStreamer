@@ -298,5 +298,17 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_QUEUE_REPEAT_ONE] = "Liste wiederholen: eine Datei",
     [TXT_QUEUE_REPEAT_ALL] = "Liste wiederholen: alle",
     [TXT_QUEUE_SHUFFLE_OFF] = "Listen-Zufall: aus",
-    [TXT_QUEUE_SHUFFLE_ON] = "Listen-Zufall: an"
+    [TXT_QUEUE_SHUFFLE_ON] = "Listen-Zufall: an",
+
+    [TXT_FLIGHT_HEALTH] = "SCHILD",
+    [TXT_FLIGHT_SCORE] = "Punkte",
+    [TXT_FLIGHT_HALL] = "Bestenliste",
+    [TXT_FLIGHT_RETURN] = "X / O: weiter",
+    [TXT_FLIGHT_SAVE_FAILED] = "Speichern fehlgeschlagen",
+    [TXT_FLIGHT_GAME_OVER] = "GAME OVER",
+    [TXT_FLIGHT_START] = "Spiel starten",
+    [TXT_FLIGHT_EXIT] = "Verlassen",
+    [TXT_FLIGHT_HOLD_EXIT] = "L + R: verlassen",
+    [TXT_FLIGHT_EMPTY] = "Noch keine Punkte",
+    [TXT_FLIGHT_MENU_HELP] = "HOCH / RUNTER   X: OK   O: Ende"
 };

@@ -291,4 +291,17 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_QUEUE_REPEAT_ONE] = "List repeat: one",
     [TXT_QUEUE_REPEAT_ALL] = "List repeat: all",
     [TXT_QUEUE_SHUFFLE_OFF] = "List shuffle: off",
-    [TXT_QUEUE_SHUFFLE_ON] = "List shuffle: on"};
+    [TXT_QUEUE_SHUFFLE_ON] = "List shuffle: on",
+
+    [TXT_FLIGHT_HEALTH] = "SHIELD",
+    [TXT_FLIGHT_SCORE] = "Score",
+    [TXT_FLIGHT_HALL] = "Hall of Fame",
+    [TXT_FLIGHT_RETURN] = "X / O: return",
+    [TXT_FLIGHT_SAVE_FAILED] = "Scores could not be saved",
+    [TXT_FLIGHT_GAME_OVER] = "GAME OVER",
+    [TXT_FLIGHT_START] = "Game Start",
+    [TXT_FLIGHT_EXIT] = "Exit",
+    [TXT_FLIGHT_HOLD_EXIT] = "L + R: exit",
+    [TXT_FLIGHT_EMPTY] = "No scores yet",
+    [TXT_FLIGHT_MENU_HELP] = "UP / DOWN   X: OK   O: Exit"
+};

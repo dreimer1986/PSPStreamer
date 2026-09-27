@@ -21,8 +21,11 @@ static float flight_axis(int value) {
 }
 void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll) {
     if(!s)return;
+    if(s->game.phase>=CAVE_GAME_EXPLODING)return;
     if(toggle){
         s->flight=!s->flight;s->flight_x=s->flight_y=0;
+        if(s->flight)cave_game_start(&s->game);
+        else s->game.phase=CAVE_GAME_OFF;
         s->flight_yaw=s->flight_pitch=0;s->flight_speed=1;
         s->flight_roll_velocity=0;
         s->flight_age=s->flight_impact=s->flight_stuck=s->flight_ghost=s->flight_ghost_age=0;
@@ -44,7 +47,7 @@ void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll
     s->flight_last_roll=roll;
 }
 float cave_ship_opacity(const CaveScene *s) {
-    if(!s || !s->flight)return 0;
+    if(!s || !s->flight || s->game.phase>=CAVE_GAME_EXPLODING)return 0;
     float t=fminf(1,s->flight_age/.85f),alpha=t*t*(3-2*t);
     if(s->flight_impact>0 || s->flight_ghost>0)alpha*=.35f+.65f*(.5f+.5f*cosf(s->flight_age*32));
     return alpha;
@@ -226,6 +229,7 @@ static void cave_flight_step(CaveScene *s,float distance,float dt) {
         s->flight_x+=delta[0];s->flight_y+=delta[1];s->motion.travel+=delta[2];
     }
     if(collided) {
+        cave_game_wall_hit(&s->game);
         s->flight_stuck=(s->motion.travel-before<distance*.15f)?s->flight_stuck+dt:0;
         if(s->flight_impact<=0) {
             s->flight_impact=.7f;
@@ -589,7 +593,10 @@ static void cave_rebase(CaveScene *s) {
 }
 CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,unsigned long long now) {
     (void)level;
-    float dt=s->motion.previous && now>=s->motion.previous?(now-s->motion.previous)*.000001f:0;
+    double elapsed=s->motion.previous && now>=s->motion.previous?(now-s->motion.previous)*.000001:0;
+    cave_game_tick(&s->game,elapsed);
+    if(s->game.phase==CAVE_GAME_HALL)s->flight=0;
+    float dt=(float)elapsed;
     s->motion.previous=now;if(dt>.1f)dt=.1f;
     float bass=(bands[0]+bands[1]+bands[2])/300.f;if(bass>1)bass=1;
     float attack=fmaxf(0,bass-s->motion.bass);
@@ -621,7 +628,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
      * compensate the animated field of view before the source cap. */
     float step=cave_forward_profile(dt,s->motion.forward,movement,
         cave_fov(s->paths.seed,s->motion.travel))*(cave_options.speed*.01f);
-    if(s->flight) {
+    if(s->flight && s->game.phase==CAVE_GAME_ALIVE && !s->game.paused) {
         s->flight_age+=dt;s->flight_impact=fmaxf(0,s->flight_impact-dt);
         s->flight_speed=fmaxf(.2f,fminf(2,s->flight_speed+s->flight_throttle*dt*.6f));
         float response=1-expf(-dt/(.06f+cave_options.flight_inertia*.009f));
@@ -642,6 +649,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         /* Player speed is independent of beat impulses and automatic sway. */
         step=fminf(1.2f,dt*6*s->flight_speed*cave_options.speed*.01f);
     }
+    if(s->flight && (s->game.phase!=CAVE_GAME_ALIVE || s->game.paused))step=0;
     float previous_travel=s->motion.travel;
     if(s->ready>=12) {
         if(s->flight && !s->flight_initialized) {
@@ -662,7 +670,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         float proposed=s->motion.travel+step;
         /* Never travel into an unprepared slab; audio is never stalled. */
         if(proposed<s->next-6) {
-            if(s->flight)cave_flight_step(s,step,dt);
+            if(s->flight && step>0)cave_flight_step(s,step,dt);
             else s->motion.travel=proposed;
         }
     }

@@ -136,12 +136,21 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
     },
     [HELP_PAGE_FLIGHT]={
         .title="Höhle: selbst fliegen",
-        .step1_title="L + R zusammen: Flug ein / aus",
+        .step1_title="L + R: Flugmenü öffnen",
         .step1_text="Analogstick: in Abzweige lenken.",
         .step2_title="L / R: rollen   HOCH/RUNTER: Tempo",
         .step2_text="Doppel-L / R: vollständige Fassrolle.",
-        .step3_title="DREIECK: Vollbild   START: Stopp",
-        .step3_text="Wand: Blinken, Rückstoß, Befreiung."
+        .step3_title="L + R 5 Sekunden halten: verlassen",
+        .step3_text="Flug im Vollbild; START stoppt Musik."
+    },
+    [HELP_PAGE_FLIGHT_GAME]={
+        .title="Flug: Schild und Bestenliste",
+        .step1_title="Starten / Bestenliste / Verlassen",
+        .step1_text="HOCH/RUNTER wählt, X: OK, O: Ende.",
+        .step2_title="Wandtreffer: -20 Schild, 1s Schutz",
+        .step2_text="Ein Punkt pro Sekunde; Pause hält an.",
+        .step3_title="Game Over: Explosion und Punkte",
+        .step3_text="Nach 5s: Top Ten. X / O geht zurück."
     },
     [HELP_PAGE_DOWNLOAD]={
         .title="Direkt auf die PSP herunterladen",

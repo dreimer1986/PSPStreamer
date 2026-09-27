@@ -36,8 +36,12 @@ The measured, timestamp-based A/V path must remain independent of new comforts.
 Implemented in 0.1.60: queue repeat off/one/all, independent persistent queue
 shuffle, provider-wide Continue Watching, recent/unwatched/collection web views,
 flight wall recoil/blinking recovery, double-L/R barrel rolls and ship fade-in.
-These supersede their proposal descriptions below. Health and projectile
-protection remain future work; the barrel roll is currently a flight maneuver.
+These supersede their proposal descriptions below. The 2026-09-27 flight build
+adds 100 shield, 20-point wall damage with a one-second cooldown, a particle
+explosion/Game Over, survival points and persistent top-ten scores. The intro
+offers Game Start / Hall of Fame / Exit; holding L+R for five seconds leaves.
+Enemy models, combat and projectile protection remain future work; the barrel
+roll is currently a flight maneuver.
 
 1. **Shared queue and repeat/shuffle are confirmed working (2026-09-27).**
    Future candidates: a next-item preview, play-next and multiple named lists. Give duplicate entries
@@ -112,8 +116,9 @@ the current PSP encoding path remains the safe default.
 
 ## Monkey Easter egg — proposals for approval
 
-Normal Monkey must remain untouched until flight mode is activated. None of
-the following collision/combat changes is included in this build.
+Normal Monkey remains untouched until the Easter egg is activated. Wall recovery,
+barrel rolls, shield/wall damage and Game Over below are implemented; enemy and
+projectile proposals are still pending. See the README for current controls.
 
 - **Wall recovery first:** one contact event, a short outward impulse and
   tangential sliding; keep forward progress where geometry permits. Contact

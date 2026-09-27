@@ -11,3 +11,7 @@ receiver_skin_end:
 receiver_tv_skin:
     .incbin "assets/menu_skin_tv.raw"
 receiver_tv_skin_end:
+    .align 6
+    .global monkey_flight_logo
+monkey_flight_logo:
+    .incbin "assets/monkey-flight-logo.raw"

@@ -1920,6 +1920,7 @@ static int play_audio_once(const char *media_id, const char *title) {
     if(live)stream_start_seconds=0;
     video_file_direction=0;
     int audio_thread_id, paused = 0, fullscreen = music_saved_fullscreen, stopped_by_user = 0;
+    int cave_screen_override=0,cave_previous_fullscreen=fullscreen;
     int previous_ui_priority = -1;
     int remote_result = 0, start_result;
     spectrum_fullscreen_reset();
@@ -2090,6 +2091,12 @@ static int play_audio_once(const char *media_id, const char *title) {
             for (band = 0; band < SPECTRUM_BANDS; band++)
                 bands[band] = audio_start ? spectrum_levels[band] : 0;
             if(debug_enabled)md_profile_select(visual_preset==6?"Cave field":music_preset_file,tv_ui_active,fullscreen,visual_preset-1);
+            if(visual_preset==6) {
+                const char *labels[11]={tr(TXT_FLIGHT_HEALTH),tr(TXT_FLIGHT_SCORE),tr(TXT_FLIGHT_HALL),
+                    tr(TXT_FLIGHT_RETURN),tr(TXT_FLIGHT_SAVE_FAILED),tr(TXT_FLIGHT_GAME_OVER),
+                    tr(TXT_FLIGHT_START),tr(TXT_FLIGHT_EXIT),tr(TXT_FLIGHT_HOLD_EXIT),tr(TXT_FLIGHT_EMPTY),tr(TXT_FLIGHT_MENU_HELP)};
+                md_cave_game_ui(subtitle_font,!audio_start,labels);
+            }
             int rendered = md_frame(tv_ui_active, fullscreen, bands, level,
                           sceKernelGetSystemTimeWide(), visual_preset-1);
             if (rendered <= 0) {
@@ -2115,9 +2122,13 @@ static int play_audio_once(const char *media_id, const char *title) {
             }
         }
         sceCtrlPeekBufferPositive(&pad, 1);
-        if(music_visual_active && (pad.Buttons&PSP_CTRL_CROSS) && !(old&PSP_CTRL_CROSS) && !(pad.Buttons&PSP_CTRL_TRIANGLE))
+        unsigned flight_pressed=pad.Buttons&~old;
+        int flight_dismissed=visual_preset==6 && music_visual_active &&
+            md_cave_game_menu(!!(flight_pressed&PSP_CTRL_DOWN)-!!(flight_pressed&PSP_CTRL_UP),
+                !!(flight_pressed&PSP_CTRL_CROSS),!!(flight_pressed&PSP_CTRL_CIRCLE));
+        if(!flight_dismissed && music_visual_active && (pad.Buttons&PSP_CTRL_CROSS) && !(old&PSP_CTRL_CROSS) && !(pad.Buttons&PSP_CTRL_TRIANGLE))
             md_title(subtitle_font,live?radio_station:current_media_artist,live?radio_song:current_media_title[0]?current_media_title:title,sceKernelGetSystemTimeWide(),1);
-        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
+        if (!flight_dismissed && (pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
             md_stop(); music_visual_active=0;
             int preset_changed=0;
             if(visual_preset==6)music_visual_options(1);
@@ -2147,10 +2158,16 @@ static int play_audio_once(const char *media_id, const char *title) {
         if(visual_preset==6 && music_visual_active) {
             unsigned int shoulders=PSP_CTRL_LTRIGGER|PSP_CTRL_RTRIGGER;
             int both=(pad.Buttons&shoulders)==shoulders;
-            int toggle=both && (old&shoulders)!=shoulders && !(pad.Buttons&PSP_CTRL_SELECT);
             int roll=both?0:!!(pad.Buttons&PSP_CTRL_RTRIGGER)-!!(pad.Buttons&PSP_CTRL_LTRIGGER);
             int throttle=!!(pad.Buttons&PSP_CTRL_UP)-!!(pad.Buttons&PSP_CTRL_DOWN);
-            cave_flying=md_cave_control(toggle,pad.Lx,pad.Ly,throttle,roll);
+            cave_flying=md_cave_control(both && !(pad.Buttons&PSP_CTRL_SELECT),pad.Lx,pad.Ly,throttle,roll,sceKernelGetSystemTimeWide());
+        }
+        if(cave_flying && !cave_screen_override) {
+            cave_previous_fullscreen=fullscreen;cave_screen_override=1;fullscreen=1;
+            lcd_music_reset();tv_music_reset();
+        } else if(!cave_flying && cave_screen_override) {
+            cave_screen_override=0;fullscreen=cave_previous_fullscreen;
+            lcd_music_reset();tv_music_reset();
         }
         if ((pad.Buttons & PSP_CTRL_START) && !(old & PSP_CTRL_START)) {
             stopped_by_user = 1;
@@ -2173,7 +2190,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             }
         } else next_volume_repeat_tick = 0;
         /* Triangle alone is enough; holding X as before remains harmless. */
-        if ((pad.Buttons & PSP_CTRL_TRIANGLE) && !(old & PSP_CTRL_TRIANGLE)) {
+        if (!cave_screen_override && (pad.Buttons & PSP_CTRL_TRIANGLE) && !(old & PSP_CTRL_TRIANGLE)) {
             fullscreen = !fullscreen;
             music_saved_fullscreen = fullscreen;
             lcd_music_reset(); tv_music_reset();

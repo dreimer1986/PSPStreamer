@@ -242,6 +242,7 @@ static void md_target(int offset, int stride, int width, int height) {
 #include "milkdrop_decor_gu.h"
 #include "cave_gu.h"
 #include "milkdrop_title.h"
+#include "cave_game_gu.h"
 /* Copy before list reuse; renderer-owned scratch avoids stack growth. */
 static MdVertex md_clip_wave_source[2*MD_CUSTOM_POINTS-1];
 static int md_draw_wave(int primitive,const MdVertex *v,int count,int split,int thick) {
@@ -329,6 +330,8 @@ void md_stop(void) {
     if(md_list)sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     md_title_until=0;md_title_key[0]=0;
     free(md_title_pixels);md_title_pixels=NULL;
+    free(cave_hud_atlas);cave_hud_atlas=NULL;
+    memset(&cave_exit_hold,0,sizeof(cave_exit_hold));
     if (!md_list) return;
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
     cave_destroy(cave_scene);cave_scene=NULL;
@@ -395,6 +398,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         if(!cave_scene)return 0;
         cave_textures_step();
         CaveSlice *built=cave_prepare(cave_scene,bands,level,now);
+        cave_game_prepare_ui();
         if(built && built->count)sceKernelDcacheWritebackRange(built->vertices,built->count*sizeof(MdVertex));
         md_profile_mark(0);
         for(int i=1;i<5;i++)md_profile_sample[i]=0;
@@ -402,7 +406,8 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         md_trace("Cave geometry");
         cave_draw(width,height);
         cave_draw_ship(width,height);
-        md_title_draw(now,1);
+        cave_game_draw_explosion();
+        if(cave_scene->game.phase==CAVE_GAME_OFF)md_title_draw(now,1);
         goto present_scene;
     }
     /* Render-thread scratch: extended EEL memories must not consume the PSP
@@ -637,6 +642,7 @@ present_scene:
     /* Slice the final stretch into narrow sprites, as recommended for PSP
      * texture-cache locality. It never copies the full scanout on the CPU. */
     md_present(left,top,width,height,1,1,0,0,NULL);
+    if(preset==5)cave_game_draw_hud(left,top,width,height);
     sceGuFinish();
     md_profile_mark(5);
     md_trace("MilkDrop GPU wait");

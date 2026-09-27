@@ -5,6 +5,7 @@
 #include "cave_paths.h"
 #include "cave_bend.h"
 #include "monkey_audio.h"
+#include "cave_game.h"
 enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HISTORY,
        CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*15,
        CAVE_EDGE_SLOTS=6*(CAVE_GRID+1)*(CAVE_GRID+1),
@@ -62,6 +63,7 @@ typedef struct {
     float flight_barrel_time;
     int flight_barrel,flight_last_roll,flight_tap_roll;
     unsigned long long flight_tap_time;
+    CaveGame game;
 } CaveScene;
 /* Model-space extents, scaled exactly like drawing, plus a small wall skin.
  * The narrow collision box rotates with the visible ship. */

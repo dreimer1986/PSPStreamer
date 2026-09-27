@@ -82,14 +82,17 @@ check a 0.001 clearance/contact boundary, 90-degree roll and tangential sliding.
 On entry only, a bounded nearby search prefers a hull-safe starting point over
 the old point-safe automatic camera location. The chase camera checks its arm
 against wall geometry and shortens it if necessary. Ship triangles use the same
-CPU clipping planes as the tunnel, within the reserved 64 KiB GU tail.
+CPU clipping planes as the tunnel. The game reserves a 96 KiB GU tail for ship,
+HUD and bounded explosion particles; normal Monkey retains its 64 KiB reserve.
 Only connected forward branches are reachable: there is no backward world cache
 or invented branch generation. Disabling flight returns to the original route.
 Position remains in loft coordinates, so world-origin rebasing needs no extra
 player transformation. Cache warmup is handled before initializing flight position.
 Its ship is independently licensed CC BY 4.0 and baked into the application.
 Disabling it restores the ordinary view at the current tunnel position; it does
-not restart music or regenerate the tunnel. No game/enemy mechanics were added.
+not restart music or regenerate the tunnel. The optional game now adds shield,
+time-based wall damage, survival scoring, an intro and persistent top-ten results.
+It does not alter the normal visualizer. There are no enemies yet.
 
 ### Final controller/field comparison batch
 

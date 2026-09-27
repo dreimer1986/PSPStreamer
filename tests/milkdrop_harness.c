@@ -14,12 +14,14 @@
 typedef struct {float x,y,z,w;} ScePspFVector4;
 typedef struct {ScePspFVector4 x,y,z,w;} ScePspFMatrix4;
 enum {GU_TRANSFORM_3D=0,GU_PROJECTION=200,GU_VIEW,GU_MODEL,GU_CLIP_PLANES,GU_FOG,GU_COLOR_BUFFER_BIT};
-enum {GU_GEQUAL=300,GU_DEPTH_BUFFER_BIT=512};
+enum {GU_GEQUAL=300,GU_DEPTH_BUFFER_BIT=512,GU_TRIANGLE_STRIP=513};
 static int cave_test,cave_draws,matrix_calls,clear_mode,clear_count,cave_hairs,cave_wires,cave_layers,cave_test_style;
 static float cave_test_view[16],cave_px,cave_py;
 static int cave_depth_mask,cave_detail_pending;
 static int cave_fog_enabled,cave_colored_without_fog;
 static int cave_external_binds;
+static int cave_hud_texture,cave_hud_draws;
+const unsigned short monkey_flight_logo[256*128] __attribute__((aligned(64)))={0};
 static unsigned cave_fog_color;
 static uint16_t cave_clear_pixel;
 static void sceGuSendCommandi(int command,int argument) {
@@ -49,7 +51,7 @@ enum { GU_TEXTURE_32BITF=1, GU_COLOR_8888=2, GU_VERTEX_32BITF=4, GU_TRANSFORM_2D
        GU_SYNC_FINISH=20, GU_SYNC_WHAT_DONE, GU_DIRECT, GU_DEPTH_TEST, GU_CULL_FACE,
        GU_LIGHTING, GU_BLEND, GU_ALPHA_TEST, GU_STENCIL_TEST, GU_SCISSOR_TEST,
        GU_TEXTURE_2D, GU_PSM_8888, GU_TFX_MODULATE, GU_TCC_RGBA, GU_LINEAR,
-       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES, GU_NEAREST, GU_OTHER_COLOR, GU_ONE_MINUS_OTHER_COLOR };
+       GU_REPEAT, GU_CLAMP, GU_TRIANGLES, GU_LINE_STRIP, GU_SPRITES, GU_PSM_5650, GU_LINES, GU_NEAREST, GU_OTHER_COLOR, GU_ONE_MINUS_OTHER_COLOR, GU_PSM_4444 };
 static int effect_texture,filter_src,filter_dst,filter_fix;
 static void *md_raw_image;
 static int md_height;
@@ -147,11 +149,17 @@ static void sceGuBlendFunc(int op,int src,int dst,unsigned int a,unsigned int b)
 static void sceGuEnable(int what) { if(what==GU_FOG)cave_fog_enabled=1; }
 static int texture_swizzled,texture_format;
 static void sceGuTexMode(int p,int a,int b,int c) {
-    assert((p==GU_PSM_8888 || p==GU_PSM_5650) && !a && !b && (c==0 || c==1));
+    assert((p==GU_PSM_8888 || p==GU_PSM_5650 || p==GU_PSM_4444) && !a && !b && (c==0 || c==1));
     if(c) assert(p==GU_PSM_8888);
     texture_swizzled=c;texture_format=p;
 }
 static void sceGuTexImage(int level,int w,int h,int s,const void *texture) {
+    cave_hud_texture=0;
+    if(cave_test && w==256 && h==128) {
+        assert(!level && s==256 && !((uintptr_t)texture&63));
+        assert(texture_format==GU_PSM_5650 || texture_format==GU_PSM_4444);
+        cave_hud_texture=1;return;
+    }
     uintptr_t offset=(uintptr_t)texture-0x04000000;
     if(cave_test && texture_swizzled) {
         assert(!level && w>=16 && w<=256 && h>=16 && h<=256 && s==w);
@@ -260,6 +268,17 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             if(type==GU_LINES){if(cave_test_style==7)cave_hairs++;else cave_wires++;}
             else if(cave_depth_mask)cave_layers++;
             cave_draws++;return;
+        }
+        if(!target_offset && covered_width==expected_width) {
+            assert(type==GU_SPRITES && count==2 && !indices && (format==14 || format==15));
+            float x0,y0,x1,y1;
+            if(format==14) {
+                typedef struct {unsigned color;float x,y,z;} Plain;
+                const Plain *p=data;x0=p[0].x;y0=p[0].y;x1=p[1].x;y1=p[1].y;
+            } else {assert(cave_hud_texture);x0=v[0].x;y0=v[0].y;x1=v[1].x;y1=v[1].y;}
+            assert(isfinite(x0) && isfinite(y0) && x0>=expected_left && y0>=expected_top);
+            assert(x1>=x0 && y1>=y0 && x1<=expected_left+expected_width+.01f && y1<=expected_top+expected_height+.01f);
+            cave_hud_draws++;return;
         }
         assert(!indices && (const unsigned char *)data>=list_base &&
                (const unsigned char *)(v+count)<=list_base+list_used);
@@ -464,9 +483,9 @@ int main(int argc,char **argv) {
         for(int a=0;a<6;a++)for(int b=0;b<6;b++)assert(md_capture_union(a,b)==capture_union[a][b]);
         for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
             md_high_resolution=resolution;md_live_transitions=1;assert(md_start());
-            expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
-            expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
-            expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
+            expected_left=full?0:tv?TV_LEFT_X:LCD_LEFT_X;expected_top=full?0:tv?TV_LEFT_Y:LCD_LEFT_Y;
+            expected_width=(full?(tv?720:480):(tv?TV_LEFT_R:LCD_LEFT_R))-expected_left;
+            expected_height=(full?(tv?480:272):(tv?TV_LEFT_B:LCD_LEFT_B))-expected_top;
             assert(md_load_preset(argv[2],&md_custom_preset,&error)==MD_FILE_OK);
             for(int frame=0;frame<3;frame++){test_time+=100000;assert(md_frame(tv,full,bands,60,test_time,3)==1);}
             {
@@ -526,21 +545,30 @@ int main(int argc,char **argv) {
     }
     if(argc==2) {
         cave_test=1;memset(bands,75,sizeof(bands));
+        static unsigned char flight_font[256*320];memset(flight_font,255,sizeof(flight_font));
+        md_cave_game_ui(flight_font,0,NULL);
         int frames=32,mode=5;
         for(int resolution=0;resolution<2;resolution++)for(int tv=0;tv<2;tv++)for(int full=0;full<2;full++) {
             cave_options.fog=tv;cave_options.multitexture=full;cave_options.transparent_hair=resolution;
             cave_options.noise=resolution?16:0;
             md_high_resolution=resolution;assert(md_start());
-            expected_left=full?0:tv?26:38;expected_top=full?0:tv?86:74;
-            expected_width=(full?(tv?720:480):(tv?534:344))-expected_left;
-            expected_height=(full?(tv?480:272):(tv?294:149))-expected_top;
+            expected_left=full?0:tv?TV_LEFT_X:LCD_LEFT_X;expected_top=full?0:tv?TV_LEFT_Y:LCD_LEFT_Y;
+            expected_width=(full?(tv?720:480):(tv?TV_LEFT_R:LCD_LEFT_R))-expected_left;
+            expected_height=(full?(tv?480:272):(tv?TV_LEFT_B:LCD_LEFT_B))-expected_top;
             int previous=cave_draws;
             for(int f=0;f<frames;f++) {
                 if(cave_scene) {
                     cave_scene->style=cave_test_style=(f/3)%9;
                     cave_scene->black=(f%7)==0;
                     cave_scene->texture_style=(f%3)!=0;
-                    md_cave_control(f==16 || f==24,200,70,1,1);
+                    md_cave_control(f==16 || f==25,200,70,1,1,test_time);
+                    if(f==17) {assert(cave_scene->game.phase==CAVE_GAME_INTRO);md_cave_game_menu(1,1,0);assert(cave_scene->game.phase==CAVE_GAME_HALL);}
+                    if(f==18) {md_cave_game_menu(0,0,1);assert(cave_scene->game.phase==CAVE_GAME_INTRO);}
+                    if(f==19) {md_cave_game_menu(-1,1,0);assert(cave_scene->flight && cave_scene->game.phase==CAVE_GAME_ALIVE);}
+                    if(f==21) {cave_scene->game.health=20;cave_scene->game.protection=0;assert(cave_game_wall_hit(&cave_scene->game));}
+                    if(f==23)test_time+=5000000;
+                    if(f==24) {assert(cave_scene->game.phase==CAVE_GAME_HALL);md_cave_game_menu(0,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
+                    if(f==26) {md_cave_game_menu(1,0,0);md_cave_game_menu(1,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
                 }
                 test_time+=100000;assert(md_frame(tv,full,bands,75,test_time,mode)==1);
                 assert(covered_width==expected_width);
@@ -549,12 +577,12 @@ int main(int argc,char **argv) {
             assert(cave_draws>previous && !cave_detail_pending);
             assert(cave_external_next==7);
             assert(cave_external_mask==(!strcmp(argv[1],"--cave-textures")?127U:0U));
-            md_stop();assert(!gu_live && !md_list && !cave_scene);
+            md_stop();assert(!gu_live && !md_list && !cave_scene && !cave_hud_atlas);
             for(int i=0;i<7;i++)assert(!cave_external[i].pixels);
             assert(!cave_external_next && !cave_external_mask);
         }
         assert(matrix_calls==frames*3*8 && clear_count==frames*8 && !clear_mode);
-        assert(cave_hairs && cave_wires && cave_layers && cave_colored_without_fog);
+        assert(cave_hairs && cave_wires && cave_layers && cave_colored_without_fog && cave_hud_draws);
         if(!strcmp(argv[1],"--cave-textures"))assert(cave_external_binds>0);
         printf("Cave: LCD/TV, window/full, resolutions, throttle and teardown OK; peak list %zu bytes\n",list_peak);
         return 0;
@@ -616,17 +644,12 @@ int main(int argc,char **argv) {
     }
     assert(mesh_calls==1920 && ring_calls>0 && sprite_calls>mesh_calls);
     assert(syncs>=starts);
-    /* Title height changes only the top, never the other three TV edges. */
+    /* Titles are now inside the visualization, not a variable GUI boundary. */
     expected_ring_color=0;
     assert(md_start());
-    expected_left=26; expected_top=84; expected_width=508; expected_height=210;
-    md_set_tv_title_bottom(79);
-    assert(md_frame(1,0,bands,0,test_time,0));
-    expected_top=100; expected_height=194;
-    md_set_tv_title_bottom(95);
+    expected_left=TV_LEFT_X; expected_top=TV_LEFT_Y; expected_width=TV_LEFT_R-TV_LEFT_X; expected_height=TV_LEFT_B-TV_LEFT_Y;
     assert(md_frame(1,0,bands,0,test_time,0));
     md_stop();
-    md_set_tv_title_bottom(81);
     expected_ring_color=0;
     expected_left=38; expected_top=74; expected_width=306; expected_height=75;
     assert(md_start());

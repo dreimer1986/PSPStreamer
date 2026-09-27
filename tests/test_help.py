@@ -19,6 +19,7 @@ class HelpTests(unittest.TestCase):
             functions.append(f'static int toggle{i}(Pad pad, unsigned int old) {{return {condition};}}')
         harness = '''#include <assert.h>
 typedef struct {unsigned int Buttons;} Pad;
+static int cave_screen_override;
 #define PSP_CTRL_CROSS 1
 #define PSP_CTRL_TRIANGLE 2
 ''' + '\n'.join(functions) + '''
@@ -32,6 +33,8 @@ int main(void) {
         assert(!toggle((Pad){2},2));assert(!toggle((Pad){3},3));
         assert(!toggle((Pad){0},2));assert(!toggle((Pad){1},0));
     }
+    cave_screen_override=1;
+    assert(toggle0((Pad){2},0)+toggle1((Pad){2},0)==1);
 }
 '''
         with tempfile.TemporaryDirectory() as temp:

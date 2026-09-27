@@ -30,7 +30,11 @@ extern int md_live_transitions;
 void md_begin_preset(unsigned int fade_ms);
 void md_stop(void);
 void md_title(const unsigned char *font,const char *heading,const char *song,unsigned long long now,int force);
-int md_cave_control(int toggle,int analog_x,int analog_y,int throttle,int roll);
+int md_cave_control(int shoulders,int analog_x,int analog_y,int throttle,int roll,unsigned long long now);
+/* Labels: health, score, hall, return, save failure, game over, start, exit,
+ * hold to exit, no entries, menu navigation. */
+void md_cave_game_ui(const unsigned char *font,int paused,const char *const labels[11]);
+int md_cave_game_menu(int move,int confirm,int back);
 void md_profile_reset(int enabled);
 void md_profile_select(const char *name,int tv,int fullscreen,int preset);
 int md_profile_report(int index,char *text,int size);

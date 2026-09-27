@@ -1293,7 +1293,13 @@ additional memory, released when leaving the renderer. With diagnostics enabled,
 <details>
 <summary>Cave Easter egg</summary>
 
-During Cave playback, press **L+R together** to enable or disable flight.
+During Cave playback, press **L+R together** to open the flight intro with its
+Monkey-inspired logo. Choose **Game Start / Hall of Fame / Exit** with Up/Down
+and confirm with X; Circle leaves the menu. During flight, hold **L+R for five
+seconds** to leave (a progress indicator appears). The entry press must be
+released first; continuing to hold it does not immediately leave again.
+The Easter egg uses fullscreen on LCD and TV and restores your previous view
+when leaving. It does not change the saved music fullscreen preference.
 The analog stick steers the forward flight direction; release it to fly parallel
 to the local tunnel axis. L/R roll the ship and its steering axes. Hold Up/Down
 to increase/decrease speed (20–200 percent, retained until leaving flight).
@@ -1310,13 +1316,38 @@ projection and depth buffer rather than a separate camera-space projection.
 Contacts remove the inward movement component, allowing tangential sliding;
 genuinely blocked passages can still stop forward progress. The following camera
 shortens its chase distance before entering walls. The box still encloses empty
-space around the tapered nose; it is not an exact hull mesh. There is no damage or combat.
-Triangle still switches fullscreen and Start stops playback.
+space around the tapered nose; it is not an exact hull mesh.
+
+The SNES Star Fox-inspired **SHIELD** gauge is at the bottom left, with points
+at the top left. A flight starts at 100 shield. A wall hit costs 20, followed by
+one second of damage protection; scraping cannot apply damage every frame.
+The initial 0.85-second ship materialization is protected too. Existing recoil,
+sliding and escape assistance remain active. Each active survival second earns
+one point; pausing music freezes the flight and scoring.
+
+At zero shield, the ship disappears in a short particle explosion and **Game
+Over** appears. Five seconds after the fatal hit the ten best scores are shown;
+X or Circle returns to ordinary Monkey. Music continues throughout. The intro's
+Hall of Fame can be viewed without starting a flight and returns to the intro.
+Abandoned flights do not enter the table. Start still stops music; Square can
+still switch visualizations. These actions remain available as emergency exits.
+
+Scores are stored locally in `ms0:/PSP/SYSTEM/PSPStreamer-flight-a.dat` and
+`PSPStreamer-flight-b.dat`. Alternating checksummed generations preserve the
+previous valid table if a write is interrupted. Updates do not replace these
+files. A write failure is shown on the result screen; the in-memory table still
+works. No server update is required.
+
+Enemies are **not implemented yet**. The score hook reserves a default reward
+of 100 points per destroyed enemy, with larger explicit rewards for stronger
+types; nothing currently awards these bonuses. Projectile damage and barrel-roll
+projectile protection remain future work.
 
 Flight starts disabled, is not saved, and is reset when the renderer is closed
 (including opening its options). When disabled, flight performs no field checks
 or mesh draw calls and does not alter the normal camera, timing or random state.
-The ship mesh is embedded; no extra file needs copying to the memory stick.
+The ship mesh and generated intro logo are embedded; no extra image needs
+copying to the memory stick. See [logo provenance](psp-client/assets/monkey-flight-logo.md).
 “Low Poly Spaceships” is by Samuel Metters, CC BY 4.0; see
 [asset attribution and conversion details](psp-client/assets/cave_ship.CREDITS.md).
 

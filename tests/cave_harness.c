@@ -420,6 +420,7 @@ int main(void) {
     }
     cave_options.flight_sensitivity=100;cave_options.flight_inertia=0;
     cave_flight_input(flight,1,128,128,0,0); /* also safe before cache warmup */
+    flight->game.protection=100; /* This fixture measures steering, not death. */
     unsigned long long clock=1000000;
     for(int i=0;i<16;i++)cave_prepare(flight,bands,90,clock+=1000);
     flight->motion.travel=0;flight->flight_x=flight->flight_y=0;

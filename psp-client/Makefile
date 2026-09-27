@@ -67,6 +67,8 @@ milkdrop_gu.o: milkdrop_decor_gu.h
 milkdrop_gu.o: milkdrop_profile.h
 milkdrop_gu.o: preset_fpu.h
 milkdrop_gu.o: cave_gu.h cave_visual.h cave_engine.h
+milkdrop_gu.o: cave_game_gu.h cave_scores.h
+main.o cave_visual.o milkdrop_gu.o: cave_game.h
 milkdrop_gu.o: cave_clip.h cave_style.h cave_bend.h
 milkdrop_gu.o: cave_ship_data.h
 milkdrop_gu.o: cave_textures.h
@@ -80,3 +82,4 @@ milkdrop_gu.o milkdrop_texture.o: milkdrop_texture.h
 
 # menu_skin.S uses .incbin so the receiver artwork is part of EBOOT.PBP.
 menu_skin.o: assets/menu_skin.raw assets/menu_skin_tv.raw
+menu_skin.o: assets/monkey-flight-logo.raw
