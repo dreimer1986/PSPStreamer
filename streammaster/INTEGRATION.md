@@ -232,6 +232,12 @@ queues and a 32 KiB host transfer buffer. No buffers are freed/reused before DMA
 completion on cancellation/detach. These larger allocations may cost throughput;
 measure profiles instead of assuming bigger is faster.
 
+Use firmware 0.2.6 or newer: 0.2.5 accidentally allocated large queues/workspaces
+in internal memory and can fail before USB attachment. With 0.2.6 the queue data
+and CPU workspaces explicitly use PSRAM; static queue controls and USB DMA remain
+internal. `xQueueCreateStatic` is supplied separate long-lived storage and control
+objects. Never assume `xQueueCreate` will select external RAM for a large queue.
+
 `stm_tuning(kib, depth)` before initialization selects the comparison profile;
 do not change tuning concurrently with I/O. Defaults remain 8×2 legacy bulk.
 `stm_usb_metrics()` retrieves boot-cumulative bulk timing counters only when

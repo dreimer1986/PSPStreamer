@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.2.6 fixes USB-startup RAM pressure introduced in 0.2.5: bulk
+  queue storage/workspaces explicitly use PSRAM; DMA and queue controls stay internal.
 - StreamMaster 0.2.5: negotiated 8/16/32 KiB read profiles with 1/2/4 requests
   (maximum approximately 64 KiB per group), retaining 8 KiB/two by default and
   legacy fallback. Add ESP queue, checksum, copy and USB transfer timing.

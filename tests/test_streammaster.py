@@ -9,6 +9,60 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_usb_queue_storage_uses_psram(self):
+        source=(ROOT/'streammaster/main/usb_bridge.c').read_text()
+        types=source[source.index('typedef struct {uint32_t epoch;'):source.index('static QueueHandle_t')]
+        allocator=source[source.index('static void *bridge_storage('):source.index('static void memory_report(')]
+        setup=source[source.index('    commands=xQueueCreateStatic('):source.index('    usb_host_client_config_t cfg=')]
+        self.assertNotIn('xQueueCreate(',source)
+        self.assertIn('Reply *reply=bridge_storage(sizeof(*reply));',source)
+        harness=r'''
+#include <assert.h>
+#include <stdlib.h>
+#include "streammaster/protocol.h"
+#define MALLOC_CAP_SPIRAM 1
+#define MALLOC_CAP_8BIT 2
+#define ESP_LOGE(...) ((void)0)
+typedef struct {unsigned count,size;void *data;} StaticQueue_t;
+typedef StaticQueue_t *QueueHandle_t;
+static QueueHandle_t commands,replies;
+static StaticQueue_t commands_control,replies_control;
+static void *allocations[4];static unsigned allocated,total;
+static void *heap_caps_calloc(unsigned count,unsigned size,unsigned caps) {
+    assert(caps==(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT) && count==1 && allocated<4);
+    void *p=calloc(count,size);assert(p);allocations[allocated++]=p;total+=size;return p;
+}
+static QueueHandle_t xQueueCreateStatic(unsigned count,unsigned size,void *data,StaticQueue_t *control) {
+    assert(count==SM_BULK_MAX_DEPTH && data==allocations[allocated-1]);
+    control->count=count;control->size=size;control->data=data;return control;
+}
+/* TYPES */
+static Reply *answer;
+/* ALLOCATOR */
+int main(void) {
+    /* SETUP */
+    Reply *worker=bridge_storage(sizeof(*worker));
+    assert(total==SM_BULK_MAX_DEPTH*(sizeof(Work)+sizeof(Reply))+2*sizeof(Reply));
+    /* Queue copies retain payloads independently of the reusable worker. */
+    for(unsigned i=0;i<SM_BULK_MAX_DEPTH;i++) {
+        memset(worker,65+i,sizeof(*worker));
+        memcpy((char *)replies->data+i*sizeof(Reply),worker,sizeof(*worker));
+    }
+    memset(worker,0,sizeof(*worker));
+    for(unsigned i=0;i<SM_BULK_MAX_DEPTH;i++) {
+        memcpy(answer,(char *)replies->data+i*sizeof(Reply),sizeof(*answer));
+        for(unsigned j=0;j<sizeof(*answer);j++)assert(((unsigned char *)answer)[j]==65+i);
+    }
+    for(unsigned i=0;i<allocated;i++)free(allocations[i]);
+}
+'''.replace('/* TYPES */',types).replace('/* ALLOCATOR */',allocator).replace('/* SETUP */',setup)
+        with tempfile.TemporaryDirectory() as folder:
+            binary=Path(folder)/'memory'
+            subprocess.run(['cc','-x','c','-','-std=c11','-Wall','-Wextra','-Werror',
+                            '-fsanitize=address,undefined','-I',str(ROOT),'-o',str(binary)],
+                           input=harness,text=True,check=True)
+            subprocess.run([str(binary)],check=True,timeout=5)
+
     def test_async_driver_buffer_ownership(self):
         source = (ROOT / "psp-client/streammaster_usb/bridge.c").read_text()
         functions = source[source.index("static int exchange_begin("):source.index("static int devctl(")]

@@ -9,6 +9,7 @@
 #include "usb/usb_host.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 typedef struct {uint32_t epoch;int64_t accepted_us;SmFrame frame;} Work;
 typedef struct {
     uint32_t epoch,wire_size;int64_t ready_us;
@@ -16,6 +17,7 @@ typedef struct {
     union {SmFrame frame;SmBulkFrame bulk;} packet;
 } Reply;
 static QueueHandle_t commands,replies;
+static StaticQueue_t commands_control,replies_control;
 static usb_host_client_handle_t client;
 static usb_device_handle_t device;
 static usb_transfer_t *rx,*tx;
@@ -30,7 +32,21 @@ void sm_usb_metrics_snapshot(SmUsbMetrics *out) {
     portENTER_CRITICAL(&metrics_lock);*out=metrics;portEXIT_CRITICAL(&metrics_lock);
 }
 static Work job;
-static Reply answer;
+static Reply *answer;
+/* Queue controls and USB DMA stay internal; only CPU-accessed packet storage
+ * belongs in PSRAM. FreeRTOS xQueueCreate always allocates internal RAM. */
+static void *bridge_storage(size_t size) {
+    void *p=heap_caps_calloc(1,size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!p){ESP_LOGE("streammaster","PSRAM allocation failed: %u bytes",(unsigned)size);abort();}
+    return p;
+}
+static void memory_report(const char *stage) {
+    ESP_LOGI("streammaster","%s: internal free=%u largest=%u DMA largest=%u PSRAM free=%u",stage,
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
 static void mark_gone(void) {
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
 }
@@ -46,29 +62,30 @@ static int process_work(Work *work,Work *response) {
     return 1;
 }
 static void network_worker(void *unused) {
-    (void)unused;static Work work,response;static Reply reply;
+    (void)unused;static Work work,response;
+    Reply *reply=bridge_storage(sizeof(*reply));
     for(;;) {
         if(xQueueReceive(commands,&work,pdMS_TO_TICKS(100))==pdTRUE) {
-            int valid=0;reply.epoch=work.epoch;
+            int valid=0;reply->epoch=work.epoch;
             if(work.frame.op==SM_SOCKET_READ_BULK || work.frame.op==SM_SOCKET_READ_BULK_EXT) {
-                int64_t begin=esp_timer_get_time();reply.queue_us=begin-work.accepted_us;
+                int64_t begin=esp_timer_get_time();reply->queue_us=begin-work.accepted_us;
                 sm_network_idle();
                 if(work.epoch==atomic_load(&epoch)) {
-                    sm_sockets_bulk_read(&work.frame,&reply.packet.bulk);
-                    reply.wire_size=sm_bulk_wire_size_op(reply.packet.bulk.op,reply.packet.bulk.length);
-                    sm_sockets_bulk_cost(&reply.ring_copy_us,&reply.checksum_us);
-                    reply.work_us=esp_timer_get_time()-begin;
+                    sm_sockets_bulk_read(&work.frame,&reply->packet.bulk);
+                    reply->wire_size=sm_bulk_wire_size_op(reply->packet.bulk.op,reply->packet.bulk.length);
+                    sm_sockets_bulk_cost(&reply->ring_copy_us,&reply->checksum_us);
+                    reply->work_us=esp_timer_get_time()-begin;
                     valid=work.epoch==atomic_load(&epoch);
                 }
             } else if(process_work(&work,&response)) {
-                reply.wire_size=work.frame.flags==SM_COMPACT?sm_wire_size(response.frame.length):SM_FRAME_SIZE;
-                memcpy(&reply.packet.frame,&response.frame,reply.wire_size);valid=1;
+                reply->wire_size=work.frame.flags==SM_COMPACT?sm_wire_size(response.frame.length):SM_FRAME_SIZE;
+                memcpy(&reply->packet.frame,&response.frame,reply->wire_size);valid=1;
             }
             if(valid) {
-                reply.ready_us=esp_timer_get_time();
+                reply->ready_us=esp_timer_get_time();
                 /* Bounded FIFO entries, never overwrite an unread reply. On
                  * detach, stale epochs are discarded by the USB owner. */
-                while(work.epoch==atomic_load(&epoch) && xQueueSend(replies,&reply,pdMS_TO_TICKS(20))!=pdTRUE)
+                while(work.epoch==atomic_load(&epoch) && xQueueSend(replies,reply,pdMS_TO_TICKS(20))!=pdTRUE)
                     usb_host_client_unblock(client);
                 usb_host_client_unblock(client);
             }
@@ -135,15 +152,21 @@ void sm_usb_daemon(void *unused) {
 }
 void sm_usb_task(void *unused) {
     (void)unused;
-    commands=xQueueCreate(SM_BULK_MAX_DEPTH,sizeof(Work));replies=xQueueCreate(SM_BULK_MAX_DEPTH,sizeof(Reply));
-    if(!commands || !replies)abort();
+    memory_report("USB init");
+    commands=xQueueCreateStatic(SM_BULK_MAX_DEPTH,sizeof(Work),
+        bridge_storage(SM_BULK_MAX_DEPTH*sizeof(Work)),&commands_control);
+    replies=xQueueCreateStatic(SM_BULK_MAX_DEPTH,sizeof(Reply),
+        bridge_storage(SM_BULK_MAX_DEPTH*sizeof(Reply)),&replies_control);
+    answer=bridge_storage(sizeof(*answer));
+    if(!commands || !replies){ESP_LOGE("streammaster","Queue initialization failed");abort();}
     usb_host_client_config_t cfg={.is_synchronous=false,.max_num_event_msg=8,
         .async={.client_event_callback=client_event,.callback_arg=NULL}};
     ESP_ERROR_CHECK(usb_host_client_register(&cfg,&client));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_FRAME_SIZE,0,&rx));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_BULK_MAX_FRAME_SIZE,0,&tx));
     rx->callback=transfer_done;tx->callback=transfer_done;
-    if(xTaskCreate(network_worker,"network",12288,NULL,6,NULL)!=pdPASS)abort();
+    if(xTaskCreate(network_worker,"network",12288,NULL,6,NULL)!=pdPASS){memory_report("worker allocation failed");abort();}
+    memory_report("USB ready");
     for(;;) {
         usb_host_client_handle_events(client,pdMS_TO_TICKS(20));
         if(new_address && !device){int address=new_address;new_address=0;open_psp(address);}
@@ -180,26 +203,26 @@ void sm_usb_task(void *unused) {
             if(xQueueSend(commands,&job,0)!=pdTRUE){mark_gone();continue;}
             memset(&job,0,sizeof(job));
         }
-        if(!tx_pending && xQueueReceive(replies,&answer,0)==pdTRUE) {
-            if(answer.epoch==epoch) {
+        if(!tx_pending && xQueueReceive(replies,answer,0)==pdTRUE) {
+            if(answer->epoch==epoch) {
                 int64_t begin=esp_timer_get_time();
-                memcpy(tx->data_buffer,&answer.packet,answer.wire_size);tx->device_handle=device;
-                tx->bEndpointAddress=0x02;tx->num_bytes=answer.wire_size;
-                tx_bulk=answer.packet.frame.op==SM_SOCKET_READ_BULK || answer.packet.frame.op==SM_SOCKET_READ_BULK_EXT;
-                tx_bulk_bytes=answer.packet.frame.length;tx_started_us=esp_timer_get_time();
+                memcpy(tx->data_buffer,&answer->packet,answer->wire_size);tx->device_handle=device;
+                tx->bEndpointAddress=0x02;tx->num_bytes=answer->wire_size;
+                tx_bulk=answer->packet.frame.op==SM_SOCKET_READ_BULK || answer->packet.frame.op==SM_SOCKET_READ_BULK_EXT;
+                tx_bulk_bytes=answer->packet.frame.length;tx_started_us=esp_timer_get_time();
                 if(tx_bulk) {
                     portENTER_CRITICAL(&metrics_lock);
-                    metrics.queue_us+=answer.queue_us;metrics.work_us+=answer.work_us;
-                    metrics.ring_copy_us+=answer.ring_copy_us;metrics.checksum_us+=answer.checksum_us;
-                    metrics.reply_wait_us+=begin-answer.ready_us;metrics.copy_us+=tx_started_us-begin;
-                    if(answer.queue_us>metrics.queue_max_us)metrics.queue_max_us=answer.queue_us;
+                    metrics.queue_us+=answer->queue_us;metrics.work_us+=answer->work_us;
+                    metrics.ring_copy_us+=answer->ring_copy_us;metrics.checksum_us+=answer->checksum_us;
+                    metrics.reply_wait_us+=begin-answer->ready_us;metrics.copy_us+=tx_started_us-begin;
+                    if(answer->queue_us>metrics.queue_max_us)metrics.queue_max_us=answer->queue_us;
                     if(last_bulk_done_us)metrics.gap_us+=tx_started_us-last_bulk_done_us;
                     portEXIT_CRITICAL(&metrics_lock);
                 }
                 if(usb_host_transfer_submit(tx)!=ESP_OK)mark_gone();
                 else {tx_pending=1;tx_deadline=esp_timer_get_time()+5000000;}
             }
-            memset(&answer,0,sizeof(answer));
+            memset(answer,0,sizeof(*answer));
         }
         /* Accept more requests while a response is on the bus. At most four
          * commands are outstanding, bounding control latency and memory. */

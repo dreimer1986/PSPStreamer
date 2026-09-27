@@ -4,6 +4,18 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.6 — 2026-09-27
+
+- Fix the 0.2.5 USB-startup memory regression: FreeRTOS dynamic queues allocate
+  internal RAM, not PSRAM. Explicitly place command/reply storage and the two
+  CPU-side reply workspaces in PSRAM, saving approximately 208 KiB internally.
+- Keep queue controls, task stacks and actual USB DMA transfers in internal RAM.
+  Packet ownership, checksum validation, profiles and detach handling are unchanged.
+- Log free/largest internal and DMA blocks at USB initialization and readiness;
+  report storage allocation failures explicitly. No PSP app update required.
+- PSP logs from the failed run show three `wait USB attach` timeouts before any
+  Wi-Fi/server operation. Hardware recovery still needs confirmation after flashing.
+
 ## 0.2.5 — 2026-09-27
 
 - Add separately negotiated extended bulk reads: 8/16/32 KiB frames and 1/2/4

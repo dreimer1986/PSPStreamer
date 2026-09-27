@@ -97,6 +97,13 @@ Their root cause is not established by this successful-download measurement.
 
 ## 0.2.5 comparison build (hardware results pending)
 
+**Use firmware 0.2.6 for this comparison.** The first 0.2.5 hardware attempt failed
+three times at USB attachment, before Wi-Fi/server setup. Its large dynamic RTOS
+queues and static workspaces consumed internal RAM. Version 0.2.6 explicitly moves
+about 208 KiB of CPU-only storage to PSRAM while keeping USB DMA/internal controls
+in suitable RAM. Recovery is not yet hardware-confirmed; this failed run provides
+no throughput measurement.
+
 - Offline SHA-256 now processes complete blocks in batches and wipes its
   workspace once per update rather than after every 64 bytes. It is adapted from
   Mbed TLS 2.28.10; partial blocks, padding and context lifecycle remain in the
