@@ -1,9 +1,13 @@
 # Transport measurement status
 
-Firmware 0.2.3 and its matching PSP build are ready for a new hardware comparison:
-32 KiB TCP window, 26 receive mailbox slots, 1 ms socket-worker tick, and shorter
-active PSP read backoff. Five-second `download progress` lines now distinguish
-bursts from sustained throughput. No measured improvement is claimed yet.
+Firmware 0.2.3's larger buffers and shorter waits achieved a completed download
+of 170,480,059 bytes in 552.635 s: **301.26 KiB/s**. The 107 recorded five-second
+intervals had median 328 KiB/s, maximum 350 KiB/s and minimum 30 KiB/s. Nine were
+below 200 KiB/s. Evidence: recovery log, completion tick 1055825. USB error count
+remained at one from an earlier operation, with no further increase during download.
+
+The subsequent PSP-only asynchronous read-ahead update is ready for comparison
+against this 301.26 KiB/s baseline. No additional speedup is claimed until measured.
 
 Do not compare playback demand or USB echo throughput with file-download speed.
 

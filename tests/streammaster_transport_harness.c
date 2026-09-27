@@ -112,10 +112,24 @@ static int kuKernelLoadModule(const char *path,int flags,void *v){(void)flags;(v
 static int sceKernelStartModule(int m,int n,void *a,int *s,void *v){(void)m;(void)n;(void)a;(void)v;*s=0;return 0;}
 static int sceKernelStopModule(int m,int n,void *a,int *s,void *v){return sceKernelStartModule(m,n,a,s,v);}
 static int sceKernelUnloadModule(int m){(void)m;return 0;}
-static int legacy_caps,legacy_bridge;
+static int legacy_caps,legacy_bridge,legacy_async;
+static SmFrame pending_reply;
+static int async_pending,async_begins,async_finishes;
 static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out,int outlen){
     (void)name;(void)inlen;(void)outlen;
     if(op==SM_DEV_STATUS)return 1;
+    if(op==SM_DEV_STOP || op==SM_DEV_CANCEL){async_pending=0;return 0;}
+    if(op==SM_DEV_READ_BEGIN) {
+        if(legacy_bridge || legacy_async)return SM_INVALID;
+        assert(!async_pending);async_begins++;
+        int rc=sceIoDevctl(name,SM_DEV_EXCHANGE_COMPACT,in,inlen,&pending_reply,sizeof(pending_reply));
+        if(rc>=0)async_pending=1;
+        return rc;
+    }
+    if(op==SM_DEV_READ_FINISH) {
+        assert(async_pending);async_pending=0;async_finishes++;
+        memcpy(out,&pending_reply,sizeof(pending_reply));return 0;
+    }
     if(op!=SM_DEV_EXCHANGE && op!=SM_DEV_EXCHANGE_COMPACT)return 0;
     if(op==SM_DEV_EXCHANGE_COMPACT && legacy_bridge)return SM_INVALID;
     rpc_count++;
@@ -226,6 +240,33 @@ int main(void){
     before=rpc_count;assert(stm_poll(p,1,1000)==0);
     assert(rpc_count-before<45); /* Fast probes only for the first 250 ms, then idle backoff. */
     assert(stm_close(fd)==0);
+    /* Pipelined block B is consumed on USB while the caller processes A.
+     * A control RPC drains B into its owner's mailbox, never its own reply. */
+    fd=open_socket();c=channel(fd);
+    unsigned char bulk[SM_PAYLOAD_SIZE*2],copy[SM_PAYLOAD_SIZE];
+    for(unsigned i=0;i<sizeof(bulk);i++)bulk[i]=(i/SM_PAYLOAD_SIZE)*37+i%251;
+    copy_in(c->rx,RX_SIZE,c->rx_write,bulk,sizeof(bulk));c->rx_write+=sizeof(bulk);
+    assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !memcmp(copy,bulk,sizeof(copy)));
+    assert(async_pending && async_begins);
+    SmInfo info;unsigned length;
+    assert(stm_rpc(SM_INFO,NULL,0,&info,sizeof(info),&length,NULL)==0 && length==sizeof(info));
+    assert(!async_pending && async_finishes);
+    assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !memcmp(copy,bulk+sizeof(copy),sizeof(copy)));
+    assert(stm_close(fd)==0 && !async_pending);
+    /* A detach with outstanding DMA must not deliver data after reassociation. */
+    fd=open_socket();c=channel(fd);
+    copy_in(c->rx,RX_SIZE,c->rx_write,bulk,sizeof(bulk));c->rx_write+=sizeof(bulk);
+    assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && async_pending);
+    stm_driver_cancel();assert(!async_pending);
+    assert(stm_associate(&running,1)==0);
+    assert((int)stm_recv(fd,copy,sizeof(copy),0)<0);
+    assert(stm_close(fd)==0);
+    /* Compact-capable older bridges lack the asynchronous local ioctl. */
+    legacy_async=1;fd=open_socket();c=channel(fd);
+    copy_in(c->rx,RX_SIZE,c->rx_write,bulk,sizeof(bulk));c->rx_write+=sizeof(bulk);
+    assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !ahead_supported);
+    assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !memcmp(copy,bulk+sizeof(copy),sizeof(copy)));
+    assert(stm_close(fd)==0);legacy_async=0;
     /* Repeated short-lived remote owners cannot exhaust either fixed pool. */
     stm_diagnostic_enable(1);
     fd=open_socket();c=channel(fd);

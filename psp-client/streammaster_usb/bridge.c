@@ -18,6 +18,7 @@ static SmFrame send_frame __attribute__((aligned(64))),recv_frame __attribute__(
 static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
 static int started;
+static int exchange_active,exchange_compact;
 static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
 static int control_request(int a,int b,struct DeviceRequest *request){(void)a;(void)b;(void)request;return 0;}
@@ -76,11 +77,11 @@ static int shutdown_usb(void) {
     if(send_pending || recv_pending){poisoned=1;return SM_BUSY;}
     if(started){sceUsbStop(DRIVER,0,NULL);sceUsbStop(PSP_USBBUS_DRIVERNAME,0,NULL);started=0;}
     memset(&send_frame,0,sizeof(send_frame));memset(&recv_frame,0,sizeof(recv_frame));
-    attached=0;poisoned=0;return 0;
+    attached=0;poisoned=0;exchange_active=0;return 0;
 }
-static int exchange(const void *in,void *out,int compact) {
+static int exchange_begin(const void *in,int compact) {
     if(!started || !attached)return SM_OFFLINE;
-    if(poisoned || send_pending || recv_pending)return SM_BUSY;
+    if(poisoned || exchange_active || send_pending || recv_pending)return SM_BUSY;
     cancelled=0;memcpy(&send_frame,in,sizeof(send_frame));
     if(!sm_valid(&send_frame) || send_frame.flags)return SM_INVALID;
     if(compact){send_frame.flags=SM_COMPACT;sm_seal(&send_frame);}
@@ -94,15 +95,21 @@ static int exchange(const void *in,void *out,int compact) {
     int rc=sceUsbbdReqRecv(&recv_req);if(rc<0){recv_pending=0;return rc;}
     send_pending=1;rc=sceUsbbdReqSend(&send_req);
     if(rc<0)send_pending=0;
-    if(rc>=0)rc=wait_request(&send_req,1);
+    if(rc<0){poisoned=1;cancel_requests();return rc;}
+    exchange_active=1;exchange_compact=compact;return 0;
+}
+static int exchange_finish(void *out) {
+    if(!exchange_active)return SM_INVALID;
+    int rc=wait_request(&send_req,1);
     if(rc>=0)rc=wait_request(&recv_req,2);
     if(rc>=0) {
         sceKernelDcacheInvalidateRange(&recv_frame,sizeof(recv_frame));
         if(!sm_valid(&recv_frame)||recv_frame.flags!=SM_REPLY || recv_frame.sequence!=send_frame.sequence || recv_frame.op!=send_frame.op ||
-           recv_req.recvsize!=(int)(compact?sm_wire_size(recv_frame.length):SM_FRAME_SIZE))rc=SM_IO;
+           recv_req.recvsize!=(int)(exchange_compact?sm_wire_size(recv_frame.length):SM_FRAME_SIZE))rc=SM_IO;
         else memcpy(out,&recv_frame,sizeof(recv_frame));
     }
     if(rc<0){poisoned=1;cancel_requests();}
+    exchange_active=0;
     return rc;
 }
 static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int inlen,void *out,int outlen) {
@@ -110,6 +117,8 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
     if(cmd==SM_DEV_CANCEL){cancel_requests();return 0;}
     if(cmd==SM_DEV_STATUS)return attached?attached:poisoned?SM_BUSY:0;
     if((cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT) && (inlen!=SM_FRAME_SIZE || outlen!=SM_FRAME_SIZE || !user_buffer(in,inlen)||!user_buffer(out,outlen)))return SM_INVALID;
+    if(cmd==SM_DEV_READ_BEGIN && (inlen!=SM_FRAME_SIZE || outlen || !user_buffer(in,inlen)))return SM_INVALID;
+    if(cmd==SM_DEV_READ_FINISH && (inlen || outlen!=SM_FRAME_SIZE || !user_buffer(out,outlen)))return SM_INVALID;
     SceUInt timeout=100000;int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     if(cmd==SM_DEV_START) {
         if(started)rc=0;
@@ -123,7 +132,17 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
             }
         }
     } else if(cmd==SM_DEV_STOP)rc=shutdown_usb();
-    else if(cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT)rc=exchange(in,out,cmd==SM_DEV_EXCHANGE_COMPACT);
+    else if(cmd==SM_DEV_READ_BEGIN) {
+        /* Only socket reads may be submitted speculatively, exactly once. Never
+         * retain a user pointer: begin copies into the static DMA buffer. */
+        SmFrame *f=in;
+        if(f->op!=SM_SOCKET_READ || f->length!=sizeof(SmSocketRequest))rc=SM_INVALID;
+        else rc=exchange_begin(in,1);
+    } else if(cmd==SM_DEV_READ_FINISH)rc=exchange_finish(out);
+    else if(cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT) {
+        rc=exchange_begin(in,cmd==SM_DEV_EXCHANGE_COMPACT);
+        if(rc>=0)rc=exchange_finish(out);
+    }
     else rc=SM_INVALID;
     sceKernelSignalSema(lock_id,1);return rc;
 }

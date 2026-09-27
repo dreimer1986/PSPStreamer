@@ -195,12 +195,29 @@ USB TLS does not inherit PSPStreamer's native PSP certificate-pinning database.
 
 ## Diagnosis and fair speed comparisons
 
+Bulk reads now optionally submit the next USB read before returning to the caller.
+The kernel bridge copies the request into owned DMA buffers; a later finish waits
+for completion. Exactly one exchange is in flight. A control RPC first collects
+that exchange into the originating socket's private look-ahead mailbox, identified
+by token and transport generation, before issuing its own request. Close drains
+outstanding work; detach/reset invalidates old data. No asynchronous user pointer
+is retained. This costs an additional 4064-byte mailbox per local socket slot.
+Reads below 1024 bytes do not initiate look-ahead. An older bridge automatically
+falls back to synchronous operation. Update `StreamMasterUSB.prx` with the app to
+enable pipelining; ESP firmware 0.2.3 need not be reflashed.
+
 `stm_diagnostic_snapshot(buffer, capacity, 0)` formats USB timing/rate counters;
 passing `1` formats sampled ESP receive-buffer counters. A zero return means no
 snapshot is available. Write these infrequently from your own diagnostic/UI
 worker, outside I/O locks. Counters are cumulative and aggregate all sockets;
 the displayed session-average KiB/s includes idle time. See
 [measurement details](README.md#transport-measurements).
+
+`ahead` counts collected speculative reads (including empty replies). For these
+reads, USB timing records the blocking finish wait only: DMA can already have
+completed while the caller was working. Do not compare that timing with the old
+fully synchronous USB duration as if it measured physical bus occupancy. Use file
+byte counts and elapsed download time to evaluate the speedup.
 
 The setup UI's echo test is an integrity/USB round-trip test, **not** a file-download
 benchmark. Compare O2/O3, direct cable/hub and native PSP Wi-Fi with the same

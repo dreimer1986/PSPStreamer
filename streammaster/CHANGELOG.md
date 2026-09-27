@@ -6,6 +6,12 @@ not mean that the feature is available in the current firmware ZIP.
 
 ## 0.2.3 — 2026-09-27
 
+- Matching PSP update adds asynchronous USB read-ahead, overlapping one next
+  block with caller processing/storage. This is a PSP-local driver ABI extension:
+  firmware wire format is unchanged and no additional ESP flash is required.
+  Copy EBOOT.PBP, PSPStreamer.prx and StreamMasterUSB.prx together. Older bridges
+  fall back to synchronous reads. `ahead` diagnostics count completed prefetches.
+
 - Increase TCP receive window from 5,760 to 32,768 bytes and receive mailbox
   from 6 to 26 entries. Application rings remain bounded at 64 KiB per channel.
 - Set FreeRTOS tick to 1 kHz: the socket owner's mandatory one-tick yield now

@@ -18,6 +18,9 @@ typedef struct {
     SceInt64 read_retry,open_retry,diagnostic_next,empty_since;
     SmSocketOpen destination;
     unsigned char cache[SM_PAYLOAD_SIZE];
+    unsigned char ahead[SM_PAYLOAD_SIZE];
+    unsigned ahead_length;
+    int ahead_ready,ahead_result;
 } LocalSocket;
 static LocalSocket sockets[LOCAL_SOCKETS];
 /* PSP newlib's __errno uses the shared _impure_ptr in this toolchain.
@@ -43,12 +46,15 @@ static int compact_packets;
 static unsigned capable_generation;
 static unsigned sequence,generation=1,next_token=1,next_fd=1;
 static SmFrame request,response;
+/* rpc_lock owns this single DMA transaction and all look-ahead mailboxes. */
+static int ahead_supported=1;
+static unsigned ahead_token,ahead_epoch;
 static char target_host[128];
 static int target_port,target_tls;
 static const char *phase="idle";
 static int diagnostic_enabled;
 static struct {
-    unsigned calls,reads,bytes,busy,errors,max_us,slow_op;
+    unsigned calls,reads,bytes,busy,errors,max_us,slow_op,prefetched;
     unsigned samples,empty,full,min,max;
     unsigned long long usb_us,wait_us,start;
 } diagnostic;
@@ -58,8 +64,8 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     SceUInt wait=1000;
     if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
     unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
-    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d cumulative",
-        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets);
+    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u cumulative",
+        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched);
     else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
         diagnostic.calls,diagnostic.reads,elapsed?(unsigned)((unsigned long long)diagnostic.bytes*1000000/elapsed/1024):0,
         diagnostic.usb_us/1000,diagnostic.wait_us/1000,diagnostic.max_us,diagnostic.slow_op,diagnostic.busy,diagnostic.errors);
@@ -73,6 +79,59 @@ static int lock(SceUID id,int milliseconds,volatile int *running) {
         if(sceKernelGetSystemTimeWide()>=end)break;
     }
     return SM_BUSY;
+}
+static void finish_ahead(void) {
+    if(!ahead_token)return;
+    unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
+    int rc=sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
+    if(rc<0){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
+    if(diagnostic_enabled) {
+        diagnostic.calls++;diagnostic.reads++;
+        diagnostic.prefetched++;
+        /* Only blocked finish time; the rest overlaps application work. */
+        diagnostic.usb_us+=sceKernelGetSystemTimeWide()-started;
+        if(rc>=0 && response.result>=0)diagnostic.bytes+=response.length;
+        if(rc<0 || response.result<0) {
+            if(rc>=0 && response.result==SM_BUSY)diagnostic.busy++;else diagnostic.errors++;
+        }
+    }
+    for(int i=0;i<LOCAL_SOCKETS;i++) {
+        LocalSocket *s=&sockets[i];
+        if(s->fd && s->token==ahead_token && s->epoch==ahead_epoch && s->epoch==generation) {
+            s->ahead_result=rc<0?rc:response.result;s->ahead_length=0;
+            if(rc>=0 && response.result>=0 && response.length<=sizeof(s->ahead)) {
+                memcpy(s->ahead,response.payload,response.length);s->ahead_length=response.length;
+            } else if(rc>=0 && response.result>=0)s->ahead_result=SM_INVALID;
+            s->ahead_ready=1;break;
+        }
+    }
+    ahead_token=0;
+}
+static int take_ahead(LocalSocket *s,int *result,unsigned *length) {
+    if(lock(rpc_lock,30,NULL)<0)return -1;
+    finish_ahead();
+    int ready=s->ahead_ready;
+    if(ready) {
+        *result=s->ahead_result;*length=s->ahead_length;
+        if(*length)memcpy(s->cache,s->ahead,*length);
+        s->ahead_ready=0;
+    }
+    sceKernelSignalSema(rpc_lock,1);return ready;
+}
+static void start_ahead(LocalSocket *s) {
+    /* Do not block playback/storage to obtain speculative data. */
+    SceUInt wait=1;
+    if(!ahead_supported || !compact_packets || sceKernelWaitSema(rpc_lock,1,&wait)<0)return;
+    if(!ahead_token && !s->ahead_ready && !broken && s->epoch==generation && !s->eof && !s->dead) {
+        SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};
+        memset(&request,0,sizeof(request));request.op=SM_SOCKET_READ;
+        request.sequence=++sequence;request.length=sizeof(r);memcpy(request.payload,&r,sizeof(r));sm_seal(&request);
+        int rc=sceIoDevctl("stm:",SM_DEV_READ_BEGIN,&request,sizeof(request),NULL,0);
+        if(rc==SM_INVALID)ahead_supported=0; /* Old bridge: retain synchronous reads. */
+        else if(rc>=0){ahead_token=s->token;ahead_epoch=s->epoch;}
+        else if(rc!=SM_BUSY){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
+    }
+    sceKernelSignalSema(rpc_lock,1);
 }
 const char *stm_stage(void){return phase;}
 int stm_enabled(void){return selected;}
@@ -96,6 +155,7 @@ int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capa
     /* Data/control pollers yield promptly to the current owner. Closing must
      * get a longer chance to release its remote slot before declaring failure. */
     if(lock(rpc_lock,op>=SM_SOCKET_OPEN && op!=SM_SOCKET_CLOSE?30:1000,running)<0)return SM_BUSY;
+    finish_ahead();
     if(module<0 || (op>=SM_SOCKET_OPEN && broken)){sceKernelSignalSema(rpc_lock,1);return SM_OFFLINE;}
     memset(&request,0,sizeof(request));memset(&response,0,sizeof(response));
     request.op=op;request.sequence=++sequence;request.length=size;
@@ -155,6 +215,7 @@ int stm_driver_start(int force,volatile int *running) {
     }
     if(rc>=0) {
         phase="reset USB driver";rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
+        ahead_token=0;ahead_supported=1;
         generation++;broken=1;compact_packets=0;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
@@ -183,6 +244,7 @@ void stm_driver_stop(void) {
     if(rpc_lock<0)return;
     stm_driver_cancel();
     if(lock(rpc_lock,1000,NULL)<0)return;
+    ahead_token=0;
     if(module>=0) {
         int rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0),status=0;
         if(rc>=0 && sceKernelStopModule(module,0,NULL,&status,NULL)>=0 && status>=0 && sceKernelUnloadModule(module)>=0)module=-1;
@@ -264,7 +326,9 @@ static int socket_refill(LocalSocket *s) {
         socket_status(s,&sample); /* One extra exchange per five seconds, not per block. */
     }
     SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
-    int rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
+    int rc=0,cached=take_ahead(s,&rc,&length);
+    if(cached<0)return 0;
+    if(!cached)rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
     if(rc==SM_BUSY) {
         SceInt64 now=sceKernelGetSystemTimeWide();
         if(!s->empty_since)s->empty_since=now;
@@ -366,7 +430,9 @@ size_t stm_recv(int fd,void *data,size_t size,int flags) {
         if(s->eof)return 0;
     }
     if(size>s->end-s->pos)size=s->end-s->pos;
-    memcpy(data,s->cache+s->pos,size);s->pos+=size;return size;
+    memcpy(data,s->cache+s->pos,size);s->pos+=size;
+    if(s->pos==s->end && size>=1024)start_ahead(s);
+    return size;
 }
 int stm_errno(void){
     if(!selected)return sceNetInetGetErrno();
@@ -413,6 +479,9 @@ int stm_close(int fd) {
         for(int i=0;i<3 && rc==SM_BUSY;i++)rc=stm_rpc(SM_SOCKET_CLOSE,&r,sizeof(r),NULL,0,NULL,NULL);
         if(rc<0 && rc!=SM_OFFLINE){broken=1;generation++;}
     }
-    if(lock(slots_lock,1000,NULL)<0)return -1;
-    memset(s,0,sizeof(*s));sceKernelSignalSema(slots_lock,1);return 0;
+    if(lock(rpc_lock,1000,NULL)<0)return -1;
+    finish_ahead();
+    if(lock(slots_lock,1000,NULL)<0){sceKernelSignalSema(rpc_lock,1);return -1;}
+    memset(s,0,sizeof(*s));sceKernelSignalSema(slots_lock,1);
+    sceKernelSignalSema(rpc_lock,1);return 0;
 }

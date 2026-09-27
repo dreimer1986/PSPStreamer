@@ -9,6 +9,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_async_driver_buffer_ownership(self):
+        source = (ROOT / "psp-client/streammaster_usb/bridge.c").read_text()
+        functions = source[source.index("static int exchange_begin("):source.index("static int devctl(")]
+        harness = (ROOT / "tests/streammaster_async_harness.c").read_text().replace("/* EXCHANGE */", functions)
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "async"
+            subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=address,undefined", "-I", str(ROOT), "-o", str(binary)],
+                           input=harness, text=True, check=True)
+            subprocess.run([str(binary)], check=True, timeout=5)
+
     def test_download_real_http_range_and_truncated_body(self):
         source = (ROOT / "psp-client/offline_ui.h").read_text()
         functions = source[source.index("static int offline_connect("):source.index("static int offline_hash(")]

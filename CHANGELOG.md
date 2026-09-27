@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Pipeline StreamMaster bulk reads through asynchronous PSP USB begin/finish
+  operations. One speculative block per socket, one USB transaction in flight,
+  generation-checked delivery, and synchronous fallback for older bridge drivers.
+  ESP firmware 0.2.3 remains compatible; update the PSP USB PRX with the app.
 - StreamMaster 0.2.3: larger TCP receive window/mailbox and finer socket-worker
   scheduling; PSP uses faster active read retries with retained idle backoff.
   Add five-second file-download progress diagnostics for throughput comparison.
