@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Batch recovery logs during offline transfers, overlap reception with bounded
+  asynchronous card writes and prefetch verification reads while hashing. Full
+  on-card SHA-256 verification and committed-prefix resume remain enabled.
 - Add opt-in download bottleneck timings for receive, storage, verification and
   per-socket StreamMaster read-ahead/ESP occupancy without extra USB queries.
 - Report StreamMaster firmware capability bits and kernel driver probe results

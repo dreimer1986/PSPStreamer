@@ -35,10 +35,14 @@ static int tls_recv(int a,void*b,int c,int d){(void)a;(void)b;(void)c;(void)d;as
 #include "../psp-client/playback_transport.h"
 static void recovery_log(const char *event,int result,int status,const char *detail){fprintf(stderr,"%s result=%d http=%d %s\n",event,result,status,detail);}
 static unsigned long long offline_size(const char *path){struct stat s;return stat(path,&s)?0:s.st_size;}
+static void recovery_flush_due(void){}
+#include "offline_async_mock.h"
+#include "../psp-client/offline_io.h"
 /* OFFLINE_HTTP */
 int main(int argc,char **argv){
     assert(argc==6);server_port=atoi(argv[1]);unsigned int expected=strtoul(argv[4],NULL,10);
     int result=offline_http(argv[2],NULL,NULL,0,argv[3],expected);
+    assert(!io_busy);
     assert((result==0)==(atoi(argv[5])==0));
     if(result==0)assert(offline_size(argv[3])==expected);
     return 0;

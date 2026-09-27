@@ -15,7 +15,11 @@ are not additional unfinished requirements of the 0.2.4 implementation.
    copying, exact-length compact copies, header/payload-only bulk initialization.
    Larger replies amortize header/checksum setup; payload integrity remains checked.
 
-Baseline: 0.2.3 plus single-request read-ahead transferred 170,598,447 bytes in
+Confirmed 0.2.4: 419.37 KiB/s over 171,481,659 bytes, `bulk=1`, zero USB errors.
+Download-only diagnostic batching, double-buffered async card writes and prefetched
+read-back verification are now implemented; their hardware comparison is pending.
+
+Earlier baseline: 0.2.3 plus single-request read-ahead transferred 170,598,447 bytes in
 516.684 s = 322.44 KiB/s. Interval median 338, maximum 357 KiB/s; one of 100
 recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 
@@ -35,8 +39,8 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 | Wi-Fi/radio | AP/channel/congestion, signal/retries, driver aggregation/buffer options | Can dominate on a bad link; environment-dependent; power saving is already disabled |
 | HTTP/server path | Inspect server disk/SMB/provider delivery and socket write batching; reuse connections for many small requests | Conditional; low–medium effort; keep-alive mostly helps startup/small files, not a single large body |
 | TLS | Profile TLS record buffering, session reuse and supported cryptographic acceleration | HTTPS only; medium–high effort; preserve verification; no gain for HTTP measurements |
-| PSP storage pipeline | Write-size/alignment tuning, overlap card writes with reception, investigate card stalls | Can improve end-to-end throughput; medium–high effort; preserve bounded RAM, committed offsets and resume correctness |
-| Final file verification | Faster SHA-256/file reads or safely pipelined verification | Current approximately two-minute post-download wait is a separate opportunity; medium effort; keep full integrity guarantees |
+| PSP storage pipeline | Tune implemented double-buffered async writes, chunk size/alignment; investigate remaining card stalls | First overlap implementation ready for measurement; further changes conditional; preserve bounded RAM, committed offsets and resume correctness |
+| Final file verification | Measure implemented read-ahead hashing; optimize remaining SHA-256 CPU work if justified | Baseline 121 s = 41 s reads + 79 s hashing; read-ahead now implemented, crypto implementation unchanged; keep full read-back integrity |
 | UI/logging/background work | Profile rendering, diagnostic writes and remote polling during transfers | Usually modest; low–medium effort; do not sacrifice controls or blindly disable diagnostics |
 | Compiler/code generation | Targeted O3/LTO/PGO or hot-loop optimization after profiling | Uncertain, generally incremental; medium effort; O3 echo comparison did not establish a win |
 | PSP CPU/bus policy | Compare already proven clock settings during transfer/hash versus idle | Conditional, with power/thermal/stability costs; no new overclock settings introduced here |

@@ -2,6 +2,7 @@
  * TLS, file and hash ownership stays on the worker; the UI only cancels it. */
 #include <pspiofilemgr_devctl.h>
 #include <mbedtls/sha256.h>
+#include "offline_io.h"
 #define OFFLINE_ROOT "ms0:/PSP/VIDEO/PSPStreamer"
 #define OFFLINE_JOBS 128
 typedef struct {char id[33],name[128],state[20],info[96];int progress,is_audio;} OfflineEntry;
@@ -95,13 +96,16 @@ static int offline_connect(int fd) {
  * Never append a 200/error page to a partial FLV. */
 static int offline_http(const char *url,const char *post,char *reply,int capacity,
                         const char *file,unsigned int expected) {
-    char header[4096],request[4096],range[80]="";unsigned char *block=NULL;
+    char header[4096],request[4096],range[80]="";unsigned char *block=NULL,*allocation=NULL;
     int fd=-1,out=-1,n=0,result=-1,code=0;unsigned int have=0,start=0,pending=0;
     unsigned long long length=0,last,tick=sceKernelGetSystemTimeWide();
     unsigned long long report_tick=tick;
     unsigned int report_bytes=0;
     unsigned long long body_tick=0,recv_us=0,write_us=0,max_recv_us=0,max_write_us=0,close_us=0;
     unsigned recv_calls=0,recv_idle=0,write_calls=0;
+    unsigned chunk=32768,committed=0,inflight_bytes=0;
+    int inflight=0,async_enabled=1;
+    unsigned long long write_wait_us=0,write_submit_us=0;
     const char *phase="request",*reason="validation";
     int transport_result=0,last_net_errno=0;
     if(file){unsigned long long old=offline_size(file);if(old>expected)goto done;start=(unsigned int)old;}
@@ -124,7 +128,7 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     phase="header";
     while(download_running && n<(int)sizeof(header)-1) {
         int got=playback_recv(fd,header+n,1,100);
-        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
+        if(got==-2){recovery_flush_due();if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
         if(got<=0){reason=got?"transport":"eof";transport_result=got;last_net_errno=got?sceNetInetGetErrno():0;goto done;}
         last=sceKernelGetSystemTimeWide();header[++n]=0;
         if(n>=4&&!memcmp(header+n-4,"\r\n\r\n",4))break;
@@ -146,34 +150,51 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
         if(sceIoLseek(out,start,PSP_SEEK_SET)<0)goto done;
         download_bytes=start;download_total=expected;
     } else if(length>=(unsigned int)capacity)goto done;
-    block=malloc(32768);if(!block)goto done;
+    if(file) {
+        chunk=524288;
+        while(!(allocation=malloc(2*chunk)) && chunk>32768)chunk/=2;
+    } else allocation=malloc(chunk);
+    block=allocation;if(!block)goto done;
     phase="body";
     report_tick=sceKernelGetSystemTimeWide();
     body_tick=report_tick;
     while(download_running && have<length) {
-        unsigned int count=length-have;if(count>32768-pending)count=32768-pending;
+        unsigned int count=length-have;if(count>chunk-pending)count=chunk-pending;
         unsigned long long op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
         int got=playback_recv(fd,block+pending,count,100);
         if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;recv_us+=dt;recv_calls++;if(dt>max_recv_us)max_recv_us=dt;if(got==-2)recv_idle++;}
-        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
+        if(got==-2){recovery_flush_due();if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
         if(got<=0){reason=got?"transport":"eof";transport_result=got;last_net_errno=got?sceNetInetGetErrno():0;goto done;}
         last=sceKernelGetSystemTimeWide();
         if(file) {
             pending+=got;
-            /* Batch storage writes
-             * in the existing 32 KiB buffer instead of flushing every packet.
-             * On cancellation, an uncommitted tail is safely downloaded again. */
-            if(pending==32768 || have+(unsigned)got==length) {
+            /* Fill one buffer while the I/O manager writes the other. */
+            if(pending==chunk || have+(unsigned)got==length) {
+                if(inflight) {
+                    long long written=0;int io=offline_io_finish(out,&written,&write_wait_us);inflight=0;
+                    unsigned long long dt=sceKernelGetSystemTimeWide()-write_submit_us;
+                    write_us+=dt;if(dt>max_write_us)max_write_us=dt;
+                    if(io<0 || written!=(long long)inflight_bytes){reason="storage-write";goto done;}
+                    committed+=inflight_bytes;
+                }
                 op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
-                int written=sceIoWrite(out,block,pending);
-                if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;write_us+=dt;write_calls++;if(dt>max_write_us)max_write_us=dt;}
-                if(written!=(int)pending){reason="storage-write";snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
+                if(async_enabled && sceIoWriteAsync(out,block,pending)>=0) {
+                    inflight=1;inflight_bytes=pending;write_submit_us=sceKernelGetSystemTimeWide();
+                    block=block==allocation?allocation+chunk:allocation;
+                } else {
+                    async_enabled=0;
+                    int written=sceIoWrite(out,block,pending);
+                    if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;write_us+=dt;write_wait_us+=dt;if(dt>max_write_us)max_write_us=dt;}
+                    if(written!=(int)pending){reason="storage-write";goto done;}
+                    committed+=pending;
+                }
+                write_calls++;
                 pending=0;
             }
         } else memcpy(reply+have,block,got);
         have+=got;
         if(file) {
-            download_bytes=start+have-pending;
+            download_bytes=start+committed;
             unsigned long long elapsed=last-tick;
             download_speed=elapsed?((unsigned long long)have*1000000ULL/elapsed):0;
             if(last-report_tick>=5000000ULL) {
@@ -184,11 +205,12 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
                     start+have,delta,span/1000,(unsigned long long)delta*1000000ULL/span/1024);
                 recovery_log("download progress",0,code,detail);
                 if(debug_enabled) {
-                    snprintf(detail,sizeof(detail),"recv_ms=%llu recv_n=%u idle=%u recv_max_us=%llu write_ms=%llu write_n=%u write_max_us=%llu",
-                        recv_us/1000,recv_calls,recv_idle,max_recv_us,write_us/1000,write_calls,max_write_us);
+                    snprintf(detail,sizeof(detail),"recv_ms=%llu recv_n=%u idle=%u write_wait_ms=%llu write_n=%u chunk=%u async=%d",
+                        recv_us/1000,recv_calls,recv_idle,write_wait_us/1000,write_calls,chunk,async_enabled);
                     recovery_log("download timing",0,code,detail);
                     if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket",0,code,detail);
                 }
+                recovery_flush_due();
                 report_tick=last;report_bytes=have;
             }
         }
@@ -197,7 +219,15 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     if(!file)reply[have]=0;
     result=0;reason="complete";
 done:
-    free(block);
+    if(inflight) {
+        long long written=0;int io=offline_io_finish(out,&written,&write_wait_us);
+        unsigned long long dt=sceKernelGetSystemTimeWide()-write_submit_us;
+        write_us+=dt;if(dt>max_write_us)max_write_us=dt;
+        if(io<0 || written!=(long long)inflight_bytes){result=-1;reason="storage-write";}
+        else {committed+=inflight_bytes;download_bytes=start+committed;}
+    }
+    free(allocation);
+    if(!strcmp(reason,"storage-write"))snprintf(download_error,sizeof(download_error),"Memory Stick write failed");
     unsigned long long close_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
     if(out>=0 && sceIoClose(out)<0){result=-1;reason="storage-close";}
     if(debug_enabled)close_us=sceKernelGetSystemTimeWide()-close_tick;
@@ -206,6 +236,9 @@ done:
         snprintf(detail,sizeof(detail),"body_ms=%llu setup_ms=%llu recv_ms=%llu write_ms=%llu close_ms=%llu recv_max_us=%llu write_max_us=%llu",
             (sceKernelGetSystemTimeWide()-body_tick)/1000,(body_tick-tick)/1000,recv_us/1000,write_us/1000,close_us/1000,max_recv_us,max_write_us);
         recovery_log("download timing final",result,code,detail);
+        snprintf(detail,sizeof(detail),"wait_ms=%llu lifetime_ms=%llu writes=%u chunk=%u committed=%u received=%u async=%d",
+            write_wait_us/1000,write_us/1000,write_calls,chunk,committed,have,async_enabled);
+        recovery_log("download storage final",result,code,detail);
         if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket final",result,code,detail);
     }
     if(fd>=0)connection_close(fd);
@@ -216,27 +249,49 @@ done:
             phase,!download_running?"cancelled":reason,transport_result,last_net_errno,have,length,start,elapsed);
         recovery_log("download HTTP",result,code,detail);
     }
+    recovery_flush_due();
     return result;
 }
 static int offline_hash(const char *path,const char *expected) {
-    unsigned char block[16384],digest[32];char hex[65];
+    unsigned char fallback[16384],digest[32];char hex[65];
     SceUID fd=sceIoOpen(path,PSP_O_RDONLY,0);if(fd<0)return -1;
-    mbedtls_sha256_context ctx;mbedtls_sha256_init(&ctx);mbedtls_sha256_starts_ret(&ctx,0);
-    int n=0;
-    unsigned long long begin=sceKernelGetSystemTimeWide(),read_us=0,hash_us=0,bytes=0;
-    while(download_running) {
-        unsigned long long t=debug_enabled?sceKernelGetSystemTimeWide():0;
-        n=sceIoRead(fd,block,sizeof(block));
-        if(debug_enabled)read_us+=sceKernelGetSystemTimeWide()-t;
-        if(n<=0)break;
-        bytes+=n;t=debug_enabled?sceKernelGetSystemTimeWide():0;
-        mbedtls_sha256_update_ret(&ctx,block,n);
-        if(debug_enabled)hash_us+=sceKernelGetSystemTimeWide()-t;
+    unsigned char *allocation=malloc(262144),*block=allocation?allocation:fallback;
+    unsigned chunk=allocation?131072:sizeof(fallback);
+    int async_enabled=allocation!=NULL,inflight=0,n=0,rc=0;
+    mbedtls_sha256_context ctx;mbedtls_sha256_init(&ctx);
+    rc=mbedtls_sha256_starts_ret(&ctx,0);
+    unsigned long long begin=sceKernelGetSystemTimeWide(),read_us=0,hash_us=0,bytes=0,flush_tick=begin;
+    unsigned long long t=sceKernelGetSystemTimeWide();
+    if(rc==0)n=sceIoRead(fd,block,chunk);
+    read_us+=sceKernelGetSystemTimeWide()-t;
+    while(download_running && rc==0 && n>0) {
+        unsigned char *next=allocation?(block==allocation?allocation+chunk:allocation):fallback;
+        /* Preserve read-back verification: hash the bytes read from the card,
+         * not the incoming network data. Only their scheduling changes. */
+        if(async_enabled) {
+            if(sceIoReadAsync(fd,next,chunk)>=0)inflight=1;
+            else async_enabled=0;
+        }
+        bytes+=n;t=sceKernelGetSystemTimeWide();
+        rc=mbedtls_sha256_update_ret(&ctx,block,n);
+        hash_us+=sceKernelGetSystemTimeWide()-t;
+        if(inflight) {
+            long long read_result=0;
+            int io=offline_io_finish(fd,&read_result,&read_us);inflight=0;
+            if(io<0 || read_result<0 || read_result>chunk){n=-1;break;}
+            n=(int)read_result;
+        } else if(download_running && rc==0) {
+            t=sceKernelGetSystemTimeWide();n=sceIoRead(fd,next,chunk);
+            read_us+=sceKernelGetSystemTimeWide()-t;
+        }
+        block=next;
+        if(sceKernelGetSystemTimeWide()-flush_tick>=5000000ULL){recovery_flush();flush_tick=sceKernelGetSystemTimeWide();}
     }
-    mbedtls_sha256_finish_ret(&ctx,digest);mbedtls_sha256_free(&ctx);sceIoClose(fd);
-    if(debug_enabled){char detail[160];snprintf(detail,sizeof(detail),"bytes=%llu total_ms=%llu read_ms=%llu hash_ms=%llu cancelled=%d read_rc=%d",
-        bytes,(sceKernelGetSystemTimeWide()-begin)/1000,read_us/1000,hash_us/1000,!download_running,n);recovery_log("download hash timing",n<0||!download_running?-1:0,0,detail);}
-    if(n<0||!download_running)return -1;
+    if(rc==0)rc=mbedtls_sha256_finish_ret(&ctx,digest);
+    mbedtls_sha256_free(&ctx);if(sceIoClose(fd)<0)rc=-1;free(allocation);
+    if(debug_enabled){char detail[176];snprintf(detail,sizeof(detail),"bytes=%llu total_ms=%llu read_wait_ms=%llu hash_ms=%llu cancelled=%d read_rc=%d async=%d chunk=%u",
+        bytes,(sceKernelGetSystemTimeWide()-begin)/1000,read_us/1000,hash_us/1000,!download_running,n,async_enabled,chunk);recovery_log("download hash timing",n<0||rc<0||!download_running?-1:0,0,detail);}
+    if(n<0||rc<0||!download_running)return -1;
     for(int i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);
     return strcmp(hex,expected)?-1:0;
 }
@@ -294,6 +349,7 @@ static int offline_download_worker(SceSize args,void *argp) {
     download_approve=0;download_stage=4;
     while(download_running&&!download_approve)sceKernelDelayThread(20000);
     if(!download_running)goto done;
+    recovery_batch_begin();
     snprintf(path,sizeof(path),"%s/job.json",folder);if(offline_write(path,meta,strlen(meta))<0)goto done;
     snprintf(path,sizeof(path),"%s/ready",folder);sceIoRemove(path);
     char *cursor=strstr(meta,"\"files\":[");if(!cursor)goto done;
@@ -335,6 +391,7 @@ static int offline_download_worker(SceSize args,void *argp) {
 done:
     recovery_log("download worker",result,0,download_running?(download_error[0]?download_error:"finished"):"cancelled");
     network_worker_finished("download");
+    recovery_batch_end();
     download_result=result;download_done=1;return 0;
 }
 static int offline_transfer(const char *key,const char *post) {

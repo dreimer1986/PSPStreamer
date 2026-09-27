@@ -28,27 +28,64 @@ Do not compare playback demand or USB echo throughput with file-download speed.
 With application debugging enabled, file downloads emit cumulative counters every
 five seconds and a final summary (also on cancellation/failure):
 
-- `download timing`: body receive-call time/count, idle returns (`-2`), longest
-  receive call, card-write time/count and longest write. Receive time includes
+- `download timing`: body receive-call time/count, idle returns (`-2`), blocked
+  write-wait time/count, buffer size and async mode. Receive time includes
   polling, transport work and waiting; it is not pure USB bus time.
 - `download timing final`: setup, body, receive, write and file-close times.
   Body wall time also includes logging/scheduling and other work. Do not add it
   to its component times. Subtract successive cumulative reports for intervals.
+  After the async-storage update, `write_ms` and `write_max_us` are observed
+  submission-to-reaping lifetimes, overlapping reception (and potentially including
+  completed work not yet reaped). They are not exclusive card-service times.
+- `download storage final`: `wait_ms` is the time actually blocked draining a
+  write, `lifetime_ms` includes overlap, `committed` is successful completed writes,
+  `received` also includes any uncommitted tail, `chunk` is the selected buffer
+  size and `async=0` indicates synchronous fallback.
 - `download USB socket`: only this socket's speculative groups, payload bytes,
   short groups and blocked finish time, plus existing ESP occupancy samples.
   Empty/full samples are snapshots, not percentages of elapsed time. Short groups
   can include EOF/busy replies. No additional USB requests are made by reporting.
   Finish time can be charged while another RPC drains this socket's queued read;
   it overlaps receive/storage work and must not be added to their totals.
-- `download hash timing`: file bytes, total verification wall time, card-read and
-  SHA-256 update time, cancellation/read-error state. This is timing, not a report
+- `download hash timing`: file bytes, total verification wall time, `read_wait_ms`
+  (first synchronous read plus waits for prefetched reads) and SHA-256 update time,
+  cancellation/read-error state, async mode and chunk size. This is timing, not a report
   that the expected digest matched; normal download validation remains authoritative.
 
-No ESP update is required. Disabled debugging skips hot-path timer reads/counters.
+No ESP update is required. Disabled debugging skips per-network-read diagnostics.
 This first attribution pass separates storage/hash costs from transport waiting;
 it does not yet measure ESP task CPU, DMA gaps, radio retries or server delays.
 Only instrument those layers if the result points there. The small logging/timing
 cost is not assumed to be zero; compare the resulting overall throughput as well.
+
+## Storage pipeline update (hardware comparison pending)
+
+The instrumented synchronous baseline transferred 170,555,495 bytes in 420.256 s.
+Writes consumed 63.736 s, with a longest write of 1.511 s. The longest receive call
+was 0.147 s; the ESP ring was full in 75/87 download-specific snapshots. Verification
+took 120.974 s: 41.385 s reading and 79.275 s hashing. These snapshots do not prove
+an exact stall frequency or distinguish card, adapter and filesystem behavior.
+
+- During file transfer/verification only, recovery logs collect in a bounded 4 KiB
+  RAM batch, normally persisted by the worker every five seconds and at completion,
+  failure or cancellation. Other workers append without card I/O. Overflow/contention
+  drops are explicitly counted; the last unflushed batch may be lost on power loss.
+  Outside that phase, immediate logging is retained. A stalled filesystem can still
+  delay persistence beyond five seconds. This is not a hard real-time guarantee.
+- Two 512 KiB download buffers overlap network reception with a single outstanding
+  asynchronous file write. Allocation falls back down to two 32 KiB buffers; unsupported
+  async submission falls back to synchronous writes. Buffer size is logged. No buffer
+  or descriptor is released until its outstanding operation has completed. Cancellation
+  drains that write, discards the unsubmitted tail and resumes from actual file length.
+- Verification reads ahead into two 128 KiB buffers while Mbed TLS hashes the current
+  one. SHA-256 itself, the expected server digest, full read-back and resume validation
+  are unchanged. No hashing of only network data and no custom crypto primitive.
+  Allocation failure retains the 16 KiB synchronous stack-buffer path. Hash API errors,
+  read failures and cancellation still fail validation.
+
+This targets overlap and fewer filesystem operations, not a guaranteed CPU hash speedup.
+Test the same ready file through verification, then cancel a second transfer and resume.
+Compare overall duration, storage wait, remaining read wait and responsiveness.
 
 | Route | Available measurement | Actual media-download throughput |
 | --- | --- | --- |

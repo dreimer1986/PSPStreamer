@@ -24,7 +24,7 @@ class StreamMasterTests(unittest.TestCase):
         source = (ROOT / "psp-client/offline_ui.h").read_text()
         functions = source[source.index("static int offline_connect("):source.index("static int offline_hash(")]
         harness = (ROOT / "tests/offline_http_harness.c").read_text().replace("/* OFFLINE_HTTP */", functions)
-        payload = bytes(range(251)) * 400
+        payload = bytes(range(251)) * 6000
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -37,7 +37,7 @@ class StreamMasterTests(unittest.TestCase):
                 if offset:
                     self.send_header("Content-Range", f"bytes {offset}-{len(payload)-1}/{len(payload)}")
                 self.end_headers()
-                self.wfile.write(payload[offset:40000] if self.path == "/short" else payload[offset:])
+                self.wfile.write(payload[offset:600000] if self.path == "/short" else payload[offset:])
 
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / "http"
@@ -56,10 +56,10 @@ class StreamMasterTests(unittest.TestCase):
                 log = download("/short", -1)
                 self.assertIn("body eof", log)
                 self.assertIn("http=200", log)
-                self.assertEqual(target.read_bytes(), payload[:32768])
+                self.assertEqual(target.read_bytes(), payload[:524288])
                 log = download("/full", 0)
                 self.assertIn("http=206", log)
-                self.assertIn("resume=32768", log)
+                self.assertIn("resume=524288", log)
                 self.assertEqual(target.read_bytes(), payload)
                 target.unlink()
                 self.assertIn("body complete", download("/full", 0))
@@ -88,7 +88,7 @@ static int stm_download_snapshot(int fd,char *line,unsigned size){(void)fd;(void
 static const char *server_host="test",*server_auth_header="";
 static char download_error[128],head[256];
 static unsigned download_bytes,download_total,download_speed,stored,position,received;
-static unsigned char disk[100003];
+static unsigned char disk[1500003];
 static unsigned long long clock_us;
 static unsigned long long sceKernelGetSystemTimeWide(void){return clock_us+=1000;}
 static unsigned long long offline_size(const char *p){(void)p;return stored;}
@@ -118,21 +118,28 @@ static int sceIoLseek(int f,unsigned p,int mode){assert(f==4&&!mode);position=p;
 static int sceIoWrite(int f,const void *b,unsigned n){assert(f==4&&position+n<=sizeof(disk));memcpy(disk+position,b,n);position+=n;stored=position;writes++;return n;}
 static int sceIoClose(int f){assert(f==4);return 0;}
 static void connection_close(int f){assert(f==3);}
+static void recovery_flush_due(void){}
+#include "offline_async_mock.h"
+#include "../psp-client/offline_io.h"
 /* FUNCTION */
 static void setup(void){
     received=stored;headpos=body_reads=0;download_running=1;
-    if(stored)snprintf(head,sizeof(head),"HTTP/1.0 206 OK\r\nContent-Length: %u\r\nContent-Range: bytes %u-100002/100003\r\n\r\n",100003-stored,stored);
-    else strcpy(head,"HTTP/1.0 200 OK\r\nContent-Length: 100003\r\n\r\n");
+    if(stored)snprintf(head,sizeof(head),"HTTP/1.0 206 OK\r\nContent-Length: %u\r\nContent-Range: bytes %u-1500002/1500003\r\n\r\n",1500003-stored,stored);
+    else strcpy(head,"HTTP/1.0 200 OK\r\nContent-Length: 1500003\r\n\r\n");
 }
 int main(void){
-    (void)server_port;setup();assert(!offline_http("/file",NULL,NULL,0,"file",100003));
-    assert(writes==4&&stored==100003&&download_bytes==stored);
+    (void)server_port;setup();assert(!offline_http("/file",NULL,NULL,0,"file",1500003));
+    assert(writes==3&&stored==1500003&&download_bytes==stored&&!io_busy);
     for(unsigned i=0;i<stored;i++)assert(disk[i]==i%251);
-    stored=writes=0;cancel_after=10;setup();assert(offline_http("/file",NULL,NULL,0,"file",100003)<0);
-    assert(stored==32768&&download_bytes==stored);
-    cancel_after=0;setup();assert(!offline_http("/file",NULL,NULL,0,"file",100003));
-    assert(stored==100003&&writes==4);
+    stored=writes=0;cancel_after=150;setup();assert(offline_http("/file",NULL,NULL,0,"file",1500003)<0);
+    assert(stored==524288&&download_bytes==stored&&!io_busy);
+    cancel_after=0;setup();assert(!offline_http("/file",NULL,NULL,0,"file",1500003));
+    assert(stored==1500003&&writes==3&&!io_busy);
     for(unsigned i=0;i<stored;i++)assert(disk[i]==i%251);
+    stored=writes=0;io_disabled=1;setup();assert(!offline_http("/file",NULL,NULL,0,"file",1500003));
+    assert(stored==1500003 && !io_busy);
+    stored=writes=0;io_disabled=0;io_fail=1;setup();assert(offline_http("/file",NULL,NULL,0,"file",1500003)<0);
+    assert(!io_busy && !stored);
 }
 '''.replace("/* FUNCTION */", function)
         transport = (ROOT / "psp-client/playback_transport.h").read_text()
@@ -140,7 +147,7 @@ int main(void){
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / "download"
             subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-fsanitize=address,undefined", "-o", str(binary)],
+                            "-fsanitize=address,undefined", "-I", str(ROOT / "tests"), "-o", str(binary)],
                            input=harness, text=True, check=True)
             subprocess.run([str(binary)], check=True, timeout=5)
 
