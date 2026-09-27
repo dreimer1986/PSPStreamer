@@ -44,6 +44,8 @@ static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
 static volatile int selected,broken=1,wifi_state;
 static int compact_packets;
 static int bulk_pairs,ahead_bulk;
+static unsigned peer_caps,peer_caps_length;
+static int peer_caps_result=SM_OFFLINE,bridge_bulk_result=SM_OFFLINE;
 static unsigned capable_generation;
 static unsigned sequence,generation=1,next_token=1,next_fd=1;
 static SmFrame request,response;
@@ -65,8 +67,9 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     SceUInt wait=1000;
     if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
     unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
-    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u bulk=%d cumulative",
-        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched,bulk_pairs);
+    if(buffers)snprintf(line,size,"bulk=%d caps=%x probe=%d len=%u bridge=%d span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u cumulative",
+        bulk_pairs,peer_caps,peer_caps_result,peer_caps_length,bridge_bulk_result,
+        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched);
     else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
         diagnostic.calls,diagnostic.reads,elapsed?(unsigned)((unsigned long long)diagnostic.bytes*1000000/elapsed/1024):0,
         diagnostic.usb_us/1000,diagnostic.wait_us/1000,diagnostic.max_us,diagnostic.slow_op,diagnostic.busy,diagnostic.errors);
@@ -228,6 +231,7 @@ int stm_driver_start(int force,volatile int *running) {
         phase="reset USB driver";rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
         ahead_token=0;ahead_supported=1;
         generation++;broken=1;compact_packets=bulk_pairs=0;
+        peer_caps=peer_caps_length=0;peer_caps_result=bridge_bulk_result=SM_OFFLINE;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
     if(rc>=0) {
@@ -245,9 +249,11 @@ int stm_driver_start(int force,volatile int *running) {
     if(rc>=0) {
         unsigned caps=0,length=0;
         int probe=stm_rpc(SM_CAPABILITIES,NULL,0,&caps,sizeof(caps),&length,running);
+        peer_caps=caps;peer_caps_length=length;peer_caps_result=probe;
+        bridge_bulk_result=sceIoDevctl("stm:",SM_DEV_BULK_CAPS,NULL,0,NULL,0);
         if(probe==0 && length==sizeof(caps)) {
             compact_packets=(caps&SM_CAP_COMPACT)!=0;
-            bulk_pairs=compact_packets && (caps&SM_CAP_BULK_PAIR) && sceIoDevctl("stm:",SM_DEV_BULK_CAPS,NULL,0,NULL,0)==1;
+            bulk_pairs=compact_packets && (caps&SM_CAP_BULK_PAIR) && bridge_bulk_result==1;
         }
         else if(probe!=SM_INVALID)rc=probe;
     }

@@ -219,7 +219,13 @@ worker, outside I/O locks. Counters are cumulative and aggregate all sockets;
 the displayed session-average KiB/s includes idle time. See
 [measurement details](README.md#transport-measurements).
 
-`bulk=1` indicates negotiated pairs. `ahead` counts collected speculative groups
+`bulk=1` indicates negotiated pairs. Diagnostics also report `caps`, `probe`,
+`len` and `bridge`: current firmware/driver should return `caps=3 probe=0 len=4
+bridge=1`. `caps=1` indicates compact-only firmware; a negative bridge result
+indicates an unsupported or failed local driver query. A September 27 flash audit
+found 0.2.3 still installed despite a 0.2.4 factory file on the PC: verify the
+actual flashed image rather than inferring firmware version from the file name.
+`ahead` counts collected speculative groups
 (including empty replies; a group has two requests in bulk mode). For these
 reads, USB timing records the blocking finish wait only: DMA can already have
 completed while the caller was working. Do not compare that timing with the old

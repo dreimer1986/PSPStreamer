@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- Report StreamMaster firmware capability bits and kernel driver probe results
+  to distinguish legacy firmware from driver negotiation failures.
 - StreamMaster 0.2.4: two outstanding 8 KiB bulk replies, negotiated legacy
   fallback, FIFO host scheduling and reduced payload copies through buffer swaps.
 - Pipeline StreamMaster bulk reads through asynchronous PSP USB begin/finish
