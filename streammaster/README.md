@@ -2,6 +2,28 @@
 
 ## Transport measurements
 
+### Experimental O3 comparison
+
+The standard release remains `-O2`. The separate `StreamMaster-Onju-V3-O3`
+package reports `0.2.2-o3` and uses the same protocol and settings. Rebuild from
+the repository root after activating ESP-IDF:
+
+```sh
+idf.py -C streammaster -B build-o3 -DSTREAMMASTER_O3=ON build
+bash streammaster/package.sh ../build-o3 StreamMaster-Onju-V3-O3
+```
+
+The comparison app and SDK sources use `-O3`, except IDF 5.5.1's
+`vfs_semihost.c` and ESP32-S3 `rtc_clk.c`: these stay at `-O2` because GCC emits
+uninitialized-variable errors at `-O3`. Warnings are not suppressed. Bootloader,
+prebuilt vendor libraries and ROM routines are not changed to O3.
+Use the same PSP app, server, HTTP URL and media file for both tests. Run the USB
+echo test several times and compare full media-download elapsed time separately.
+Playback rate alone is not a maximum-throughput benchmark. Flashing only
+`streammaster_onju_v3.bin` at `0x10000` preserves NVS configuration; do not erase
+flash or use the factory image for this comparison. Revert with the standard
+package's app binary at the same offset.
+
 With PSP debugging enabled, `PSP/SYSTEM/PSPStreamer-recovery.txt` records
 `USB throughput` and `ESP RX samples` approximately every 30 seconds while
 network diagnostics are running. Counters are cumulative for the app session:

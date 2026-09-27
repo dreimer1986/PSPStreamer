@@ -12,6 +12,7 @@ psp-client/release/
 
 # Local toolchains and vendored build dependencies
 .toolchain/
+build-o3/
 psp-client/third_party/
 
 # Local configuration

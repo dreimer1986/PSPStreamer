@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "bridge.h"
+#include "esp_app_desc.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdatomic.h>
@@ -109,7 +110,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     }
     case SM_INFO:
     case SM_NETWORK_INFO: {
-        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.2.2");
+        SmInfo info={0};snprintf(info.firmware,sizeof(info.firmware),"StreamMaster Onju V3 %.10s",esp_app_get_description()->version);
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);

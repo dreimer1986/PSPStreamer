@@ -6,6 +6,11 @@ not mean that the feature is available in the current firmware ZIP.
 
 ## 0.2.2 — 2026-09-27
 
+- Optional separately packaged `0.2.2-o3` compiler comparison; standard stays
+  O2. Two SDK source exceptions, unchanged vendor binaries and reproducible
+  build/flash instructions are documented in the README. No speedup claimed
+  until measured on hardware.
+
 - Negotiate compact USB framing: a socket read request now occupies 40 bytes
   rather than 4096; empty replies use 32 bytes. Full data replies remain 4096.
   Short-packet termination handles 64-byte boundaries explicitly. Packet length,
