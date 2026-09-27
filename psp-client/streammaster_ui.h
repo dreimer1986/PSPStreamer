@@ -12,6 +12,12 @@ static SmConfig sm_draft;
 static SmInfo sm_info;
 static SmScan sm_scan;
 static SmHttpOpen sm_server;
+static const char *sm_stage="idle";
+static int sm_step(const char *stage,int rc) {
+    sm_stage=stage;
+    recovery_log("StreamMaster",rc,0,stage);
+    return rc;
+}
 
 static int sm_rpc(unsigned op,const void *data,unsigned size) {
     if(sm_cancel)return SM_TIMEOUT;
@@ -20,6 +26,7 @@ static int sm_rpc(unsigned op,const void *data,unsigned size) {
     sm_request.op=op;sm_request.sequence=++sm_sequence;sm_request.length=size;
     if(size)memcpy(sm_request.payload,data,size);
     sm_seal(&sm_request);
+    sm_stage="USB exchange";
     int rc=sceIoDevctl("stm:",SM_DEV_EXCHANGE,&sm_request,sizeof(sm_request),&sm_response,sizeof(sm_response));
     memset(&sm_request,0,sizeof(sm_request));
     if(rc<0)return rc;
@@ -35,28 +42,31 @@ static int sm_read_info(void) {
 }
 static int sm_load(void) {
     if(sm_module<0) {
-        int module=kuKernelLoadModule("flash0:/kd/usb.prx",0,NULL),result=0;
+        int module=sm_step("load Sony USB",kuKernelLoadModule("flash0:/kd/usb.prx",0,NULL)),result=0;
         if(module>=0) {
-            int rc=sceKernelStartModule(module,0,NULL,&result,NULL);
+            int rc=sm_step("start Sony USB",sceKernelStartModule(module,0,NULL,&result,NULL));
             if(rc<0)return rc;
+            sm_step("Sony USB module result",result);if(result<0)return result;
         } else if((unsigned)module!=0x80020139U)return module;
         char path[256],cwd[192];
         if(!getcwd(cwd,sizeof(cwd)))snprintf(cwd,sizeof(cwd),"%s",PSP_STREAMER_INSTALL_DIR);
         snprintf(path,sizeof(path),"%s/StreamMasterUSB.prx",cwd);
-        module=kuKernelLoadModule(path,0,NULL);if(module<0)return module;
-        int rc=sceKernelStartModule(module,0,NULL,&result,NULL);
+        module=sm_step("load bridge PRX",kuKernelLoadModule(path,0,NULL));if(module<0)return module;
+        int rc=sm_step("start bridge PRX",sceKernelStartModule(module,0,NULL,&result,NULL));
+        if(rc>=0)sm_step("bridge module result",result);
         if(rc<0 || result<0){sceKernelUnloadModule(module);return rc<0?rc:result;}
         sm_module=module;
     }
-    int rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
+    int rc=sm_step("reset USB driver",sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0));
     if(rc<0)return rc;
-    rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);if(rc<0)return rc;
+    rc=sm_step("activate USB driver",sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0));if(rc<0)return rc;
+    sm_stage="wait USB attach";
     SceInt64 deadline=sceKernelGetSystemTimeWide()+10000000;
     do {
         if(sm_cancel)return SM_TIMEOUT;
         rc=sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0);
-        if(rc>0)return sm_read_info();
-        if(rc<0)return rc;
+        if(rc>0){sm_step("USB attached",rc);return sm_read_info();}
+        if(rc<0)return sm_step("USB attach status",rc);
         sceKernelDelayThread(20000);
     }while(sceKernelGetSystemTimeWide()<deadline);
     return SM_TIMEOUT;
@@ -116,7 +126,9 @@ static int sm_worker(SceSize size,void *args) {
         }
     } else rc=sm_rpc(sm_job,NULL,0);
     memset(&sm_server,0,sizeof(sm_server));memset(&sm_response,0,sizeof(sm_response));
-    sm_result=sm_cancel?SM_TIMEOUT:rc;sm_finished=1;
+    sm_result=sm_cancel?SM_TIMEOUT:rc;
+    recovery_log("StreamMaster job done",sm_result,sm_http_status,sm_stage);
+    sm_finished=1;
     return 0;
 }
 static int sm_reap(void) {
@@ -257,6 +269,7 @@ static void streammaster_settings(void) {
                 }
                 memset(draft,0,sizeof(draft));
             }
+            if(rc<0 && !detail[0])snprintf(detail,sizeof(detail),"%s",sm_stage);
             if(rc==SM_IO || rc==SM_TIMEOUT)ready=0;
             dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
         }

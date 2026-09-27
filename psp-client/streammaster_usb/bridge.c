@@ -124,7 +124,11 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
     else rc=SM_INVALID;
     sceKernelSignalSema(lock_id,1);return rc;
 }
-static PspIoDrvFuncs io_functions={.IoDevctl=devctl};
+/* I/O manager requires both lifecycle callbacks even for a devctl-only
+ * device. It must never retain a driver table after its PRX is unloaded. */
+static int io_init(PspIoDrvArg *arg){(void)arg;return 0;}
+static int io_exit(PspIoDrvArg *arg){(void)arg;return 0;}
+static PspIoDrvFuncs io_functions={.IoInit=io_init,.IoExit=io_exit,.IoDevctl=devctl};
 static PspIoDrv io_driver={"stm",0x10,0x800,"StreamMaster",&io_functions};
 int module_start(SceSize size,void *args) {
     (void)size;(void)args;
@@ -145,6 +149,9 @@ int module_stop(SceSize size,void *args) {
     SceUInt timeout=100000;
     int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     rc=shutdown_usb();if(rc<0){sceKernelSignalSema(lock_id,1);return rc;}
-    sceIoDelDrv("stm");sceUsbbdUnregister(&driver);
+    rc=sceIoDelDrv("stm");
+    if(rc<0){sceKernelSignalSema(lock_id,1);return rc;}
+    rc=sceUsbbdUnregister(&driver);
+    if(rc<0){sceIoAddDrv(&io_driver);sceKernelSignalSema(lock_id,1);return rc;}
     sceKernelDeleteSema(lock_id);sceKernelDeleteEventFlag(event_id);return 0;
 }
