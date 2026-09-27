@@ -64,6 +64,7 @@ static int sceKernelChangeThreadPriority(int thread, int priority) {
 #include "lcd_music.h"
 
 int main(void) {
+    if(getenv("SPECTRUM_STYLE_TEST")){spectrum_style=1;spectrum_segments=1;spectrum_peak_hold=1;}
     /* Independent legacy formula, so sharing the new helper between full
      * and partial renderers cannot hide an envelope regression. */
     for (int value = 0; value <= 100; value++)

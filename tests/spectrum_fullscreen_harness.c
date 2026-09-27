@@ -6,6 +6,9 @@ typedef uint32_t u32;
 #define SPECTRUM_BANDS 12
 #define SPECTRUM_MAX_BANDS 64
 static int test_bands=12;
+int spectrum_style,spectrum_segments,spectrum_peak_hold;
+static unsigned long long test_clock;
+static unsigned long long sceKernelGetSystemTimeWide(void){return test_clock+=50000;}
 static int spectrum_bar_count(void){return test_bands;}
 static int spectrum_display[SPECTRUM_MAX_BANDS];
 static int music_ui_envelope(int displayed,int target) {
@@ -13,6 +16,7 @@ static int music_ui_envelope(int displayed,int target) {
 }
 #include "spectrum_fullscreen.h"
 int main(void) {
+    if(getenv("SPECTRUM_STYLE_TEST")){spectrum_style=1;spectrum_segments=1;spectrum_peak_hold=1;}
     int tv,i,x,y;
     const int choices[]={12,24,32,48,64};
     for(int choice=0;choice<5;choice++)for(tv=0;tv<2;tv++) {
@@ -27,7 +31,7 @@ int main(void) {
         for(i=0;i<7;i++) spectrum_fullscreen_render(pixels,w,h,stride,levels,1);
         assert(pixels[(h/30)*stride+w/30]!=0x00080E14);
         assert(pixels[(h-h/30-1)*stride+w/30]!=0x00080E14);
-        for(i=0;i<40;i++) spectrum_fullscreen_render(pixels,w,h,stride,levels,0);
+        for(i=0;i<70;i++) spectrum_fullscreen_render(pixels,w,h,stride,levels,0);
         for(y=0;y<h;y++) {
             for(x=0;x<w;x++) assert(pixels[y*stride+x]==0x00080E14);
             for(x=w;x<stride;x++) assert(pixels[y*stride+x]==0xDEADBEEF);

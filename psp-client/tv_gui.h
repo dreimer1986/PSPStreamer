@@ -8,6 +8,9 @@ enum { TV_VIEW_LIBRARY, TV_VIEW_LOADING, TV_VIEW_INFO, TV_VIEW_OPTIONS, TV_VIEW_
 #define TV_MUTED 0x00AEADA0
 #define TV_CYAN  0x00EAD080
 #define TV_AMBER 0x003CC9FF
+#include "spectrum_paint.h"
+static SpectrumPaint tv_spectrum;
+static void tv_spectrum_restore(void *ctx,int x,int y,int w,int h);
 /* Inner glass of the production 720x480 skin, not the text/list rectangle.
  * Uses the same measured boundaries as the visualizations. */
 enum { TV_ART_X=TV_LEFT_X, TV_ART_Y=TV_LEFT_Y, TV_ART_W=TV_LEFT_R-TV_LEFT_X, TV_ART_H=TV_LEFT_B-TV_LEFT_Y };
@@ -298,13 +301,17 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
             tv_text(562, 127, 10, 3, TV_MUTED, tr(TXT_TV_VOLUME), playback_volume * 100 / 30);
             tv_text(562, 194, 10, 3, TV_MUTED, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
         }
+        tv_spectrum.tv_original=1;
         for (i = 0; i < spectrum_bar_count() && !music_visual_active; i++) {
             int target = !audio_running || !audio_start ? 0 : spectrum_bar_level(i,spectrum_levels[i%12]);
             int height;
             spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
             height = spectrum_display[i] * (fullscreen?168:TV_LEFT_B-120) / 100;
-            tv_rect(&tv_canvas, theme_analyzer_x(1,fullscreen,i,spectrum_bar_count()), (fullscreen?288:TV_LEFT_B) - height,
-                    theme_analyzer_width(1,fullscreen,spectrum_bar_count()), height, i < spectrum_bar_count()/3 ? TV_AMBER : i < 2*spectrum_bar_count()/3 ? 0x00B070FF : TV_CYAN);
+            int dirty_y;
+            spectrum_paint_bar(&tv_spectrum,tv_canvas.pixels,TV_GUI_STRIDE,
+                theme_analyzer_x(1,fullscreen,i,spectrum_bar_count()),fullscreen?288:TV_LEFT_B,
+                theme_analyzer_width(1,fullscreen,spectrum_bar_count()),fullscreen?168:TV_LEFT_B-120,
+                i,spectrum_bar_count(),height,sceKernelGetSystemTimeWide(),1,tv_spectrum_restore,&fullscreen,&dirty_y);
         }
         tv_help(tr(TXT_MUSIC_CONTROLS));
     }
@@ -331,13 +338,13 @@ static void tv_library_receiver_refresh(void) {
  * gained/lost portion of each spectrum bar. Static text stays untouched. */
 typedef struct { int x, y, width, height; } TvDirtyRect;
 static struct {
-    int valid, fullscreen, volume, band_count, meter[2], height[SPECTRUM_MAX_BANDS];
+    int valid, fullscreen, volume, band_count, style, meter[2], height[SPECTRUM_MAX_BANDS];
     u32 light[5];
     unsigned long long next_tick, copied_bytes;
     unsigned int full_frames, incremental_frames;
 } tv_music;
 
-static void tv_music_reset(void) { memset(&tv_music, 0, sizeof(tv_music)); }
+static void tv_music_reset(void) { memset(&tv_music, 0, sizeof(tv_music));memset(&tv_spectrum,0,sizeof(tv_spectrum)); }
 
 static void tv_restore_rect(int x, int y, int width, int height) {
     int yy;
@@ -349,13 +356,19 @@ static void tv_restore_rect(int x, int y, int width, int height) {
     }
 }
 
+static void tv_spectrum_restore(void *ctx,int x,int y,int w,int h) {
+    if(*(int *)ctx)tv_rect(&tv_canvas,x,y,w,h,0x000C0C0A);
+    else tv_restore_rect(x,y,w,h);
+}
 static void tv_draw_music(const char *title, int fullscreen) {
     TvDirtyRect dirty[SPECTRUM_MAX_BANDS + 10];
     int count = 0, i;
     unsigned int parts = 0;
     unsigned long long now = sceKernelGetSystemTimeWide();
     if (!tv_ui_active || !display_output.tv || tvout_video_active || !tv_canvas.pixels) return;
+    if(tv_music.style!=spectrum_style_key()){tv_music_reset();tv_music.style=spectrum_style_key();}
     if (!tv_music.valid || tv_music.band_count!=spectrum_bar_count() || tv_music.fullscreen != fullscreen) {
+        memset(&tv_spectrum,0,sizeof(tv_spectrum));
         tv_draw_view(TV_VIEW_MUSIC, 0, 0, 1, title, fullscreen);
         tv_music.valid = 1; tv_music.fullscreen = fullscreen;
         tv_music.band_count=spectrum_bar_count();
@@ -404,20 +417,14 @@ static void tv_draw_music(const char *title, int fullscreen) {
     tv_receiver_parts(parts);
     for (i = 0; i < spectrum_bar_count() && !music_visual_active; i++) {
         int target = !audio_running || !audio_start ? 0 : spectrum_bar_level(i,spectrum_levels[i%12]);
-        int height, previous = tv_music.height[i];
+        int height,dirty_y;
         int x = theme_analyzer_x(1,fullscreen,i,spectrum_bar_count()), width = theme_analyzer_width(1,fullscreen,spectrum_bar_count());
         int baseline=fullscreen?288:TV_LEFT_B;
         spectrum_display[i] = music_ui_envelope(spectrum_display[i], target);
         height = spectrum_display[i] * (fullscreen?168:TV_LEFT_B-120) / 100;
-        if (height > previous) {
-            tv_rect(&tv_canvas, x, baseline - height, width, height - previous,
-                    i < spectrum_bar_count()/3 ? TV_AMBER : i < 2*spectrum_bar_count()/3 ? 0x00B070FF : TV_CYAN);
-            dirty[count++] = (TvDirtyRect){x, baseline - height, width, height - previous};
-        } else if (height < previous) {
-            if (fullscreen) tv_rect(&tv_canvas, x, baseline - previous, width, previous - height, 0x000C0C0A);
-            else tv_restore_rect(x, baseline - previous, width, previous - height);
-            dirty[count++] = (TvDirtyRect){x, baseline - previous, width, previous - height};
-        }
+        int dirty_h=spectrum_paint_bar(&tv_spectrum,tv_canvas.pixels,TV_GUI_STRIDE,x,baseline,width,
+            fullscreen?168:TV_LEFT_B-120,i,spectrum_bar_count(),height,now,0,tv_spectrum_restore,&fullscreen,&dirty_y);
+        if(dirty_h)dirty[count++]=(TvDirtyRect){x,dirty_y,width,dirty_h};
         tv_music.height[i] = height;
     }
     if (count) {

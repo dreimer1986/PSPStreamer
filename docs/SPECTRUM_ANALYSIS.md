@@ -10,7 +10,7 @@ Each output keeps its own count; changing the output selects its saved value.
 The analysis mode is shared. Switching outputs does not select a different
 MilkDrop analysis algorithm or change the three frequency ranges.
 
-During music, Circle in Spectrum opens these four options directly; Left/Right
+During music, Circle in Spectrum opens these seven options directly; Left/Right
 changes them and Circle returns/saves. MilkDrop exposes them at the end of its
 existing visualization-options menu (inside the preset browser). Changes apply
 without restarting the app. Windowed LCD/TV and fullscreen support every count.
@@ -27,6 +27,9 @@ spectrum_analysis=0
 spectrum_bands_lcd=32
 spectrum_bands_tv=32
 spectrum_gain_db=0
+spectrum_style=1
+spectrum_segments=0
+spectrum_peak_hold=1
 ```
 
 Set `spectrum_analysis=1` to enable FFT analysis. Unsupported band counts are
@@ -38,6 +41,26 @@ signed-8-bit input, mapped logarithmically from -60 to 0 dBFS. A full-scale sine
 can reach the top; ordinary music need not fill every bar. Try +6 or +12 dB for
 a more prominent display. There is no automatic gain riding. Windowed bars
 still reserve space for the title/volume text above them.
+
+### Colors, LED segments and peaks
+
+**Spectrum colors** selects Original (0), Rainbow (1, default), Classic VU (2),
+Ice (3), or Fire (4). Rainbow runs blue/cyan/green/yellow/orange/red/pink from
+bottom to top. Colors are fixed to the available canvas height, not stretched
+to each bar: quiet bars do not acquire pink tips. Original preserves the three
+horizontal color groups. The palette is shared by LCD and TV.
+
+**LED segments** (default off) adds horizontal gaps. **Peak hold** (default on)
+adds a bright tip held for 450 ms, then falling at half the available height per
+second; a new higher peak immediately takes over. Paused/stopped audio drains
+the bars and markers instead of leaving them frozen.
+
+All three options work in Light and Desktop FFT modes, windowed and fullscreen.
+Change them with Left/Right in main Settings or the Spectrum Circle menu; they
+are saved without an app restart. They never modify audio analysis or playback.
+A shared cached color table and bounded per-band peak state require about 7 KiB;
+there are no additional textures/framebuffers or FFTs. Only changed bar/marker
+strips are painted; TV copies at most one enclosing dirty span per changed band.
 
 ## Source behavior and scope
 
@@ -76,6 +99,12 @@ Monkey reuses the same FFT scratch with its input filter instead of running a
 second FFT. Analysis remains off for video and in Light mode. Presets explicitly
 requesting custom spectrum waves still use their existing FFT in either mode.
 Bar rendering retains changed-strip updates, without new framebuffers.
+
+Palette verification: all five styles, LED/peak combinations and six canvas
+heights match a separate full-frame pixel oracle under sanitizers. Actual LCD
+and TV incremental renderers match their full renderers, also with Rainbow,
+LEDs and peaks enabled. Native fullscreen guards, decay-to-silence and settings
+bounds pass. A host check does not establish PSP audio stability or CPU cost.
 
 ## Verification and hardware test
 

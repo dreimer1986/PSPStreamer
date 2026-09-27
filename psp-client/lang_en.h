@@ -88,6 +88,16 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_BANDS] = "FFT bars LCD",
     [TXT_SETTINGS_BANDS_TV] = "FFT bars TV",
     [TXT_SETTINGS_SPECTRUM_GAIN] = "FFT gain (dB)",
+    [TXT_SETTINGS_SPECTRUM_STYLE] = "Spectrum colors",
+    [TXT_SETTINGS_SPECTRUM_SEGMENTS] = "LED segments",
+    [TXT_SETTINGS_SPECTRUM_PEAK] = "Peak hold",
+
+    [TXT_SPECTRUM_ORIGINAL] = "Original",
+    [TXT_SPECTRUM_RAINBOW] = "Rainbow",
+    [TXT_SPECTRUM_VU] = "Classic VU",
+    [TXT_SPECTRUM_ICE] = "Ice",
+    [TXT_SPECTRUM_FIRE] = "Fire",
+
     [TXT_ANALYSIS_LEGACY] = "Light (12)",
     [TXT_ANALYSIS_FFT] = "Desktop FFT",
     [TXT_SETTINGS_OC] = "StreamerOC plugin",

@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Spectrum color presets (Original, Rainbow, Classic VU, Ice, Fire), optional
+  LED segments and time-based peak hold; persistent settings for LCD/TV,
+  windowed/fullscreen, with incremental rendering and unchanged audio analysis.
 - Normalize FFT analyzer height to a fixed -60..0 dBFS range; adjustable
   display-only gain (-24..+24 dB), without changing MilkDrop values or volume.
 - Desktop FFT mode now gives Monkey its reference input filtering, frequency

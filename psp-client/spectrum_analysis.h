@@ -4,6 +4,7 @@
 enum { SPECTRUM_MAX_BANDS=64 };
 extern int spectrum_analysis_mode, spectrum_band_count, spectrum_tv_band_count;
 extern int spectrum_gain_db;
+extern int spectrum_style,spectrum_segments,spectrum_peak_hold;
 void spectrum_analysis_output(int tv);
 int spectrum_band_valid(int count);
 int spectrum_band_choice(int count,int direction);

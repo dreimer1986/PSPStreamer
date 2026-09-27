@@ -30,10 +30,14 @@ static VisualOption visual_options[]={
     {"spectrum_analysis",TXT_SETTINGS_ANALYSIS,&spectrum_analysis_mode,0,1,1},
     {"spectrum_bands_lcd",TXT_SETTINGS_BANDS,&spectrum_band_count,12,64,1},
     {"spectrum_bands_tv",TXT_SETTINGS_BANDS_TV,&spectrum_tv_band_count,12,64,1},
-    {"spectrum_gain_db",TXT_SETTINGS_SPECTRUM_GAIN,&spectrum_gain_db,-24,24,1}
+    {"spectrum_gain_db",TXT_SETTINGS_SPECTRUM_GAIN,&spectrum_gain_db,-24,24,1},
+    {"spectrum_style",TXT_SETTINGS_SPECTRUM_STYLE,&spectrum_style,0,4,1},
+    {"spectrum_segments",TXT_SETTINGS_SPECTRUM_SEGMENTS,&spectrum_segments,0,1,1},
+    {"spectrum_peak_hold",TXT_SETTINGS_SPECTRUM_PEAK,&spectrum_peak_hold,0,1,1}
 };
 #define VISUAL_OPTION_COUNT ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
 #define VISUAL_CAVE_OPTIONS 13
+#define VISUAL_SPECTRUM_OPTIONS 7
 static int visual_option_parse(const char *line) {
     for(int i=0;i<VISUAL_OPTION_COUNT;i++) {
         VisualOption *o=&visual_options[i];size_t n=strlen(o->key);

@@ -34,6 +34,11 @@ spectrum_bands_lcd=32
 spectrum_bands_tv=32
 # FFT display gain only (-24..24 dB); does not change volume or effect response.
 spectrum_gain_db=0
+# Spectrum colors: 0 Original, 1 Rainbow, 2 Classic VU, 3 Ice, 4 Fire.
+# Display options apply to Light mode too, LCD/TV and fullscreen.
+spectrum_style=1
+spectrum_segments=0
+spectrum_peak_hold=1
 volume=24
 shuffle=0
 language=en

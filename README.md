@@ -940,6 +940,10 @@ spectrum_analysis=0
 spectrum_bands_lcd=32
 spectrum_bands_tv=32
 spectrum_gain_db=0
+# Colors: 0 Original, 1 Rainbow, 2 Classic VU, 3 Ice, 4 Fire.
+spectrum_style=1
+spectrum_segments=0
+spectrum_peak_hold=1
 volume=24
 shuffle=0
 language=en

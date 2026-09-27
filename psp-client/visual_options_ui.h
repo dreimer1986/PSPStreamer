@@ -1,7 +1,7 @@
 /* Music workers keep running; caller has released the GU. */
 static void music_visual_options(int cave) {
-    int first=cave==2?VISUAL_OPTION_COUNT-4:cave?0:VISUAL_CAVE_OPTIONS;
-    int count=cave==2?4:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
+    int first=cave==2?VISUAL_OPTION_COUNT-VISUAL_SPECTRUM_OPTIONS:cave?0:VISUAL_CAVE_OPTIONS;
+    int count=cave==2?VISUAL_SPECTRUM_OPTIONS:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
     unsigned old=PSP_CTRL_CIRCLE|PSP_CTRL_SELECT;unsigned long long repeat=0;
     while(audio_running && music_remote_action<MUSIC_REMOTE_STOP) {
         keep_awake();video_watch_ping("visual options");
@@ -14,6 +14,7 @@ static void music_visual_options(int cave) {
             for(int i=top;i<count && i<top+8;i++) {
                 VisualOption *o=&visual_options[first+i];char line[96],value[20];
                 if(o->value==&spectrum_analysis_mode)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_ANALYSIS_FFT:TXT_ANALYSIS_LEGACY));
+                else if(o->value==&spectrum_style)snprintf(value,sizeof(value),"%s",tr((TextId)(TXT_SPECTRUM_ORIGINAL+*o->value)));
                 else if(o->maximum==1)snprintf(value,sizeof(value),"%s",tr(*o->value?TXT_SETTINGS_ON:TXT_OFF));
                 else snprintf(value,sizeof(value),"%d",*o->value);
                 snprintf(line,sizeof(line),"%s: %s",tr(o->label),value);

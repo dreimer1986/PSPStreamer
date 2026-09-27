@@ -89,6 +89,16 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_BANDS] = "FFT-Balken LCD",
     [TXT_SETTINGS_BANDS_TV] = "FFT-Balken TV",
     [TXT_SETTINGS_SPECTRUM_GAIN] = "FFT-Pegel (dB)",
+    [TXT_SETTINGS_SPECTRUM_STYLE] = "Spektrumfarben",
+    [TXT_SETTINGS_SPECTRUM_SEGMENTS] = "LED-Segmente",
+    [TXT_SETTINGS_SPECTRUM_PEAK] = "Spitzen halten",
+
+    [TXT_SPECTRUM_ORIGINAL] = "Original",
+    [TXT_SPECTRUM_RAINBOW] = "Regenbogen",
+    [TXT_SPECTRUM_VU] = "Klassisch VU",
+    [TXT_SPECTRUM_ICE] = "Eis",
+    [TXT_SPECTRUM_FIRE] = "Feuer",
+
     [TXT_ANALYSIS_LEGACY] = "Sparsam (12)",
     [TXT_ANALYSIS_FFT] = "Desktop FFT",
     [TXT_SETTINGS_OC] = "StreamerOC-Plugin",

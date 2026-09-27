@@ -8,6 +8,7 @@
 #include "monkey_audio.h"
 int spectrum_analysis_mode=0,spectrum_band_count=32,spectrum_tv_band_count=32;
 int spectrum_gain_db=0;
+int spectrum_style=1,spectrum_segments=0,spectrum_peak_hold=1;
 static int spectrum_output_tv;
 static volatile int spectrum_capture;
 static volatile unsigned int spectrum_sequence;

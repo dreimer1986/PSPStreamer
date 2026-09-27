@@ -100,6 +100,7 @@ static void dump_frame(const char *directory, const char *language, int view, in
     fclose(output);
 }
 int main(int argc, char **argv) {
+    if(getenv("SPECTRUM_STYLE_TEST")){spectrum_style=1;spectrum_segments=1;spectrum_peak_hold=1;}
     int i, language, view, variant, before;
     FILE *input = fopen("assets/subtitle_font.raw", "rb");
     assert(input && fread(font, 1, sizeof(font), input) == sizeof(font)); fclose(input);
