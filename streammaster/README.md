@@ -1,5 +1,8 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
+See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
+including matching PSP-side changes and work not yet released.
+
 Version 0.1.2 is the **hardware bring-up build**. It includes a native ESP-IDF
 firmware, a PSP USB device driver, and a PSP settings/diagnostics menu. It does
 **not yet route media playback, library browsing or remote control through

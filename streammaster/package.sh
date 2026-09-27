@@ -8,7 +8,7 @@ done
 mkdir -p release/StreamMaster-Onju-V3
 cp build/bootloader/bootloader.bin release/StreamMaster-Onju-V3/
 cp build/partition_table/partition-table.bin release/StreamMaster-Onju-V3/
-cp build/streammaster_onju_v3.bin README.md PSPLINK-license.txt release/StreamMaster-Onju-V3/
+cp build/streammaster_onju_v3.bin README.md CHANGELOG.md PSPLINK-license.txt release/StreamMaster-Onju-V3/
 cp ../LICENSE release/StreamMaster-Onju-V3/GPL-2.0.txt
 cp "${IDF_PATH:?Activate ESP-IDF first}/LICENSE" release/StreamMaster-Onju-V3/ESP-IDF-license.txt
 mkdir -p release/StreamMaster-Onju-V3/licenses
