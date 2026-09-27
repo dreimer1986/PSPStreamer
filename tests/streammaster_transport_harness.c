@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include "streammaster/protocol.h"
+static int64_t esp_timer_get_time(void){static int64_t ticks;return ++ticks;}
 typedef int SceUID;
 typedef unsigned SceUInt;
 typedef int64_t SceInt64;
@@ -114,6 +115,7 @@ static int sceKernelStopModule(int m,int n,void *a,int *s,void *v){return sceKer
 static int sceKernelUnloadModule(int m){(void)m;return 0;}
 static int legacy_caps,legacy_bridge,legacy_async;
 static int bulk_firmware=1,bulk_bridge=1;
+static int extended_firmware,extended_bridge;
 static SmFrame pending_reply;
 static SmBulkResult pending_bulk;
 static int async_pending,async_begins,async_finishes;
@@ -121,12 +123,14 @@ static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out
     (void)name;(void)inlen;(void)outlen;
     if(op==SM_DEV_STATUS)return 1;
     if(op==SM_DEV_BULK_CAPS)return bulk_bridge && !legacy_bridge && !legacy_async?1:SM_INVALID;
+    if(op==SM_DEV_BULK_EXT_CAPS)return extended_bridge?1:SM_INVALID;
     if(op==SM_DEV_BULK_BEGIN) {
         assert(bulk_firmware && bulk_bridge && !async_pending);
         SmFrame r=*(SmFrame *)in;SmBulkFrame b;
         pending_bulk.length=0;pending_bulk.result=0;
-        for(int i=0;i<2;i++) {
-            r.sequence+=i;sm_sockets_bulk_read(&r,&b);assert(sm_bulk_valid(&b));
+        int depth=r.op==SM_SOCKET_READ_BULK_EXT?r.result:2;
+        for(int i=0;i<depth;i++) {
+            sm_sockets_bulk_read(&r,&b);assert(sm_bulk_valid(&b));r.sequence++;
             memcpy(pending_bulk.payload+pending_bulk.length,b.payload,b.length);pending_bulk.length+=b.length;
             if(b.result<0)pending_bulk.result=b.result;
         }
@@ -135,7 +139,8 @@ static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out
     }
     if(op==SM_DEV_BULK_FINISH) {
         assert(async_pending);async_pending=0;async_finishes++;
-        memcpy(out,&pending_bulk,sizeof(pending_bulk));return 0;
+        assert(outlen==SM_LEGACY_RESULT_SIZE || outlen==sizeof(pending_bulk));
+        memcpy(out,&pending_bulk,8+pending_bulk.length);return 0;
     }
     if(op==SM_DEV_STOP || op==SM_DEV_CANCEL){async_pending=0;return 0;}
     if(op==SM_DEV_READ_BEGIN) {
@@ -164,7 +169,7 @@ static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out
     if(r->op==SM_INFO){SmInfo info={.wifi_state=SM_WIFI_READY};memcpy(reply->payload,&info,sizeof(info));reply->length=sizeof(info);}
     else if(r->op==SM_CONNECT)reply->result=0;
     else if(old_firmware)reply->result=SM_INVALID;
-    else if(r->op==SM_CAPABILITIES){if(legacy_caps)reply->result=SM_INVALID;else {unsigned caps=SM_CAP_COMPACT|(bulk_firmware?SM_CAP_BULK_PAIR:0);memcpy(reply->payload,&caps,sizeof(caps));reply->length=sizeof(caps);}}
+    else if(r->op==SM_CAPABILITIES){if(legacy_caps)reply->result=SM_INVALID;else {unsigned caps=SM_CAP_COMPACT|(bulk_firmware?SM_CAP_BULK_PAIR:0)|(extended_firmware?SM_CAP_BULK_EXT:0);memcpy(reply->payload,&caps,sizeof(caps));reply->length=sizeof(caps);}}
     else sm_sockets_command(r,reply);
     sm_seal(reply);return 0;
 }
@@ -337,6 +342,26 @@ int main(void){
     running=0;clock_us=0;semaphores[rpc_lock]=0;
     assert(stm_rpc(SM_INFO,NULL,0,NULL,0,NULL,&running)==SM_BUSY && clock_us==0);
     semaphores[rpc_lock]=1;stm_driver_stop();
+    running=1;
+    for(unsigned kib=8;kib<=32;kib*=2)for(unsigned depth=1;depth<=4;depth*=2) {
+        stm_tuning(kib,depth);extended_firmware=extended_bridge=1;
+        assert(!stm_associate(&running,1));
+        unsigned expected_depth=kib==32&&depth==4?2:depth;
+        assert(bulk_depth==expected_depth && bulk_payload==kib*1024-32);
+        fd=open_socket();c=channel(fd);
+        unsigned char input[65536],output[65536];
+        for(unsigned i=0;i<sizeof(input);i++)input[i]=(i*13+i/255)%251;
+        c->rx_read=c->rx_write=RX_SIZE-17;copy_in(c->rx,RX_SIZE,c->rx_write,input,sizeof(input));
+        c->rx_write+=sizeof(input);c->state=SM_SOCKET_EOF;consumed=0;
+        while(consumed<sizeof(input)) {
+            int n=stm_recv(fd,output,sizeof(output),0);assert(n>0 && (unsigned)n<=sizeof(input)-consumed);
+            assert(!memcmp(output,input+consumed,n));consumed+=n;
+        }
+        assert(!stm_recv(fd,output,sizeof(output),0));assert(!stm_close(fd));
+    }
+    extended_bridge=0;assert(!stm_associate(&running,1) && !bulk_extended && bulk_depth==2 && bulk_payload==8160);
+    extended_bridge=1;extended_firmware=0;assert(!stm_associate(&running,1) && !bulk_extended);
+    stm_driver_stop();
     for(int i=0;i<SM_SOCKET_COUNT;i++){free(channels[i].rx);free(channels[i].tx);free(channels[i].block);free(channels[i].write_block);}
-    puts("StreamMaster: 10000 PSP cycles + 4000 ESP owner runs; isolation, one-RPC reads, idle backoff, cleanup and fallback OK");
+    puts("StreamMaster: legacy/extended profiles, 10000 PSP cycles + 4000 ESP owner runs; isolation, cleanup and fallback OK");
 }

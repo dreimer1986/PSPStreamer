@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_tls.h"
 #include "esp_crt_bundle.h"
 #include "lwip/sockets.h"
@@ -25,6 +26,9 @@ typedef struct {
 } Channel;
 static Channel channels[SM_SOCKET_COUNT];
 static atomic_bool reset_pending;
+/* Read only by the same network-command worker immediately after bulk_read. */
+static uint32_t last_ring_copy_us,last_checksum_us;
+void sm_sockets_bulk_cost(uint32_t *copy,uint32_t *checksum){*copy=last_ring_copy_us;*checksum=last_checksum_us;}
 static void copy_out(unsigned char *dst,const unsigned char *ring,unsigned cap,unsigned pos,unsigned n) {
     unsigned first=cap-pos%cap;if(first>n)first=n;
     memcpy(dst,ring+pos%cap,first);memcpy(dst+first,ring,n-first);
@@ -126,6 +130,7 @@ void sm_sockets_init(void) {
 }
 void sm_sockets_reset(void){atomic_store(&reset_pending,true);}
 void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out) {
+    last_ring_copy_us=last_checksum_us=0;
     memset(out,0,32);out->magic=SM_MAGIC;out->version=SM_VERSION;
     out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;out->result=SM_INVALID;
     if(r->length==sizeof(SmSocketRequest)) {
@@ -137,15 +142,18 @@ void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out) {
             if(c->state==SM_SOCKET_FREE || c->open.token!=request.token){xSemaphoreGive(c->lock);continue;}
             unsigned n=c->rx_write-c->rx_read;
             if(n>request.length)n=request.length;
-            if(n>SM_BULK_PAYLOAD_SIZE)n=SM_BULK_PAYLOAD_SIZE;
-            if(n){copy_out(out->payload,c->rx,RX_SIZE,c->rx_read,n);c->rx_read+=n;out->length=n;out->result=0;}
+            unsigned limit=r->op==SM_SOCKET_READ_BULK_EXT?SM_BULK_MAX_FRAME_SIZE-32:SM_BULK_PAYLOAD_SIZE;
+            if(n>limit)n=limit;
+            if(n){int64_t begin=esp_timer_get_time();copy_out(out->payload,c->rx,RX_SIZE,c->rx_read,n);last_ring_copy_us=esp_timer_get_time()-begin;c->rx_read+=n;out->length=n;out->result=0;}
             else out->result=c->state==SM_SOCKET_EOF?0:c->state==SM_SOCKET_ERROR?SM_IO:SM_BUSY;
             xSemaphoreGive(c->lock);break;
         }
     }
     /* Only the header and actual payload go onto the wire; padding is zero. */
-    if(sm_bulk_wire_size(out->length)>32+out->length)out->payload[out->length]=0;
+    if(sm_bulk_wire_size_op(out->op,out->length)>32+out->length)out->payload[out->length]=0;
+    int64_t begin=esp_timer_get_time();
     out->checksum=sm_bulk_checksum(out);
+    last_checksum_us=esp_timer_get_time()-begin;
 }
 void sm_sockets_idle(void) {
     if(!atomic_exchange(&reset_pending,false))return;

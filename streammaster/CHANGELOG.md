@@ -4,6 +4,28 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.5 — 2026-09-27
+
+- Add separately negotiated extended bulk reads: 8/16/32 KiB frames and 1/2/4
+  outstanding requests, capped at about 64 KiB per group (32 KiB/four clamps to
+  two in the app). Default 8 KiB/two still uses the unchanged legacy bulk opcode.
+- Bound the ESP command/reply queues to four entries, use a 32 KiB TX DMA buffer
+  and retain sequence/checksum validation, detach generations and cancellation.
+- Add boot-cumulative ESP metrics for command queue, worker, ring copy, checksum,
+  reply wait, host copy, transfer completion and within-group transfer gaps.
+  The matching PSP app logs start/end deltas around downloads when debugging is on.
+- Preserve old 8 KiB framing and the old PSP result-buffer ABI. Extended framing
+  is enabled only with support from both firmware and kernel bridge. Short replies
+  use a terminating short packet even at an 8/16 KiB boundary.
+- PSP configuration: `streammaster_bulk_kib=8`, `streammaster_bulk_depth=2`;
+  changes take effect after an app restart. These are comparison controls, not
+  evidence that larger/deeper groups are faster.
+- PSP fixed socket buffers now reserve approximately 1.5 MiB across 12 slots
+  (about 1.125 MiB extra); kernel bulk buffers about 144 KiB. No per-packet allocation.
+- PSP-only offline SHA-256 batching clears its temporary workspace once per
+  batch instead of per block; TLS remains unchanged. Full on-card verification
+  and cancellation/resume handling are retained. Hashes checked against Mbed TLS.
+
 ## 0.2.4 — 2026-09-27
 
 - Negotiate two outstanding bulk-read requests, each with an 8 KiB USB frame

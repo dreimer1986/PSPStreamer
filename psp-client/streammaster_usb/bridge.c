@@ -19,19 +19,19 @@ static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
 static int started;
 static int exchange_active,exchange_compact;
-static SmFrame bulk_send[2] __attribute__((aligned(64)));
-static SmBulkFrame bulk_recv[2] __attribute__((aligned(64)));
-static struct UsbdDeviceReq bulk_send_req[2],bulk_recv_req[2];
+static SmFrame bulk_send[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
+static SmBulkFrame bulk_recv[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
+static struct UsbdDeviceReq bulk_send_req[SM_BULK_MAX_DEPTH],bulk_recv_req[SM_BULK_MAX_DEPTH];
 static volatile unsigned bulk_pending;
-static int bulk_active;
+static int bulk_active,bulk_count=2;
 static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
 static int control_request(int a,int b,struct DeviceRequest *request){(void)a;(void)b;(void)request;return 0;}
 static int control_complete(int a,int b,int c){(void)a;(void)b;(void)c;return 0;}
 static int done(struct UsbdDeviceReq *r,int a,int b) {
     (void)a;(void)b;
-    for(int i=0;i<2;i++) {
-        unsigned bit=r==&bulk_send_req[i]?(8U<<i):r==&bulk_recv_req[i]?(32U<<i):0;
+    for(unsigned i=0;i<SM_BULK_MAX_DEPTH;i++) {
+        unsigned bit=r==&bulk_send_req[i]?(8U<<i):r==&bulk_recv_req[i]?(128U<<i):0;
         if(bit){__sync_fetch_and_and(&bulk_pending,~bit);sceKernelSetEventFlag(event_id,bit);return 0;}
     }
     if(r==&send_req)send_pending=0;else recv_pending=0;
@@ -72,7 +72,7 @@ static int user_buffer(void *p,int bytes) {
     return bytes>=0 && a>=0x08800000U && a<0x0c000000U && (unsigned)bytes<=0x0c000000U-a;
 }
 static int wait_request(struct UsbdDeviceReq *request,int bit) {
-    SceUInt timeout=send_frame.op>=SM_SOCKET_OPEN?500000:15000000;u32 bits=0;
+    SceUInt timeout=(send_frame.op>=SM_SOCKET_OPEN || send_frame.op==SM_USB_METRICS)?500000:15000000;u32 bits=0;
     int rc=sceKernelWaitEventFlag(event_id,bit|4,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,&bits,&timeout);
     if(rc<0 || (bits&4) || cancelled)return SM_TIMEOUT;
     if(request->retcode || request->recvsize<32 || request->recvsize>request->size)return SM_IO;
@@ -125,24 +125,32 @@ static int bulk_begin(const SmFrame *in) {
     if(!started || !attached)return SM_OFFLINE;
     if(poisoned || exchange_active || bulk_active || bulk_pending || send_pending || recv_pending)return SM_BUSY;
     memcpy(&bulk_send[0],in,32+sizeof(SmSocketRequest));
-    if(bulk_send[0].length!=sizeof(SmSocketRequest) || bulk_send[0].op!=SM_SOCKET_READ_BULK ||
+    if(bulk_send[0].length!=sizeof(SmSocketRequest) || (bulk_send[0].op!=SM_SOCKET_READ_BULK && bulk_send[0].op!=SM_SOCKET_READ_BULK_EXT) ||
        bulk_send[0].flags || !sm_valid(&bulk_send[0]))return SM_INVALID;
-    memcpy(&bulk_send[1],&bulk_send[0],32+sizeof(SmSocketRequest));
-    bulk_send[1].sequence++;
+    int extended=bulk_send[0].op==SM_SOCKET_READ_BULK_EXT;
+    bulk_count=extended?bulk_send[0].result:2;
+    SmSocketRequest request;memcpy(&request,bulk_send[0].payload,sizeof(request));
+    if((bulk_count!=1 && bulk_count!=2 && bulk_count!=4) || !request.length ||
+       request.length>(extended?SM_BULK_MAX_FRAME_SIZE-32:SM_BULK_PAYLOAD_SIZE) ||
+       request.length*bulk_count>SM_MAX_GROUP_PAYLOAD)return SM_INVALID;
+    bulk_send[0].result=0;
+    for(int i=1;i<bulk_count;i++) {
+        memcpy(&bulk_send[i],&bulk_send[0],32+sizeof(SmSocketRequest));bulk_send[i].sequence+=i;
+    }
     cancelled=0;bulk_active=1;sceKernelClearEventFlag(event_id,0);
-    for(int i=0;i<2;i++) {
+    for(int i=0;i<bulk_count;i++) {
         if(cancelled || !attached){poisoned=1;cancel_requests();return SM_TIMEOUT;}
         bulk_send[i].flags=SM_COMPACT;sm_seal(&bulk_send[i]);
         memset(&bulk_send_req[i],0,sizeof(bulk_send_req[i]));
         memset(&bulk_recv_req[i],0,sizeof(bulk_recv_req[i]));
         struct UsbdDeviceReq *s=&bulk_send_req[i],*r=&bulk_recv_req[i];
         s->endp=&endpoints[1];s->data=&bulk_send[i];s->size=sm_wire_size(sizeof(SmSocketRequest));s->func=done;
-        r->endp=&endpoints[2];r->data=&bulk_recv[i];r->size=sizeof(bulk_recv[i]);r->func=done;
+        r->endp=&endpoints[2];r->data=&bulk_recv[i];r->size=extended?SM_BULK_MAX_FRAME_SIZE:SM_BULK_FRAME_SIZE;r->func=done;
         sceKernelDcacheWritebackRange(&bulk_send[i],s->size);
-        sceKernelDcacheWritebackInvalidateRange(&bulk_recv[i],sizeof(bulk_recv[i]));
-        __sync_fetch_and_or(&bulk_pending,32U<<i);
+        sceKernelDcacheWritebackInvalidateRange(&bulk_recv[i],r->size);
+        __sync_fetch_and_or(&bulk_pending,128U<<i);
         int rc=sceUsbbdReqRecv(r);
-        if(rc<0){__sync_fetch_and_and(&bulk_pending,~(32U<<i));poisoned=1;cancel_requests();return rc;}
+        if(rc<0){__sync_fetch_and_and(&bulk_pending,~(128U<<i));poisoned=1;cancel_requests();return rc;}
         __sync_fetch_and_or(&bulk_pending,8U<<i);rc=sceUsbbdReqSend(s);
         if(rc<0){__sync_fetch_and_and(&bulk_pending,~(8U<<i));poisoned=1;cancel_requests();return rc;}
     }
@@ -156,15 +164,16 @@ static int bulk_wait(struct UsbdDeviceReq *r,unsigned bit) {
 static int bulk_finish(SmBulkResult *out) {
     if(!bulk_active)return SM_INVALID;
     int rc=0;out->length=0;out->result=0;
-    for(int i=0;i<2 && rc>=0;i++) {
+    for(int i=0;i<bulk_count && rc>=0;i++) {
         rc=bulk_wait(&bulk_send_req[i],8U<<i);
-        if(rc>=0)rc=bulk_wait(&bulk_recv_req[i],32U<<i);
+        if(rc>=0)rc=bulk_wait(&bulk_recv_req[i],128U<<i);
         if(rc<0)break;
         SmBulkFrame *f=&bulk_recv[i];
-        sceKernelDcacheInvalidateRange(f,sizeof(*f));
+        sceKernelDcacheInvalidateRange(f,bulk_recv_req[i].size);
         if(bulk_send_req[i].recvsize!=bulk_send_req[i].size || bulk_recv_req[i].recvsize<32 ||
-           !sm_bulk_valid(f) || f->sequence!=bulk_send[i].sequence ||
-           bulk_recv_req[i].recvsize!=(int)sm_bulk_wire_size(f->length) || (f->result<0 && f->length)) {rc=SM_IO;break;}
+           !sm_bulk_valid(f) || f->op!=bulk_send[i].op || f->sequence!=bulk_send[i].sequence ||
+           bulk_recv_req[i].recvsize!=(int)sm_bulk_wire_size_op(f->op,f->length) || (f->result<0 && f->length) ||
+           f->length>SM_MAX_GROUP_PAYLOAD-out->length) {rc=SM_IO;break;}
         if(f->length){memcpy(out->payload+out->length,f->payload,f->length);out->length+=f->length;}
         else if(f->result<0)out->result=f->result;
     }
@@ -178,11 +187,13 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
     if(cmd==SM_DEV_CANCEL){cancel_requests();return 0;}
     if(cmd==SM_DEV_STATUS)return attached?attached:poisoned?SM_BUSY:0;
     if(cmd==SM_DEV_BULK_CAPS)return 1;
+    if(cmd==SM_DEV_BULK_EXT_CAPS)return 1;
     if((cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT) && (inlen!=SM_FRAME_SIZE || outlen!=SM_FRAME_SIZE || !user_buffer(in,inlen)||!user_buffer(out,outlen)))return SM_INVALID;
     if(cmd==SM_DEV_READ_BEGIN && (inlen!=SM_FRAME_SIZE || outlen || !user_buffer(in,inlen)))return SM_INVALID;
     if(cmd==SM_DEV_READ_FINISH && (inlen || outlen!=SM_FRAME_SIZE || !user_buffer(out,outlen)))return SM_INVALID;
     if(cmd==SM_DEV_BULK_BEGIN && (inlen!=SM_FRAME_SIZE || outlen || !user_buffer(in,inlen)))return SM_INVALID;
-    if(cmd==SM_DEV_BULK_FINISH && (inlen || outlen!=sizeof(SmBulkResult) || !user_buffer(out,outlen)))return SM_INVALID;
+    if(cmd==SM_DEV_BULK_FINISH && (inlen ||
+       outlen!=(int)(bulk_send[0].op==SM_SOCKET_READ_BULK_EXT?sizeof(SmBulkResult):SM_LEGACY_RESULT_SIZE) || !user_buffer(out,outlen)))return SM_INVALID;
     SceUInt timeout=100000;int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     if(cmd==SM_DEV_START) {
         if(started)rc=0;

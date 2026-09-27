@@ -52,13 +52,12 @@ five seconds and a final summary (also on cancellation/failure):
   cancellation/read-error state, async mode and chunk size. This is timing, not a report
   that the expected digest matched; normal download validation remains authoritative.
 
-No ESP update is required. Disabled debugging skips per-network-read diagnostics.
-This first attribution pass separates storage/hash costs from transport waiting;
-it does not yet measure ESP task CPU, DMA gaps, radio retries or server delays.
-Only instrument those layers if the result points there. The small logging/timing
-cost is not assumed to be zero; compare the resulting overall throughput as well.
+These original counters require no ESP update. Disabled debugging skips PSP
+per-network-read diagnostics. Firmware 0.2.5 adds ESP timing as described below;
+radio retries and server delivery delays remain unmeasured. Diagnostic overhead
+is not assumed to be zero; compare resulting overall throughput as well.
 
-## Storage pipeline update (hardware comparison pending)
+## Storage pipeline update (completed hardware comparison)
 
 The instrumented synchronous baseline transferred 170,555,495 bytes in 420.256 s.
 Writes consumed 63.736 s, with a longest write of 1.511 s. The longest receive call
@@ -78,14 +77,53 @@ an exact stall frequency or distinguish card, adapter and filesystem behavior.
   or descriptor is released until its outstanding operation has completed. Cancellation
   drains that write, discards the unsubmitted tail and resumes from actual file length.
 - Verification reads ahead into two 128 KiB buffers while Mbed TLS hashes the current
-  one. SHA-256 itself, the expected server digest, full read-back and resume validation
-  are unchanged. No hashing of only network data and no custom crypto primitive.
+  one. At this stage the SHA-256 implementation, expected server digest, full
+  read-back and resume validation were unchanged.
   Allocation failure retains the 16 KiB synchronous stack-buffer path. Hash API errors,
   read failures and cancellation still fail validation.
 
 This targets overlap and fewer filesystem operations, not a guaranteed CPU hash speedup.
 Test the same ready file through verification, then cancel a second transfer and resume.
 Compare overall duration, storage wait, remaining read wait and responsiveness.
+
+The completed async run transferred **170,327,183 bytes in 344.148 s = 483.324
+KiB/s**; interval median 503, maximum 524 and minimum 372 KiB/s. Only 1.544 s
+was spent waiting for the 325 writes. Verification took 105.530 s (21.690 s
+read wait, 82.860 s hashing); body plus verification was 449.678 s, versus
+541.230 s for the preceding synchronous run. Files were similar-sized, not
+byte-identical. Earlier USB failures in this log preceded the successful run;
+the user reported an unresponsive Onju requiring power-cycle/Wi-Fi restart.
+Their root cause is not established by this successful-download measurement.
+
+## 0.2.5 comparison build (hardware results pending)
+
+- Offline SHA-256 now processes complete blocks in batches and wipes its
+  workspace once per update rather than after every 64 bytes. It is adapted from
+  Mbed TLS 2.28.10; partial blocks, padding and context lifecycle remain in the
+  library. TLS is untouched. Full card read-back/digest verification remains.
+  Host comparison covers 98 chunk/boundary combinations and 32-bit length carry;
+  a PSP timing improvement is **not yet measured**.
+- Default USB profile remains **8 KiB × 2**, using legacy framing. CFG-only
+  `streammaster_bulk_kib` (8/16/32) and `streammaster_bulk_depth` (1/2/4) select
+  experiments after app restart. 32 KiB × 4 is clamped to two; firmware and kernel
+  must both advertise extended support. Otherwise the older route remains.
+  `download USB socket` records the actual `kib`, `depth` and `ext` values.
+- With app debugging enabled, two extra USB metric queries bracket each file
+  body transfer. `download ESP timing` reports deltas for **all bulk requests**
+  during that window: individual requests, bytes, queue wait, worker time, reply
+  wait. `download ESP transfer` reports host DMA-buffer copy, submit-to-callback
+  `tx_us`, and `gap_us` between
+  completed/submitted responses while another command is outstanding.
+  `gap_us` excludes idle gaps between groups; `tx_us` is not pure wire time.
+  Work includes ring copy/checksum; queue/reply waits overlap other requests.
+  **Do not add these overlapping counters into a wall-time total.**
+- `download ESP costs` separates ring copy and checksum deltas; maxima are since
+  ESP boot, not per download. Failed/disconnected/cancelled transfers may have no
+  final ESP snapshot. Fixed storage/PSP counters still report the failure.
+- Larger bounded buffers/queues reserve more RAM and can add copying cost; larger
+  profiles are experiments, not a new performance recommendation. No per-packet
+  allocations are introduced. Compare the same file first at 8×2, then 16×2,
+  32×2 and 16×4, keeping HTTP, hub, card and clocks unchanged.
 
 | Route | Available measurement | Actual media-download throughput |
 | --- | --- | --- |

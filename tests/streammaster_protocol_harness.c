@@ -8,6 +8,11 @@ static SmConfig dhcp(void) {
     strcpy(c.ssid,"Network");strcpy(c.password,"example-password");return c;
 }
 int main(void) {
+    for(unsigned n=0;n<=SM_BULK_MAX_FRAME_SIZE-32;n++) {
+        unsigned wire=sm_bulk_wire_size_op(SM_SOCKET_READ_BULK_EXT,n);
+        assert(wire>=32+n && wire<=SM_BULK_MAX_FRAME_SIZE);
+        assert(wire==SM_BULK_MAX_FRAME_SIZE || wire%64);
+    }
     SmFrame f={.op=SM_ECHO,.sequence=42,.length=SM_PAYLOAD_SIZE};
     for(unsigned i=0;i<SM_PAYLOAD_SIZE;i++)f.payload[i]=(unsigned char)i;
     sm_seal(&f);assert(sm_valid(&f));

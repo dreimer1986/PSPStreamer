@@ -14,3 +14,5 @@ void sm_network_idle(void);
 void sm_usb_task(void *unused);
 void sm_usb_daemon(void *unused);
 void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out);
+void sm_sockets_bulk_cost(uint32_t *copy,uint32_t *checksum);
+void sm_usb_metrics_snapshot(SmUsbMetrics *out);

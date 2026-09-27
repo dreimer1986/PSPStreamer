@@ -400,6 +400,7 @@ static int seek_requested;
 static char server_host[64] = PSP_STREAMER_HOST;
 static int server_https;
 static int network_transport;
+static unsigned streammaster_bulk_kib=8,streammaster_bulk_depth=2;
 #include "streammaster_transport.h"
 static int server_port = PSP_STREAMER_PORT;
 #include "server_auth.h"
@@ -482,6 +483,8 @@ static void load_playback_settings(void) {
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
             else if (!strncmp(line,"https=",6)) server_https=atoi(line+6)!=0;
             else if (!strncmp(line,"network_transport=",18)) network_transport=!strcmp(line+18,"streammaster");
+            else if (!strncmp(line,"streammaster_bulk_kib=",21)) streammaster_bulk_kib=atoi(line+21);
+            else if (!strncmp(line,"streammaster_bulk_depth=",23)) streammaster_bulk_depth=atoi(line+23);
             else if (!strncmp(line,"debug=",6)) debug_enabled=!strcmp(line+6,"1");
             else if (!strncmp(line, "server_password=", 16)) {
                 strncpy(server_password,line+16,sizeof(server_password)-1);
@@ -539,6 +542,7 @@ static int save_playback_settings(void) {
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_high_resolution=%d\n",md_high_resolution);
     length += snprintf(data+length,sizeof(data)-length,"https=%d\n",server_https);
     length += snprintf(data+length,sizeof(data)-length,"network_transport=%s\n",network_transport?"streammaster":"wifi");
+    length += snprintf(data+length,sizeof(data)-length,"streammaster_bulk_kib=%u\nstreammaster_bulk_depth=%u\n",streammaster_bulk_kib,streammaster_bulk_depth);
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_cpu_mhz=%d\nidle_cpu_mhz=%d\n",milkdrop_cpu_mhz,idle_cpu_mhz);
@@ -3539,6 +3543,7 @@ int main(void) {
     setup_callbacks();
     tls_init();
     load_playback_settings();
+    stm_tuning(streammaster_bulk_kib,streammaster_bulk_depth);
     stm_init(network_transport,server_host,server_port,server_https);
     stm_diagnostic_enable(debug_enabled);
     diagnostic_history_start();

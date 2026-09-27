@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.2.5: negotiated 8/16/32 KiB read profiles with 1/2/4 requests
+  (maximum approximately 64 KiB per group), retaining 8 KiB/two by default and
+  legacy fallback. Add ESP queue, checksum, copy and USB transfer timing.
+- Batch offline SHA-256 compression with one work-buffer wipe per batch; preserve
+  full Memory Stick read-back, the expected digest and the library's TLS path.
+  Performance remains subject to on-device comparison.
 - Batch recovery logs during offline transfers, overlap reception with bounded
   asynchronous card writes and prefetch verification reads while hashing. Full
   on-card SHA-256 verification and committed-prefix resume remain enabled.

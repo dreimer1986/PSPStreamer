@@ -2,6 +2,7 @@
  * TLS, file and hash ownership stays on the worker; the UI only cancels it. */
 #include <pspiofilemgr_devctl.h>
 #include <mbedtls/sha256.h>
+#include "offline_sha256.h"
 #include "offline_io.h"
 #define OFFLINE_ROOT "ms0:/PSP/VIDEO/PSPStreamer"
 #define OFFLINE_JOBS 128
@@ -86,6 +87,23 @@ static unsigned long long offline_remaining_bytes(char *meta,const char *folder,
         cursor=end+1;
     }
     return needed;
+}
+static void offline_usb_metrics_log(const SmUsbMetrics *start) {
+    SmUsbMetrics end;char detail[176];
+    if(!stm_usb_metrics(&end) || end.requests<start->requests || end.bytes<start->bytes)return;
+    snprintf(detail,sizeof(detail),"requests=%llu bytes=%llu queue_us=%llu work_us=%llu ready_us=%llu",
+        (unsigned long long)(end.requests-start->requests),(unsigned long long)(end.bytes-start->bytes),
+        (unsigned long long)(end.queue_us-start->queue_us),(unsigned long long)(end.work_us-start->work_us),
+        (unsigned long long)(end.reply_wait_us-start->reply_wait_us));
+    recovery_log("download ESP timing",0,0,detail);
+    snprintf(detail,sizeof(detail),"copy_us=%llu tx_us=%llu gap_us=%llu",
+        (unsigned long long)(end.copy_us-start->copy_us),(unsigned long long)(end.tx_us-start->tx_us),
+        (unsigned long long)(end.gap_us-start->gap_us));
+    recovery_log("download ESP transfer",0,0,detail);
+    snprintf(detail,sizeof(detail),"checksum_us=%llu ring_copy_us=%llu tx_max_us=%u queue_max_us=%u maxima_since_boot=1",
+        (unsigned long long)(end.checksum_us-start->checksum_us),(unsigned long long)(end.ring_copy_us-start->ring_copy_us),
+        (unsigned)end.tx_max_us,(unsigned)end.queue_max_us);
+    recovery_log("download ESP costs",0,0,detail);
 }
 static int offline_connect(int fd) {
     struct sockaddr_in address;
@@ -273,7 +291,7 @@ static int offline_hash(const char *path,const char *expected) {
             else async_enabled=0;
         }
         bytes+=n;t=sceKernelGetSystemTimeWide();
-        rc=mbedtls_sha256_update_ret(&ctx,block,n);
+        rc=offline_sha256_update(&ctx,block,n);
         hash_us+=sceKernelGetSystemTimeWide()-t;
         if(inflight) {
             long long read_result=0;
@@ -375,7 +393,12 @@ static int offline_download_worker(SceSize args,void *argp) {
         }
         download_stage=1;download_bytes=old;download_total=size;download_speed=0;
         snprintf(url,sizeof(url),"/api/offline/file/%s/%d",download_key,i);
-        if(old<size && offline_http(url,NULL,NULL,0,part,size)<0)goto done;
+        if(old<size) {
+            SmUsbMetrics baseline;int measured=debug_enabled && stm_usb_metrics(&baseline);
+            int transferred=offline_http(url,NULL,NULL,0,part,size);
+            if(measured && download_running)offline_usb_metrics_log(&baseline);
+            if(transferred<0)goto done;
+        }
         if(!size && offline_write(part,"",0)<0)goto done;
         download_stage=2;
         if(offline_hash(part,hash)<0) {

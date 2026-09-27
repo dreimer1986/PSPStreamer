@@ -46,6 +46,14 @@ static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
 static volatile int selected,broken=1,wifi_state;
 static int compact_packets;
 static int bulk_pairs,ahead_bulk;
+static int bulk_extended;
+static unsigned tuning_kib=8,tuning_depth=2;
+static unsigned bulk_payload=SM_BULK_PAYLOAD_SIZE,bulk_depth=2;
+void stm_tuning(unsigned kib,unsigned depth) {
+    tuning_kib=(kib==16 || kib==32)?kib:8;
+    tuning_depth=(depth==1 || depth==4)?depth:2;
+    if(tuning_kib==32 && tuning_depth==4)tuning_depth=2;
+}
 static unsigned peer_caps,peer_caps_length;
 static int peer_caps_result=SM_OFFLINE,bridge_bulk_result=SM_OFFLINE;
 static unsigned capable_generation;
@@ -94,7 +102,7 @@ static void finish_ahead(void) {
     if(!owner){broken=1;generation++;ahead_token=0;return;}
     SmBulkResult *packet=&owner->buffers[1-owner->cache_index];
     unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
-    int rc=ahead_bulk?sceIoDevctl("stm:",SM_DEV_BULK_FINISH,NULL,0,packet,sizeof(*packet)):
+    int rc=ahead_bulk?sceIoDevctl("stm:",SM_DEV_BULK_FINISH,NULL,0,packet,bulk_extended?sizeof(*packet):SM_LEGACY_RESULT_SIZE):
         sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
     if(!ahead_bulk && rc>=0) {
         packet->length=response.length;packet->result=response.result;
@@ -105,7 +113,7 @@ static void finish_ahead(void) {
     if(diagnostic_enabled) {
         owner->groups++;owner->finish_us+=sceKernelGetSystemTimeWide()-started;
         if(rc>=0 && packet->result>=0)owner->group_bytes+=packet->length;
-        if(rc>=0 && packet->length<(ahead_bulk?SM_PAIR_PAYLOAD_SIZE:SM_PAYLOAD_SIZE))owner->short_groups++;
+        if(rc>=0 && packet->length<(ahead_bulk?bulk_depth*bulk_payload:SM_PAYLOAD_SIZE))owner->short_groups++;
         diagnostic.calls++;diagnostic.reads++;
         diagnostic.prefetched++;
         /* Only blocked finish time; the rest overlaps application work. */
@@ -141,10 +149,11 @@ static void start_ahead(LocalSocket *s) {
     SceUInt wait=1;
     if(!ahead_supported || !compact_packets || sceKernelWaitSema(rpc_lock,1,&wait)<0)return;
     if(!ahead_token && !s->ahead_ready && !broken && s->epoch==generation && !s->eof && !s->dead) {
-        SmSocketRequest r={s->token,bulk_pairs?SM_BULK_PAYLOAD_SIZE:SM_PAYLOAD_SIZE};
-        memset(&request,0,32+sizeof(r));request.op=bulk_pairs?SM_SOCKET_READ_BULK:SM_SOCKET_READ;
+        SmSocketRequest r={s->token,bulk_pairs?bulk_payload:SM_PAYLOAD_SIZE};
+        memset(&request,0,32+sizeof(r));request.op=bulk_pairs?(bulk_extended?SM_SOCKET_READ_BULK_EXT:SM_SOCKET_READ_BULK):SM_SOCKET_READ;
+        if(bulk_extended)request.result=bulk_depth;
         request.sequence=++sequence;request.length=sizeof(r);memcpy(request.payload,&r,sizeof(r));sm_seal(&request);
-        if(bulk_pairs)sequence++;
+        if(bulk_pairs)sequence+=bulk_depth-1;
         int rc=sceIoDevctl("stm:",bulk_pairs?SM_DEV_BULK_BEGIN:SM_DEV_READ_BEGIN,&request,sizeof(request),NULL,0);
         if(rc==SM_INVALID)ahead_supported=0; /* Old bridge: retain synchronous reads. */
         else if(rc>=0){ahead_token=s->token;ahead_epoch=s->epoch;ahead_bulk=bulk_pairs;}
@@ -235,7 +244,8 @@ int stm_driver_start(int force,volatile int *running) {
     if(rc>=0) {
         phase="reset USB driver";rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
         ahead_token=0;ahead_supported=1;
-        generation++;broken=1;compact_packets=bulk_pairs=0;
+        generation++;broken=1;compact_packets=bulk_pairs=bulk_extended=0;
+        bulk_payload=SM_BULK_PAYLOAD_SIZE;bulk_depth=2;
         peer_caps=peer_caps_length=0;peer_caps_result=bridge_bulk_result=SM_OFFLINE;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
@@ -259,6 +269,10 @@ int stm_driver_start(int force,volatile int *running) {
         if(probe==0 && length==sizeof(caps)) {
             compact_packets=(caps&SM_CAP_COMPACT)!=0;
             bulk_pairs=compact_packets && (caps&SM_CAP_BULK_PAIR) && bridge_bulk_result==1;
+            bulk_extended=bulk_pairs && (caps&SM_CAP_BULK_EXT) &&
+                sceIoDevctl("stm:",SM_DEV_BULK_EXT_CAPS,NULL,0,NULL,0)==1 &&
+                (tuning_kib!=8 || tuning_depth!=2);
+            if(bulk_extended){bulk_payload=tuning_kib*1024-32;bulk_depth=tuning_depth;}
         }
         else if(probe!=SM_INVALID)rc=probe;
     }
@@ -349,9 +363,14 @@ static int socket_status(LocalSocket *s,SmSocketStatus *status) {
 int stm_download_snapshot(int fd,char *line,unsigned size) {
     if(!diagnostic_enabled || !virtual_fd(fd) || lock(rpc_lock,1,NULL)<0)return 0;
     LocalSocket *s=get(fd);int ok=s!=NULL;
-    if(s)snprintf(line,size,"groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u bulk=%d",
-        s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available,bulk_pairs);
+    if(s)snprintf(line,size,"bulk=%d kib=%u depth=%u ext=%d groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u",
+        bulk_pairs,(bulk_payload+32)/1024,bulk_depth,bulk_extended,s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available);
     sceKernelSignalSema(rpc_lock,1);return ok;
+}
+int stm_usb_metrics(SmUsbMetrics *out) {
+    unsigned length=0;
+    if(!selected || !diagnostic_enabled || !(peer_caps&SM_CAP_USB_METRICS) || broken)return 0;
+    return stm_rpc(SM_USB_METRICS,NULL,0,out,sizeof(*out),&length,NULL)==0 && length==sizeof(*out);
 }
 /* A read probe also collects the data. Previously POLLIN used a full STATUS
  * exchange followed by a second full READ exchange for the same 4 KiB block. */

@@ -195,6 +195,8 @@ USB TLS does not inherit PSPStreamer's native PSP certificate-pinning database.
 
 ## Diagnosis and fair speed comparisons
 
+### Bulk protocol and advanced comparisons
+
 Firmware 0.2.4 adds `SM_CAP_BULK_PAIR`. The app enables it only when the kernel
 bridge also advertises `SM_DEV_BULK_CAPS`. Two independent socket-read requests
 are queued, each allowing an 8192-byte frame (8160 payload bytes), with consecutive
@@ -212,6 +214,30 @@ for 12 slots). Reads below 1024 bytes do not initiate look-ahead. Old firmware u
 the previous 4 KiB asynchronous route; old kernel bridges fall back to synchronous
 operation. Update firmware and all three PSP binaries for the new pair mode.
 
+Firmware 0.2.5 adds `SM_CAP_BULK_EXT` and `SM_CAP_USB_METRICS` (total capabilities
+15). Check `SM_DEV_BULK_EXT_CAPS` as well before sending `SM_SOCKET_READ_BULK_EXT`.
+For the local `SM_DEV_BULK_BEGIN` ioctl, the request header's `result` supplies the
+group depth (1/2/4); the driver clears it before sending consecutive requests.
+`SmSocketRequest.length` supplies each payload limit. Maximum frame size is 32 KiB;
+groups may total no more than `SM_MAX_GROUP_PAYLOAD`. The driver waits for each
+32 KiB receive or a short packet; use `sm_bulk_wire_size_op` (not the legacy helper)
+to terminate replies at 8/16 KiB boundaries too. Checksums cover only header/payload.
+`SM_SOCKET_READ_BULK` and `SM_LEGACY_RESULT_SIZE` retain the old 8 KiB/two ABI.
+`SM_DEV_BULK_FINISH` must receive the appropriate old or extended output capacity.
+
+The new app reserves two extended result buffers per slot (~1.5 MiB across 12
+slots) and the kernel has four fixed send/receive pairs (~144 KiB). USB DMA never
+targets an asynchronously retained user pointer. The ESP uses bounded four-entry
+queues and a 32 KiB host transfer buffer. No buffers are freed/reused before DMA
+completion on cancellation/detach. These larger allocations may cost throughput;
+measure profiles instead of assuming bigger is faster.
+
+`stm_tuning(kib, depth)` before initialization selects the comparison profile;
+do not change tuning concurrently with I/O. Defaults remain 8×2 legacy bulk.
+`stm_usb_metrics()` retrieves boot-cumulative bulk timing counters only when
+debugging and the capability are enabled. The app brackets a download with two
+queries; see [counter interpretation](../docs/TRANSPORT_DOWNLOAD_COMPARISON.md).
+
 `stm_diagnostic_snapshot(buffer, capacity, 0)` formats USB timing/rate counters;
 passing `1` formats sampled ESP receive-buffer counters. A zero return means no
 snapshot is available. Write these infrequently from your own diagnostic/UI
@@ -220,7 +246,7 @@ the displayed session-average KiB/s includes idle time. See
 [measurement details](README.md#transport-measurements).
 
 `bulk=1` indicates negotiated pairs. Diagnostics also report `caps`, `probe`,
-`len` and `bridge`: current firmware/driver should return `caps=3 probe=0 len=4
+`len` and `bridge`: firmware 0.2.4/driver should return `caps=3 probe=0 len=4
 bridge=1`. `caps=1` indicates compact-only firmware; a negative bridge result
 indicates an unsupported or failed local driver query. A September 27 flash audit
 found 0.2.3 still installed despite a 0.2.4 factory file on the PC: verify the

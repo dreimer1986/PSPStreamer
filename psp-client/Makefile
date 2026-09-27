@@ -3,6 +3,7 @@ OBJS = main.o h264_hw.o language.o menu_skin.o tvout_imports.o milkdrop_warp.o m
 PSP_FW_VERSION = 661
 OBJS += cave_visual.o cave_paths.o
 OBJS += streammaster_transport.o
+OBJS += offline_sha256.o
 BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
@@ -51,7 +52,8 @@ main.o: oc_settings_ui.h oc_settings_io.h ../psp-overclock/config_parse.h
 main.o: streammaster_ui.h ../streammaster/protocol.h
 main.o: streammaster_fields.h
 main.o: offline_source.h offline_ui.h offline_filename.h
-main.o: offline_io.h
+main.o: offline_io.h offline_sha256.h
+offline_sha256.o: offline_sha256.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h
 main.o: wifi_connection.h

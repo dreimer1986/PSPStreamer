@@ -917,6 +917,15 @@ and the claimed PSP USB connection; see the LED legend in the firmware guide.
 See [firmware, flashing and first-test instructions](streammaster/README.md).
 Developers can integrate the adapter into other PSP homebrews using the
 [StreamMaster integration guide](streammaster/INTEGRATION.md).
+Firmware 0.2.5 also supports advanced CFG-only throughput comparison settings:
+`streammaster_bulk_kib=8` (8, 16 or 32 KiB per response) and
+`streammaster_bulk_depth=2` (1, 2 or 4 outstanding requests). Save the CFG and
+restart the app. The defaults retain the proven 8 KiB/two-request route.
+32 KiB/four is limited to two requests; unsupported values use the defaults.
+Older firmware/drivers retain their negotiated legacy route. Keep the same ready
+file, HTTP route, card, hub and clock when comparing settings. No speedup is assumed.
+Download diagnostics include the actual selected profile and, on 0.2.5, ESP timing
+to separate queuing and processing from USB transfer time.
 The bridge replaces Onju's current firmware and requires a powered USB host
 connection; it is not a globally installed ARK Wi-Fi replacement plugin.
 

@@ -11,6 +11,7 @@
 /* Host SHA implementation is an independent oracle for the PSP scheduling.
  * Production retains Mbed TLS; no cryptographic primitives were changed. */
 typedef SHA256_CTX mbedtls_sha256_context;
+#define offline_sha256_update mbedtls_sha256_update_ret
 static void mbedtls_sha256_init(mbedtls_sha256_context *c){memset(c,0,sizeof(*c));}
 static int mbedtls_sha256_starts_ret(mbedtls_sha256_context *c,int v){assert(!v);return SHA256_Init(c)?0:-1;}
 static int mbedtls_sha256_update_ret(mbedtls_sha256_context *c,const void *p,size_t n){return SHA256_Update(c,p,n)?0:-1;}

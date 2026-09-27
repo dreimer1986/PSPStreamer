@@ -5,7 +5,7 @@ not a claim that future measurements cannot reveal another bottleneck. Potential
 is conditional: no percentage gain is promised for unmeasured changes. Items below
 are not additional unfinished requirements of the 0.2.4 implementation.
 
-## Completed, hardware comparison next
+## Completed and measured baseline
 
 1. Two actual outstanding read requests, rather than only overlapping one request
    with application work. ESP receives a second request during the first response.
@@ -17,7 +17,17 @@ are not additional unfinished requirements of the 0.2.4 implementation.
 
 Confirmed 0.2.4: 419.37 KiB/s over 171,481,659 bytes, `bulk=1`, zero USB errors.
 Download-only diagnostic batching, double-buffered async card writes and prefetched
-read-back verification are now implemented; their hardware comparison is pending.
+read-back verification raised the measured body rate to 483.324 KiB/s, with
+1.544 s blocked write wait. Hashing still used 82.860 s of the 105.530 s verification.
+The files were similar-sized, not byte-identical; see the comparison document.
+
+## Prepared in 0.2.5; hardware comparison next
+
+- Offline-only SHA-256 batch compression, identical digests checked against Mbed
+  TLS; full card read-back retained. Compare hash time separately from USB speed.
+- Negotiated 8/16/32 KiB × 1/2/4 profiles (maximum ~64 KiB/group); 8×2 remains default.
+- ESP queue/worker/copy/checksum/transfer/gap timings, logged as download-window
+  deltas. These attribute overlapping costs; they do not measure radio retries.
 
 Earlier baseline: 0.2.3 plus single-request read-ahead transferred 170,598,447 bytes in
 516.684 s = 322.44 KiB/s. Interval median 338, maximum 357 KiB/s; one of 100
@@ -27,8 +37,8 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 
 | Area | Concrete option | Potential / cost / constraint |
 | --- | --- | --- |
-| Attribution | Per-connection timing of server receive, ring occupancy, USB queue wait, DMA completion and PSP writes | Measurement, not a speedup itself; low–medium effort; needed to prioritize below |
-| Block/depth tuning | Compare 8/16/32 KiB and two versus deeper outstanding groups | Conditional; medium effort; more RAM and longer control/cancellation latency. Current 8 KiB/two is implemented, not a missing feature |
+| Attribution | Interpret implemented PSP storage and ESP queue/worker/copy/transfer measurements; add server/radio attribution if indicated | Measurement, not a speedup itself; first firmware 0.2.5 capture pending |
+| Block/depth tuning | Compare implemented 8/16/32 KiB and 1/2/4 profiles | Conditional; more RAM and longer control/cancellation latency. All supported profiles are now selectable; hardware comparison pending |
 | Continuous receive | Credit-based push/ring transfer instead of request/response polling | Potentially meaningful; very high effort; new flow control, fairness and recovery protocol |
 | DMA/queue ownership | ESP pointer queues and reusable DMA buffer pool; scatter/ring delivery where supported | Medium potential; high effort; preserve callback lifetime and detach safety |
 | PSP zero-copy | Explicitly owned/pinned shared buffers instead of kernel-to-user copy | Conditional; very high risk/effort; DMA/cache coherency and arbitrary caller lifetimes prohibit casually passing user pointers |
@@ -39,8 +49,8 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 | Wi-Fi/radio | AP/channel/congestion, signal/retries, driver aggregation/buffer options | Can dominate on a bad link; environment-dependent; power saving is already disabled |
 | HTTP/server path | Inspect server disk/SMB/provider delivery and socket write batching; reuse connections for many small requests | Conditional; low–medium effort; keep-alive mostly helps startup/small files, not a single large body |
 | TLS | Profile TLS record buffering, session reuse and supported cryptographic acceleration | HTTPS only; medium–high effort; preserve verification; no gain for HTTP measurements |
-| PSP storage pipeline | Tune implemented double-buffered async writes, chunk size/alignment; investigate remaining card stalls | First overlap implementation ready for measurement; further changes conditional; preserve bounded RAM, committed offsets and resume correctness |
-| Final file verification | Measure implemented read-ahead hashing; optimize remaining SHA-256 CPU work if justified | Baseline 121 s = 41 s reads + 79 s hashing; read-ahead now implemented, crypto implementation unchanged; keep full read-back integrity |
+| PSP storage pipeline | Tune implemented double-buffered async writes, chunk size/alignment; investigate remaining card stalls | Overlap measured: only 1.544 s blocked write wait; further gains conditional; preserve committed offsets and resume correctness |
+| Final file verification | Measure new batched SHA-256 compression, retaining read-ahead | Read-ahead baseline 105.530 s = 21.690 s read wait + 82.860 s hashing; new CPU optimization awaits measurement; keep full read-back integrity |
 | UI/logging/background work | Profile rendering, diagnostic writes and remote polling during transfers | Usually modest; low–medium effort; do not sacrifice controls or blindly disable diagnostics |
 | Compiler/code generation | Targeted O3/LTO/PGO or hot-loop optimization after profiling | Uncertain, generally incremental; medium effort; O3 echo comparison did not establish a win |
 | PSP CPU/bus policy | Compare already proven clock settings during transfer/hash versus idle | Conditional, with power/thermal/stability costs; no new overclock settings introduced here |
