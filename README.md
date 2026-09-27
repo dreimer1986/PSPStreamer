@@ -897,6 +897,19 @@ The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1
 
 ## Install and configure the PSP app
 
+### StreamMaster USB / Onju Voice V3 (hardware test)
+
+An optional ESP32-S3 bridge and PSP USB driver are available for the original
+Onju Voice PCB V3. **Select → Settings → StreamMaster USB** configures its Wi-Fi,
+DHCP/static IPv4 and DNS, and provides USB integrity/throughput and server tests.
+Network credentials are saved on Onju. This initial build is for hardware
+verification: **playback and browsing still use the PSP's existing Wi-Fi**.
+See [firmware, flashing and first-test instructions](streammaster/README.md).
+The bridge replaces Onju's current firmware and requires a powered USB host
+connection; it is not a globally installed ARK Wi-Fi replacement plugin.
+
+### PSP installation
+
 After a build, install the complete contents of `psp-client/release/PSPStreamer/` to:
 
 ```

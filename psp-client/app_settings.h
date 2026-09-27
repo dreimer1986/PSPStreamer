@@ -1,7 +1,7 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_COUNT};
+      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_STREAMMASTER,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
@@ -91,6 +91,7 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
     }
 }
 #include "oc_settings_ui.h"
+static void streammaster_settings(void);
 static int app_settings(void) {
     AppSettings original,draft;settings_capture(&original);draft=original;
     /* Help and immediate display action are not persisted CFG settings. */
@@ -111,7 +112,7 @@ static int app_settings(void) {
                 if(i==SET_HOST)snprintf(value,sizeof(value),"%s",draft.host);
                 else if(i==SET_PASSWORD)strcpy(value,draft.password[0]?"********":"-");
                 else if(i==SET_PRESET)snprintf(value,sizeof(value),"%.48s",draft.preset);
-                else if(i==SET_OC)strcpy(value,"[X]");
+                else if(i==SET_OC || i==SET_STREAMMASTER)strcpy(value,"[X]");
                 else if(i==SET_LANGUAGE)strcpy(value,draft.value[i]?"Deutsch":"English");
                 else if(i==SET_RESOLUTION)strcpy(value,draft.value[i]?"512x512":"512x256");
                 else if(i==SET_ANALYSIS)snprintf(value,sizeof(value),"%s",tr(draft.value[i]?TXT_ANALYSIS_FFT:TXT_ANALYSIS_LEGACY));
@@ -159,6 +160,9 @@ static int app_settings(void) {
             }
             if(selected==SET_OC) {
                 oc_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+            }
+            if(selected==SET_STREAMMASTER) {
+                streammaster_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
             }
             if(selected==SET_PRESET) {
                 preset_choose(draft.preset,0);dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;

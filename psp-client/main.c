@@ -140,6 +140,7 @@ static const char *hardware_runtime_step = "not loaded";
  * PRX copied beside a different EBOOT. */
 static char hardware_runtime_path[256] = "-";
 static void keep_awake(void);
+static void streammaster_cleanup(void);
 static int remote_control_thread(SceSize args, void *argp);
 
 extern int pspDveMgrCheckVideoOut(void);
@@ -632,6 +633,7 @@ static void keep_awake(void) {
 int exit_callback(int arg1, int arg2, void *common) {
     (void)arg1; (void)arg2; (void)common;
     prepare_oc_exit();
+    streammaster_cleanup();
     sceKernelExitGame();
     return 0;
 }
@@ -3460,6 +3462,7 @@ static int playback_options(int audio_only) {
 
 #include "help_ui.h"
 #include "app_settings.h"
+#include "streammaster_ui.h"
 #include "comfort_ui.h"
 #include "offline_ui.h"
 

@@ -61,6 +61,8 @@ static void music_transition_end(void){}
 static void input_text_begin(int capacity,int secret){(void)capacity;(void)secret;}
 static void input_text_end(void){}
 static int input_text_take(char *text,int capacity){(void)text;(void)capacity;return 0;}
+static int streammaster_visits;
+static void streammaster_settings(void){streammaster_visits++;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
@@ -127,8 +129,11 @@ int main(void) {
     assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
     /* Both submenus are reachable without audio running. OC cancel has no
      * filesystem side effects. A preset remains a draft until outer START. */
-    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
-    sequence(oc_cancel,9);assert(app_settings()==0);
+    const unsigned int usb_open[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
+    sequence(usb_open,7);assert(app_settings()==0&&streammaster_visits==1);
+    assert(TXT_SETTINGS_STREAMMASTER-TXT_SETTINGS_HOST==SET_STREAMMASTER);
+    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(oc_cancel,11);assert(app_settings()==0);
     for(int accept=0;accept<2;accept++) {
         n=0;held[n++]=0;
         for(int i=0;i<SET_PRESET+2;i++){held[n++]=PSP_CTRL_DOWN;held[n++]=0;}

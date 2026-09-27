@@ -44,6 +44,7 @@ main.o tls_transport.o: tls_transport.h
 main.o: server_connection.h playback_transport.h playback_recovery.h diagnostic_history.h recovery_log.h app_settings.h
 LIBS += -lpsprtc
 main.o: oc_settings_ui.h oc_settings_io.h ../psp-overclock/config_parse.h
+main.o: streammaster_ui.h ../streammaster/protocol.h
 main.o: offline_source.h offline_ui.h offline_filename.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h
