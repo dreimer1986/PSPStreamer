@@ -218,6 +218,18 @@ int main(void){
     assert(rpc_count-before<20); /* Empty channel cannot flood the USB bus. */
     assert(stm_close(fd)==0);
     /* Repeated short-lived remote owners cannot exhaust either fixed pool. */
+    stm_diagnostic_enable(1);
+    fd=open_socket();c=channel(fd);
+    copy_in(c->rx,RX_SIZE,c->rx_write,(const unsigned char *)"diag",4);c->rx_write+=4;
+    before=rpc_count;
+    assert(stm_recv(fd,got,4,0)==4 && rpc_count==before+2);
+    assert(diagnostic.bytes==4 && diagnostic.reads==1 && diagnostic.max==4);
+    char report[176];
+    assert(stm_diagnostic_snapshot(report,sizeof(report),0)&&strstr(report,"reads=1"));
+    assert(stm_diagnostic_snapshot(report,sizeof(report),1)&&strstr(report,"max_B=4"));
+    stm_diagnostic_enable(0);
+    assert(!stm_diagnostic_snapshot(report,sizeof(report),0));
+    assert(stm_close(fd)==0);
     for(int cycle=0;cycle<10000;cycle++) {
         test_tid=cycle+2;fd=open_socket();c=channel(fd);c->state=SM_SOCKET_EOF;c->done=1;
         assert(stm_recv(fd,got,1,0)==0);assert(stm_close(fd)==0);

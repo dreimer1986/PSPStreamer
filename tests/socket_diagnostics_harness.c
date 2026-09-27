@@ -19,6 +19,7 @@ static void recovery_log(const char *event,int result,int status,const char *det
     snprintf(last_detail,sizeof(last_detail),"%s",detail);
 }
 static void stm_thread_finished(void){}
+static int stm_diagnostic_snapshot(char *line,unsigned size,int buffers){(void)line;(void)size;(void)buffers;return 0;}
 #include "socket_diagnostics.h"
 int main(void){
     network_worker_finished("test");assert(releases==1);

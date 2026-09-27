@@ -1,5 +1,21 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
+## Transport measurements
+
+With PSP debugging enabled, `PSP/SYSTEM/PSPStreamer-recovery.txt` records
+`USB throughput` and `ESP RX samples` approximately every 30 seconds while
+network diagnostics are running. Counters are cumulative for the app session:
+USB exchanges, read payload bytes, elapsed time, exchange time, successful-lock
+waiting time, longest exchange and its operation, busy replies and errors.
+`KiB_s` is the session-average read payload rate, including idle time; use
+differences in `rx_B` and `span_ms` for interval rates. This is not a USB speed limit.
+ESP buffer samples include ordinary socket-status replies and one additional
+status request per five seconds per reading socket. Empty/full counts are sampled
+observations, not time percentages; buffers from all sockets are aggregated.
+The USB echo test also records its rate, byte count and elapsed time. These
+measurements need no firmware update from 0.2.1. Disabling debugging disables
+extra sampling and logs. HTTP and HTTPS can be compared without changing codecs.
+
 See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
 including matching PSP-side changes and work not yet released.
 

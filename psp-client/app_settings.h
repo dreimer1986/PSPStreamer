@@ -25,6 +25,7 @@ static void settings_apply(const AppSettings *s) {
     playback_volume=s->value[SET_VOLUME];audio_shuffle=s->value[SET_SHUFFLE];
     music_preset_auto=s->value[SET_AUTO];music_preset_seconds=s->value[SET_SECONDS];music_preset_fade_ms=s->value[SET_FADE];
     debug_enabled=s->value[SET_DEBUG];
+    stm_diagnostic_enable(debug_enabled);
     music_cpu_mhz=s->value[SET_CPU_MUSIC];video_cpu_mhz=s->value[SET_CPU_VIDEO];screen_idle=s->value[SET_SCREEN];
     milkdrop_cpu_mhz=s->value[SET_CPU_MILKDROP];idle_cpu_mhz=s->value[SET_CPU_IDLE];
     md_high_resolution=s->value[SET_RESOLUTION];

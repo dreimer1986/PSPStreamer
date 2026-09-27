@@ -6,6 +6,9 @@ not mean that the feature is available in the current firmware ZIP.
 
 ## PSP client follow-up — 2026-09-27
 
+- Add opt-in transport timing, read-throughput and sampled ESP receive-buffer
+  diagnostics, plus persisted USB benchmark results. Firmware remains 0.2.1.
+
 - Route library hostname resolution through StreamMaster instead of attempting
   native PSP DNS without a PSP WLAN connection. Firmware 0.2.1 is unchanged.
 - Reload saved ESP configuration and current DHCP information automatically

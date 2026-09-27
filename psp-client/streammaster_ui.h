@@ -74,6 +74,9 @@ static int sm_worker(SceSize size,void *args) {
         }
         unsigned long long elapsed=sceKernelGetSystemTimeWide()-start;
         sm_rate=elapsed?(unsigned)((unsigned long long)sm_bytes*1000000ULL/elapsed/1024):0;
+        char measurement[128];
+        snprintf(measurement,sizeof(measurement),"KiB_s=%u bytes=%u elapsed_ms=%llu",sm_rate,sm_bytes,elapsed/1000);
+        recovery_log("StreamMaster benchmark",rc,0,measurement);
     } else if(sm_job==SM_JOB_SERVER) {
         rc=sm_rpc(SM_HTTP_OPEN,&sm_server,sizeof(sm_server));
         if(rc>=0) {

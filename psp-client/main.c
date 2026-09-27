@@ -3540,6 +3540,7 @@ int main(void) {
     tls_init();
     load_playback_settings();
     stm_init(network_transport,server_host,server_port,server_https);
+    stm_diagnostic_enable(debug_enabled);
     diagnostic_history_start();
     comfort_load_file(COMFORT_PATH,&comfort_store);
     pspDebugScreenInit();

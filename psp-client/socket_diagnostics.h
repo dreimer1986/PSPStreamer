@@ -69,6 +69,9 @@ static void socket_snapshot_tick(void) {
     if(now>=socket_snapshot_next) {
         socket_snapshot_next=now+30000000ULL;
         socket_snapshot("socket resources",0);
+        char usb[176];
+        if(stm_diagnostic_snapshot(usb,sizeof(usb),0))recovery_log("USB throughput",0,0,usb);
+        if(stm_diagnostic_snapshot(usb,sizeof(usb),1))recovery_log("ESP RX samples",0,0,usb);
     }
     __sync_lock_release(&socket_snapshot_lock);
 }

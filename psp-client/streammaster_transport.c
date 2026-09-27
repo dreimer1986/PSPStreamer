@@ -15,7 +15,7 @@ typedef struct {
     int fd,nonblock,opened,eof,dead,opening,connected;
     unsigned token,epoch,pos,end;
     unsigned read_backoff;
-    SceInt64 read_retry,open_retry;
+    SceInt64 read_retry,open_retry,diagnostic_next;
     SmSocketOpen destination;
     unsigned char cache[SM_PAYLOAD_SIZE];
 } LocalSocket;
@@ -45,6 +45,25 @@ static SmFrame request,response;
 static char target_host[128];
 static int target_port,target_tls;
 static const char *phase="idle";
+static int diagnostic_enabled;
+static struct {
+    unsigned calls,reads,bytes,busy,errors,max_us,slow_op;
+    unsigned samples,empty,full,min,max;
+    unsigned long long usb_us,wait_us,start;
+} diagnostic;
+void stm_diagnostic_enable(int enabled){diagnostic_enabled=enabled;}
+int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
+    if(!selected || !diagnostic_enabled || rpc_lock<0)return 0;
+    SceUInt wait=1000;
+    if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
+    unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
+    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u cumulative",
+        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max);
+    else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
+        diagnostic.calls,diagnostic.reads,elapsed?(unsigned)((unsigned long long)diagnostic.bytes*1000000/elapsed/1024):0,
+        diagnostic.usb_us/1000,diagnostic.wait_us/1000,diagnostic.max_us,diagnostic.slow_op,diagnostic.busy,diagnostic.errors);
+    sceKernelSignalSema(rpc_lock,1);return 1;
+}
 static int lock(SceUID id,int milliseconds,volatile int *running) {
     SceInt64 end=sceKernelGetSystemTimeWide()+(SceInt64)milliseconds*1000;
     while(!running || *running) {
@@ -70,6 +89,7 @@ int stm_init(int enabled,const char *host,int port,int https) {
     stm_server(host,port,https);return 0;
 }
 int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capacity,unsigned *length,volatile int *running) {
+    unsigned long long entered=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
     if(length)*length=0;
     if(size>SM_PAYLOAD_SIZE || rpc_lock<0 || (op>=SM_SOCKET_OPEN && broken))return SM_OFFLINE;
     /* Data/control pollers yield promptly to the current owner. Closing must
@@ -80,11 +100,27 @@ int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capa
     request.op=op;request.sequence=++sequence;request.length=size;
     if(size)memcpy(request.payload,data,size);
     sm_seal(&request);
+    unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
     int rc=sceIoDevctl("stm:",SM_DEV_EXCHANGE,&request,sizeof(request),&response,sizeof(response));
+    unsigned duration=diagnostic_enabled?(unsigned)(sceKernelGetSystemTimeWide()-started):0;
     if(rc<0 && rc!=SM_BUSY){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     if(rc>=0) {
         if(response.length>capacity || (response.length && !reply))rc=SM_INVALID;
         else {if(reply && response.length)memcpy(reply,response.payload,response.length);if(length)*length=response.length;rc=response.result;}
+    }
+    if(diagnostic_enabled) {
+        if(!diagnostic.calls)diagnostic.start=entered;
+        diagnostic.calls++;diagnostic.usb_us+=duration;diagnostic.wait_us+=started-entered;
+        if(duration>diagnostic.max_us){diagnostic.max_us=duration;diagnostic.slow_op=op;}
+        if(rc==SM_BUSY)diagnostic.busy++;else if(rc<0)diagnostic.errors++;
+        if(op==SM_SOCKET_READ){diagnostic.reads++;if(rc>=0)diagnostic.bytes+=response.length;}
+        if(op==SM_SOCKET_STATUS && rc>=0 && response.length==sizeof(SmSocketStatus)) {
+            SmSocketStatus state;memcpy(&state,response.payload,sizeof(state));
+            if(!diagnostic.samples || state.available<diagnostic.min)diagnostic.min=state.available;
+            if(state.available>diagnostic.max)diagnostic.max=state.available;
+            diagnostic.samples++;if(!state.available)diagnostic.empty++;
+            if(state.available==65536)diagnostic.full++;
+        }
     }
     memset(&request,0,sizeof(request));memset(&response,0,sizeof(response));
     sceKernelSignalSema(rpc_lock,1);return rc;
@@ -209,6 +245,11 @@ static int socket_status(LocalSocket *s,SmSocketStatus *status) {
 static int socket_refill(LocalSocket *s) {
     if(s->end>s->pos || s->eof)return 1;
     if(sceKernelGetSystemTimeWide()<s->read_retry)return 0;
+    if(diagnostic_enabled && sceKernelGetSystemTimeWide()>=s->diagnostic_next) {
+        SmSocketStatus sample;
+        s->diagnostic_next=sceKernelGetSystemTimeWide()+5000000;
+        socket_status(s,&sample); /* One extra exchange per five seconds, not per block. */
+    }
     SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
     int rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
     if(rc==SM_BUSY) {
