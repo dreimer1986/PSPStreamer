@@ -16,6 +16,7 @@
 static SmConfig config;
 static esp_netif_t *netif;
 static atomic_uint state,reason;
+unsigned sm_network_state(void){return atomic_load(&state);}
 static atomic_bool disconnect_requested,drop_http;
 static int was_ready;
 static int reconnect,retries;
@@ -102,7 +103,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     if(!sm_valid(r) || r->flags){out->result=SM_INVALID;goto done;}
     switch(r->op) {
     case SM_INFO: {
-        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.1.0");
+        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.1.1");
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);

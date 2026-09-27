@@ -904,6 +904,8 @@ Onju Voice PCB V3. **Select → Settings → StreamMaster USB** configures its W
 DHCP/static IPv4 and DNS, and provides USB integrity/throughput and server tests.
 Network credentials are saved on Onju. This initial build is for hardware
 verification: **playback and browsing still use the PSP's existing Wi-Fi**.
+Onju's status LEDs indicate firmware operation, Wi-Fi connection/signal strength
+and the claimed PSP USB connection; see the LED legend in the firmware guide.
 See [firmware, flashing and first-test instructions](streammaster/README.md).
 The bridge replaces Onju's current firmware and requires a powered USB host
 connection; it is not a globally installed ARK Wi-Fi replacement plugin.

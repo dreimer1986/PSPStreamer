@@ -1,6 +1,6 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
-Version 0.1.0 is the **hardware bring-up build**. It includes a native ESP-IDF
+Version 0.1.1 is the **hardware bring-up build**. It includes a native ESP-IDF
 firmware, a PSP USB device driver, and a PSP settings/diagnostics menu. It does
 **not yet route media playback, library browsing or remote control through
 USB**. Existing playback continues to use the PSP's Wi-Fi. Test USB enumeration,
@@ -33,7 +33,35 @@ Its USB host is full-speed, 12 Mbit/s raw, not high-speed USB. Actual throughput
 must be measured. Bluetooth on the S3 is BLE only; ordinary phone Bluetooth
 PAN tethering is **not** supported. A phone's Wi-Fi hotspot remains an option.
 
-## Build
+## Status LEDs
+
+The six onboard GRB pixels (GPIO11, 800 kHz) show:
+
+| LEDs | Meaning |
+| --- | --- |
+| First outer LED, dim white | Firmware running / power indication after boot |
+| Four central LEDs, dim blue | No Wi-Fi connection configured or deliberately disconnected |
+| Central amber running light | Connecting / reconnecting to Wi-Fi |
+| Central red pulse | Connection failed / waiting for another retry |
+| 1–4 central steady bars | Wi-Fi connected and an IPv4 address obtained |
+| Other outer LED, cyan | PSP USB interface claimed by StreamMaster |
+
+Signal bars: 1 below −80 dBm, 2 from −80, 3 from −70, 4 from −60 dBm.
+One or two bars are amber/yellow; three or four are green. A 3 dB downward
+hysteresis and one RSSI reading per second prevent rapid threshold flicker.
+This indicates the **access-point signal**, not server/Internet reachability
+or measured throughput. The USB LED goes out when the PSP leaves the
+StreamMaster submenu and releases its USB interface.
+
+Brightness is deliberately low (maximum 24/255 per colour). An independent
+low-priority task checks display state four times per second and sends only
+changed frames. RMT generates the LED timing in hardware; the complete six-pixel
+frame fits its allocated symbol memory. LED errors disable the display rather
+than aborting USB/Wi-Fi. The white LED is a firmware indication, not a supply
+voltage measurement or watchdog guarantee. No PSP app update is required for
+these indicators.
+
+## Building the firmware
 
 Use **ESP-IDF v5.5.1**, target `esp32s3`. From a checkout of ESP-IDF:
 

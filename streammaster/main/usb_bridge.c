@@ -65,7 +65,7 @@ static int open_psp(int address) {
             if(found_in && found_out) {
                 iface=candidate;
                 if(usb_host_interface_claim(client,device,iface,0)!=ESP_OK)goto reject;
-                claimed=1;epoch++;busy=rx_done=tx_done=0;return 1;
+                claimed=1;sm_led_usb(1);epoch++;busy=rx_done=tx_done=0;return 1;
             }
         }
         p+=p[0];
@@ -91,6 +91,7 @@ void sm_usb_task(void *unused) {
         usb_host_client_handle_events(client,pdMS_TO_TICKS(20));
         if(new_address && !device){int address=new_address;new_address=0;open_psp(address);}
         if(gone) {
+            sm_led_usb(0);
             sm_network_drop_http();
             flush_endpoints();
             /* Static transfer buffers remain alive until both callbacks have

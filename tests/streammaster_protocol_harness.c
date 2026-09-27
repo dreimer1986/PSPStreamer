@@ -1,4 +1,5 @@
 #include "../streammaster/protocol.h"
+#include "../streammaster/main/led_pattern.h"
 #include <assert.h>
 #include <stdio.h>
 static SmConfig dhcp(void) {
@@ -38,5 +39,26 @@ int main(void) {
     const char *bad[]={"","1","1.2.3","1.2.3.4.5","256.1.2.3","1..2.3","-1.2.3.4","1.2.3.4x"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++)assert(!sm_ip(bad[i],NULL));
     uint32_t ip;assert(sm_ip("192.168.10.20",&ip)&&ip==0xc0a80a14U);
-    puts("StreamMaster protocol/config checks passed");return 0;
+    assert(sm_led_bars(-90,0)==1);assert(sm_led_bars(-80,0)==2);
+    assert(sm_led_bars(-70,0)==3);assert(sm_led_bars(-60,0)==4);
+    assert(sm_led_bars(-62,4)==4);assert(sm_led_bars(-64,4)==3);
+    assert(sm_led_bars(-73,3)==3);assert(sm_led_bars(-74,3)==2);
+    assert(sm_led_bars(-95,4)==1);assert(sm_led_bars(-45,1)==4);
+    uint8_t rgb[6][3];
+    for(unsigned state=0;state<=SM_WIFI_FAILED;state++)for(unsigned phase=0;phase<16;phase++) {
+        sm_led_pattern(state,3,1,phase,rgb);
+        assert(rgb[0][0]==8&&rgb[0][1]==8&&rgb[0][2]==8);
+        assert(rgb[5][0]==0&&rgb[5][1]==8&&rgb[5][2]==24);
+        for(int i=0;i<6;i++)for(int j=0;j<3;j++)assert(rgb[i][j]<=24);
+    }
+    for(int bars=0;bars<=4;bars++) {
+        sm_led_pattern(SM_WIFI_READY,bars,0,0,rgb);
+        assert(!rgb[5][0]&&!rgb[5][1]&&!rgb[5][2]);
+        for(int i=1;i<=4;i++)assert((rgb[i][1]!=0)==(i<=bars));
+    }
+    sm_led_pattern(SM_WIFI_CONNECTING,0,0,2,rgb);
+    assert(rgb[3][0]==24&&rgb[1][0]==0&&rgb[2][0]==0&&rgb[4][0]==0);
+    sm_led_pattern(SM_WIFI_FAILED,0,0,0,rgb);assert(rgb[1][0]==24);
+    sm_led_pattern(SM_WIFI_FAILED,0,0,2,rgb);assert(rgb[1][0]==3);
+    puts("StreamMaster protocol/config/LED checks passed");return 0;
 }
