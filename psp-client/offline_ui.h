@@ -98,6 +98,8 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     char header[4096],request[4096],range[80]="";unsigned char *block=NULL;
     int fd=-1,out=-1,n=0,result=-1,code=0;unsigned int have=0,start=0,pending=0;
     unsigned long long length=0,last,tick=sceKernelGetSystemTimeWide();
+    unsigned long long report_tick=tick;
+    unsigned int report_bytes=0;
     const char *phase="request",*reason="validation";
     int transport_result=0,last_net_errno=0;
     if(file){unsigned long long old=offline_size(file);if(old>expected)goto done;start=(unsigned int)old;}
@@ -144,6 +146,7 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     } else if(length>=(unsigned int)capacity)goto done;
     block=malloc(32768);if(!block)goto done;
     phase="body";
+    report_tick=sceKernelGetSystemTimeWide();
     while(download_running && have<length) {
         unsigned int count=length-have;if(count>32768-pending)count=32768-pending;
         int got=playback_recv(fd,block+pending,count,100);
@@ -165,6 +168,15 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
             download_bytes=start+have-pending;
             unsigned long long elapsed=last-tick;
             download_speed=elapsed?((unsigned long long)have*1000000ULL/elapsed):0;
+            if(last-report_tick>=5000000ULL) {
+                char detail[144];
+                unsigned long long span=last-report_tick;
+                unsigned int delta=have-report_bytes;
+                snprintf(detail,sizeof(detail),"bytes=%u delta=%u span_ms=%llu KiB_s=%llu",
+                    start+have,delta,span/1000,(unsigned long long)delta*1000000ULL/span/1024);
+                recovery_log("download progress",0,code,detail);
+                report_tick=last;report_bytes=have;
+            }
         }
     }
     if(have!=length)goto done;

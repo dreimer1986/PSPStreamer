@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.2.3: larger TCP receive window/mailbox and finer socket-worker
+  scheduling; PSP uses faster active read retries with retained idle backoff.
+  Add five-second file-download progress diagnostics for throughput comparison.
 - Reuse matching queued, running and intact completed offline conversions instead
   of creating duplicates; distinguish server queue waiting from conversion on PSP.
 - Downloads now share playback's nonblocking connection/send/receive handling,

@@ -15,7 +15,7 @@ typedef struct {
     int fd,nonblock,opened,eof,dead,opening,connected;
     unsigned token,epoch,pos,end;
     unsigned read_backoff;
-    SceInt64 read_retry,open_retry,diagnostic_next;
+    SceInt64 read_retry,open_retry,diagnostic_next,empty_since;
     SmSocketOpen destination;
     unsigned char cache[SM_PAYLOAD_SIZE];
 } LocalSocket;
@@ -266,12 +266,15 @@ static int socket_refill(LocalSocket *s) {
     SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
     int rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
     if(rc==SM_BUSY) {
-        s->read_backoff=s->read_backoff?s->read_backoff*2:5000;
-        if(s->read_backoff>100000)s->read_backoff=100000;
+        SceInt64 now=sceKernelGetSystemTimeWide();
+        if(!s->empty_since)s->empty_since=now;
+        unsigned limit=now-s->empty_since<250000?10000:100000;
+        s->read_backoff=s->read_backoff?s->read_backoff*2:1000;
+        if(s->read_backoff>limit)s->read_backoff=limit;
         s->read_retry=sceKernelGetSystemTimeWide()+s->read_backoff;return 0;
     }
     if(rc<0){s->dead=1;return -1;}
-    s->read_backoff=0;s->read_retry=0;s->pos=0;s->end=length;
+    s->read_backoff=0;s->read_retry=0;s->empty_since=0;s->pos=0;s->end=length;
     if(!length)s->eof=1;
     return 1;
 }
@@ -320,7 +323,7 @@ int stm_poll(struct SceNetInetPollfd *fds,size_t count,int timeout) {
         }
         if(ready)return ready;
         if(sceKernelGetSystemTimeWide()>=end)break;
-        sceKernelDelayThread(5000);
+        sceKernelDelayThread(1000);
     }while(1);
     return 0;
 }

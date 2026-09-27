@@ -4,6 +4,19 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.3 — 2026-09-27
+
+- Increase TCP receive window from 5,760 to 32,768 bytes and receive mailbox
+  from 6 to 26 entries. Application rings remain bounded at 64 KiB per channel.
+- Set FreeRTOS tick to 1 kHz: the socket owner's mandatory one-tick yield now
+  takes 1 ms instead of 10 ms. USB/LED timeouts expressed in milliseconds retain
+  their durations. Six independent socket owners and cancellation remain intact.
+- Matching PSP app: reduce active empty-read backoff to 1–10 ms (was 5–100 ms),
+  retaining up to 100 ms after 250 ms without data to avoid flooding idle channels.
+  Poll virtual sockets at 1 ms and log active download progress every five seconds.
+- Standard build remains O2. Throughput and audio stability require hardware
+  validation; the previous release remains the measured baseline.
+
 ## 0.2.2 — 2026-09-27
 
 - Optional separately packaged `0.2.2-o3` compiler comparison; standard stays

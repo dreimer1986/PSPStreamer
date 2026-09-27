@@ -188,6 +188,12 @@ int main(void){
         for(int j=0;j<40;j++)assert(stm_recv(fds[i],got+j,1,0)==1);
         assert(rpc_count==before+1 && !memcmp(got,data,sizeof(got)));
         assert((int)stm_recv(fds[i],got,1,0)==-1 && stm_errno()==35);
+        assert(get(fds[i])->read_backoff==1000);
+        for(int retry=0;retry<8;retry++) {
+            clock_us+=10000;
+            assert((int)stm_recv(fds[i],got,1,0)==-1 && stm_errno()==35);
+            assert(get(fds[i])->read_backoff<=10000);
+        }
     }
     /* One slow connection must not prevent another from reading. */
     clock_us+=100000; /* Let the previous empty-read backoff expire. */
@@ -218,7 +224,7 @@ int main(void){
     p[0]=(struct SceNetInetPollfd){fd,SCE_NET_INET_POLLIN,0};
     assert(stm_poll(p,1,0)==1 && stm_recv(fd,got,3,0)==3 && rpc_count==before+1);
     before=rpc_count;assert(stm_poll(p,1,1000)==0);
-    assert(rpc_count-before<20); /* Empty channel cannot flood the USB bus. */
+    assert(rpc_count-before<45); /* Fast probes only for the first 250 ms, then idle backoff. */
     assert(stm_close(fd)==0);
     /* Repeated short-lived remote owners cannot exhaust either fixed pool. */
     stm_diagnostic_enable(1);

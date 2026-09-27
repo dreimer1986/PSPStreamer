@@ -20,3 +20,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES=y
 CONFIG_LWIP_SO_LINGER=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+# One tick must not stall the socket pump for 10 ms after each read burst.
+CONFIG_FREERTOS_HZ=1000
+# Keep the TCP window below the application's 64 KiB receive ring. Mailbox
+# capacity covers the window at the default MSS, with spare packet slots.
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=26

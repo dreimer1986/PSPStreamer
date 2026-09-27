@@ -1,5 +1,10 @@
 # Transport measurement status
 
+Firmware 0.2.3 and its matching PSP build are ready for a new hardware comparison:
+32 KiB TCP window, 26 receive mailbox slots, 1 ms socket-worker tick, and shorter
+active PSP read backoff. Five-second `download progress` lines now distinguish
+bursts from sustained throughput. No measured improvement is claimed yet.
+
 Do not compare playback demand or USB echo throughput with file-download speed.
 
 | Route | Available measurement | Actual media-download throughput |

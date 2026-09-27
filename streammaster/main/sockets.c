@@ -87,7 +87,9 @@ static void socket_worker(void *arg) {
                 }
                 if(!progress)break;
             }
-            vTaskDelay(1); /* Explicitly yield even under continuous traffic. */
+            /* 1 ms at the configured 1 kHz tick, still yielding to idle/USB
+             * even under continuous traffic. Previously this slept 10 ms. */
+            vTaskDelay(1);
         }
         if(tls) {
             xSemaphoreTake(c->lock,portMAX_DELAY);
