@@ -37,7 +37,8 @@ static const char *const lang_de[TXT_COUNT] = {
     /* Lokale Bibliothek und Übertragungsstatus. */
     [TXT_LOCAL_STORAGE] = "LOKALER SPEICHER",
     [TXT_DOWNLOADS] = "SERVER-AUFTRÄGE",
-    [TXT_CONVERTING] = "Warten / Server konvertiert",
+    [TXT_CONVERTING] = "Server konvertiert",
+    [TXT_DOWNLOAD_QUEUED] = "In Server-Warteschlange",
     [TXT_DOWNLOADING] = "Übertragung auf Memory Stick",
     [TXT_VERIFYING] = "SHA256-Prüfsumme prüfen",
     [TXT_DOWNLOAD_STOPPING] = "Übertragung wird beendet...",

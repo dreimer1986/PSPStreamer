@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- Reuse matching queued, running and intact completed offline conversions instead
+  of creating duplicates; distinguish server queue waiting from conversion on PSP.
 - Downloads now share playback's nonblocking connection/send/receive handling,
   including native WLAN would-block retries. Debug logs record download phases,
   HTTP status, transport results, byte counts, resume offsets and elapsed time.

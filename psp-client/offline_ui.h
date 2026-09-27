@@ -227,7 +227,8 @@ static int offline_download_worker(SceSize args,void *argp) {
     while(download_running) {
         if(offline_http(url,NULL,meta,sizeof(meta),NULL,0)<0)goto done;
         if(!json_value(meta,"state",state,sizeof(state)))goto done;
-        download_percent=json_integer(meta,"progress",0);download_stage=0;
+        download_percent=json_integer(meta,"progress",0);
+        download_stage=!strcmp(state,"queued")?5:0;
         if(!strcmp(state,"ready"))break;
         if(strcmp(state,"queued")&&strcmp(state,"encoding")) {
             json_value(meta,"error",download_error,sizeof(download_error));goto done;
@@ -304,7 +305,7 @@ static int offline_transfer(const char *key,const char *post) {
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
         if((pad.Buttons&PSP_CTRL_CIRCLE)&&!(old&PSP_CTRL_CIRCLE))download_running=0;
         settings_shell(tr(TXT_DOWNLOADS));char line[100];
-        settings_line(0,0,tr(!download_running?TXT_DOWNLOAD_STOPPING:download_stage==4?TXT_TRAVEL:download_stage==3?TXT_CONNECTING_WIFI:download_stage==0?TXT_CONVERTING:download_stage==1?TXT_DOWNLOADING:TXT_VERIFYING));
+        settings_line(0,0,tr(!download_running?TXT_DOWNLOAD_STOPPING:download_stage==5?TXT_DOWNLOAD_QUEUED:download_stage==4?TXT_TRAVEL:download_stage==3?TXT_CONNECTING_WIFI:download_stage==0?TXT_CONVERTING:download_stage==1?TXT_DOWNLOADING:TXT_VERIFYING));
         unsigned int percent=download_stage==1 && download_total ? (unsigned int)((unsigned long long)download_bytes*100/download_total) : (unsigned int)download_percent;
         if(percent>100)percent=100;
         snprintf(line,sizeof(line),"%u%%",percent);settings_line(2,0,line);

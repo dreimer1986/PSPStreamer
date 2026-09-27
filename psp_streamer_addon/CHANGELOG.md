@@ -1,3 +1,8 @@
+# 0.1.62
+
+- Reuse identical offline conversion jobs and intact ready packages instead of
+  duplicating work. Different track/quality/output choices remain separate.
+
 # 0.1.61
 
 - Add a Cover view toggle directly to all new Plex/Jellyfin provider shelves.

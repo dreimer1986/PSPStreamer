@@ -36,7 +36,8 @@ static const char *const lang_en[TXT_COUNT] = {
     /* Offline library and transfer status. */
     [TXT_LOCAL_STORAGE] = "LOCAL STORAGE",
     [TXT_DOWNLOADS] = "SERVER QUEUE",
-    [TXT_CONVERTING] = "Waiting / converting on server",
+    [TXT_CONVERTING] = "Server is converting",
+    [TXT_DOWNLOAD_QUEUED] = "Waiting in server queue",
     [TXT_DOWNLOADING] = "Downloading to Memory Stick",
     [TXT_VERIFYING] = "Verifying SHA256 checksum",
     [TXT_DOWNLOAD_STOPPING] = "Stopping transfer...",

@@ -138,6 +138,20 @@ class OfflineQueue:
     def add(self, options):
         return self.add_many([options])[0]
 
+    def _reusable(self, job):
+        if job['state'] in {'queued', 'encoding'}:
+            return True
+        if job['state'] != 'ready' or len(job.get('files', [])) != 3:
+            return False
+        # Never reuse a package whose files have been removed or truncated.
+        try:
+            folder = self.root / job['job']
+            return all(Path(entry['name']).name == entry['name'] and
+                       (folder / entry['name']).stat().st_size == entry['size']
+                       for entry in job['files'])
+        except (OSError, KeyError, TypeError):
+            return False
+
     def add_many(self, options):
         if not isinstance(options, list) or not 1 <= len(options) <= MAX_JOBS:
             raise ValueError('Choose between 1 and 128 files')
@@ -145,18 +159,34 @@ class OfflineQueue:
         prepared = [self.prepare(item) for item in options]
         self.start()
         with self.lock:
-            if len(self.jobs) + len(prepared) > MAX_JOBS:
+            fields = ('id', 'audio', 'subtitle', 'audio_quality', 'video_fps', 'profile', 'kind')
+            available = {}
+            # Prefer completed packages over duplicate in-progress legacy jobs.
+            for job in self.jobs.values():
+                if self._reusable(job):
+                    signature = tuple(job.get(field) for field in fields)
+                    if signature not in available or job['state'] == 'ready':
+                        available[signature] = job
+            selected, new_jobs = [], []
+            for job in prepared:
+                signature = tuple(job.get(field) for field in fields)
+                if signature not in available:
+                    available[signature] = job
+                    new_jobs.append(job)
+                selected.append(available[signature])
+            if len(self.jobs) + len(new_jobs) > MAX_JOBS:
                 raise ValueError('Queue full; remove old server jobs first')
             try:
-                for job in prepared:
+                for job in new_jobs:
                     self._save(job)
             except OSError:
-                for job in prepared:
+                for job in new_jobs:
                     shutil.rmtree(self.root / job['job'], ignore_errors=True)
                 raise
-            self.jobs.update((job['job'], job) for job in prepared)
+            self.jobs.update((job['job'], job) for job in new_jobs)
+            result = [dict(job) for job in selected]
         self.wake.set()
-        return [dict(job) for job in prepared]
+        return result
 
     def cancel(self, key):
         with self.lock:
