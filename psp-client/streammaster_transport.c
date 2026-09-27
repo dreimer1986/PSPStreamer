@@ -21,6 +21,8 @@ typedef struct {
     unsigned cache_index;
     unsigned ahead_length;
     int ahead_ready,ahead_result;
+    unsigned samples,empty_samples,full_samples,max_available,groups,group_bytes,short_groups;
+    unsigned long long finish_us;
 } LocalSocket;
 static LocalSocket sockets[LOCAL_SOCKETS];
 /* PSP newlib's __errno uses the shared _impure_ptr in this toolchain.
@@ -101,6 +103,9 @@ static void finish_ahead(void) {
     if(rc>=0 && packet->length>sizeof(packet->payload))rc=SM_IO;
     if(rc<0){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     if(diagnostic_enabled) {
+        owner->groups++;owner->finish_us+=sceKernelGetSystemTimeWide()-started;
+        if(rc>=0 && packet->result>=0)owner->group_bytes+=packet->length;
+        if(rc>=0 && packet->length<(ahead_bulk?SM_PAIR_PAYLOAD_SIZE:SM_PAYLOAD_SIZE))owner->short_groups++;
         diagnostic.calls++;diagnostic.reads++;
         diagnostic.prefetched++;
         /* Only blocked finish time; the rest overlaps application work. */
@@ -332,8 +337,21 @@ static int socket_status(LocalSocket *s,SmSocketStatus *status) {
     int rc=stm_rpc(SM_SOCKET_STATUS,&r,sizeof(r),status,sizeof(*status),&length,NULL);
     if(rc==SM_BUSY)return 0;
     if(rc<0 || length!=sizeof(*status))return -1;
+    if(diagnostic_enabled) {
+        s->samples++;if(!status->available)s->empty_samples++;
+        if(status->available==65536)s->full_samples++;
+        if(status->available>s->max_available)s->max_available=status->available;
+    }
     if(status->state==SM_SOCKET_READY)s->connected=1;
     return 1;
+}
+/* Called by the download owner before close. No extra USB transaction. */
+int stm_download_snapshot(int fd,char *line,unsigned size) {
+    if(!diagnostic_enabled || !virtual_fd(fd) || lock(rpc_lock,1,NULL)<0)return 0;
+    LocalSocket *s=get(fd);int ok=s!=NULL;
+    if(s)snprintf(line,size,"groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u bulk=%d",
+        s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available,bulk_pairs);
+    sceKernelSignalSema(rpc_lock,1);return ok;
 }
 /* A read probe also collects the data. Previously POLLIN used a full STATUS
  * exchange followed by a second full READ exchange for the same 4 KiB block. */

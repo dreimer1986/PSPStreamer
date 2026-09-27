@@ -83,6 +83,8 @@ class StreamMasterTests(unittest.TestCase):
 #define AF_INET 2
 #define SOCK_STREAM 1
 static int download_running=1,server_https,server_port=8091,writes,cancel_after,body_reads,headpos,send_calls,recv_calls;
+static int debug_enabled=1;
+static int stm_download_snapshot(int fd,char *line,unsigned size){(void)fd;(void)line;(void)size;return 0;}
 static const char *server_host="test",*server_auth_header="";
 static char download_error[128],head[256];
 static unsigned download_bytes,download_total,download_speed,stored,position,received;

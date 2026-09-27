@@ -100,6 +100,8 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     unsigned long long length=0,last,tick=sceKernelGetSystemTimeWide();
     unsigned long long report_tick=tick;
     unsigned int report_bytes=0;
+    unsigned long long body_tick=0,recv_us=0,write_us=0,max_recv_us=0,max_write_us=0,close_us=0;
+    unsigned recv_calls=0,recv_idle=0,write_calls=0;
     const char *phase="request",*reason="validation";
     int transport_result=0,last_net_errno=0;
     if(file){unsigned long long old=offline_size(file);if(old>expected)goto done;start=(unsigned int)old;}
@@ -147,19 +149,25 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     block=malloc(32768);if(!block)goto done;
     phase="body";
     report_tick=sceKernelGetSystemTimeWide();
+    body_tick=report_tick;
     while(download_running && have<length) {
         unsigned int count=length-have;if(count>32768-pending)count=32768-pending;
+        unsigned long long op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
         int got=playback_recv(fd,block+pending,count,100);
+        if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;recv_us+=dt;recv_calls++;if(dt>max_recv_us)max_recv_us=dt;if(got==-2)recv_idle++;}
         if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
         if(got<=0){reason=got?"transport":"eof";transport_result=got;last_net_errno=got?sceNetInetGetErrno():0;goto done;}
         last=sceKernelGetSystemTimeWide();
         if(file) {
             pending+=got;
-            /* USB delivers at most 4064 bytes per read. Batch storage writes
+            /* Batch storage writes
              * in the existing 32 KiB buffer instead of flushing every packet.
              * On cancellation, an uncommitted tail is safely downloaded again. */
             if(pending==32768 || have+(unsigned)got==length) {
-                if(sceIoWrite(out,block,pending)!=(int)pending){reason="storage-write";snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
+                op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
+                int written=sceIoWrite(out,block,pending);
+                if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;write_us+=dt;write_calls++;if(dt>max_write_us)max_write_us=dt;}
+                if(written!=(int)pending){reason="storage-write";snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
                 pending=0;
             }
         } else memcpy(reply+have,block,got);
@@ -175,6 +183,12 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
                 snprintf(detail,sizeof(detail),"bytes=%u delta=%u span_ms=%llu KiB_s=%llu",
                     start+have,delta,span/1000,(unsigned long long)delta*1000000ULL/span/1024);
                 recovery_log("download progress",0,code,detail);
+                if(debug_enabled) {
+                    snprintf(detail,sizeof(detail),"recv_ms=%llu recv_n=%u idle=%u recv_max_us=%llu write_ms=%llu write_n=%u write_max_us=%llu",
+                        recv_us/1000,recv_calls,recv_idle,max_recv_us,write_us/1000,write_calls,max_write_us);
+                    recovery_log("download timing",0,code,detail);
+                    if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket",0,code,detail);
+                }
                 report_tick=last;report_bytes=have;
             }
         }
@@ -184,7 +198,16 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     result=0;reason="complete";
 done:
     free(block);
+    unsigned long long close_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
     if(out>=0 && sceIoClose(out)<0){result=-1;reason="storage-close";}
+    if(debug_enabled)close_us=sceKernelGetSystemTimeWide()-close_tick;
+    if(debug_enabled && file && body_tick) {
+        char detail[176];
+        snprintf(detail,sizeof(detail),"body_ms=%llu setup_ms=%llu recv_ms=%llu write_ms=%llu close_ms=%llu recv_max_us=%llu write_max_us=%llu",
+            (sceKernelGetSystemTimeWide()-body_tick)/1000,(body_tick-tick)/1000,recv_us/1000,write_us/1000,close_us/1000,max_recv_us,max_write_us);
+        recovery_log("download timing final",result,code,detail);
+        if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket final",result,code,detail);
+    }
     if(fd>=0)connection_close(fd);
     {
         char detail[176];
@@ -200,8 +223,19 @@ static int offline_hash(const char *path,const char *expected) {
     SceUID fd=sceIoOpen(path,PSP_O_RDONLY,0);if(fd<0)return -1;
     mbedtls_sha256_context ctx;mbedtls_sha256_init(&ctx);mbedtls_sha256_starts_ret(&ctx,0);
     int n=0;
-    while(download_running && (n=sceIoRead(fd,block,sizeof(block)))>0)mbedtls_sha256_update_ret(&ctx,block,n);
+    unsigned long long begin=sceKernelGetSystemTimeWide(),read_us=0,hash_us=0,bytes=0;
+    while(download_running) {
+        unsigned long long t=debug_enabled?sceKernelGetSystemTimeWide():0;
+        n=sceIoRead(fd,block,sizeof(block));
+        if(debug_enabled)read_us+=sceKernelGetSystemTimeWide()-t;
+        if(n<=0)break;
+        bytes+=n;t=debug_enabled?sceKernelGetSystemTimeWide():0;
+        mbedtls_sha256_update_ret(&ctx,block,n);
+        if(debug_enabled)hash_us+=sceKernelGetSystemTimeWide()-t;
+    }
     mbedtls_sha256_finish_ret(&ctx,digest);mbedtls_sha256_free(&ctx);sceIoClose(fd);
+    if(debug_enabled){char detail[160];snprintf(detail,sizeof(detail),"bytes=%llu total_ms=%llu read_ms=%llu hash_ms=%llu cancelled=%d read_rc=%d",
+        bytes,(sceKernelGetSystemTimeWide()-begin)/1000,read_us/1000,hash_us/1000,!download_running,n);recovery_log("download hash timing",n<0||!download_running?-1:0,0,detail);}
     if(n<0||!download_running)return -1;
     for(int i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",digest[i]);
     return strcmp(hex,expected)?-1:0;

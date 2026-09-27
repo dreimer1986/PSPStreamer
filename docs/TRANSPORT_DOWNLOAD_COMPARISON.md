@@ -13,12 +13,42 @@ were recorded. This is approximately 7% above the preceding large-download resul
 though the files were not byte-identical.
 
 Firmware **0.2.4** and the matching PSP app/bridge now implement two outstanding
-8 KiB replies and reduced copying. Their throughput is **not yet measured**.
+8 KiB replies and reduced copying. Confirmed with `bulk=1`: 171,481,659 bytes
+in 399.320 s = **419.37 KiB/s**, interval median 446 and maximum 462 KiB/s,
+minimum 240, zero USB errors. This is 26.3% above the preceding compact-only
+332.15 KiB/s run of a nearly equal-sized file. Post-body completion took 123.319 s.
 Compare the same ready file over HTTP, with the same hub, card and clock; confirm
 `bulk=1` in diagnostics. Remaining avenues are listed in
 [the optimization inventory](STREAMMASTER_OPTIMIZATION_INVENTORY.md).
 
 Do not compare playback demand or USB echo throughput with file-download speed.
+
+## Download bottleneck instrumentation
+
+With application debugging enabled, file downloads emit cumulative counters every
+five seconds and a final summary (also on cancellation/failure):
+
+- `download timing`: body receive-call time/count, idle returns (`-2`), longest
+  receive call, card-write time/count and longest write. Receive time includes
+  polling, transport work and waiting; it is not pure USB bus time.
+- `download timing final`: setup, body, receive, write and file-close times.
+  Body wall time also includes logging/scheduling and other work. Do not add it
+  to its component times. Subtract successive cumulative reports for intervals.
+- `download USB socket`: only this socket's speculative groups, payload bytes,
+  short groups and blocked finish time, plus existing ESP occupancy samples.
+  Empty/full samples are snapshots, not percentages of elapsed time. Short groups
+  can include EOF/busy replies. No additional USB requests are made by reporting.
+  Finish time can be charged while another RPC drains this socket's queued read;
+  it overlaps receive/storage work and must not be added to their totals.
+- `download hash timing`: file bytes, total verification wall time, card-read and
+  SHA-256 update time, cancellation/read-error state. This is timing, not a report
+  that the expected digest matched; normal download validation remains authoritative.
+
+No ESP update is required. Disabled debugging skips hot-path timer reads/counters.
+This first attribution pass separates storage/hash costs from transport waiting;
+it does not yet measure ESP task CPU, DMA gaps, radio retries or server delays.
+Only instrument those layers if the result points there. The small logging/timing
+cost is not assumed to be zero; compare the resulting overall throughput as well.
 
 | Route | Available measurement | Actual media-download throughput |
 | --- | --- | --- |

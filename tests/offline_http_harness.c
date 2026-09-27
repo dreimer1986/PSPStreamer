@@ -11,6 +11,8 @@
 #include <arpa/inet.h>
 #include "tls_host/pspnet_inet.h"
 static volatile int download_running=1;
+static int debug_enabled=1;
+static int stm_download_snapshot(int fd,char *line,unsigned size){(void)fd;(void)line;(void)size;return 0;}
 static volatile unsigned int download_bytes,download_total,download_speed;
 static char download_error[160],server_host[]="127.0.0.1",server_auth_header[]="";
 static int server_https,server_port;

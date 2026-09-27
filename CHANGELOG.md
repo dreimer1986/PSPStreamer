@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- Add opt-in download bottleneck timings for receive, storage, verification and
+  per-socket StreamMaster read-ahead/ESP occupancy without extra USB queries.
 - Report StreamMaster firmware capability bits and kernel driver probe results
   to distinguish legacy firmware from driver negotiation failures.
 - StreamMaster 0.2.4: two outstanding 8 KiB bulk replies, negotiated legacy

@@ -312,7 +312,11 @@ int main(void){
     char report[176];
     assert(stm_diagnostic_snapshot(report,sizeof(report),0)&&strstr(report,"reads=1"));
     assert(stm_diagnostic_snapshot(report,sizeof(report),1)&&strstr(report,"max_B=4"));
+    before=rpc_count;
+    assert(stm_download_snapshot(fd,report,sizeof(report))&&strstr(report,"max_B=4"));
+    assert(rpc_count==before); /* Reporting must not issue another USB request. */
     stm_diagnostic_enable(0);
+    assert(!stm_download_snapshot(fd,report,sizeof(report)));
     assert(!stm_diagnostic_snapshot(report,sizeof(report),0));
     assert(stm_close(fd)==0);
     for(int cycle=0;cycle<10000;cycle++) {
