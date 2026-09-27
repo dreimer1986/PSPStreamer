@@ -1,5 +1,10 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
+For other PSP homebrews, see the [developer integration guide](INTEGRATION.md):
+source dependencies, build setup, socket/TLS semantics, ownership, configuration
+and transport limitations. This is an application-local adapter, not a global
+replacement for the PSP WLAN driver.
+
 ## Transport measurements
 
 ### Experimental O3 comparison

@@ -915,6 +915,8 @@ throughput still require testing on the actual adapter.
 Onju's status LEDs indicate firmware operation, Wi-Fi connection/signal strength
 and the claimed PSP USB connection; see the LED legend in the firmware guide.
 See [firmware, flashing and first-test instructions](streammaster/README.md).
+Developers can integrate the adapter into other PSP homebrews using the
+[StreamMaster integration guide](streammaster/INTEGRATION.md).
 The bridge replaces Onju's current firmware and requires a powered USB host
 connection; it is not a globally installed ARK Wi-Fi replacement plugin.
 

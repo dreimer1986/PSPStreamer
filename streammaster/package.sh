@@ -11,7 +11,7 @@ done
 release_dir="release/$release_name"
 mkdir -p "$release_dir/licenses"
 cp "$build_dir/bootloader/bootloader.bin" "$build_dir/partition_table/partition-table.bin" "$build_dir/streammaster_onju_v3.bin" "$release_dir/"
-cp README.md CHANGELOG.md PSPLINK-license.txt "$release_dir/"
+cp README.md INTEGRATION.md CHANGELOG.md PSPLINK-license.txt "$release_dir/"
 cp ../LICENSE "$release_dir/GPL-2.0.txt"
 cp "${IDF_PATH:?Activate ESP-IDF first}/LICENSE" "$release_dir/ESP-IDF-license.txt"
 cp "$IDF_PATH/components/lwip/lwip/COPYING" "$release_dir/licenses/lwip.txt"
