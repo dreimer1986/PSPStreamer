@@ -902,7 +902,7 @@ The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1
 An optional ESP32-S3 bridge and PSP USB driver are available for the original
 Onju Voice PCB V3. **Select → Settings → StreamMaster USB** configures its Wi-Fi,
 DHCP/static IPv4 and DNS, and provides USB integrity/throughput and server tests.
-Network credentials are saved on Onju. With firmware **0.2.1** and the matching
+Network credentials are saved on Onju. With firmware **0.2.2** and the matching
 PSP app/USB driver, **Settings → Network transport → StreamMaster USB** routes
 browsing, playback, subtitles, downloads and remote control through Onju.
 Save and restart the app to switch transports. The CFG equivalent is

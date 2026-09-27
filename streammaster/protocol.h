@@ -11,11 +11,13 @@
 #define SM_USB_PID 0x5354 /* Private development PID on the PSP's Sony VID. */
 #define SM_USB_SUBCLASS 0x53
 #define SM_USB_PROTOCOL 0x01
-enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE,SM_NETWORK_INFO};
+enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE,SM_NETWORK_INFO,SM_CAPABILITIES};
+#define SM_CAP_COMPACT 1U
+#define SM_COMPACT 2U
 enum {SM_OK=0,SM_INVALID=-1,SM_OFFLINE=-2,SM_IO=-3,SM_TIMEOUT=-4,SM_BUSY=-5,SM_TLS=-6};
 enum {SM_REPLY=1,SM_CFG_DHCP=1,SM_CFG_AUTO_DNS=2,SM_CFG_KEEP_PASSWORD=4,SM_CFG_HAS_PASSWORD=8};
 enum {SM_WIFI_IDLE,SM_WIFI_CONNECTING,SM_WIFI_READY,SM_WIFI_FAILED};
-enum {SM_DEV_START=0x53540001,SM_DEV_STOP,SM_DEV_STATUS,SM_DEV_EXCHANGE,SM_DEV_CANCEL};
+enum {SM_DEV_START=0x53540001,SM_DEV_STOP,SM_DEV_STATUS,SM_DEV_EXCHANGE,SM_DEV_CANCEL,SM_DEV_EXCHANGE_COMPACT};
 enum {SM_SOCKET_OPEN=20,SM_SOCKET_STATUS,SM_SOCKET_WRITE,SM_SOCKET_READ,SM_SOCKET_CLOSE,SM_SOCKET_RESET};
 enum {SM_SOCKET_FREE,SM_SOCKET_CONNECTING,SM_SOCKET_READY,SM_SOCKET_EOF,SM_SOCKET_ERROR};
 #define SM_SOCKET_COUNT 6
@@ -62,7 +64,19 @@ static inline uint32_t sm_checksum(const SmFrame *f) {
 static inline void sm_seal(SmFrame *f){f->magic=SM_MAGIC;f->version=SM_VERSION;f->checksum=sm_checksum(f);}
 static inline int sm_valid(const SmFrame *f) {
     return f->magic==SM_MAGIC && f->version==SM_VERSION && f->length<=SM_PAYLOAD_SIZE &&
-        f->flags<=SM_REPLY && f->checksum==sm_checksum(f);
+        f->flags<=SM_COMPACT && f->checksum==sm_checksum(f);
+}
+/* Full-speed short packet terminates a compact transfer. Avoid a trailing
+ * full 64-byte packet (which would otherwise require a separate ZLP). */
+static inline unsigned sm_wire_size(unsigned payload) {
+    unsigned n=32+payload;
+    if(n<SM_FRAME_SIZE && !(n%64))n++;
+    return n;
+}
+static inline int sm_request_wire_valid(const SmFrame *f,unsigned received) {
+    if(received<32 || f->length>SM_PAYLOAD_SIZE || (f->flags && f->flags!=SM_COMPACT))return 0;
+    if(received!=(f->flags==SM_COMPACT?sm_wire_size(f->length):SM_FRAME_SIZE))return 0;
+    return sm_valid(f);
 }
 static inline int sm_ip(const char *s,uint32_t *out) {
     uint32_t value=0;

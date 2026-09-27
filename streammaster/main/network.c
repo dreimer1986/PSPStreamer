@@ -102,11 +102,14 @@ void sm_network_init(void) {
 static int require_size(const SmFrame *r,size_t size){return r->length==size;}
 void sm_network_command(const SmFrame *r,SmFrame *out) {
     memset(out,0,sizeof(*out));out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;requests++;
-    if(!sm_valid(r) || r->flags){out->result=SM_INVALID;goto done;}
+    if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
+    case SM_CAPABILITIES: {
+        uint32_t caps=SM_CAP_COMPACT;memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
+    }
     case SM_INFO:
     case SM_NETWORK_INFO: {
-        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.2.1");
+        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.2.2");
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);

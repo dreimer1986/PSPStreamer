@@ -17,6 +17,7 @@ static usb_transfer_t *rx,*tx;
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
 static int64_t tx_deadline;
+static int compact_reply;
 static Work job,answer;
 static void mark_gone(void) {
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
@@ -125,17 +126,20 @@ void sm_usb_task(void *unused) {
         }
         if(!claimed)continue;
         if(tx_pending && esp_timer_get_time()>tx_deadline){mark_gone();continue;}
-        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=SM_FRAME_SIZE){mark_gone();continue;}busy=0;}
+        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){mark_gone();continue;}busy=0;}
         if(rx_done) {
             rx_done=0;
-            if(rx->status!=USB_TRANSFER_STATUS_COMPLETED || rx->actual_num_bytes!=SM_FRAME_SIZE){mark_gone();continue;}
+            if(rx->status!=USB_TRANSFER_STATUS_COMPLETED || rx->actual_num_bytes<32){mark_gone();continue;}
+            SmFrame *frame=(SmFrame *)rx->data_buffer;
+            if(!sm_request_wire_valid(frame,rx->actual_num_bytes)){mark_gone();continue;}
+            compact_reply=frame->flags==SM_COMPACT;
             memcpy(&job.frame,rx->data_buffer,SM_FRAME_SIZE);job.epoch=epoch;
             memset(rx->data_buffer,0,SM_FRAME_SIZE);busy=1;xQueueOverwrite(commands,&job);memset(&job,0,sizeof(job));
         }
         if(!tx_pending && xQueueReceive(replies,&answer,0)==pdTRUE) {
             if(answer.epoch==epoch) {
                 memcpy(tx->data_buffer,&answer.frame,SM_FRAME_SIZE);tx->device_handle=device;
-                tx->bEndpointAddress=0x02;tx->num_bytes=SM_FRAME_SIZE;
+                tx->bEndpointAddress=0x02;tx->num_bytes=compact_reply?sm_wire_size(answer.frame.length):SM_FRAME_SIZE;
                 if(usb_host_transfer_submit(tx)!=ESP_OK)mark_gone();
                 else {tx_pending=1;tx_deadline=esp_timer_get_time()+5000000;}
             }

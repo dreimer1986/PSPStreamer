@@ -7,6 +7,69 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_download_batches_storage_and_resumes_committed_bytes(self):
+        source = (ROOT / "psp-client/offline_ui.h").read_text()
+        function = source[source.index("static int offline_http("):source.index("static int offline_hash(")]
+        harness = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define PSP_O_WRONLY 1
+#define PSP_O_CREAT 2
+#define PSP_SEEK_SET 0
+#define AF_INET 2
+#define SOCK_STREAM 1
+static int download_running=1,server_https,server_port=8091,writes,cancel_after,body_reads,headpos;
+static const char *server_host="test",*server_auth_header="";
+static char download_error[128],head[256];
+static unsigned download_bytes,download_total,download_speed,stored,position,received;
+static unsigned char disk[100003];
+static unsigned long long clock_us;
+static unsigned long long sceKernelGetSystemTimeWide(void){return clock_us+=1000;}
+static unsigned long long offline_size(const char *p){(void)p;return stored;}
+static int sceNetInetSocket(int a,int b,int c){(void)a;(void)b;(void)c;return 3;}
+static int offline_connect(int f){assert(f==3);return 0;}
+static int sceNetInetSend(int f,const void *b,int n,int flags){(void)b;(void)flags;assert(f==3);return n;}
+static int tls_send(int f,const void *b,int n,volatile int *r,int ms){(void)r;(void)ms;return sceNetInetSend(f,b,n,0);}
+static int stream_recv(int f,void *b,unsigned n,int ms){
+    (void)ms;assert(f==3);
+    if(head[headpos]){assert(n==1);*(char *)b=head[headpos++];return 1;}
+    if(n>4064)n=4064;
+    for(unsigned i=0;i<n;i++)((unsigned char *)b)[i]=(received+i)%251;
+    received+=n;
+    if(cancel_after && ++body_reads==cancel_after)download_running=0;
+    return n;
+}
+static int sceIoOpen(const char *p,int a,int b){(void)p;(void)a;(void)b;return 4;}
+static int sceIoLseek(int f,unsigned p,int mode){assert(f==4&&!mode);position=p;return p;}
+static int sceIoWrite(int f,const void *b,unsigned n){assert(f==4&&position+n<=sizeof(disk));memcpy(disk+position,b,n);position+=n;stored=position;writes++;return n;}
+static int sceIoClose(int f){assert(f==4);return 0;}
+static void connection_close(int f){assert(f==3);}
+/* FUNCTION */
+static void setup(void){
+    received=stored;headpos=body_reads=0;download_running=1;
+    if(stored)snprintf(head,sizeof(head),"HTTP/1.0 206 OK\r\nContent-Length: %u\r\nContent-Range: bytes %u-100002/100003\r\n\r\n",100003-stored,stored);
+    else strcpy(head,"HTTP/1.0 200 OK\r\nContent-Length: 100003\r\n\r\n");
+}
+int main(void){
+    (void)server_port;setup();assert(!offline_http("/file",NULL,NULL,0,"file",100003));
+    assert(writes==4&&stored==100003&&download_bytes==stored);
+    for(unsigned i=0;i<stored;i++)assert(disk[i]==i%251);
+    stored=writes=0;cancel_after=10;setup();assert(offline_http("/file",NULL,NULL,0,"file",100003)<0);
+    assert(stored==32768&&download_bytes==stored);
+    cancel_after=0;setup();assert(!offline_http("/file",NULL,NULL,0,"file",100003));
+    assert(stored==100003&&writes==4);
+    for(unsigned i=0;i<stored;i++)assert(disk[i]==i%251);
+}
+'''.replace("/* FUNCTION */", function)
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "download"
+            subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=address,undefined", "-o", str(binary)],
+                           input=harness, text=True, check=True)
+            subprocess.run([str(binary)], check=True, timeout=5)
+
     def test_stale_usb_work_cannot_keep_connections_alive(self):
         source = (ROOT / "streammaster/main/usb_bridge.c").read_text()
         function = source[source.index("static int process_work("):source.index("static void network_worker(")]

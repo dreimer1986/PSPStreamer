@@ -109,7 +109,7 @@ connected:
 static int offline_http(const char *url,const char *post,char *reply,int capacity,
                         const char *file,unsigned int expected) {
     char header[4096],request[4096],range[80]="";unsigned char *block=NULL;
-    int fd=-1,out=-1,n=0,result=-1,code=0;unsigned int have=0,start=0;
+    int fd=-1,out=-1,n=0,result=-1,code=0;unsigned int have=0,start=0,pending=0;
     unsigned long long length=0,last,tick=sceKernelGetSystemTimeWide();
     if(file){unsigned long long old=offline_size(file);if(old>expected)return -1;start=(unsigned int)old;}
     if(start)snprintf(range,sizeof(range),"Range: bytes=%u-\r\n",start);
@@ -148,16 +148,24 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     } else if(length>=(unsigned int)capacity)goto done;
     block=malloc(32768);if(!block)goto done;
     while(download_running && have<length) {
-        unsigned int count=length-have;if(count>32768)count=32768;
-        int got=stream_recv(fd,block,count,100);
+        unsigned int count=length-have;if(count>32768-pending)count=32768-pending;
+        int got=stream_recv(fd,block+pending,count,100);
         if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;goto done;}
         if(got<=0)goto done;
         last=sceKernelGetSystemTimeWide();
-        if(file){if(sceIoWrite(out,block,got)!=got){snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}}
-        else memcpy(reply+have,block,got);
+        if(file) {
+            pending+=got;
+            /* USB delivers at most 4064 bytes per read. Batch storage writes
+             * in the existing 32 KiB buffer instead of flushing every packet.
+             * On cancellation, an uncommitted tail is safely downloaded again. */
+            if(pending==32768 || have+(unsigned)got==length) {
+                if(sceIoWrite(out,block,pending)!=(int)pending){snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
+                pending=0;
+            }
+        } else memcpy(reply+have,block,got);
         have+=got;
         if(file) {
-            download_bytes=start+have;
+            download_bytes=start+have-pending;
             unsigned long long elapsed=last-tick;
             download_speed=elapsed?((unsigned long long)have*1000000ULL/elapsed):0;
         }

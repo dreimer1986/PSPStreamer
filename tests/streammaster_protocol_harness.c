@@ -17,7 +17,18 @@ int main(void) {
     for(unsigned i=0;i<sizeof(f);i++){p[i]^=1;assert(!sm_valid(&f));p[i]^=1;}
     f.length=UINT32_MAX;assert(!sm_valid(&f));
     f.length=0;f.flags=SM_REPLY;sm_seal(&f);assert(sm_valid(&f));
-    f.flags=2;sm_seal(&f);assert(!sm_valid(&f));
+    f.flags=SM_COMPACT;sm_seal(&f);assert(sm_valid(&f));
+    f.flags=3;sm_seal(&f);assert(!sm_valid(&f));
+    for(unsigned n=0;n<=SM_PAYLOAD_SIZE;n++) {
+        unsigned wire=sm_wire_size(n);
+        assert(wire>=32+n && wire<=SM_FRAME_SIZE);
+        assert(wire==SM_FRAME_SIZE || wire%64);
+        f.length=n;f.flags=SM_COMPACT;sm_seal(&f);
+        assert(sm_request_wire_valid(&f,wire));
+        assert(!sm_request_wire_valid(&f,wire-1));
+        f.flags=0;sm_seal(&f);assert(sm_request_wire_valid(&f,SM_FRAME_SIZE));
+        assert(!sm_request_wire_valid(&f,31));
+    }
     SmConfig c=dhcp();assert(sm_config_valid(&c,0));
     c.password[0]=0;assert(sm_config_valid(&c,0));
     c.flags|=SM_CFG_KEEP_PASSWORD;assert(sm_config_valid(&c,1));assert(!sm_config_valid(&c,0));

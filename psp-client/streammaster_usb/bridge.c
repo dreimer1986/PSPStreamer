@@ -65,7 +65,8 @@ static int wait_request(struct UsbdDeviceReq *request,int bit) {
     SceUInt timeout=send_frame.op>=SM_SOCKET_OPEN?500000:15000000;u32 bits=0;
     int rc=sceKernelWaitEventFlag(event_id,bit|4,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,&bits,&timeout);
     if(rc<0 || (bits&4) || cancelled)return SM_TIMEOUT;
-    if(request->retcode || request->recvsize!=SM_FRAME_SIZE)return SM_IO;
+    if(request->retcode || request->recvsize<32 || request->recvsize>request->size)return SM_IO;
+    if(bit==1 && request->recvsize!=request->size)return SM_IO;
     return SM_OK;
 }
 static int shutdown_usb(void) {
@@ -77,13 +78,14 @@ static int shutdown_usb(void) {
     memset(&send_frame,0,sizeof(send_frame));memset(&recv_frame,0,sizeof(recv_frame));
     attached=0;poisoned=0;return 0;
 }
-static int exchange(const void *in,void *out) {
+static int exchange(const void *in,void *out,int compact) {
     if(!started || !attached)return SM_OFFLINE;
     if(poisoned || send_pending || recv_pending)return SM_BUSY;
     cancelled=0;memcpy(&send_frame,in,sizeof(send_frame));
     if(!sm_valid(&send_frame) || send_frame.flags)return SM_INVALID;
+    if(compact){send_frame.flags=SM_COMPACT;sm_seal(&send_frame);}
     memset(&recv_frame,0,sizeof(recv_frame));memset(&send_req,0,sizeof(send_req));memset(&recv_req,0,sizeof(recv_req));
-    send_req.endp=&endpoints[1];send_req.data=&send_frame;send_req.size=SM_FRAME_SIZE;send_req.func=done;
+    send_req.endp=&endpoints[1];send_req.data=&send_frame;send_req.size=compact?sm_wire_size(send_frame.length):SM_FRAME_SIZE;send_req.func=done;
     recv_req.endp=&endpoints[2];recv_req.data=&recv_frame;recv_req.size=SM_FRAME_SIZE;recv_req.func=done;
     sceKernelClearEventFlag(event_id,0);
     sceKernelDcacheWritebackRange(&send_frame,sizeof(send_frame));
@@ -96,7 +98,8 @@ static int exchange(const void *in,void *out) {
     if(rc>=0)rc=wait_request(&recv_req,2);
     if(rc>=0) {
         sceKernelDcacheInvalidateRange(&recv_frame,sizeof(recv_frame));
-        if(!sm_valid(&recv_frame)||recv_frame.flags!=SM_REPLY || recv_frame.sequence!=send_frame.sequence || recv_frame.op!=send_frame.op)rc=SM_IO;
+        if(!sm_valid(&recv_frame)||recv_frame.flags!=SM_REPLY || recv_frame.sequence!=send_frame.sequence || recv_frame.op!=send_frame.op ||
+           recv_req.recvsize!=(int)(compact?sm_wire_size(recv_frame.length):SM_FRAME_SIZE))rc=SM_IO;
         else memcpy(out,&recv_frame,sizeof(recv_frame));
     }
     if(rc<0){poisoned=1;cancel_requests();}
@@ -106,7 +109,7 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
     (void)a;(void)name;
     if(cmd==SM_DEV_CANCEL){cancel_requests();return 0;}
     if(cmd==SM_DEV_STATUS)return attached?attached:poisoned?SM_BUSY:0;
-    if(cmd==SM_DEV_EXCHANGE && (inlen!=SM_FRAME_SIZE || outlen!=SM_FRAME_SIZE || !user_buffer(in,inlen)||!user_buffer(out,outlen)))return SM_INVALID;
+    if((cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT) && (inlen!=SM_FRAME_SIZE || outlen!=SM_FRAME_SIZE || !user_buffer(in,inlen)||!user_buffer(out,outlen)))return SM_INVALID;
     SceUInt timeout=100000;int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     if(cmd==SM_DEV_START) {
         if(started)rc=0;
@@ -120,7 +123,7 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
             }
         }
     } else if(cmd==SM_DEV_STOP)rc=shutdown_usb();
-    else if(cmd==SM_DEV_EXCHANGE)rc=exchange(in,out);
+    else if(cmd==SM_DEV_EXCHANGE || cmd==SM_DEV_EXCHANGE_COMPACT)rc=exchange(in,out,cmd==SM_DEV_EXCHANGE_COMPACT);
     else rc=SM_INVALID;
     sceKernelSignalSema(lock_id,1);return rc;
 }

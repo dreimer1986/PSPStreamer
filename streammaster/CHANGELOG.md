@@ -4,6 +4,20 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.2 — 2026-09-27
+
+- Negotiate compact USB framing: a socket read request now occupies 40 bytes
+  rather than 4096; empty replies use 32 bytes. Full data replies remain 4096.
+  Short-packet termination handles 64-byte boundaries explicitly. Packet length,
+  checksum, sequence, ownership and cancellation validation remain enabled.
+- Fall back to fixed framing with 0.2.1 firmware or an older PSP kernel bridge.
+  Matching new app, bridge and ESP firmware are required for compact framing.
+- Batch Memory Stick download writes into the existing 32 KiB buffer. Resume
+  uses committed file length; cancelled uncommitted tails are downloaded again.
+- Add transport measurements and log the selected framing (`compact=1`).
+- Firmware stays at ESP-IDF performance `-O2`. Real throughput and an `-O3`
+  comparison remain hardware-test follow-ups, not claimed performance gains.
+
 ## PSP client follow-up — 2026-09-27
 
 - Add opt-in transport timing, read-throughput and sampled ESP receive-buffer

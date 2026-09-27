@@ -19,7 +19,7 @@ extra sampling and logs. HTTP and HTTPS can be compared without changing codecs.
 See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
 including matching PSP-side changes and work not yet released.
 
-Version **0.2.1** provides an opt-in USB network transport for PSPStreamer, with
+Version **0.2.2** provides an opt-in USB network transport for PSPStreamer, with
 six independent TCP/TLS channels. Library browsing, media, subtitles, remote
 control and downloads can use Onju's Wi-Fi instead of the PSP's Wi-Fi.
 Native PSP Wi-Fi remains the default. This is the first media-transport build:
@@ -186,9 +186,18 @@ out of screenshots/logs. If USB initialization fails, include the full hexadecim
 code. `FFFFFFFC` is a timeout, `FFFFFFFB` means busy, `FFFFFFFD` is a transport
 or HTTP I/O failure. Other values can be original PSP module/USB errors.
 
-## Enable USB playback (0.2.1)
+## Enable USB playback (0.2.2)
 
-1. Flash firmware **0.2.1** and copy all three matching PSP files listed above.
+Version 0.2.2 negotiates compact transfers with the matching app and
+`StreamMasterUSB.prx`. Read requests shrink from 4096 to 40 bytes, empty replies
+to 32 bytes, while full payload replies remain 4096 bytes. Older peers retain
+fixed framing. `compact=1` in the receive-buffer log confirms negotiation.
+Memory Stick downloads batch writes into the existing 32 KiB buffer; cancellation
+may discard an uncommitted tail, which is fetched again on resume. No additional
+large buffer is allocated. Benchmark, playback and file-download rates must be
+measured separately; reduced wire traffic is not a measured speed multiplier.
+
+1. Flash firmware **0.2.2** and copy all three matching PSP files listed above.
    Updating only Onju or only the app/PRX is insufficient.
 2. Configure Onju and verify **Test saved server** succeeds. The server address
    must be reachable from Onju's network. HTTP is a useful first transport test.
@@ -224,7 +233,7 @@ unmodified.
   NVS and diagnostics. Each of six TCP/TLS channels has an independent owner
   for DNS/connect/handshake and socket I/O. Device
   generation numbers reject responses from an earlier cable connection.
-- Fixed 4096-byte little-endian messages have bounded payloads, sequence numbers
+- Up-to-4096-byte little-endian messages have bounded payloads, sequence numbers
   and a checksum. These detect corruption; they are not encryption or an
   authentication mechanism. USB is a physically trusted connection.
 - WLAN reconnect is bounded to five retries; **Reconnect Wi-Fi** starts a new

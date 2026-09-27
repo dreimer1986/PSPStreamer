@@ -39,6 +39,7 @@ void stm_thread_finished(void) {
 }
 static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
 static volatile int selected,broken=1,wifi_state;
+static int compact_packets;
 static unsigned capable_generation;
 static unsigned sequence,generation=1,next_token=1,next_fd=1;
 static SmFrame request,response;
@@ -57,8 +58,8 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     SceUInt wait=1000;
     if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
     unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
-    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u cumulative",
-        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max);
+    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d cumulative",
+        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets);
     else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
         diagnostic.calls,diagnostic.reads,elapsed?(unsigned)((unsigned long long)diagnostic.bytes*1000000/elapsed/1024):0,
         diagnostic.usb_us/1000,diagnostic.wait_us/1000,diagnostic.max_us,diagnostic.slow_op,diagnostic.busy,diagnostic.errors);
@@ -101,7 +102,12 @@ int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capa
     if(size)memcpy(request.payload,data,size);
     sm_seal(&request);
     unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
-    int rc=sceIoDevctl("stm:",SM_DEV_EXCHANGE,&request,sizeof(request),&response,sizeof(response));
+    int rc=sceIoDevctl("stm:",compact_packets?SM_DEV_EXCHANGE_COMPACT:SM_DEV_EXCHANGE,&request,sizeof(request),&response,sizeof(response));
+    if(rc==SM_INVALID && compact_packets) {
+        /* Older kernel bridge rejects the new ioctl before submitting USB. */
+        compact_packets=0;
+        rc=sceIoDevctl("stm:",SM_DEV_EXCHANGE,&request,sizeof(request),&response,sizeof(response));
+    }
     unsigned duration=diagnostic_enabled?(unsigned)(sceKernelGetSystemTimeWide()-started):0;
     if(rc<0 && rc!=SM_BUSY){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     if(rc>=0) {
@@ -149,7 +155,7 @@ int stm_driver_start(int force,volatile int *running) {
     }
     if(rc>=0) {
         phase="reset USB driver";rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
-        generation++;broken=1;
+        generation++;broken=1;compact_packets=0;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
     if(rc>=0) {
@@ -163,7 +169,14 @@ int stm_driver_start(int force,volatile int *running) {
         }while(sceKernelGetSystemTimeWide()<end);
         if(broken && rc>=0)rc=SM_TIMEOUT;
     }
-    sceKernelSignalSema(rpc_lock,1);return rc;
+    sceKernelSignalSema(rpc_lock,1);
+    if(rc>=0) {
+        unsigned caps=0,length=0;
+        int probe=stm_rpc(SM_CAPABILITIES,NULL,0,&caps,sizeof(caps),&length,running);
+        if(probe==0 && length==sizeof(caps))compact_packets=(caps&SM_CAP_COMPACT)!=0;
+        else if(probe!=SM_INVALID)rc=probe;
+    }
+    return rc;
 }
 void stm_driver_cancel(void) {if(module>=0)sceIoDevctl("stm:",SM_DEV_CANCEL,NULL,0,NULL,0);broken=1;generation++;}
 void stm_driver_stop(void) {

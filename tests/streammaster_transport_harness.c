@@ -112,10 +112,12 @@ static int kuKernelLoadModule(const char *path,int flags,void *v){(void)flags;(v
 static int sceKernelStartModule(int m,int n,void *a,int *s,void *v){(void)m;(void)n;(void)a;(void)v;*s=0;return 0;}
 static int sceKernelStopModule(int m,int n,void *a,int *s,void *v){return sceKernelStartModule(m,n,a,s,v);}
 static int sceKernelUnloadModule(int m){(void)m;return 0;}
+static int legacy_caps,legacy_bridge;
 static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out,int outlen){
     (void)name;(void)inlen;(void)outlen;
     if(op==SM_DEV_STATUS)return 1;
-    if(op!=SM_DEV_EXCHANGE)return 0;
+    if(op!=SM_DEV_EXCHANGE && op!=SM_DEV_EXCHANGE_COMPACT)return 0;
+    if(op==SM_DEV_EXCHANGE_COMPACT && legacy_bridge)return SM_INVALID;
     rpc_count++;
     if(injected_error)return injected_error;
     SmFrame *r=in,*reply=out;assert(sm_valid(r));
@@ -129,6 +131,7 @@ static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out
     if(r->op==SM_INFO){SmInfo info={.wifi_state=SM_WIFI_READY};memcpy(reply->payload,&info,sizeof(info));reply->length=sizeof(info);}
     else if(r->op==SM_CONNECT)reply->result=0;
     else if(old_firmware)reply->result=SM_INVALID;
+    else if(r->op==SM_CAPABILITIES){if(legacy_caps)reply->result=SM_INVALID;else {unsigned caps=SM_CAP_COMPACT;memcpy(reply->payload,&caps,sizeof(caps));reply->length=sizeof(caps);}}
     else sm_sockets_command(r,reply);
     sm_seal(reply);return 0;
 }
@@ -241,6 +244,10 @@ int main(void){
     for(int i=0;i<32;i++)assert(!thread_errors[i].tid);
     for(int i=0;i<LOCAL_SOCKETS;i++)assert(!sockets[i].fd);
     for(int i=0;i<SM_SOCKET_COUNT;i++)assert(channels[i].state==SM_SOCKET_FREE);
+    legacy_caps=1;assert(stm_associate(&running,1)==0 && !compact_packets);
+    legacy_caps=0;assert(stm_associate(&running,1)==0 && compact_packets);
+    legacy_bridge=1;assert(stm_associate(&running,1)==0 && !compact_packets);
+    legacy_bridge=0;
     running=0;clock_us=0;semaphores[rpc_lock]=0;
     assert(stm_rpc(SM_INFO,NULL,0,NULL,0,NULL,&running)==SM_BUSY && clock_us==0);
     semaphores[rpc_lock]=1;stm_driver_stop();
