@@ -17,8 +17,8 @@ typedef struct {
     unsigned read_backoff;
     SceInt64 read_retry,open_retry,diagnostic_next,empty_since;
     SmSocketOpen destination;
-    unsigned char cache[SM_PAYLOAD_SIZE];
-    unsigned char ahead[SM_PAYLOAD_SIZE];
+    SmBulkResult buffers[2];
+    unsigned cache_index;
     unsigned ahead_length;
     int ahead_ready,ahead_result;
 } LocalSocket;
@@ -43,10 +43,11 @@ void stm_thread_finished(void) {
 static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
 static volatile int selected,broken=1,wifi_state;
 static int compact_packets;
+static int bulk_pairs,ahead_bulk;
 static unsigned capable_generation;
 static unsigned sequence,generation=1,next_token=1,next_fd=1;
 static SmFrame request,response;
-/* rpc_lock owns this single DMA transaction and all look-ahead mailboxes. */
+/* rpc_lock owns a legacy transaction or a two-request bulk group and mailboxes. */
 static int ahead_supported=1;
 static unsigned ahead_token,ahead_epoch;
 static char target_host[128];
@@ -64,8 +65,8 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     SceUInt wait=1000;
     if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
     unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
-    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u cumulative",
-        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched);
+    if(buffers)snprintf(line,size,"span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u bulk=%d cumulative",
+        elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched,bulk_pairs);
     else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
         diagnostic.calls,diagnostic.reads,elapsed?(unsigned)((unsigned long long)diagnostic.bytes*1000000/elapsed/1024):0,
         diagnostic.usb_us/1000,diagnostic.wait_us/1000,diagnostic.max_us,diagnostic.slow_op,diagnostic.busy,diagnostic.errors);
@@ -82,26 +83,35 @@ static int lock(SceUID id,int milliseconds,volatile int *running) {
 }
 static void finish_ahead(void) {
     if(!ahead_token)return;
+    LocalSocket *owner=NULL;
+    for(int i=0;i<LOCAL_SOCKETS;i++)if(sockets[i].fd && sockets[i].token==ahead_token && sockets[i].epoch==ahead_epoch){owner=&sockets[i];break;}
+    /* A closed slot is drained before reuse. Reset clears ahead_token. */
+    if(!owner){broken=1;generation++;ahead_token=0;return;}
+    SmBulkResult *packet=&owner->buffers[1-owner->cache_index];
     unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
-    int rc=sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
+    int rc=ahead_bulk?sceIoDevctl("stm:",SM_DEV_BULK_FINISH,NULL,0,packet,sizeof(*packet)):
+        sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
+    if(!ahead_bulk && rc>=0) {
+        packet->length=response.length;packet->result=response.result;
+        if(packet->length<=sizeof(packet->payload))memcpy(packet->payload,response.payload,packet->length);
+    }
+    if(rc>=0 && packet->length>sizeof(packet->payload))rc=SM_IO;
     if(rc<0){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     if(diagnostic_enabled) {
         diagnostic.calls++;diagnostic.reads++;
         diagnostic.prefetched++;
         /* Only blocked finish time; the rest overlaps application work. */
         diagnostic.usb_us+=sceKernelGetSystemTimeWide()-started;
-        if(rc>=0 && response.result>=0)diagnostic.bytes+=response.length;
-        if(rc<0 || response.result<0) {
-            if(rc>=0 && response.result==SM_BUSY)diagnostic.busy++;else diagnostic.errors++;
+        if(rc>=0 && packet->result>=0)diagnostic.bytes+=packet->length;
+        if(rc<0 || packet->result<0) {
+            if(rc>=0 && packet->result==SM_BUSY)diagnostic.busy++;else diagnostic.errors++;
         }
     }
     for(int i=0;i<LOCAL_SOCKETS;i++) {
         LocalSocket *s=&sockets[i];
         if(s->fd && s->token==ahead_token && s->epoch==ahead_epoch && s->epoch==generation) {
-            s->ahead_result=rc<0?rc:response.result;s->ahead_length=0;
-            if(rc>=0 && response.result>=0 && response.length<=sizeof(s->ahead)) {
-                memcpy(s->ahead,response.payload,response.length);s->ahead_length=response.length;
-            } else if(rc>=0 && response.result>=0)s->ahead_result=SM_INVALID;
+            s->ahead_result=rc<0?rc:packet->result;
+            s->ahead_length=rc>=0 && packet->result>=0?packet->length:0;
             s->ahead_ready=1;break;
         }
     }
@@ -113,7 +123,7 @@ static int take_ahead(LocalSocket *s,int *result,unsigned *length) {
     int ready=s->ahead_ready;
     if(ready) {
         *result=s->ahead_result;*length=s->ahead_length;
-        if(*length)memcpy(s->cache,s->ahead,*length);
+        s->cache_index=1-s->cache_index; /* Exchange ownership, not payload bytes. */
         s->ahead_ready=0;
     }
     sceKernelSignalSema(rpc_lock,1);return ready;
@@ -123,12 +133,13 @@ static void start_ahead(LocalSocket *s) {
     SceUInt wait=1;
     if(!ahead_supported || !compact_packets || sceKernelWaitSema(rpc_lock,1,&wait)<0)return;
     if(!ahead_token && !s->ahead_ready && !broken && s->epoch==generation && !s->eof && !s->dead) {
-        SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};
-        memset(&request,0,sizeof(request));request.op=SM_SOCKET_READ;
+        SmSocketRequest r={s->token,bulk_pairs?SM_BULK_PAYLOAD_SIZE:SM_PAYLOAD_SIZE};
+        memset(&request,0,32+sizeof(r));request.op=bulk_pairs?SM_SOCKET_READ_BULK:SM_SOCKET_READ;
         request.sequence=++sequence;request.length=sizeof(r);memcpy(request.payload,&r,sizeof(r));sm_seal(&request);
-        int rc=sceIoDevctl("stm:",SM_DEV_READ_BEGIN,&request,sizeof(request),NULL,0);
+        if(bulk_pairs)sequence++;
+        int rc=sceIoDevctl("stm:",bulk_pairs?SM_DEV_BULK_BEGIN:SM_DEV_READ_BEGIN,&request,sizeof(request),NULL,0);
         if(rc==SM_INVALID)ahead_supported=0; /* Old bridge: retain synchronous reads. */
-        else if(rc>=0){ahead_token=s->token;ahead_epoch=s->epoch;}
+        else if(rc>=0){ahead_token=s->token;ahead_epoch=s->epoch;ahead_bulk=bulk_pairs;}
         else if(rc!=SM_BUSY){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     }
     sceKernelSignalSema(rpc_lock,1);
@@ -216,7 +227,7 @@ int stm_driver_start(int force,volatile int *running) {
     if(rc>=0) {
         phase="reset USB driver";rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0);
         ahead_token=0;ahead_supported=1;
-        generation++;broken=1;compact_packets=0;
+        generation++;broken=1;compact_packets=bulk_pairs=0;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
     if(rc>=0) {
@@ -234,7 +245,10 @@ int stm_driver_start(int force,volatile int *running) {
     if(rc>=0) {
         unsigned caps=0,length=0;
         int probe=stm_rpc(SM_CAPABILITIES,NULL,0,&caps,sizeof(caps),&length,running);
-        if(probe==0 && length==sizeof(caps))compact_packets=(caps&SM_CAP_COMPACT)!=0;
+        if(probe==0 && length==sizeof(caps)) {
+            compact_packets=(caps&SM_CAP_COMPACT)!=0;
+            bulk_pairs=compact_packets && (caps&SM_CAP_BULK_PAIR) && sceIoDevctl("stm:",SM_DEV_BULK_CAPS,NULL,0,NULL,0)==1;
+        }
         else if(probe!=SM_INVALID)rc=probe;
     }
     return rc;
@@ -328,7 +342,7 @@ static int socket_refill(LocalSocket *s) {
     SmSocketRequest r={s->token,SM_PAYLOAD_SIZE};unsigned length=0;
     int rc=0,cached=take_ahead(s,&rc,&length);
     if(cached<0)return 0;
-    if(!cached)rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->cache,sizeof(s->cache),&length,NULL);
+    if(!cached)rc=stm_rpc(SM_SOCKET_READ,&r,sizeof(r),s->buffers[s->cache_index].payload,SM_PAIR_PAYLOAD_SIZE,&length,NULL);
     if(rc==SM_BUSY) {
         SceInt64 now=sceKernelGetSystemTimeWide();
         if(!s->empty_since)s->empty_since=now;
@@ -430,7 +444,7 @@ size_t stm_recv(int fd,void *data,size_t size,int flags) {
         if(s->eof)return 0;
     }
     if(size>s->end-s->pos)size=s->end-s->pos;
-    memcpy(data,s->cache+s->pos,size);s->pos+=size;
+    memcpy(data,s->buffers[s->cache_index].payload+s->pos,size);s->pos+=size;
     if(s->pos==s->end && size>=1024)start_ahead(s);
     return size;
 }

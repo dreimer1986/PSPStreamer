@@ -4,6 +4,27 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.4 — 2026-09-27
+
+- Negotiate two outstanding bulk-read requests, each with an 8 KiB USB frame
+  (8,160 payload bytes). Up to 16,320 bytes are collected per read-ahead group.
+- ESP USB owner receives the next request while the previous response is on the
+  bus. Two-entry FIFO queues replace overwrite queues; replies retain their own
+  wire size and generation. Detach flushes DMA before buffer/queue reuse.
+- PSP bridge queues two independent send/receive pairs, verifies both sequence
+  numbers, lengths and checksums, and drains/cancels outstanding DMA safely.
+- PSP rotates cache/mailbox ownership instead of copying cached payloads. Bulk
+  results go directly from kernel buffers into the owning socket's mailbox;
+  compact legacy replies copy only their header and actual payload.
+- Larger replies are sealed once on ESP and checked once in the PSP kernel.
+  No checksum or cancellation safeguard is removed. Legacy 4 KiB operation is
+  retained when either firmware or kernel bridge lacks the negotiated feature.
+- Requires firmware 0.2.4 plus matching EBOOT.PBP, PSPStreamer.prx and
+  StreamMasterUSB.prx for bulk pairs. `bulk=1` in diagnostics confirms selection.
+- Fixed PSP user-space buffers now reserve about 383 KiB across 12 slots, about
+  287 KiB more than the previous buffers. Additional kernel DMA buffers use about
+  24 KiB. No allocation per packet. Hardware performance is not yet measured.
+
 ## 0.2.3 — 2026-09-27
 
 - Matching PSP update adds asynchronous USB read-ahead, overlapping one next

@@ -125,6 +125,28 @@ void sm_sockets_init(void) {
     }
 }
 void sm_sockets_reset(void){atomic_store(&reset_pending,true);}
+void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out) {
+    memset(out,0,32);out->magic=SM_MAGIC;out->version=SM_VERSION;
+    out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;out->result=SM_INVALID;
+    if(r->length==sizeof(SmSocketRequest)) {
+        SmSocketRequest request;memcpy(&request,r->payload,sizeof(request));
+        out->result=SM_OFFLINE;
+        for(int i=0;i<SM_SOCKET_COUNT;i++) {
+            Channel *c=&channels[i];
+            if(xSemaphoreTake(c->lock,0)!=pdTRUE){out->result=SM_BUSY;continue;}
+            if(c->state==SM_SOCKET_FREE || c->open.token!=request.token){xSemaphoreGive(c->lock);continue;}
+            unsigned n=c->rx_write-c->rx_read;
+            if(n>request.length)n=request.length;
+            if(n>SM_BULK_PAYLOAD_SIZE)n=SM_BULK_PAYLOAD_SIZE;
+            if(n){copy_out(out->payload,c->rx,RX_SIZE,c->rx_read,n);c->rx_read+=n;out->length=n;out->result=0;}
+            else out->result=c->state==SM_SOCKET_EOF?0:c->state==SM_SOCKET_ERROR?SM_IO:SM_BUSY;
+            xSemaphoreGive(c->lock);break;
+        }
+    }
+    /* Only the header and actual payload go onto the wire; padding is zero. */
+    if(sm_bulk_wire_size(out->length)>32+out->length)out->payload[out->length]=0;
+    out->checksum=sm_bulk_checksum(out);
+}
 void sm_sockets_idle(void) {
     if(!atomic_exchange(&reset_pending,false))return;
     for(int i=0;i<SM_SOCKET_COUNT;i++) {

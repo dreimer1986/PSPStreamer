@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.2.4: two outstanding 8 KiB bulk replies, negotiated legacy
+  fallback, FIFO host scheduling and reduced payload copies through buffer swaps.
 - Pipeline StreamMaster bulk reads through asynchronous PSP USB begin/finish
   operations. One speculative block per socket, one USB transaction in flight,
   generation-checked delivery, and synchronous fallback for older bridge drivers.

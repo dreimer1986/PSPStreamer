@@ -113,11 +113,30 @@ static int sceKernelStartModule(int m,int n,void *a,int *s,void *v){(void)m;(voi
 static int sceKernelStopModule(int m,int n,void *a,int *s,void *v){return sceKernelStartModule(m,n,a,s,v);}
 static int sceKernelUnloadModule(int m){(void)m;return 0;}
 static int legacy_caps,legacy_bridge,legacy_async;
+static int bulk_firmware=1,bulk_bridge=1;
 static SmFrame pending_reply;
+static SmBulkResult pending_bulk;
 static int async_pending,async_begins,async_finishes;
 static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out,int outlen){
     (void)name;(void)inlen;(void)outlen;
     if(op==SM_DEV_STATUS)return 1;
+    if(op==SM_DEV_BULK_CAPS)return bulk_bridge && !legacy_bridge && !legacy_async?1:SM_INVALID;
+    if(op==SM_DEV_BULK_BEGIN) {
+        assert(bulk_firmware && bulk_bridge && !async_pending);
+        SmFrame r=*(SmFrame *)in;SmBulkFrame b;
+        pending_bulk.length=0;pending_bulk.result=0;
+        for(int i=0;i<2;i++) {
+            r.sequence+=i;sm_sockets_bulk_read(&r,&b);assert(sm_bulk_valid(&b));
+            memcpy(pending_bulk.payload+pending_bulk.length,b.payload,b.length);pending_bulk.length+=b.length;
+            if(b.result<0)pending_bulk.result=b.result;
+        }
+        if(pending_bulk.length)pending_bulk.result=0;
+        async_pending=1;async_begins++;return 0;
+    }
+    if(op==SM_DEV_BULK_FINISH) {
+        assert(async_pending);async_pending=0;async_finishes++;
+        memcpy(out,&pending_bulk,sizeof(pending_bulk));return 0;
+    }
     if(op==SM_DEV_STOP || op==SM_DEV_CANCEL){async_pending=0;return 0;}
     if(op==SM_DEV_READ_BEGIN) {
         if(legacy_bridge || legacy_async)return SM_INVALID;
@@ -145,7 +164,7 @@ static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out
     if(r->op==SM_INFO){SmInfo info={.wifi_state=SM_WIFI_READY};memcpy(reply->payload,&info,sizeof(info));reply->length=sizeof(info);}
     else if(r->op==SM_CONNECT)reply->result=0;
     else if(old_firmware)reply->result=SM_INVALID;
-    else if(r->op==SM_CAPABILITIES){if(legacy_caps)reply->result=SM_INVALID;else {unsigned caps=SM_CAP_COMPACT;memcpy(reply->payload,&caps,sizeof(caps));reply->length=sizeof(caps);}}
+    else if(r->op==SM_CAPABILITIES){if(legacy_caps)reply->result=SM_INVALID;else {unsigned caps=SM_CAP_COMPACT|(bulk_firmware?SM_CAP_BULK_PAIR:0);memcpy(reply->payload,&caps,sizeof(caps));reply->length=sizeof(caps);}}
     else sm_sockets_command(r,reply);
     sm_seal(reply);return 0;
 }
@@ -262,11 +281,27 @@ int main(void){
     assert((int)stm_recv(fd,copy,sizeof(copy),0)<0);
     assert(stm_close(fd)==0);
     /* Compact-capable older bridges lack the asynchronous local ioctl. */
-    legacy_async=1;fd=open_socket();c=channel(fd);
+    legacy_async=1;assert(stm_associate(&running,1)==0 && !bulk_pairs);fd=open_socket();c=channel(fd);
     copy_in(c->rx,RX_SIZE,c->rx_write,bulk,sizeof(bulk));c->rx_write+=sizeof(bulk);
     assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !ahead_supported);
     assert(stm_recv(fd,copy,sizeof(copy),0)==sizeof(copy) && !memcmp(copy,bulk+sizeof(copy),sizeof(copy)));
     assert(stm_close(fd)==0);legacy_async=0;
+    assert(stm_associate(&running,1)==0 && bulk_pairs);
+    fd=open_socket();c=channel(fd);
+    unsigned char large[SM_PAIR_PAYLOAD_SIZE*3],chunk[SM_PAIR_PAYLOAD_SIZE];
+    for(unsigned i=0;i<sizeof(large);i++)large[i]=(i*7+i/257)%251;
+    c->rx_read=c->rx_write=RX_SIZE-100;
+    copy_in(c->rx,RX_SIZE,c->rx_write,large,sizeof(large));c->rx_write+=sizeof(large);c->state=SM_SOCKET_EOF;
+    unsigned consumed=0,max_read=0;
+    while(consumed<sizeof(large)) {
+        int n=(int)stm_recv(fd,chunk,sizeof(chunk),0);assert(n>0);
+        assert(!memcmp(chunk,large+consumed,n));consumed+=n;
+        if((unsigned)n>max_read)max_read=n;
+    }
+    assert(max_read==SM_PAIR_PAYLOAD_SIZE && stm_recv(fd,chunk,sizeof(chunk),0)==0);
+    assert(stm_close(fd)==0);
+    bulk_firmware=0;assert(stm_associate(&running,1)==0 && !bulk_pairs && compact_packets);
+    bulk_firmware=1;
     /* Repeated short-lived remote owners cannot exhaust either fixed pool. */
     stm_diagnostic_enable(1);
     fd=open_socket();c=channel(fd);

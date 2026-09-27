@@ -6,8 +6,17 @@ intervals had median 328 KiB/s, maximum 350 KiB/s and minimum 30 KiB/s. Nine wer
 below 200 KiB/s. Evidence: recovery log, completion tick 1055825. USB error count
 remained at one from an earlier operation, with no further increase during download.
 
-The subsequent PSP-only asynchronous read-ahead update is ready for comparison
-against this 301.26 KiB/s baseline. No additional speedup is claimed until measured.
+The subsequent PSP-only asynchronous read-ahead update completed 170,598,447 bytes
+in 516.684 s: **322.44 KiB/s**. Its 100 recorded five-second intervals had median
+338, maximum 357 and minimum 171 KiB/s; only one was below 200 KiB/s. No USB errors
+were recorded. This is approximately 7% above the preceding large-download result,
+though the files were not byte-identical.
+
+Firmware **0.2.4** and the matching PSP app/bridge now implement two outstanding
+8 KiB replies and reduced copying. Their throughput is **not yet measured**.
+Compare the same ready file over HTTP, with the same hub, card and clock; confirm
+`bulk=1` in diagnostics. Remaining avenues are listed in
+[the optimization inventory](STREAMMASTER_OPTIMIZATION_INVENTORY.md).
 
 Do not compare playback demand or USB echo throughput with file-download speed.
 

@@ -106,7 +106,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
     case SM_CAPABILITIES: {
-        uint32_t caps=SM_CAP_COMPACT;memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
+        uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR;memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
     }
     case SM_INFO:
     case SM_NETWORK_INFO: {

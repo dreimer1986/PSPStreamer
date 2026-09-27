@@ -1,0 +1,70 @@
+# StreamMaster: complete currently identified optimization inventory
+
+This is the complete set of avenues identified during the September 27 review,
+not a claim that future measurements cannot reveal another bottleneck. Potential
+is conditional: no percentage gain is promised for unmeasured changes. Items below
+are not additional unfinished requirements of the 0.2.4 implementation.
+
+## Completed, hardware comparison next
+
+1. Two actual outstanding read requests, rather than only overlapping one request
+   with application work. ESP receives a second request during the first response.
+2. Negotiated 8 KiB replies, two per group (16,320 payload bytes), instead of
+   4 KiB replies (4,064 payload bytes). Small/control transactions stay compatible.
+3. Kernel-to-mailbox delivery, ownership swapping instead of mailbox-to-cache
+   copying, exact-length compact copies, header/payload-only bulk initialization.
+   Larger replies amortize header/checksum setup; payload integrity remains checked.
+
+Baseline: 0.2.3 plus single-request read-ahead transferred 170,598,447 bytes in
+516.684 s = 322.44 KiB/s. Interval median 338, maximum 357 KiB/s; one of 100
+recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
+
+## Remaining avenues on current hardware
+
+| Area | Concrete option | Potential / cost / constraint |
+| --- | --- | --- |
+| Attribution | Per-connection timing of server receive, ring occupancy, USB queue wait, DMA completion and PSP writes | Measurement, not a speedup itself; low–medium effort; needed to prioritize below |
+| Block/depth tuning | Compare 8/16/32 KiB and two versus deeper outstanding groups | Conditional; medium effort; more RAM and longer control/cancellation latency. Current 8 KiB/two is implemented, not a missing feature |
+| Continuous receive | Credit-based push/ring transfer instead of request/response polling | Potentially meaningful; very high effort; new flow control, fairness and recovery protocol |
+| DMA/queue ownership | ESP pointer queues and reusable DMA buffer pool; scatter/ring delivery where supported | Medium potential; high effort; preserve callback lifetime and detach safety |
+| PSP zero-copy | Explicitly owned/pinned shared buffers instead of kernel-to-user copy | Conditional; very high risk/effort; DMA/cache coherency and arbitrary caller lifetimes prohibit casually passing user pointers |
+| Checksums | Profile FNV cost; faster implementation or negotiated CRC with equivalent corruption detection | Low–medium potential; medium effort; keep integrity checks, validate both platforms, do not simply omit checks |
+| Scheduling | Core affinity, task priorities, bounded larger receive bursts, event-driven wakeups instead of polling | Conditional; medium–high effort; keep watchdog idle time and audio/control fairness |
+| Memory placement | Profile hot buffers/code in internal RAM versus PSRAM, alignment/cache maintenance, eligible IRAM placement | Conditional; medium effort; scarce internal/DMA memory, not all buffers can move |
+| TCP buffering | Further receive-window/mailbox/socket-buffer tuning and lwIP/Wi-Fi buffer balance | Conditional; medium effort; currently 32 KiB/26; larger is not automatically faster, especially across six channels |
+| Wi-Fi/radio | AP/channel/congestion, signal/retries, driver aggregation/buffer options | Can dominate on a bad link; environment-dependent; power saving is already disabled |
+| HTTP/server path | Inspect server disk/SMB/provider delivery and socket write batching; reuse connections for many small requests | Conditional; low–medium effort; keep-alive mostly helps startup/small files, not a single large body |
+| TLS | Profile TLS record buffering, session reuse and supported cryptographic acceleration | HTTPS only; medium–high effort; preserve verification; no gain for HTTP measurements |
+| PSP storage pipeline | Write-size/alignment tuning, overlap card writes with reception, investigate card stalls | Can improve end-to-end throughput; medium–high effort; preserve bounded RAM, committed offsets and resume correctness |
+| Final file verification | Faster SHA-256/file reads or safely pipelined verification | Current approximately two-minute post-download wait is a separate opportunity; medium effort; keep full integrity guarantees |
+| UI/logging/background work | Profile rendering, diagnostic writes and remote polling during transfers | Usually modest; low–medium effort; do not sacrifice controls or blindly disable diagnostics |
+| Compiler/code generation | Targeted O3/LTO/PGO or hot-loop optimization after profiling | Uncertain, generally incremental; medium effort; O3 echo comparison did not establish a win |
+| PSP CPU/bus policy | Compare already proven clock settings during transfer/hash versus idle | Conditional, with power/thermal/stability costs; no new overclock settings introduced here |
+| Reverse direction | Add symmetric large/pipelined writes for future PSP uploads | Separate feature; does not improve today's downloads; medium–high effort |
+| Connection batching | Parallel HTTP ranges or multiple file transfers | Uncertain, often worse on a shared bottleneck; high effort; ordering, server load, storage and resume complexity |
+
+## Physical limits and non-solutions
+
+- The ESP32-S3 USB-OTG peripheral is **Full Speed, 12 Mbit/s raw**, not High Speed.
+  Raw 1.5 MB/s is not usable application throughput; USB framing, scheduling,
+  acknowledgments, software, Wi-Fi and storage reduce it. Larger frames still use
+  64-byte physical bulk packets. The 429 KiB/s echo result is neither a guaranteed
+  download speed nor a theoretical ceiling. [Espressif USB overview](https://docs.espressif.com/projects/esp-iot-solution/en/latest/usb/usb_overview/usb_otg.html).
+- Reliable VBUS, cable and hub behavior matter. The user's direct cable caused
+  failures; retain the working powered/hub setup. Removing a hub does not guarantee
+  a speedup. A cable cannot turn this controller into a High-Speed host.
+- A genuinely higher hardware ceiling needs a different USB host/controller and
+  another port of the bridge (for example suitable High-Speed hardware). That is
+  a hardware project, not another firmware flag for the Onju S3.
+- Compressing already compressed H.264/MP3 is not a promising transport gain.
+  Lowering media bitrate saves bytes but does not increase USB throughput.
+- Removing checksums, abandoning cancellation, starving audio, increasing all
+  buffers blindly or unsafe clock/voltage changes are not acceptable shortcuts.
+
+## Recommended order after 0.2.4 testing
+
+Measure the same ready file, same HTTP route, hub, card and clock. Confirm `bulk=1`.
+First establish sustained rate and control/audio stability. If speed is still worth
+pursuing: attribute stalls, then tune block/depth or the specific measured hot path.
+Treat verification-time optimization separately from USB bandwidth. Do not promise
+all remaining items will provide gains or quietly turn them into mandatory work.

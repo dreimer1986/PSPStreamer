@@ -13,6 +13,10 @@
 #define SM_USB_PROTOCOL 0x01
 enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE,SM_NETWORK_INFO,SM_CAPABILITIES};
 #define SM_CAP_COMPACT 1U
+#define SM_CAP_BULK_PAIR 2U
+#define SM_BULK_FRAME_SIZE 8192U
+#define SM_BULK_PAYLOAD_SIZE (SM_BULK_FRAME_SIZE-32)
+#define SM_PAIR_PAYLOAD_SIZE (2*SM_BULK_PAYLOAD_SIZE)
 #define SM_COMPACT 2U
 enum {SM_OK=0,SM_INVALID=-1,SM_OFFLINE=-2,SM_IO=-3,SM_TIMEOUT=-4,SM_BUSY=-5,SM_TLS=-6};
 enum {SM_REPLY=1,SM_CFG_DHCP=1,SM_CFG_AUTO_DNS=2,SM_CFG_KEEP_PASSWORD=4,SM_CFG_HAS_PASSWORD=8};
@@ -20,7 +24,9 @@ enum {SM_WIFI_IDLE,SM_WIFI_CONNECTING,SM_WIFI_READY,SM_WIFI_FAILED};
 enum {SM_DEV_START=0x53540001,SM_DEV_STOP,SM_DEV_STATUS,SM_DEV_EXCHANGE,SM_DEV_CANCEL,SM_DEV_EXCHANGE_COMPACT};
 /* Local PSP driver ABI only; no change to the ESP wire protocol. */
 enum {SM_DEV_READ_BEGIN=0x53540010,SM_DEV_READ_FINISH};
+enum {SM_DEV_BULK_CAPS=0x53540020,SM_DEV_BULK_BEGIN,SM_DEV_BULK_FINISH};
 enum {SM_SOCKET_OPEN=20,SM_SOCKET_STATUS,SM_SOCKET_WRITE,SM_SOCKET_READ,SM_SOCKET_CLOSE,SM_SOCKET_RESET};
+#define SM_SOCKET_READ_BULK 26U
 enum {SM_SOCKET_FREE,SM_SOCKET_CONNECTING,SM_SOCKET_READY,SM_SOCKET_EOF,SM_SOCKET_ERROR};
 #define SM_SOCKET_COUNT 6
 typedef struct {uint32_t token,port,tls;char host[128];} SmSocketOpen;
@@ -32,6 +38,32 @@ typedef struct {
     uint32_t flags,checksum;
     unsigned char payload[SM_PAYLOAD_SIZE];
 } SmFrame;
+typedef struct {
+    uint32_t magic,version,op,sequence,length;
+    int32_t result;
+    uint32_t flags,checksum;
+    unsigned char payload[SM_BULK_PAYLOAD_SIZE];
+} SmBulkFrame;
+typedef struct {
+    int32_t result;
+    uint32_t length;
+    unsigned char payload[SM_PAIR_PAYLOAD_SIZE];
+} SmBulkResult;
+static inline uint32_t sm_bulk_checksum(const SmBulkFrame *f) {
+    uint32_t h=2166136261U;const unsigned char *p=(const unsigned char *)f;
+    for(int i=0;i<28;i++)h=(h^p[i])*16777619U;
+    for(uint32_t i=0;i<f->length;i++)h=(h^f->payload[i])*16777619U;
+    return h;
+}
+static inline int sm_bulk_valid(const SmBulkFrame *f) {
+    return f->magic==SM_MAGIC && f->version==SM_VERSION && f->op==SM_SOCKET_READ_BULK &&
+        f->flags==SM_REPLY && f->length<=SM_BULK_PAYLOAD_SIZE && f->checksum==sm_bulk_checksum(f);
+}
+static inline unsigned sm_bulk_wire_size(unsigned payload) {
+    unsigned n=32+payload;
+    return n<SM_BULK_FRAME_SIZE && !(n%64)?n+1:n;
+}
+_Static_assert(sizeof(SmBulkFrame)==SM_BULK_FRAME_SIZE,"Bulk frame layout");
 typedef struct {
     uint32_t flags;
     char ssid[33],password[65];

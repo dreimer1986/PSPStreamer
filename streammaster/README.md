@@ -46,7 +46,7 @@ extra sampling and logs. HTTP and HTTPS can be compared without changing codecs.
 See [CHANGELOG.md](CHANGELOG.md) for changes since the first firmware version,
 including matching PSP-side changes and work not yet released.
 
-Version **0.2.3** provides an opt-in USB network transport for PSPStreamer, with
+Version **0.2.4** provides an opt-in USB network transport for PSPStreamer, with
 six independent TCP/TLS channels. Library browsing, media, subtitles, remote
 control and downloads can use Onju's Wi-Fi instead of the PSP's Wi-Fi.
 Native PSP Wi-Fi remains the default. This is the first media-transport build:
@@ -224,7 +224,7 @@ may discard an uncommitted tail, which is fetched again on resume. No additional
 large buffer is allocated. Benchmark, playback and file-download rates must be
 measured separately; reduced wire traffic is not a measured speed multiplier.
 
-1. Flash firmware **0.2.3** and copy all three matching PSP files listed above.
+1. Flash firmware **0.2.4** and copy all three matching PSP files listed above.
    Updating only Onju or only the app/PRX is insufficient.
 2. Configure Onju and verify **Test saved server** succeeds. The server address
    must be reachable from Onju's network. HTTP is a useful first transport test.

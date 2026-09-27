@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 typedef struct {uint32_t epoch;SmFrame frame;} Work;
+typedef struct {uint32_t epoch,wire_size;union {SmFrame frame;SmBulkFrame bulk;} packet;} Reply;
 static QueueHandle_t commands,replies;
 static usb_host_client_handle_t client;
 static usb_device_handle_t device;
@@ -17,8 +18,8 @@ static usb_transfer_t *rx,*tx;
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
 static int64_t tx_deadline;
-static int compact_reply;
-static Work job,answer;
+static Work job;
+static Reply answer;
 static void mark_gone(void) {
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
 }
@@ -34,11 +35,26 @@ static int process_work(Work *work,Work *response) {
     return 1;
 }
 static void network_worker(void *unused) {
-    (void)unused;static Work work,response;
+    (void)unused;static Work work,response;static Reply reply;
     for(;;) {
         if(xQueueReceive(commands,&work,pdMS_TO_TICKS(100))==pdTRUE) {
-            if(process_work(&work,&response)) {
-                xQueueOverwrite(replies,&response);
+            int valid=0;reply.epoch=work.epoch;
+            if(work.frame.op==SM_SOCKET_READ_BULK) {
+                sm_network_idle();
+                if(work.epoch==atomic_load(&epoch)) {
+                    sm_sockets_bulk_read(&work.frame,&reply.packet.bulk);
+                    reply.wire_size=sm_bulk_wire_size(reply.packet.bulk.length);
+                    valid=work.epoch==atomic_load(&epoch);
+                }
+            } else if(process_work(&work,&response)) {
+                reply.wire_size=work.frame.flags==SM_COMPACT?sm_wire_size(response.frame.length):SM_FRAME_SIZE;
+                memcpy(&reply.packet.frame,&response.frame,reply.wire_size);valid=1;
+            }
+            if(valid) {
+                /* Two FIFO entries, never overwrite an unread reply. On
+                 * detach, stale epochs are discarded by the USB owner. */
+                while(work.epoch==atomic_load(&epoch) && xQueueSend(replies,&reply,pdMS_TO_TICKS(20))!=pdTRUE)
+                    usb_host_client_unblock(client);
                 usb_host_client_unblock(client);
             }
             memset(&work,0,sizeof(work));memset(&response,0,sizeof(response));
@@ -95,13 +111,13 @@ void sm_usb_daemon(void *unused) {
 }
 void sm_usb_task(void *unused) {
     (void)unused;
-    commands=xQueueCreate(1,sizeof(Work));replies=xQueueCreate(1,sizeof(Work));
+    commands=xQueueCreate(2,sizeof(Work));replies=xQueueCreate(2,sizeof(Reply));
     if(!commands || !replies)abort();
     usb_host_client_config_t cfg={.is_synchronous=false,.max_num_event_msg=8,
         .async={.client_event_callback=client_event,.callback_arg=NULL}};
     ESP_ERROR_CHECK(usb_host_client_register(&cfg,&client));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_FRAME_SIZE,0,&rx));
-    ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_FRAME_SIZE,0,&tx));
+    ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_BULK_FRAME_SIZE,0,&tx));
     rx->callback=transfer_done;tx->callback=transfer_done;
     if(xTaskCreate(network_worker,"network",12288,NULL,6,NULL)!=pdPASS)abort();
     for(;;) {
@@ -115,6 +131,7 @@ void sm_usb_task(void *unused) {
             /* Static transfer buffers remain alive until both callbacks have
              * completed. Never free or reuse DMA memory on an unplug timeout. */
             if(rx_pending || tx_pending)continue;
+            xQueueReset(commands);xQueueReset(replies);
             /* Never lose a live handle when release temporarily fails. */
             if(claimed) {
                 if(usb_host_interface_release(client,device,iface)!=ESP_OK)continue;
@@ -122,30 +139,34 @@ void sm_usb_task(void *unused) {
             }
             if(device && usb_host_device_close(client,device)!=ESP_OK)continue;
             device=NULL;claimed=gone=busy=rx_done=tx_done=0;epoch++;
-            memset(rx->data_buffer,0,SM_FRAME_SIZE);memset(tx->data_buffer,0,SM_FRAME_SIZE);continue;
+            memset(rx->data_buffer,0,SM_FRAME_SIZE);memset(tx->data_buffer,0,SM_BULK_FRAME_SIZE);continue;
         }
         if(!claimed)continue;
         if(tx_pending && esp_timer_get_time()>tx_deadline){mark_gone();continue;}
-        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){mark_gone();continue;}busy=0;}
+        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){mark_gone();continue;}if(busy)busy--;}
         if(rx_done) {
             rx_done=0;
             if(rx->status!=USB_TRANSFER_STATUS_COMPLETED || rx->actual_num_bytes<32){mark_gone();continue;}
             SmFrame *frame=(SmFrame *)rx->data_buffer;
             if(!sm_request_wire_valid(frame,rx->actual_num_bytes)){mark_gone();continue;}
-            compact_reply=frame->flags==SM_COMPACT;
-            memcpy(&job.frame,rx->data_buffer,SM_FRAME_SIZE);job.epoch=epoch;
-            memset(rx->data_buffer,0,SM_FRAME_SIZE);busy=1;xQueueOverwrite(commands,&job);memset(&job,0,sizeof(job));
+            memset(&job.frame,0,sizeof(job.frame));
+            memcpy(&job.frame,rx->data_buffer,32+frame->length);job.epoch=epoch;
+            busy++;
+            if(xQueueSend(commands,&job,0)!=pdTRUE){mark_gone();continue;}
+            memset(&job,0,sizeof(job));
         }
         if(!tx_pending && xQueueReceive(replies,&answer,0)==pdTRUE) {
             if(answer.epoch==epoch) {
-                memcpy(tx->data_buffer,&answer.frame,SM_FRAME_SIZE);tx->device_handle=device;
-                tx->bEndpointAddress=0x02;tx->num_bytes=compact_reply?sm_wire_size(answer.frame.length):SM_FRAME_SIZE;
+                memcpy(tx->data_buffer,&answer.packet,answer.wire_size);tx->device_handle=device;
+                tx->bEndpointAddress=0x02;tx->num_bytes=answer.wire_size;
                 if(usb_host_transfer_submit(tx)!=ESP_OK)mark_gone();
                 else {tx_pending=1;tx_deadline=esp_timer_get_time()+5000000;}
             }
             memset(&answer,0,sizeof(answer));
         }
-        if(!busy && !rx_pending && !gone) {
+        /* Accept request B while response A is on the bus. At most two
+         * commands are outstanding, bounding control latency and memory. */
+        if(busy<2 && !rx_pending && !gone) {
             rx->device_handle=device;rx->bEndpointAddress=0x81;rx->num_bytes=SM_FRAME_SIZE;
             if(usb_host_transfer_submit(rx)!=ESP_OK)mark_gone();else rx_pending=1;
         }
