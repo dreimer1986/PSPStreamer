@@ -29,7 +29,9 @@ static unsigned long long sceKernelGetSystemTimeWide(void){struct timespec t;clo
 static int prepare_server(struct sockaddr_in *p){memset(p,0,sizeof(*p));p->sin_family=AF_INET;p->sin_port=htons(server_port);p->sin_addr.s_addr=htonl(INADDR_LOOPBACK);return 0;}
 static int tls_open(int a,const char*b,int c,volatile int*d,int e){(void)a;(void)b;(void)c;(void)d;(void)e;assert(0);return -1;}
 static int tls_send(int a,const void*b,int c,volatile int*d,int e){(void)a;(void)b;(void)c;(void)d;(void)e;assert(0);return -1;}
-static int stream_recv(int fd,void *data,int size,int timeout){struct pollfd p={fd,POLLIN,0};int n=poll(&p,1,timeout);return n==0?-2:n<0?-1:(int)recv(fd,data,size,0);}
+static int tls_recv(int a,void*b,int c,int d){(void)a;(void)b;(void)c;(void)d;assert(0);return -1;}
+#include "../psp-client/playback_transport.h"
+static void recovery_log(const char *event,int result,int status,const char *detail){fprintf(stderr,"%s result=%d http=%d %s\n",event,result,status,detail);}
 static unsigned long long offline_size(const char *path){struct stat s;return stat(path,&s)?0:s.st_size;}
 /* OFFLINE_HTTP */
 int main(int argc,char **argv){

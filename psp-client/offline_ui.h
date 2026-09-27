@@ -87,22 +87,9 @@ static unsigned long long offline_remaining_bytes(char *meta,const char *folder,
     return needed;
 }
 static int offline_connect(int fd) {
-    struct sockaddr_in address;int nonblock=1,error=0;socklen_t size=sizeof(error);
+    struct sockaddr_in address;
     if(prepare_server(&address)<0)return -1;
-    if(sceNetInetSetsockopt(fd,SOL_SOCKET,SO_NONBLOCK,&nonblock,sizeof(nonblock))<0)return -1;
-    unsigned long long until=sceKernelGetSystemTimeWide()+15000000ULL;
-    if(sceNetInetConnect(fd,(struct sockaddr *)&address,sizeof(address))<0) {
-        while(download_running && (unsigned long long)sceKernelGetSystemTimeWide()<until) {
-            struct SceNetInetPollfd p={fd,SCE_NET_INET_POLLOUT,0};
-            int n=sceNetInetPoll(&p,1,100);if(n<0)return -1;if(!n)continue;
-            if(!(p.revents&SCE_NET_INET_POLLOUT) || sceNetInetGetsockopt(fd,SOL_SOCKET,SO_ERROR,&error,&size)<0 || error)return -1;
-            goto connected;
-        }
-        return -1;
-    }
-connected:
-    if(!download_running)return -1;
-    return server_https?tls_open(fd,server_host,server_port,&download_running,15000):0;
+    return playback_connect(fd,&address,&download_running);
 }
 /* Strict finite HTTP body. Resume must be acknowledged with the exact range.
  * Never append a 200/error page to a partial FLV. */
@@ -111,26 +98,34 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     char header[4096],request[4096],range[80]="";unsigned char *block=NULL;
     int fd=-1,out=-1,n=0,result=-1,code=0;unsigned int have=0,start=0,pending=0;
     unsigned long long length=0,last,tick=sceKernelGetSystemTimeWide();
-    if(file){unsigned long long old=offline_size(file);if(old>expected)return -1;start=(unsigned int)old;}
+    const char *phase="request",*reason="validation";
+    int transport_result=0,last_net_errno=0;
+    if(file){unsigned long long old=offline_size(file);if(old>expected)goto done;start=(unsigned int)old;}
     if(start)snprintf(range,sizeof(range),"Range: bytes=%u-\r\n",start);
     int wanted=snprintf(request,sizeof(request),"%s %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s%s%sContent-Length: %u\r\n\r\n%s",
         post?"POST":"GET",url,server_host,server_auth_header,range,post?"Content-Type: application/json\r\n":"",
         post?(unsigned int)strlen(post):0,post?post:"");
     if(wanted<0||wanted>=(int)sizeof(request))goto done;
-    fd=sceNetInetSocket(AF_INET,SOCK_STREAM,0);if(fd<0||offline_connect(fd)<0)goto done;
+    phase="connect";reason="transport";
+    fd=sceNetInetSocket(AF_INET,SOCK_STREAM,0);
+    transport_result=fd<0?fd:offline_connect(fd);
+    if(transport_result<0){last_net_errno=sceNetInetGetErrno();goto done;}
+    phase="send";
     for(int sent=0;sent<wanted && download_running;) {
-        int got=server_https?tls_send(fd,request+sent,wanted-sent,&download_running,15000):(int)sceNetInetSend(fd,request+sent,wanted-sent,0);
-        if(got<=0)goto done;
+        int got=playback_send(fd,request+sent,wanted-sent,&download_running);
+        if(got<=0){transport_result=got;last_net_errno=sceNetInetGetErrno();goto done;}
         sent+=got;
     }
     last=sceKernelGetSystemTimeWide();
+    phase="header";
     while(download_running && n<(int)sizeof(header)-1) {
-        int got=stream_recv(fd,header+n,1,100);
-        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;goto done;}
-        if(got<=0)goto done;
+        int got=playback_recv(fd,header+n,1,100);
+        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
+        if(got<=0){reason=got?"transport":"eof";transport_result=got;last_net_errno=got?sceNetInetGetErrno():0;goto done;}
         last=sceKernelGetSystemTimeWide();header[++n]=0;
         if(n>=4&&!memcmp(header+n-4,"\r\n\r\n",4))break;
     }
+    reason="validation";
     if(!download_running || !strstr(header,"\r\n\r\n") || sscanf(header,"HTTP/%*s %d",&code)!=1)goto done;
     char *value=strstr(header,"Content-Length:");if(!value)goto done;
     length=strtoull(value+15,NULL,10);
@@ -142,16 +137,18 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     }
     if(file) {
         if(length!=(unsigned long long)expected-start)goto done;
+        phase="storage";
         out=sceIoOpen(file,PSP_O_WRONLY|PSP_O_CREAT,0777);if(out<0)goto done;
         if(sceIoLseek(out,start,PSP_SEEK_SET)<0)goto done;
         download_bytes=start;download_total=expected;
     } else if(length>=(unsigned int)capacity)goto done;
     block=malloc(32768);if(!block)goto done;
+    phase="body";
     while(download_running && have<length) {
         unsigned int count=length-have;if(count>32768-pending)count=32768-pending;
-        int got=stream_recv(fd,block+pending,count,100);
-        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;goto done;}
-        if(got<=0)goto done;
+        int got=playback_recv(fd,block+pending,count,100);
+        if(got==-2){if(sceKernelGetSystemTimeWide()-last<30000000ULL)continue;reason="idle-timeout";transport_result=got;goto done;}
+        if(got<=0){reason=got?"transport":"eof";transport_result=got;last_net_errno=got?sceNetInetGetErrno():0;goto done;}
         last=sceKernelGetSystemTimeWide();
         if(file) {
             pending+=got;
@@ -159,7 +156,7 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
              * in the existing 32 KiB buffer instead of flushing every packet.
              * On cancellation, an uncommitted tail is safely downloaded again. */
             if(pending==32768 || have+(unsigned)got==length) {
-                if(sceIoWrite(out,block,pending)!=(int)pending){snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
+                if(sceIoWrite(out,block,pending)!=(int)pending){reason="storage-write";snprintf(download_error,sizeof(download_error),"Memory Stick write failed");goto done;}
                 pending=0;
             }
         } else memcpy(reply+have,block,got);
@@ -172,11 +169,18 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     }
     if(have!=length)goto done;
     if(!file)reply[have]=0;
-    result=0;
+    result=0;reason="complete";
 done:
     free(block);
-    if(out>=0 && sceIoClose(out)<0)result=-1;
+    if(out>=0 && sceIoClose(out)<0){result=-1;reason="storage-close";}
     if(fd>=0)connection_close(fd);
+    {
+        char detail[176];
+        unsigned long long elapsed=(sceKernelGetSystemTimeWide()-tick)/1000;
+        snprintf(detail,sizeof(detail),"%s %s rc=%d last_errno=%d bytes=%u/%llu resume=%u ms=%llu",
+            phase,!download_running?"cancelled":reason,transport_result,last_net_errno,have,length,start,elapsed);
+        recovery_log("download HTTP",result,code,detail);
+    }
     return result;
 }
 static int offline_hash(const char *path,const char *expected) {
@@ -282,6 +286,7 @@ static int offline_download_worker(SceSize args,void *argp) {
     snprintf(path,sizeof(path),"%s/ready",folder);
     result=offline_write(path,"1",1);
 done:
+    recovery_log("download worker",result,0,download_running?(download_error[0]?download_error:"finished"):"cancelled");
     network_worker_finished("download");
     download_result=result;download_done=1;return 0;
 }

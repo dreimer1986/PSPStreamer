@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Downloads now share playback's nonblocking connection/send/receive handling,
+  including native WLAN would-block retries. Debug logs record download phases,
+  HTTP status, transport results, byte counts, resume offsets and elapsed time.
+  Playback behavior, download idle deadlines and resumable storage are unchanged.
 - LED spectrum uses whole, single-color segments and grid-aligned peak markers;
   configure 8..32 vertical LEDs per bar (default 20) without changing FFT bands.
 - Spectrum color presets (Original, Rainbow, Classic VU, Ice, Fire), optional

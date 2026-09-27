@@ -2,11 +2,62 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import http.server
+import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_download_real_http_range_and_truncated_body(self):
+        source = (ROOT / "psp-client/offline_ui.h").read_text()
+        functions = source[source.index("static int offline_connect("):source.index("static int offline_hash(")]
+        harness = (ROOT / "tests/offline_http_harness.c").read_text().replace("/* OFFLINE_HTTP */", functions)
+        payload = bytes(range(251)) * 400
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                offset = int(self.headers.get("Range", "bytes=0-")[6:-1])
+                self.send_response(206 if offset else 200)
+                self.send_header("Content-Length", str(len(payload) - offset))
+                if offset:
+                    self.send_header("Content-Range", f"bytes {offset}-{len(payload)-1}/{len(payload)}")
+                self.end_headers()
+                self.wfile.write(payload[offset:40000] if self.path == "/short" else payload[offset:])
+
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / "http"
+            subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=undefined", "-I", str(ROOT / "tests"), "-o", str(binary)],
+                           input=harness, text=True, check=True)
+            server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                target = Path(folder) / "media.part"
+                def download(path, expected_result):
+                    return subprocess.run([str(binary), str(server.server_port), path, str(target),
+                                           str(len(payload)), str(expected_result)],
+                                          capture_output=True, text=True, check=True, timeout=5).stderr
+                log = download("/short", -1)
+                self.assertIn("body eof", log)
+                self.assertIn("http=200", log)
+                self.assertEqual(target.read_bytes(), payload[:32768])
+                log = download("/full", 0)
+                self.assertIn("http=206", log)
+                self.assertIn("resume=32768", log)
+                self.assertEqual(target.read_bytes(), payload)
+                target.unlink()
+                self.assertIn("body complete", download("/full", 0))
+                self.assertEqual(target.read_bytes(), payload)
+            finally:
+                server.shutdown()
+                thread.join()
+                server.server_close()
+
     def test_download_batches_storage_and_resumes_committed_bytes(self):
         source = (ROOT / "psp-client/offline_ui.h").read_text()
         function = source[source.index("static int offline_http("):source.index("static int offline_hash(")]
@@ -20,7 +71,7 @@ class StreamMasterTests(unittest.TestCase):
 #define PSP_SEEK_SET 0
 #define AF_INET 2
 #define SOCK_STREAM 1
-static int download_running=1,server_https,server_port=8091,writes,cancel_after,body_reads,headpos;
+static int download_running=1,server_https,server_port=8091,writes,cancel_after,body_reads,headpos,send_calls,recv_calls;
 static const char *server_host="test",*server_auth_header="";
 static char download_error[128],head[256];
 static unsigned download_bytes,download_total,download_speed,stored,position,received;
@@ -30,10 +81,11 @@ static unsigned long long sceKernelGetSystemTimeWide(void){return clock_us+=1000
 static unsigned long long offline_size(const char *p){(void)p;return stored;}
 static int sceNetInetSocket(int a,int b,int c){(void)a;(void)b;(void)c;return 3;}
 static int offline_connect(int f){assert(f==3);return 0;}
-static int sceNetInetSend(int f,const void *b,int n,int flags){(void)b;(void)flags;assert(f==3);return n;}
+static int sceNetInetGetErrno(void){return 35;}
+static int sceNetInetSend(int f,const void *b,int n,int flags){(void)b;(void)flags;assert(f==3);if(++send_calls%3==1)return -1;return n>17?17:n;}
 static int tls_send(int f,const void *b,int n,volatile int *r,int ms){(void)r;(void)ms;return sceNetInetSend(f,b,n,0);}
-static int stream_recv(int f,void *b,unsigned n,int ms){
-    (void)ms;assert(f==3);
+static int sceNetInetRecv(int f,void *b,unsigned n,int flags){
+    (void)flags;assert(f==3);if(++recv_calls%7==1)return -1;
     if(head[headpos]){assert(n==1);*(char *)b=head[headpos++];return 1;}
     if(n>4064)n=4064;
     for(unsigned i=0;i<n;i++)((unsigned char *)b)[i]=(received+i)%251;
@@ -41,6 +93,13 @@ static int stream_recv(int f,void *b,unsigned n,int ms){
     if(cancel_after && ++body_reads==cancel_after)download_running=0;
     return n;
 }
+static int tls_recv(int f,void *b,int n,int ms){(void)ms;return sceNetInetRecv(f,b,n,0);}
+#define SCE_NET_INET_POLLOUT 2
+#define SCE_NET_INET_POLLIN 1
+struct SceNetInetPollfd {int fd,events,revents;};
+static int sceNetInetPoll(struct SceNetInetPollfd *p,int count,int ms){(void)count;(void)ms;p->revents=p->events;return 1;}
+static void recovery_log(const char *e,int r,int h,const char *d){(void)e;(void)r;(void)h;assert(strlen(d)<176);}
+/* TRANSPORT */
 static int sceIoOpen(const char *p,int a,int b){(void)p;(void)a;(void)b;return 4;}
 static int sceIoLseek(int f,unsigned p,int mode){assert(f==4&&!mode);position=p;return p;}
 static int sceIoWrite(int f,const void *b,unsigned n){assert(f==4&&position+n<=sizeof(disk));memcpy(disk+position,b,n);position+=n;stored=position;writes++;return n;}
@@ -63,6 +122,8 @@ int main(void){
     for(unsigned i=0;i<stored;i++)assert(disk[i]==i%251);
 }
 '''.replace("/* FUNCTION */", function)
+        transport = (ROOT / "psp-client/playback_transport.h").read_text()
+        harness = harness.replace("/* TRANSPORT */", transport[transport.index("static int playback_send("):])
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / "download"
             subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
