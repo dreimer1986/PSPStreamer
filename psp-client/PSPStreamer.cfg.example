@@ -38,6 +38,8 @@ spectrum_gain_db=0
 # Display options apply to Light mode too, LCD/TV and fullscreen.
 spectrum_style=1
 spectrum_segments=0
+# Whole vertical LEDs per bar, 8..32 (independent of frequency-band count).
+spectrum_led_count=20
 spectrum_peak_hold=1
 volume=24
 shuffle=0

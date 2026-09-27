@@ -943,6 +943,8 @@ spectrum_gain_db=0
 # Colors: 0 Original, 1 Rainbow, 2 Classic VU, 3 Ice, 4 Fire.
 spectrum_style=1
 spectrum_segments=0
+# Whole vertical LEDs per bar: 8..32, shared by LCD and TV.
+spectrum_led_count=20
 spectrum_peak_hold=1
 volume=24
 shuffle=0

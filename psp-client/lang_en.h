@@ -91,6 +91,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_SPECTRUM_STYLE] = "Spectrum colors",
     [TXT_SETTINGS_SPECTRUM_SEGMENTS] = "LED segments",
     [TXT_SETTINGS_SPECTRUM_PEAK] = "Peak hold",
+    [TXT_SETTINGS_SPECTRUM_LEDS] = "LEDs per bar",
 
     [TXT_SPECTRUM_ORIGINAL] = "Original",
     [TXT_SPECTRUM_RAINBOW] = "Rainbow",

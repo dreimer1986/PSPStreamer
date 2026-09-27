@@ -2,6 +2,8 @@
 
 ## Additional unreleased changes
 
+- LED spectrum uses whole, single-color segments and grid-aligned peak markers;
+  configure 8..32 vertical LEDs per bar (default 20) without changing FFT bands.
 - Spectrum color presets (Original, Rainbow, Classic VU, Ice, Fire), optional
   LED segments and time-based peak hold; persistent settings for LCD/TV,
   windowed/fullscreen, with incremental rendering and unchanged audio analysis.

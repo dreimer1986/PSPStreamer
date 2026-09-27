@@ -10,7 +10,7 @@ Each output keeps its own count; changing the output selects its saved value.
 The analysis mode is shared. Switching outputs does not select a different
 MilkDrop analysis algorithm or change the three frequency ranges.
 
-During music, Circle in Spectrum opens these seven options directly; Left/Right
+During music, Circle in Spectrum opens these eight options directly; Left/Right
 changes them and Circle returns/saves. MilkDrop exposes them at the end of its
 existing visualization-options menu (inside the preset browser). Changes apply
 without restarting the app. Windowed LCD/TV and fullscreen support every count.
@@ -29,6 +29,7 @@ spectrum_bands_tv=32
 spectrum_gain_db=0
 spectrum_style=1
 spectrum_segments=0
+spectrum_led_count=20
 spectrum_peak_hold=1
 ```
 
@@ -50,12 +51,17 @@ bottom to top. Colors are fixed to the available canvas height, not stretched
 to each bar: quiet bars do not acquire pink tips. Original preserves the three
 horizontal color groups. The palette is shared by LCD and TV.
 
-**LED segments** (default off) adds horizontal gaps. **Peak hold** (default on)
+**LED segments** (default off) uses whole, solid-color LEDs, never a partial top
+segment. **LEDs per bar** selects 8..32 vertical segments (default 20), shared by
+LCD/TV and independent of the horizontal frequency-band count. Integer pixel
+boundaries divide the available height; remainder pixels are distributed across
+complete segments, including the top one. The peak marker occupies one whole
+LED on the same grid. **Peak hold** (default on)
 adds a bright tip held for 450 ms, then falling at half the available height per
 second; a new higher peak immediately takes over. Paused/stopped audio drains
 the bars and markers instead of leaving them frozen.
 
-All three options work in Light and Desktop FFT modes, windowed and fullscreen.
+All four display options work in Light and Desktop FFT modes, windowed and fullscreen.
 Change them with Left/Right in main Settings or the Spectrum Circle menu; they
 are saved without an app restart. They never modify audio analysis or playback.
 A shared cached color table and bounded per-band peak state require about 7 KiB;

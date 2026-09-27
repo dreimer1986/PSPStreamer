@@ -7,6 +7,7 @@ typedef uint32_t u32;
 #define SPECTRUM_MAX_BANDS 64
 static int test_bands=12;
 int spectrum_style,spectrum_segments,spectrum_peak_hold;
+int spectrum_led_count=20;
 static unsigned long long test_clock;
 static unsigned long long sceKernelGetSystemTimeWide(void){return test_clock+=50000;}
 static int spectrum_bar_count(void){return test_bands;}
