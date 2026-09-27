@@ -11,7 +11,7 @@
 #define SM_USB_PID 0x5354 /* Private development PID on the PSP's Sony VID. */
 #define SM_USB_SUBCLASS 0x53
 #define SM_USB_PROTOCOL 0x01
-enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE};
+enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE,SM_NETWORK_INFO};
 enum {SM_OK=0,SM_INVALID=-1,SM_OFFLINE=-2,SM_IO=-3,SM_TIMEOUT=-4,SM_BUSY=-5,SM_TLS=-6};
 enum {SM_REPLY=1,SM_CFG_DHCP=1,SM_CFG_AUTO_DNS=2,SM_CFG_KEEP_PASSWORD=4,SM_CFG_HAS_PASSWORD=8};
 enum {SM_WIFI_IDLE,SM_WIFI_CONNECTING,SM_WIFI_READY,SM_WIFI_FAILED};
@@ -33,6 +33,13 @@ typedef struct {
     uint32_t wifi_state,disconnect_reason,free_heap,usb_requests;
     int32_t rssi;
 } SmInfo;
+/* Separate command preserves the original SM_INFO layout for older apps. */
+typedef struct {
+    SmInfo info;
+    char mask[16],ssid[33];
+    unsigned char reserved[3];
+    uint32_t config_flags;
+} SmNetworkInfo;
 typedef struct {char ssid[33];int8_t rssi;uint8_t channel,auth;} SmAccessPoint;
 typedef struct {uint32_t count;SmAccessPoint ap[24];} SmScan;
 typedef struct {char url[256],authorization[256];} SmHttpOpen;

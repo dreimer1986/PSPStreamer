@@ -1,6 +1,6 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
-Version 0.1.1 is the **hardware bring-up build**. It includes a native ESP-IDF
+Version 0.1.2 is the **hardware bring-up build**. It includes a native ESP-IDF
 firmware, a PSP USB device driver, and a PSP settings/diagnostics menu. It does
 **not yet route media playback, library browsing or remote control through
 USB**. Existing playback continues to use the PSP's Wi-Fi. Test USB enumeration,
@@ -136,6 +136,14 @@ are not included in this initial firmware.
    gateway and DNS. Automatic DNS is disabled in this case. `0.0.0.0` is allowed
    for an intentionally absent gateway; a primary DNS address is required.
    DHCP can also be combined with manually chosen DNS servers.
+   DHCP-managed fields show `(DHCP)` followed by the actual leased address,
+   subnet mask, gateway or DNS value. They are read-only: X refreshes the status
+   instead of opening the keyboard. **Network status** refreshes all fields too.
+   Until a lease is available, or after changing to a different unsaved SSID,
+   they show `(DHCP) -`. Manual DNS stays unmarked even when IPv4 uses DHCP.
+   Live values do not overwrite saved manual addresses. Full lease details
+   require firmware 0.1.2 and the matching PSP app; older app/firmware combinations
+   retain the original status command but cannot show all new fields.
 6. Choose **Save to Onju + connect**, wait a few seconds and select **Network
    status**. Expect “Connected”, an IP address and RSSI. The settings persist in
    Onju's NVS, not in the PSP CFG. Returning with Circle discards unsaved edits.

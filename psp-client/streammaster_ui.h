@@ -2,6 +2,7 @@
  * First hardware bring-up: USB diagnostics are deliberately not a playback
  * transport yet. One worker owns RPC buffers; the UI never blocks in USB. */
 #include "../streammaster/protocol.h"
+#include "streammaster_fields.h"
 enum {SM_JOB_ATTACH=100,SM_JOB_BENCH,SM_JOB_SERVER};
 static int sm_module=-1,sm_thread=-1;
 static volatile int sm_cancel,sm_finished,sm_result,sm_progress;
@@ -10,6 +11,7 @@ static unsigned sm_sequence,sm_rate,sm_bytes;
 static SmFrame sm_request,sm_response;
 static SmConfig sm_draft;
 static SmInfo sm_info;
+static SmNetworkInfo sm_network;
 static SmScan sm_scan;
 static SmHttpOpen sm_server;
 static const char *sm_stage="idle";
@@ -33,11 +35,15 @@ static int sm_rpc(unsigned op,const void *data,unsigned size) {
     return sm_response.result;
 }
 static int sm_read_info(void) {
-    int rc=sm_rpc(SM_INFO,NULL,0);
+    int rc=sm_rpc(SM_NETWORK_INFO,NULL,0);
+    if(rc==SM_INVALID)rc=sm_rpc(SM_INFO,NULL,0); /* Firmware <= 0.1.1. */
     if(rc<0)return rc;
-    if(sm_response.length!=sizeof(sm_info))return SM_IO;
+    if(sm_response.length!=sizeof(sm_info) && sm_response.length!=sizeof(sm_network))return SM_IO;
+    memset(&sm_network,0,sizeof(sm_network));
+    if(sm_response.length==sizeof(sm_network))memcpy(&sm_network,sm_response.payload,sizeof(sm_network));
     memcpy(&sm_info,sm_response.payload,sizeof(sm_info));
     sm_info.firmware[31]=sm_info.ip[15]=sm_info.gateway[15]=sm_info.dns[15]=sm_info.dns2[15]=0;
+    sm_network.info=sm_info;sm_network.mask[15]=sm_network.ssid[32]=0;
     return 0;
 }
 static int sm_load(void) {
@@ -115,7 +121,7 @@ static int sm_worker(SceSize size,void *args) {
         if(rc>=0 && (sm_http_status!=200 || !sm_bytes))rc=SM_IO;
     } else if(sm_job==SM_CONFIG_SET) {
         rc=sm_rpc(SM_CONFIG_SET,&sm_draft,sizeof(sm_draft));
-        if(rc>=0){memset(sm_draft.password,0,sizeof(sm_draft.password));sm_draft.flags|=SM_CFG_KEEP_PASSWORD;}
+        if(rc>=0){memset(sm_draft.password,0,sizeof(sm_draft.password));sm_draft.flags|=SM_CFG_KEEP_PASSWORD;memset(&sm_network,0,sizeof(sm_network));}
     } else if(sm_job==SM_INFO)rc=sm_read_info();
     else if(sm_job==SM_SCAN) {
         rc=sm_rpc(SM_SCAN,NULL,0);
@@ -222,11 +228,10 @@ static void streammaster_settings(void) {
             settings_shell("StreamMaster / Onju V3");
             for(int i=selected/8*8;i<M_COUNT && i<selected/8*8+8;i++) {
                 char value[40]="[X]",line[88];
-                const char *fields[]={sm_draft.ip,sm_draft.mask,sm_draft.gateway,sm_draft.dns,sm_draft.dns2};
                 if(i==M_SSID)snprintf(value,sizeof(value),"%s",sm_draft.ssid);
                 if(i==M_PASSWORD)snprintf(value,sizeof(value),"%s",tr(sm_draft.flags&SM_CFG_KEEP_PASSWORD?TXT_SM_RETAIN:sm_draft.password[0]?TXT_SM_HIDDEN:TXT_OFF));
                 if(i==M_DHCP || i==M_AUTO_DNS)snprintf(value,sizeof(value),"%s",tr(sm_draft.flags&(i==M_DHCP?SM_CFG_DHCP:SM_CFG_AUTO_DNS)?TXT_SETTINGS_ON:TXT_OFF));
-                if(i>=M_IP && i<=M_DNS2)snprintf(value,sizeof(value),"%s",fields[i-M_IP]);
+                if(i>=M_IP && i<=M_DNS2)sm_field_value(value,sizeof(value),&sm_draft,&sm_network,i-M_IP);
                 snprintf(line,sizeof(line),"%c %s: %s",selected==i?'>':' ',tr(labels[i]),value);
                 settings_line(i%8,selected==i,line);
             }
@@ -250,7 +255,7 @@ static void streammaster_settings(void) {
             else if(selected==M_SAVE) {
                 if(!sm_config_valid(&sm_draft,1))rc=SM_INVALID;
                 else {rc=sm_run(SM_CONFIG_SET);if(rc>=0)snprintf(detail,sizeof(detail),"%s",tr(TXT_SM_SAVED));}
-            } else if(selected==M_CONNECT)rc=sm_run(SM_CONNECT);
+            } else if(selected==M_CONNECT){rc=sm_run(SM_CONNECT);memset(&sm_network,0,sizeof(sm_network));}
             else if(selected==M_BENCH) {
                 rc=sm_run(SM_JOB_BENCH);
                 if(rc>=0)snprintf(detail,sizeof(detail),"USB: %u KiB/s / %u KiB OK",sm_rate,sm_bytes/1024);
@@ -258,6 +263,8 @@ static void streammaster_settings(void) {
                 rc=sm_run(SM_JOB_SERVER);
                 /* Show HTTP status even on an authentication/server error. */
                 if(sm_http_status)snprintf(detail,sizeof(detail),"HTTP %d / %u bytes",sm_http_status,sm_bytes);
+            } else if(selected>=M_IP && selected<=M_DNS2 && sm_field_dhcp(&sm_draft,selected-M_IP)) {
+                rc=sm_run(SM_INFO); /* Read-only lease field: X refreshes it. */
             } else {
                 char draft[80],*field=selected==M_SSID?sm_draft.ssid:selected==M_PASSWORD?sm_draft.password:
                     selected==M_IP?sm_draft.ip:selected==M_MASK?sm_draft.mask:selected==M_GATEWAY?sm_draft.gateway:selected==M_DNS?sm_draft.dns:sm_draft.dns2;

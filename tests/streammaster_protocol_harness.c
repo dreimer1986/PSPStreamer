@@ -1,5 +1,6 @@
 #include "../streammaster/protocol.h"
 #include "../streammaster/main/led_pattern.h"
+#include "../psp-client/streammaster_fields.h"
 #include <assert.h>
 #include <stdio.h>
 static SmConfig dhcp(void) {
@@ -60,5 +61,27 @@ int main(void) {
     assert(rgb[3][0]==24&&rgb[1][0]==0&&rgb[2][0]==0&&rgb[4][0]==0);
     sm_led_pattern(SM_WIFI_FAILED,0,0,0,rgb);assert(rgb[1][0]==24);
     sm_led_pattern(SM_WIFI_FAILED,0,0,2,rgb);assert(rgb[1][0]==3);
-    puts("StreamMaster protocol/config/LED checks passed");return 0;
+    c=dhcp();strcpy(c.ip,"10.0.0.55");strcpy(c.dns,"9.9.9.9");
+    SmConfig unchanged=c;
+    SmNetworkInfo live={.config_flags=SM_CFG_DHCP|SM_CFG_AUTO_DNS};
+    live.info.wifi_state=SM_WIFI_READY;strcpy(live.ssid,c.ssid);
+    strcpy(live.info.ip,"192.168.1.12");strcpy(live.mask,"255.255.255.0");
+    strcpy(live.info.gateway,"192.168.1.1");strcpy(live.info.dns,"192.168.1.1");
+    char display[40];
+    sm_field_value(display,sizeof(display),&c,&live,0);assert(!strcmp(display,"(DHCP) 192.168.1.12"));
+    sm_field_value(display,sizeof(display),&c,&live,1);assert(!strcmp(display,"(DHCP) 255.255.255.0"));
+    sm_field_value(display,sizeof(display),&c,&live,2);assert(!strcmp(display,"(DHCP) 192.168.1.1"));
+    sm_field_value(display,sizeof(display),&c,&live,3);assert(!strcmp(display,"(DHCP) 192.168.1.1"));
+    sm_field_value(display,sizeof(display),&c,&live,4);assert(!strcmp(display,"(DHCP) -"));
+    assert(!memcmp(&c,&unchanged,sizeof(c)));
+    c.flags=SM_CFG_DHCP;
+    sm_field_value(display,sizeof(display),&c,&live,3);assert(!strcmp(display,"9.9.9.9"));
+    c.flags=0;sm_field_value(display,sizeof(display),&c,&live,0);assert(!strcmp(display,"10.0.0.55"));
+    c=unchanged;live.info.wifi_state=SM_WIFI_FAILED;
+    sm_field_value(display,sizeof(display),&c,&live,0);assert(!strcmp(display,"(DHCP) -"));
+    live.info.wifi_state=SM_WIFI_READY;strcpy(live.ssid,"Other network");
+    sm_field_value(display,sizeof(display),&c,&live,0);assert(!strcmp(display,"(DHCP) -"));
+    strcpy(live.ssid,c.ssid);live.config_flags=0;
+    sm_field_value(display,sizeof(display),&c,&live,0);assert(!strcmp(display,"(DHCP) -"));
+    puts("StreamMaster protocol/config/LED/DHCP display checks passed");return 0;
 }

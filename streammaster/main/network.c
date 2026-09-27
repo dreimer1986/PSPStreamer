@@ -102,8 +102,9 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     memset(out,0,sizeof(*out));out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;requests++;
     if(!sm_valid(r) || r->flags){out->result=SM_INVALID;goto done;}
     switch(r->op) {
-    case SM_INFO: {
-        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.1.1");
+    case SM_INFO:
+    case SM_NETWORK_INFO: {
+        SmInfo info={0};strcpy(info.firmware,"StreamMaster Onju V3 0.1.2");
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);
@@ -111,7 +112,13 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
         for(int i=0;i<2;i++) {esp_netif_dns_info_t dns={0};esp_netif_get_dns_info(netif,i?ESP_NETIF_DNS_BACKUP:ESP_NETIF_DNS_MAIN,&dns);
             snprintf(i?info.dns2:info.dns,16,IPSTR,IP2STR(&dns.ip.u_addr.ip4));}
         wifi_ap_record_t ap;if(esp_wifi_sta_get_ap_info(&ap)==ESP_OK)info.rssi=ap.rssi;
-        memcpy(out->payload,&info,sizeof(info));out->length=sizeof(info);break;
+        if(r->op==SM_NETWORK_INFO) {
+            SmNetworkInfo live={.info=info,.config_flags=config.flags};
+            snprintf(live.mask,sizeof(live.mask),IPSTR,IP2STR(&ip.netmask));
+            memcpy(live.ssid,config.ssid,sizeof(live.ssid));
+            memcpy(out->payload,&live,sizeof(live));out->length=sizeof(live);
+        } else {memcpy(out->payload,&info,sizeof(info));out->length=sizeof(info);}
+        break;
     }
     case SM_CONFIG_GET: {
         SmConfig safe=config;memset(safe.password,0,sizeof(safe.password));
