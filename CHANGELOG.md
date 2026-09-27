@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Normalize FFT analyzer height to a fixed -60..0 dBFS range; adjustable
+  display-only gain (-24..+24 dB), without changing MilkDrop values or volume.
+- Desktop FFT mode now gives Monkey its reference input filtering, frequency
+  groups, history and adaptive beat detector; retain the light-mode detector.
 - Optional desktop MilkDrop music analysis; retain the light 12-band default.
 - Select 12/24/32/48/64 FFT analyzer bars independently for LCD and TV, windowed or fullscreen,
   with persistent in-app settings and no restart required.

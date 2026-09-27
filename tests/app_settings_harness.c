@@ -4,7 +4,7 @@
 #include <string.h>
 #include "language.h"
 #include "spectrum_analysis.h"
-int spectrum_analysis_mode,spectrum_band_count=32,spectrum_tv_band_count=32;
+int spectrum_analysis_mode,spectrum_band_count=32,spectrum_tv_band_count=32,spectrum_gain_db;
 int spectrum_band_valid(int n){return n==12||n==24||n==32||n==48||n==64;}
 int spectrum_band_choice(int n,int direction){(void)n;return direction>0?64:12;}
 void spectrum_analysis_reset(void){}

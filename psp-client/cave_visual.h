@@ -4,6 +4,7 @@
 #include "milkdrop_warp.h"
 #include "cave_paths.h"
 #include "cave_bend.h"
+#include "monkey_audio.h"
 enum { CAVE_GRID=12,CAVE_AHEAD=16,CAVE_HISTORY=3,CAVE_SLICES=CAVE_AHEAD+CAVE_HISTORY,
        CAVE_TEXTURE=64,CAVE_MAX_VERTICES=CAVE_GRID*CAVE_GRID*15,
        CAVE_EDGE_SLOTS=6*(CAVE_GRID+1)*(CAVE_GRID+1),
@@ -29,6 +30,7 @@ typedef struct {
 typedef struct {
     CaveSlice slices[CAVE_SLICES];
     CaveMotion motion;
+    MonkeyAudio audio;
     int next,ready,built;
     float noise[16*16*16];
     float noise_matrix[3][9],noise_offset[3][3];

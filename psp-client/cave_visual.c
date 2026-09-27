@@ -3,6 +3,7 @@
  * No executable code, random tables or assets are copied from the DLL.
  * See docs/MONKEY_GEOMETRY.md for verified observations vs PSP adaptations. */
 #include "cave_visual.h"
+#include "spectrum_analysis.h"
 #include "cave_topology.h"
 #include "cave_style.h"
 #include "cave_control.h"
@@ -592,10 +593,14 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     s->motion.previous=now;if(dt>.1f)dt=.1f;
     float bass=(bands[0]+bands[1]+bands[2])/300.f;if(bass>1)bass=1;
     float attack=fmaxf(0,bass-s->motion.bass);
-    /* Detection uses PSP PCM bands, not Winamp's analysis callback. The
-     * response itself uses the recovered original impulse/decay law. */
     int beat=cave_options.beat && bass>.08f && attack>(.22f-.01f*cave_options.sensitivity) &&
         now-s->motion.last_beat>250000ULL;
+    if(spectrum_analysis_mode) {
+        const float *raw=spectrum_monkey_raw();
+        beat=raw?monkey_audio_step(&s->audio,raw,cave_options.sensitivity,dt):0;
+        beat=beat && cave_options.beat;
+        if(!raw)monkey_audio_reset(&s->audio);
+    } else s->audio.ready=0;
     if(beat)s->motion.last_beat=now;
     int change=cave_beat_response(&s->motion,cave_options.amplitude,beat?random_step(&s->random):0,dt,beat);
     if((change && cave_options.style<0) || (cave_options.style>=0 && s->style!=cave_options.style)) {

@@ -29,7 +29,8 @@ static VisualOption visual_options[]={
     {"preset_hard_seconds",TXT_PRESET_HALFLIFE,&preset_hard_seconds,5,180,5},
     {"spectrum_analysis",TXT_SETTINGS_ANALYSIS,&spectrum_analysis_mode,0,1,1},
     {"spectrum_bands_lcd",TXT_SETTINGS_BANDS,&spectrum_band_count,12,64,1},
-    {"spectrum_bands_tv",TXT_SETTINGS_BANDS_TV,&spectrum_tv_band_count,12,64,1}
+    {"spectrum_bands_tv",TXT_SETTINGS_BANDS_TV,&spectrum_tv_band_count,12,64,1},
+    {"spectrum_gain_db",TXT_SETTINGS_SPECTRUM_GAIN,&spectrum_gain_db,-24,24,1}
 };
 #define VISUAL_OPTION_COUNT ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
 #define VISUAL_CAVE_OPTIONS 13

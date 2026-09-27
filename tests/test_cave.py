@@ -15,6 +15,7 @@ class CaveTests(unittest.TestCase):
                 '-fsanitize=undefined,float-cast-overflow','-I',str(ROOT/'psp-client'),
                 str(ROOT/'tests/cave_harness.c'),str(ROOT/'psp-client/cave_visual.c'),
                 str(ROOT/'psp-client/cave_paths.c'),
+                str(ROOT/'psp-client/milkdrop_signal.c'),
                 '-lm','-o',str(binary)],check=True)
             subprocess.run([str(binary)],check=True,timeout=10)
 

@@ -5,6 +5,9 @@ See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 Music analysis now offers an optional [desktop MilkDrop FFT mode](docs/SPECTRUM_ANALYSIS.md)
 and 12/24/32/48/64 analyzer bars. The original light 12-band mode remains the
 default. Configure it in PSP Settings or press Circle while using the spectrum.
+FFT display gain (`spectrum_gain_db`, -24..+24 dB, default 0) affects only the
+bars, not volume or effect response. Desktop FFT mode also enables Monkey's
+[reference audio analysis and adaptive beat detector](docs/MONKEY_AUDIO.md).
 No server update is required.
 
 Server **0.1.61** adds a **Cover view** switch to all new Plex/Jellyfin provider
@@ -936,6 +939,7 @@ milkdrop_high_resolution=1
 spectrum_analysis=0
 spectrum_bands_lcd=32
 spectrum_bands_tv=32
+spectrum_gain_db=0
 volume=24
 shuffle=0
 language=en

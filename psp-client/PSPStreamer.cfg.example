@@ -32,6 +32,8 @@ spectrum_analysis=0
 # Analyzer bars in FFT mode: 12, 24, 32, 48 or 64. Light mode always uses 12.
 spectrum_bands_lcd=32
 spectrum_bands_tv=32
+# FFT display gain only (-24..24 dB); does not change volume or effect response.
+spectrum_gain_db=0
 volume=24
 shuffle=0
 language=en

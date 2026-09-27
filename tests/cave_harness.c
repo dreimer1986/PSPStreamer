@@ -1,4 +1,5 @@
 #include "cave_visual.h"
+#include "spectrum_analysis.h"
 #include "cave_clip.h"
 #include "cave_topology.h"
 #include "cave_style.h"
@@ -506,6 +507,14 @@ int main(void) {
     assert((cave_effect_color(0,0,0,1,0)>>24)==0xff);
     assert(clipped_visible>0);printf("Visible clipped triangles: %d\n",clipped_visible);
     printf("Cave: source oscillator fixture, 4000 path steps, 2100 gradient comparisons, 1024 cube cases, 1800 ticks; %d slabs, peak %d vertices/slab, allocation %zu bytes\n",s->built,peak,sizeof(*s));
+    spectrum_analysis_mode=1;
+    short pcm[1152];for(int i=0;i<576;i++)pcm[2*i]=pcm[2*i+1]=(short)(25000*sinf(i*.13f));
+    clock+=1000000;spectrum_analysis_step(clock,2,1);spectrum_pcm_publish(pcm,576);
+    spectrum_analysis_step(clock+=50000,2,1);cave_prepare(s,bands,90,clock);
+    assert(s->audio.ready && isfinite(s->audio.threshold));
+    spectrum_analysis_step(clock+=50000,2,0);cave_prepare(s,bands,90,clock);
+    assert(s->audio.threshold==5 && s->audio.armed);
+    spectrum_analysis_mode=0;cave_prepare(s,bands,90,clock+=50000);assert(!s->audio.ready);
     cave_destroy(s);
     return 0;
 }

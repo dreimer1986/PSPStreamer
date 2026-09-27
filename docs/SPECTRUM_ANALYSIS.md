@@ -10,12 +10,15 @@ Each output keeps its own count; changing the output selects its saved value.
 The analysis mode is shared. Switching outputs does not select a different
 MilkDrop analysis algorithm or change the three frequency ranges.
 
-During music, Circle in Spectrum opens these three options directly; Left/Right
+During music, Circle in Spectrum opens these four options directly; Left/Right
 changes them and Circle returns/saves. MilkDrop exposes them at the end of its
 existing visualization-options menu (inside the preset browser). Changes apply
 without restarting the app. Windowed LCD/TV and fullscreen support every count.
 Light mode always displays twelve bars; the saved FFT count is retained but
-inactive. Monkey keeps its existing settings and beat detection.
+inactive. **FFT gain (dB)** changes only analyzer height (-24 to +24, default 0).
+The gain is shared by LCD/TV and does not affect volume or either visualization.
+Monkey uses its own [reference analysis and beat detector](MONKEY_AUDIO.md)
+in Desktop FFT mode; Light mode keeps the previous inexpensive detector.
 
 Equivalent `PSPStreamer.cfg` entries:
 
@@ -23,11 +26,18 @@ Equivalent `PSPStreamer.cfg` entries:
 spectrum_analysis=0
 spectrum_bands_lcd=32
 spectrum_bands_tv=32
+spectrum_gain_db=0
 ```
 
 Set `spectrum_analysis=1` to enable FFT analysis. Unsupported band counts are
 ignored. The band count changes only display grouping: never MilkDrop's music
 variables, preset geometry budgets or playback clocks. No server change needed.
+
+Bars use unweighted FFT magnitudes normalized for the Hann window and full-scale
+signed-8-bit input, mapped logarithmically from -60 to 0 dBFS. A full-scale sine
+can reach the top; ordinary music need not fill every bar. Try +6 or +12 dB for
+a more prominent display. There is no automatic gain riding. Windowed bars
+still reserve space for the title/volume text above them.
 
 ## Source behavior and scope
 
@@ -61,8 +71,9 @@ depend on PSP decoding/rendering rather than Winamp's host callback.
 The producer only copies an additional 576 left-channel samples when needed.
 FFT/history/display grouping run in the music/UI consumer at most 20 times per
 second; the transform is reused until a new PCM snapshot arrives. Fixed scratch
-uses about 17 KiB, with no per-frame allocation or blocking producer waits.
-The new analysis is off for Monkey/video and in Light mode. Presets explicitly
+uses about 19 KiB, with no per-frame allocation or blocking producer waits.
+Monkey reuses the same FFT scratch with its input filter instead of running a
+second FFT. Analysis remains off for video and in Light mode. Presets explicitly
 requesting custom spectrum waves still use their existing FFT in either mode.
 Bar rendering retains changed-strip updates, without new framebuffers.
 

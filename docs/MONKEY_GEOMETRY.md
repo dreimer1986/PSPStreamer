@@ -1,5 +1,9 @@
 # Monkey geometry study and bounded PSP implementation
 
+Audio update (2026-09-27): [Desktop FFT mode now implements the reference
+analysis and adaptive beat detector](MONKEY_AUDIO.md). Historical notes below
+about substituted audio analysis still apply to Light mode only.
+
 The tube prototype was removed after successful cave hardware testing. **Cave** implements an
 independent isosurface engine following the field/surface approach identified
 in the local Winamp Monkey 1.0 DLL. It is **not a complete Monkey port**.

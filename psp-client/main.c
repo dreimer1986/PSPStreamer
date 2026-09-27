@@ -2046,7 +2046,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         }
         keep_awake();
         spectrum_analysis_output(tv_ui_active);
-        spectrum_analysis_step(sceKernelGetSystemTimeWide(),visual_preset==0||visual_preset==4,audio_running&&audio_start);
+        spectrum_analysis_step(sceKernelGetSystemTimeWide(),visual_preset==6?2:(visual_preset==0||visual_preset==4),audio_running&&audio_start);
         /* A true visualizer fullscreen owns all visible pixels. Do not draw
          * receiver controls between GU frames (including throttled frames). */
         if (fullscreen && !music_visual_active) {

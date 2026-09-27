@@ -88,6 +88,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_ANALYSIS] = "Musikanalyse",
     [TXT_SETTINGS_BANDS] = "FFT-Balken LCD",
     [TXT_SETTINGS_BANDS_TV] = "FFT-Balken TV",
+    [TXT_SETTINGS_SPECTRUM_GAIN] = "FFT-Pegel (dB)",
     [TXT_ANALYSIS_LEGACY] = "Sparsam (12)",
     [TXT_ANALYSIS_FFT] = "Desktop FFT",
     [TXT_SETTINGS_OC] = "StreamerOC-Plugin",

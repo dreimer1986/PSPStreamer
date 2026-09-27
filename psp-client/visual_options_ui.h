@@ -1,7 +1,7 @@
 /* Music workers keep running; caller has released the GU. */
 static void music_visual_options(int cave) {
-    int first=cave==2?VISUAL_OPTION_COUNT-3:cave?0:VISUAL_CAVE_OPTIONS;
-    int count=cave==2?3:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
+    int first=cave==2?VISUAL_OPTION_COUNT-4:cave?0:VISUAL_CAVE_OPTIONS;
+    int count=cave==2?4:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
     unsigned old=PSP_CTRL_CIRCLE|PSP_CTRL_SELECT;unsigned long long repeat=0;
     while(audio_running && music_remote_action<MUSIC_REMOTE_STOP) {
         keep_awake();video_watch_ping("visual options");
