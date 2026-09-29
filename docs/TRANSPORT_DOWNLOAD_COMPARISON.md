@@ -25,6 +25,35 @@ Do not compare playback demand or USB echo throughput with file-download speed.
 
 ## Download bottleneck instrumentation
 
+September 29 follow-up with firmware 0.2.7: 170,143,443 bytes in 346.539 s =
+**479.472 KiB/s**, versus 464.091 KiB/s in the preceding run and the earlier
+483.324 KiB/s best. Similar file sizes, not byte-identical inputs. Blocked media
+write wait was 5.689 s; receive-call time 325.130 s. The remaining 15.720 s includes
+unattributed submission/reporting/scheduling and close work. Later ESP occupancy
+samples remained full. This suggests investigating the PSP-side stalls, not proof
+that every gap is a card/logging stall. Verification took 97.498 s (66.501 s hashing).
+
+The new PSP-only build moves batched recovery writes to a dedicated thread:
+bounded 4 KiB producer buffer plus a writer-owned stack snapshot, no media buffer
+sharing, and join/drain before download completion. Producers never wait for that
+thread's card I/O. If thread creation/start fails, synchronous batching remains
+available (`async=0`). File transfer and hash verification request background
+flushes, never a second concurrent direct flush. The card itself still serializes
+physical I/O; two media buffers cannot hide arbitrarily long storage stalls.
+Hardware throughput comparison of this change is pending; firmware remains 0.2.7.
+
+New counters:
+
+- `download overhead` / `download overhead final`: cumulative `submit_ms` and
+  `submit_max_us` measure `sceIoWriteAsync` calls, separately from waiting for their
+  completion. `report_ms` / `report_max_us` measure diagnostic formatting, snapshots
+  and flush scheduling (or the synchronous fallback), not background writer time.
+  Periodic reports describe previously completed reporting calls.
+- `download log IO`: `flush_ms`, `max_us`, `count`, and `async` cover completed
+  batches, including open/write/close. These are download-session cumulative,
+  including verification and sidecars, not per-file. In-flight batches are only
+  counted after completion. They overlap reception: do not add to body time.
+
 With application debugging enabled, file downloads emit cumulative counters every
 five seconds and a final summary (also on cancellation/failure):
 

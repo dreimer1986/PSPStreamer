@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- PSP offline downloads: move periodic diagnostic card writes to a bounded,
+  dedicated writer so reception can continue. Join and drain on exit; retain
+  double-buffered media writes and full read-back verification. Add separate
+  write-submission, reporting and log-I/O timings; StreamMaster firmware unchanged.
 - StreamMaster 0.2.7: internal 8 KiB reply pool and pointer queues remove repeated
   full-buffer PSRAM copies/clears. Larger comparison buffers are allocated on
   demand; default USB DMA starts at 8 KiB. PSP app and hash optimization unchanged.

@@ -10,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_download_instrumentation_compiles(self):
+        source = (ROOT/'psp-client/offline_ui.h').read_text()
+        code = (ROOT/'tests/offline_http_harness.c').read_text().replace(
+            '/* OFFLINE_HTTP */', source[source.index('static int offline_connect('):source.index('static int offline_hash(')])
+        with tempfile.TemporaryDirectory() as folder:
+            subprocess.run(['cc', '-x', 'c', '-', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-I', str(ROOT/'tests'), '-o', str(Path(folder)/'download')],
+                           input=code, text=True, check=True)
+
     def test_esp_metric_logs_fit_recovery_lines(self):
         source=(ROOT/'psp-client/offline_ui.h').read_text()
         function=source[source.index('static void offline_usb_metrics_log('):source.index('static int offline_connect(')]
@@ -117,6 +126,11 @@ int main(void) {
 #include <string.h>
 #include <stdlib.h>
 typedef int SceUID;
+typedef unsigned SceSize;
+static int sceKernelCreateThread(const char *n,int (*fn)(SceSize,void *),int p,int s,int a,void *o){(void)n;(void)fn;(void)p;(void)s;(void)a;(void)o;return -1;}
+static int sceKernelStartThread(int t,int a,void *p){(void)t;(void)a;(void)p;return -1;}
+static int sceKernelDeleteThread(int t){(void)t;return 0;}
+static int sceKernelWaitThreadEnd(int t,void *p){(void)t;(void)p;return 0;}
 #define PSP_O_WRONLY 1
 #define PSP_O_CREAT 2
 #define PSP_O_APPEND 4
@@ -135,6 +149,7 @@ int main(void){
     for(int i=0;i<10;i++)recovery_log("progress",0,0,"buffered");
     assert(opens==1);now=4999999;recovery_flush_due();assert(opens==1);
     now=5000000;recovery_flush_due();assert(opens==2&&closes==2);
+    recovery_download_timing();
     assert(strstr(disk,"buffered"));
     recovery_batch_lock=1;recovery_log("busy",0,0,"dropped");recovery_batch_lock=0;
     for(int i=0;i<100;i++)recovery_log("fill",0,0,"bounded memory");
@@ -150,3 +165,11 @@ int main(void){
             subprocess.run(["cc", "-x", "c", "-", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=address,undefined", "-o", str(binary)], input=harness, text=True, check=True)
             subprocess.run([str(binary)], check=True, timeout=5)
+
+    def test_recovery_async_writer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'async-log'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=address,undefined', '-pthread',
+                            str(ROOT/'tests/recovery_async_harness.c'), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=10)

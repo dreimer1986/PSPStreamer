@@ -36,6 +36,7 @@ static int tls_recv(int a,void*b,int c,int d){(void)a;(void)b;(void)c;(void)d;as
 static void recovery_log(const char *event,int result,int status,const char *detail){fprintf(stderr,"%s result=%d http=%d %s\n",event,result,status,detail);}
 static unsigned long long offline_size(const char *path){struct stat s;return stat(path,&s)?0:s.st_size;}
 static void recovery_flush_due(void){}
+static void recovery_download_timing(void){}
 #include "offline_async_mock.h"
 #include "../psp-client/offline_io.h"
 /* OFFLINE_HTTP */

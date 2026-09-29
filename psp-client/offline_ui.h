@@ -124,6 +124,7 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
     unsigned chunk=32768,committed=0,inflight_bytes=0;
     int inflight=0,async_enabled=1;
     unsigned long long write_wait_us=0,write_submit_us=0;
+    unsigned long long submit_us=0,submit_max_us=0,report_us=0,report_max_us=0;
     const char *phase="request",*reason="validation";
     int transport_result=0,last_net_errno=0;
     if(file){unsigned long long old=offline_size(file);if(old>expected)goto done;start=(unsigned int)old;}
@@ -196,11 +197,20 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
                     committed+=inflight_bytes;
                 }
                 op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
-                if(async_enabled && sceIoWriteAsync(out,block,pending)>=0) {
+                int submitted=-1;
+                if(async_enabled) {
+                    submitted=sceIoWriteAsync(out,block,pending);
+                    if(debug_enabled){
+                        unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;
+                        submit_us+=dt;if(dt>submit_max_us)submit_max_us=dt;
+                    }
+                }
+                if(submitted>=0) {
                     inflight=1;inflight_bytes=pending;write_submit_us=sceKernelGetSystemTimeWide();
                     block=block==allocation?allocation+chunk:allocation;
                 } else {
                     async_enabled=0;
+                    op_tick=debug_enabled?sceKernelGetSystemTimeWide():0;
                     int written=sceIoWrite(out,block,pending);
                     if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-op_tick;write_us+=dt;write_wait_us+=dt;if(dt>max_write_us)max_write_us=dt;}
                     if(written!=(int)pending){reason="storage-write";goto done;}
@@ -216,6 +226,7 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
             unsigned long long elapsed=last-tick;
             download_speed=elapsed?((unsigned long long)have*1000000ULL/elapsed):0;
             if(last-report_tick>=5000000ULL) {
+                unsigned long long report_begin=debug_enabled?sceKernelGetSystemTimeWide():0;
                 char detail[144];
                 unsigned long long span=last-report_tick;
                 unsigned int delta=have-report_bytes;
@@ -226,9 +237,14 @@ static int offline_http(const char *url,const char *post,char *reply,int capacit
                     snprintf(detail,sizeof(detail),"recv_ms=%llu recv_n=%u idle=%u write_wait_ms=%llu write_n=%u chunk=%u async=%d",
                         recv_us/1000,recv_calls,recv_idle,write_wait_us/1000,write_calls,chunk,async_enabled);
                     recovery_log("download timing",0,code,detail);
+                    snprintf(detail,sizeof(detail),"submit_ms=%llu submit_max_us=%llu report_ms=%llu report_max_us=%llu",
+                        submit_us/1000,submit_max_us,report_us/1000,report_max_us);
+                    recovery_log("download overhead",0,code,detail);
+                    recovery_download_timing();
                     if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket",0,code,detail);
                 }
                 recovery_flush_due();
+                if(debug_enabled){unsigned long long dt=sceKernelGetSystemTimeWide()-report_begin;report_us+=dt;if(dt>report_max_us)report_max_us=dt;}
                 report_tick=last;report_bytes=have;
             }
         }
@@ -257,6 +273,10 @@ done:
         snprintf(detail,sizeof(detail),"wait_ms=%llu lifetime_ms=%llu writes=%u chunk=%u committed=%u received=%u async=%d",
             write_wait_us/1000,write_us/1000,write_calls,chunk,committed,have,async_enabled);
         recovery_log("download storage final",result,code,detail);
+        snprintf(detail,sizeof(detail),"submit_ms=%llu submit_max_us=%llu report_ms=%llu report_max_us=%llu",
+            submit_us/1000,submit_max_us,report_us/1000,report_max_us);
+        recovery_log("download overhead final",result,code,detail);
+        recovery_download_timing();
         if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket final",result,code,detail);
     }
     if(fd>=0)connection_close(fd);
@@ -303,7 +323,7 @@ static int offline_hash(const char *path,const char *expected) {
             read_us+=sceKernelGetSystemTimeWide()-t;
         }
         block=next;
-        if(sceKernelGetSystemTimeWide()-flush_tick>=5000000ULL){recovery_flush();flush_tick=sceKernelGetSystemTimeWide();}
+        if(sceKernelGetSystemTimeWide()-flush_tick>=5000000ULL){recovery_flush_due();flush_tick=sceKernelGetSystemTimeWide();}
     }
     if(rc==0)rc=mbedtls_sha256_finish_ret(&ctx,digest);
     mbedtls_sha256_free(&ctx);if(sceIoClose(fd)<0)rc=-1;free(allocation);

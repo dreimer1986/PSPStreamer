@@ -24,7 +24,7 @@ typedef int SceUID;
 #define sceIoRead read
 #define sceIoWrite write
 static unsigned long long sceKernelGetSystemTimeWide(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (unsigned long long)t.tv_sec*1000000+t.tv_nsec/1000;}
-static void recovery_flush(void){}
+static void recovery_flush_due(void){}
 static void recovery_log(const char *e,int r,int h,const char *d){(void)e;(void)r;(void)h;(void)d;}
 #define OFFLINE_TEST_READ
 #include "offline_async_mock.h"

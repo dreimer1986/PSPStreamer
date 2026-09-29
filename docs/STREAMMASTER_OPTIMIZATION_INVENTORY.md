@@ -21,12 +21,17 @@ read-back verification raised the measured body rate to 483.324 KiB/s, with
 1.544 s blocked write wait. Hashing still used 82.860 s of the 105.530 s verification.
 The files were similar-sized, not byte-identical; see the comparison document.
 
-## Current follow-up: 0.2.7 hardware comparison next
+## Current follow-up: PSP-side diagnostic I/O
 
 0.2.6 recovered USB startup but dropped to 340.876 KiB/s; hash CPU time improved
 to 65.241 s. 0.2.7 replaces full-size PSRAM reply queues with pointer queues and
 two internal 8 KiB workspaces. Larger reply/DMA buffers are only created when
-requested. Re-test 8×2 before any larger profile. No speed recovery claimed yet.
+requested. Two 8×2 hardware runs recovered 464.091 and 479.472 KiB/s, respectively,
+against the earlier 483.324 KiB/s best (similar-sized, not identical files).
+The latest run still has brief stalls: 5.689 s blocked media writes and 15.720 s
+outside receive/write-wait counters. PSP logging now uses its own bounded writer;
+new submission/reporting/log-I/O timings separate these costs. This PSP build needs
+a fresh hardware comparison; firmware remains 0.2.7, no ESP RAM/profile change.
 
 - Offline-only SHA-256 batch compression, identical digests checked against Mbed
   TLS; full card read-back retained. Compare hash time separately from USB speed.
@@ -42,7 +47,7 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 
 | Area | Concrete option | Potential / cost / constraint |
 | --- | --- | --- |
-| Attribution | Compare measured PSP storage and ESP queue/worker/copy/transfer counters against 0.2.7; add server/radio attribution if indicated | 0.2.6 capture available; 0.2.7 comparison pending |
+| Attribution | Compare PSP submission/reporting/background-log timings; add server/radio attribution if indicated | 0.2.7 throughput recovered; asynchronous diagnostic writer hardware comparison pending |
 | Block/depth tuning | Compare implemented 8/16/32 KiB and 1/2/4 profiles | Conditional; more RAM and longer control/cancellation latency. All supported profiles are now selectable; hardware comparison pending |
 | Continuous receive | Credit-based push/ring transfer instead of request/response polling | Potentially meaningful; very high effort; new flow control, fairness and recovery protocol |
 | DMA/queue ownership | Measure implemented pointer queues/internal reply pool; possible future direct-to-DMA pool or scatter/ring delivery | Pointer queues implemented in 0.2.7; removing the remaining DMA copy is separate high-effort work requiring callback lifetime/detach safeguards |
