@@ -270,6 +270,15 @@ static void sceGuDrawArray(int type,int format,int count,const void *indices,con
             cave_draws++;return;
         }
         if(!target_offset && covered_width==expected_width) {
+            if(type==GU_TRIANGLES && format==15) {
+                assert(count>0 && count<=1800 && count%3==0 && !indices);
+                for(int i=0;i<count;i++) {
+                    assert(isfinite(v[i].x) && isfinite(v[i].y) && v[i].z==0);
+                    assert(v[i].x>=expected_left && v[i].x<=expected_left+expected_width);
+                    assert(v[i].y>=expected_top && v[i].y<=expected_top+expected_height);
+                }
+                cave_hud_draws++;return;
+            }
             assert(type==GU_SPRITES && count==2 && !indices && (format==14 || format==15));
             float x0,y0,x1,y1;
             if(format==14) {

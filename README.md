@@ -1330,7 +1330,7 @@ additional memory, released when leaving the renderer. With diagnostics enabled,
 During Cave playback, press **L+R together** to open the flight intro with its
 Monkey-inspired logo. Choose **Game Start / Hall of Fame / Exit** with Up/Down
 and confirm with X; Circle leaves the menu. **Left/Right selects one of seven
-ships** before starting (Low Poly 2 is the original/default ship). During flight, hold **L+R for five
+ships** with a model preview before starting (Low Poly 2 is the original/default ship). During flight, hold **L+R for five
 seconds** to leave (a progress indicator appears). The entry press must be
 released first; continuing to hold it does not immediately leave again.
 The Easter egg uses fullscreen on LCD and TV and restores your previous view
@@ -1379,8 +1379,10 @@ take **10 damage per projectile**; a kill earns **100 points**. The full
 double-tap barrel roll protects against projectiles, not wall damage.
 
 Every 15–20 simulation seconds, the game attempts to place one stationary enemy
-ship near the floor of a sufficiently open chamber. An unsuitable site is
-skipped until the next opportunity. At most one enemy and 32 projectiles exist
+ship near the floor or hovering above an uneven slope, with room to pass.
+An unsuitable site leaves **one pending spawn**, retried at most once per second.
+Missed opportunities never accumulate; a successful spawn restarts the 15–20
+second interval. At most one enemy and 32 projectiles exist
 at once; enemies left behind are removed. The enemy uses a random ship model,
 turns toward the player after a short line-of-sight delay, and fires at most once
 every **750 ms** when aligned. Walls block shots. Music pause freezes combat.

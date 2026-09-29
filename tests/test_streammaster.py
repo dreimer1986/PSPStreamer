@@ -9,6 +9,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_ring_copy_boundaries(self):
+        source=(ROOT/'streammaster/main/sockets.c').read_text()
+        functions=source[source.index('static void copy_out('):source.index('static int would_block(')]
+        harness='''#include <assert.h>
+#include <string.h>
+#include <stdio.h>
+'''+functions+'''
+int main(void) {
+    unsigned char ring[128],src[128],out[130],expected[128];
+    for(unsigned i=0;i<128;i++)src[i]=i*193U;
+    for(unsigned pos=0;pos<256;pos++)for(unsigned n=0;n<=128;n++) {
+        memset(ring,0x5a,sizeof(ring));memcpy(expected,ring,sizeof(ring));
+        for(unsigned i=0;i<n;i++)expected[(pos+i)%128]=src[i];
+        copy_in(ring,128,pos,src,n);assert(!memcmp(ring,expected,128));
+        memset(out,0xa5,sizeof(out));copy_out(out+1,ring,128,pos,n);
+        assert(out[0]==0xa5 && out[n+1]==0xa5 && !memcmp(out+1,src,n));
+    }
+    puts("Ring copies: 33024 contiguous/wrapped/empty cases OK");
+}'''
+        with tempfile.TemporaryDirectory() as folder:
+            binary=Path(folder)/'ring'
+            subprocess.run(['cc','-x','c','-','-std=c11','-O2','-Wall','-Wextra','-Werror',
+                '-fsanitize=address,undefined','-o',str(binary)],input=harness,text=True,check=True)
+            subprocess.run([str(binary)],check=True,timeout=5)
+
     def test_internal_reply_pool_ownership(self):
         source=(ROOT/'streammaster/main/usb_bridge.c').read_text()
         types=source[source.index('typedef struct {uint32_t epoch;'):source.index('static QueueHandle_t')]

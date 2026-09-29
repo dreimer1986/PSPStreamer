@@ -8,6 +8,18 @@ static SmConfig dhcp(void) {
     strcpy(c.ssid,"Network");strcpy(c.password,"example-password");return c;
 }
 int main(void) {
+    /* Compare every tail/alignment and bulk length with the previous scalar
+     * algorithm; testing only producer against consumer could hide drift. */
+    static unsigned char checksum_data[SM_BULK_MAX_FRAME_SIZE+4];
+    for(unsigned i=0;i<sizeof(checksum_data);i++)checksum_data[i]=(i*193U+i/7)&255;
+    for(unsigned offset=0;offset<4;offset++) {
+        uint32_t reference=2166136261U;
+        for(unsigned n=0;n<=SM_BULK_MAX_FRAME_SIZE;n++) {
+            if(n<128 || n%1024<4 || n==SM_BULK_MAX_FRAME_SIZE)
+                assert(sm_fnv_bytes(2166136261U,checksum_data+offset,n)==reference);
+            reference=(reference^checksum_data[offset+n])*16777619U;
+        }
+    }
     for(unsigned n=0;n<=SM_BULK_MAX_FRAME_SIZE-32;n++) {
         unsigned wire=sm_bulk_wire_size_op(SM_SOCKET_READ_BULK_EXT,n);
         assert(wire>=32+n && wire<=SM_BULK_MAX_FRAME_SIZE);

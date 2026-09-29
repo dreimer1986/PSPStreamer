@@ -1,5 +1,6 @@
 /* Game-only overlay. Normal Monkey rendering never allocates this atlas. */
 #include "cave_scores.h"
+#include <stdlib.h>
 static const unsigned char *cave_hud_font;
 static unsigned short *cave_hud_atlas;
 extern const unsigned short monkey_flight_logo[];
@@ -90,6 +91,40 @@ static void cave_hud_logo(float left,float top,float width) {
     v[0]=(MdVertex){0,0,0xffffffff,left,top,0};v[1]=(MdVertex){256,85,0xffffffff,left+width,top+width*85/256,0};
     sceGuDrawArray(GU_SPRITES,MD_FORMAT,2,NULL,v);
 }
+/* Selection-only orthographic preview. Cache the painter-sorted geometry;
+ * no extra render target, texture, framebuffer switch or per-frame sorting. */
+typedef struct {float depth;int index;} CavePreviewFace;
+static int cave_preview_order(const void *a,const void *b) {
+    float d=((const CavePreviewFace *)a)->depth-((const CavePreviewFace *)b)->depth;
+    return d<0?-1:d>0;
+}
+static void cave_hud_ship(float cx,float cy,float size) {
+    static int cached=-1,count;
+    static MdVertex projected[1800];
+    static CavePreviewFace order[600];
+    int selected=cave_scene->ship_model;
+    const CaveModel *model=&cave_models[selected];
+    if(selected!=cached) {
+        count=model->count;
+        for(int i=0;i<count;i++) {
+            MdVertex v=model->vertices[i];
+            float x=.8660254f*v.x+.5f*v.z,z=-.5f*v.x+.8660254f*v.z;
+            projected[i]=v;projected[i].x=x;
+            projected[i].y=-(.8660254f*v.y-.5f*z);
+            projected[i].z=.5f*v.y+.8660254f*z;
+        }
+        for(int i=0;i<count/3;i++)order[i]=(CavePreviewFace){
+            (projected[3*i].z+projected[3*i+1].z+projected[3*i+2].z)/3,i};
+        qsort(order,count/3,sizeof(*order),cave_preview_order);cached=selected;
+    }
+    MdVertex *out=sceGuGetMemory(count*sizeof(*out));
+    for(int i=0;i<count;i++) {
+        out[i]=projected[order[i/3].index*3+i%3];
+        out[i].x=cx+size*out[i].x;out[i].y=cy+size*out[i].y;out[i].z=0;
+    }
+    sceGuDisable(GU_TEXTURE_2D);
+    sceGuDrawArray(GU_TRIANGLES,MD_FORMAT,count,NULL,out);
+}
 /* Native scanout overlay, clipped to the visualization rectangle. Text is
  * not baked into a low-resolution tunnel texture or accumulated as feedback. */
 static void cave_game_draw_hud(int left,int top,int width,int height) {
@@ -101,7 +136,8 @@ static void cave_game_draw_hud(int left,int top,int width,int height) {
     sceGuEnable(GU_BLEND);sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_ONE_MINUS_SRC_ALPHA,0,0);
     if(g->phase==CAVE_GAME_INTRO) {
         cave_hud_rect(left+width*.05f,top+height*.04f,width*.9f,height*.92f,0xee000000);
-        cave_hud_logo(left+width*.15f,top+height*.08f,width*.7f);
+        cave_hud_logo(left+width*.10f,top+height*.08f,width*.50f);
+        cave_hud_ship(left+width*.78f,top+height*.24f,fminf(width*.23f,height*.30f));
         snprintf(text,sizeof(text),"<  Low Poly %d / %d  >",cave_scene->ship_model+1,CAVE_SHIPS);
         cave_hud_text(left+width*.24f,top+height*.79f,.65f*scale,text,0xff40eaff);
         for(int i=0;i<3;i++) {

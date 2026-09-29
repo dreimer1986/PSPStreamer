@@ -5,7 +5,7 @@ static int cave_combat_clear(const CaveScene *s,const float a[3],const float b[3
     int steps=(int)(sqrtf(distance)*4)+1;if(steps>80)return 0;
     for(int i=1;i<=steps;i++) {
         float t=(float)i/steps,x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,z=a[2]+(b[2]-a[2])*t;
-        if(fabsf(x)>5.5f || fabsf(y)>5.5f || z>=s->next-1 || z<s->motion.travel-2 || cave_density(s,x,y,z)<.04f)return 0;
+        if(fabsf(x)>5.5f || fabsf(y)>5.5f || z>=s->next-1 || z<s->motion.travel-2 || cave_density(s,x,y,z)<.008f)return 0;
     }
     return 1;
 }
@@ -25,37 +25,47 @@ static void cave_combat_emit(CaveCombat *c,const float p[3],const float directio
 }
 static void cave_combat_spawn(CaveScene *s) {
     CaveCombat *c=&s->combat;
-    if(c->health>0 || s->ready<12)return;
-    float z=s->motion.travel+12;if(z>=s->next-2)return;
-    float x,y;cave_camera(s,z,&x,&y);
-    /* Probe a small fixed set of floor sites; a blocked/narrow chamber simply
-     * misses this 15..20 second opportunity, never queues a later burst. */
-    for(int attempt=0;attempt<5;attempt++) {
-        float px=x+(attempt?((attempt&1)?1:-1)*(1+attempt/3.f):0),py=y;
-        if(cave_density(s,px,py,z)<.15f)continue;
-        while(py>-5.1f && cave_density(s,px,py-.1f,z)>.02f)py-=.1f;
-        if(py<=-5.1f)continue;
-        float floor=py-.1f;
-        int clear=1;
-        for(int k=0;k<5;k++) {
-            float dx=k==1?.65f:k==2?-.65f:0,dz=k==3?.65f:k==4?-.65f:0;
-            if(cave_density(s,px+dx,floor+.35f,z+dz)<.06f ||
-               cave_density(s,px+dx,floor+1.4f,z+dz)<.12f)clear=0;
-            /* The footprint must also be supported, not suspended over a pit. */
-            if(cave_density(s,px+dx,floor-.25f,z+dz)>.03f)clear=0;
+    if(c->health>0 || s->ready<10)return;
+    int model=random_step(&c->random)%CAVE_SHIPS;
+    float radius[3];for(int k=0;k<3;k++)radius[k]=.65f*cave_model_half[model][k]+.06f;
+    /* Curved floors need not be flat across a wide footprint. Fit the hull
+     * plus a little passing room; a stationary ship may hover above a slope. */
+    for(int depth=0;depth<3;depth++) {
+        float z=s->motion.travel+10+((depth==1)?-2:(depth==2)?2:0);
+        if(z>=s->next-2)continue;
+        float x,y;cave_camera(s,z,&x,&y);
+        for(int attempt=0;attempt<6;attempt++) {
+            float px=x+(attempt%3==1?.55f:attempt%3==2?-.55f:0),py=y;
+            if(cave_density(s,px,py,z)<.008f)continue;
+            if(attempt<3) {
+                while(py>-5 && cave_density(s,px,py-.1f,z)>.008f)py-=.1f;
+                py+=radius[1]+.06f;
+            } else py-=.25f;
+            if(fabsf(px)+radius[0]>5.5f || fabsf(py)+radius[1]>5.5f)continue;
+            int clear=cave_density(s,px,py,z)>.008f;
+            for(int k=0;k<6 && clear;k++) {
+                float p[3]={px,py,z};p[k/2]+=radius[k/2]*(k&1?1:-1);
+                clear=cave_density(s,p[0],p[1],p[2])>.008f;
+            }
+            if(!clear || (cave_density(s,px-.6f,py+.25f,z)<.008f &&
+                          cave_density(s,px+.6f,py+.25f,z)<.008f))continue;
+            c->health=100;c->model=model;
+            c->enemy[0]=px;c->enemy[1]=py;c->enemy[2]=z;
+            c->aim[0]=0;c->aim[1]=0;c->aim[2]=-1;c->visible=0;
+            c->enemy_cooldown=CAVE_ENEMY_FIRE_SECONDS;return;
         }
-        if(!clear)continue;
-        c->health=100;c->model=random_step(&c->random)%CAVE_SHIPS;
-        c->enemy[0]=px;c->enemy[1]=floor+.65f*cave_model_half[c->model][1]+.06f;c->enemy[2]=z;
-        c->aim[0]=0;c->aim[1]=0;c->aim[2]=-1;c->visible=0;c->enemy_cooldown=CAVE_ENEMY_FIRE_SECONDS;return;
     }
 }
 static void cave_combat_step(CaveScene *s,float dt) {
     CaveCombat *c=&s->combat;
     if(!s->flight || s->game.phase!=CAVE_GAME_ALIVE || s->game.paused || dt<=0)return;
-    c->spawn-=dt;c->flash=fmaxf(0,c->flash-dt);
+    c->spawn-=dt;c->spawn_retry=fmaxf(0,c->spawn_retry-dt);c->flash=fmaxf(0,c->flash-dt);
     if(c->health>0 && c->enemy[2]<s->motion.travel-1)c->health=0;
-    if(c->spawn<=0){c->spawn=15+(random_step(&c->random)%5001)*.001f;cave_combat_spawn(s);}
+    if(c->spawn<=0){c->pending_spawn=1;c->spawn=0;}
+    if(c->pending_spawn && !c->health && !c->spawn_retry) {
+        cave_combat_spawn(s);c->spawn_retry=1;
+        if(c->health>0){c->pending_spawn=0;c->spawn=15+(random_step(&c->random)%5001)*.001f;}
+    }
     float player[3]={s->flight_x,s->flight_y,s->motion.travel+2};
     c->fire_cooldown=fmaxf(0,c->fire_cooldown-dt);
     if(c->fire && !c->fire_cooldown && s->flight_age>.85f) {

@@ -1,5 +1,19 @@
 # StreamMaster: complete currently identified optimization inventory
 
+## Implemented follow-up: 0.2.8 test build
+
+- Same-wire FNV-1a now handles four bytes per loop iteration on ESP and PSP.
+  Scalar-reference tests cover alignment, tails and bulk-length boundaries.
+- Contiguous socket ring copies no longer make an empty second `memcpy` call;
+  wrapped transfers remain identical (33,024 focused boundary cases).
+- No buffer/profile defaults, memory ownership, PSRAM placement, task priorities,
+  timeouts or recovery rules changed. Firmware/app/USB bridge remain compatible
+  with their previous protocol-v1 counterparts. Hardware throughput is unmeasured.
+- The remaining candidates below require bottleneck evidence or affect timing,
+  memory/lifetimes, security or recovery. They are not regression-free and were
+  deliberately not included in this low-risk follow-up. In particular, there is
+  no blind switch to deeper/larger queues and no new zero-copy/DMA protocol.
+
 ## September 29 follow-up: what is still worth doing?
 
 This review changes documentation only, not firmware or transport behaviour.

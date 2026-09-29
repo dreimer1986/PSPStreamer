@@ -34,10 +34,13 @@ int main(void) {
     cave_combat_step(s,.011f);assert(bolts(s,0)==2);
     s->game.paused=1;CaveCombat saved=s->combat;cave_combat_step(s,1);assert(!memcmp(&saved,&s->combat,sizeof(saved)));
     reset(s);blocked=1;s->combat.spawn=0;cave_combat_step(s,.01f);
-    assert(!s->combat.health && s->combat.spawn>=15 && s->combat.spawn<=20);
-    blocked=0;cave_combat_step(s,.1f);assert(!s->combat.health); /* no deferred burst */
-    s->combat.spawn=0;cave_combat_step(s,.01f);
+    assert(!s->combat.health && s->combat.pending_spawn==1);
+    for(int i=0;i<500;i++)cave_combat_step(s,.1f);
+    assert(s->combat.pending_spawn==1 && !s->combat.health); /* bounded backlog */
+    blocked=0;s->combat.spawn_retry=1;cave_combat_step(s,.1f);assert(!s->combat.health);
+    for(int i=0;i<11 && !s->combat.health;i++)cave_combat_step(s,.1f);
     assert(s->combat.health==100 && s->combat.model>=0 && s->combat.model<CAVE_SHIPS);
+    assert(!s->combat.pending_spawn && s->combat.spawn>=15 && s->combat.spawn<=20);
     assert(s->combat.enemy[1]>0 && s->combat.enemy[1]<.5f);
     assert(!bolts(s,1));for(int i=0;i<4;i++)cave_combat_step(s,.1f);assert(!bolts(s,1));
     for(int i=0;i<20 && !bolts(s,1);i++)cave_combat_step(s,.1f);
@@ -52,5 +55,5 @@ int main(void) {
     s->flight_barrel=1;cave_combat_emit(&s->combat,incoming,toward,1);cave_combat_step(s,.05f);assert(s->game.health==90);
     s->flight_barrel=0;blocked=1;cave_combat_emit(&s->combat,incoming,toward,1);cave_combat_step(s,.05f);assert(s->game.health==90);
     reset(s);for(int i=0;i<100;i++)cave_combat_emit(&s->combat,muzzle,dir,0);assert(bolts(s,0)==CAVE_BOLTS);
-    free(s);puts("Combat: bounded pool, fire rate, pause, skipped spawn, acquisition, damage, kill reward, wall/roll protection OK");
+    free(s);puts("Combat: bounded pool/backlog, fire rate, pause, deferred spawn, acquisition, damage, kill reward, wall/roll protection OK");
 }

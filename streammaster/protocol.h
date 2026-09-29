@@ -64,11 +64,19 @@ typedef struct {
     uint32_t length;
     unsigned char payload[SM_MAX_GROUP_PAYLOAD];
 } SmBulkResult;
-static inline uint32_t sm_bulk_checksum(const SmBulkFrame *f) {
-    uint32_t h=2166136261U;const unsigned char *p=(const unsigned char *)f;
-    for(int i=0;i<28;i++)h=(h^p[i])*16777619U;
-    for(uint32_t i=0;i<f->length;i++)h=(h^f->payload[i])*16777619U;
+/* Same FNV-1a byte order and wire value, four bytes per loop branch. No word
+ * loads/alignment assumptions, table, allocation or protocol negotiation. */
+static inline uint32_t sm_fnv_bytes(uint32_t h,const unsigned char *p,uint32_t n) {
+    while(n>=4) {
+        h=(h^p[0])*16777619U;h=(h^p[1])*16777619U;
+        h=(h^p[2])*16777619U;h=(h^p[3])*16777619U;
+        p+=4;n-=4;
+    }
+    while(n--){h=(h^*p++)*16777619U;}
     return h;
+}
+static inline uint32_t sm_bulk_checksum(const SmBulkFrame *f) {
+    return sm_fnv_bytes(sm_fnv_bytes(2166136261U,(const unsigned char *)f,28),f->payload,f->length);
 }
 static inline int sm_bulk_valid(const SmBulkFrame *f) {
     unsigned limit=f->op==SM_SOCKET_READ_BULK?SM_BULK_PAYLOAD_SIZE:
@@ -112,10 +120,7 @@ _Static_assert(sizeof(SmFrame)==SM_FRAME_SIZE,"USB frame layout");
 _Static_assert(sizeof(SmConfig)==184,"Network config layout");
 _Static_assert(sizeof(SmScan)<=SM_PAYLOAD_SIZE,"Scan fits one frame");
 static inline uint32_t sm_checksum(const SmFrame *f) {
-    uint32_t h=2166136261U;const unsigned char *p=(const unsigned char *)f;
-    for(int i=0;i<28;i++)h=(h^p[i])*16777619U;
-    for(uint32_t i=0;i<f->length;i++)h=(h^f->payload[i])*16777619U;
-    return h;
+    return sm_fnv_bytes(sm_fnv_bytes(2166136261U,(const unsigned char *)f,28),f->payload,f->length);
 }
 static inline void sm_seal(SmFrame *f){f->magic=SM_MAGIC;f->version=SM_VERSION;f->checksum=sm_checksum(f);}
 static inline int sm_valid(const SmFrame *f) {

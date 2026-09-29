@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.2.8 — compatible checksum/copy optimization
+
+- Unroll FNV-1a four bytes at a time while preserving exact wire checksums,
+  byte order, unaligned input support and protocol version 1.
+- Avoid zero-length second ring-buffer copies on contiguous reads/writes.
+- Keep internal reply buffers, PSRAM allocation, USB profiles, task scheduling,
+  timeouts and recovery unchanged. No measured throughput gain claimed yet.
+- Rebuild PSP app and StreamMasterUSB.prx for the matching checksum hot loop;
+  old/new firmware and PSP components remain protocol-compatible.
+
 Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.

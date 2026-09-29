@@ -7,6 +7,35 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 class CaveGameTests(unittest.TestCase):
+    def test_spawns_in_generated_tunnel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/"spawn.c";binary=Path(tmp)/"spawn"
+            source.write_text('''#include "cave_visual.c"
+#include <assert.h>
+#include <stdio.h>
+int main(void) {
+    unsigned seeds[]={1,0x45319a7,123456};int total=0;
+    for(int seed=0;seed<3;seed++) {
+        CaveScene *s=cave_create_seed(seeds[seed]);assert(s);
+        unsigned char bands[12]={0};int spawned=0,attempts=0;
+        for(int f=0;f<240;f++) {
+            cave_prepare(s,bands,0,1000000ULL+f*50000ULL);
+            if(f>20 && f%10==0) {
+                s->combat.health=0;cave_combat_spawn(s);attempts++;
+                if(s->combat.health>0)spawned++;
+            }
+        }
+        printf("Generated tunnel seed %u: %d/%d spawn sites usable\\n",seeds[seed],spawned,attempts);
+        assert(spawned>0);total+=spawned;cave_destroy(s);
+    }
+    assert(total>0);
+}''')
+            subprocess.run(["cc","-std=c11","-O2","-Wall","-Wextra","-Werror",
+                "-fsanitize=undefined","-fno-sanitize-recover=all","-I",str(ROOT/"psp-client"),
+                str(source),str(ROOT/"psp-client/cave_paths.c"),str(ROOT/"psp-client/milkdrop_signal.c"),
+                "-lm","-o",str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_combat(self):
         with tempfile.TemporaryDirectory() as tmp:
             binary = Path(tmp) / "combat"

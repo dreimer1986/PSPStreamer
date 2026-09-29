@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Monkey: retain at most one missed enemy spawn, retry once per second with
+  hull-sized clearance on uneven terrain; show selected ship in the flight menu.
+- StreamMaster 0.2.8: exact-compatible unrolled FNV checksums and skip empty
+  ring-wrap copies; retain current buffering and scheduling defaults.
 - Monkey flight: seven selectable ships, bounded stationary enemy encounters,
   yellow blaster projectiles (player 500 ms, enemy 750 ms), 10-point projectile
   damage, barrel-roll protection and 100-point kill rewards. Import all supplied

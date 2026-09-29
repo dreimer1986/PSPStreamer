@@ -31,11 +31,13 @@ static uint32_t last_ring_copy_us,last_checksum_us;
 void sm_sockets_bulk_cost(uint32_t *copy,uint32_t *checksum){*copy=last_ring_copy_us;*checksum=last_checksum_us;}
 static void copy_out(unsigned char *dst,const unsigned char *ring,unsigned cap,unsigned pos,unsigned n) {
     unsigned first=cap-pos%cap;if(first>n)first=n;
-    memcpy(dst,ring+pos%cap,first);memcpy(dst+first,ring,n-first);
+    memcpy(dst,ring+pos%cap,first);
+    if(n>first)memcpy(dst+first,ring,n-first);
 }
 static void copy_in(unsigned char *ring,unsigned cap,unsigned pos,const unsigned char *src,unsigned n) {
     unsigned first=cap-pos%cap;if(first>n)first=n;
-    memcpy(ring+pos%cap,src,first);memcpy(ring,src+first,n-first);
+    memcpy(ring+pos%cap,src,first);
+    if(n>first)memcpy(ring,src+first,n-first);
 }
 static int would_block(int n) {
     return n==ESP_TLS_ERR_SSL_WANT_READ || n==ESP_TLS_ERR_SSL_WANT_WRITE ||
