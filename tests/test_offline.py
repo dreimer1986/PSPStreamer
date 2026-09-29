@@ -334,7 +334,7 @@ assert.equal(preferredTrack([],'off',true),-1);
         from psp_streamer.pgs import PgsCue
         folder=self.root/'package';folder.mkdir()
         source=self.root/'pgs.mkv';source.touch()
-        cue=PgsCue(1,2,10,20,2,2,b'\x01\x02\x03\x04',bytes(range(256))*4,1920,1080)
+        cue=PgsCue(1,2,10,20,2,2,b'\x01\x02\x03\x04',bytes(range(256))*4,480,272)
         job={'subtitle':0,'profile':'normal'}
         probe={'streams':[{'codec_type':'subtitle','codec_name':'hdmv_pgs_subtitle'}]}
         def capture(command, *args):
@@ -345,7 +345,7 @@ assert.equal(preferredTrack([],'off',true),-1);
             self.assertEqual(self.server.offline._subtitles(job,source,probe,folder),-1)
         blob=(folder/'subtitles.ovl').read_bytes();length=struct.unpack('<I',blob[4:8])[0]
         payload=json.loads(blob[8:8+length]);self.assertEqual(payload['t'],'pgs')
-        self.assertEqual(payload['c'],[[1000,2000,10,20,2,2,1920,1080]])
+        self.assertEqual(payload['c'],[[1000,2000,10,20,2,2,480,272]])
         self.assertEqual(blob[8+length:],cue.palette+cue.pixels)
         job['profile']='tv'
         self.assertEqual(self.server.offline._subtitles(job,source,probe,folder),0)

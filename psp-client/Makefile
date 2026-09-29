@@ -60,6 +60,7 @@ main.o: streammaster_fields.h
 main.o: offline_source.h offline_ui.h offline_filename.h
 main.o: offline_io.h offline_sha256.h
 main.o: queue_quality.h
+main.o: bitmap_overlay.h
 offline_sha256.o: offline_sha256.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h

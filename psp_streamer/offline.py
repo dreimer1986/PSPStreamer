@@ -265,7 +265,7 @@ class OfflineQueue:
                     payload['c'] = []
                     burn = track
             elif codec == 'hdmv_pgs_subtitle' and job['profile'] != 'tv' and (external or isinstance(source, RemoteSource) or source.suffix.lower() == '.mkv'):
-                from .pgs import parse_pgs
+                from .pgs import parse_pgs, lcd_cue
                 sup = folder / 'extract.sup'
                 if external:
                     sup.write_bytes(external[1])
@@ -276,7 +276,7 @@ class OfflineQueue:
                     tracks = json.loads(self._capture(['mkvmerge', '-J', str(source)], job))['tracks']
                     selected = [t for t in tracks if t.get('type') == 'subtitles'][track]
                     self._capture(['mkvextract', 'tracks', str(source), f"{selected['id']}:{sup}"], job, 600)
-                cues = parse_pgs(sup.read_bytes())
+                cues = [lcd_cue(cue) for cue in parse_pgs(sup.read_bytes())]
                 sup.unlink()
                 if len(cues) > 960 or any(len(c.palette) + len(c.pixels) > 512 * 1024 for c in cues):
                     burn = track  # keep existing bounded PSP overlay limits

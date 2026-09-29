@@ -8,6 +8,7 @@ palette-indexed sprites; the PSP never needs to understand Blu-ray packets.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 
 
 @dataclass
@@ -22,6 +23,33 @@ class PgsCue:
     palette: bytes
     canvas_width: int
     canvas_height: int
+
+
+def lcd_cue(cue: PgsCue) -> PgsCue:
+    """Use the LCD renderer's exact nearest-neighbour sample positions.
+
+    A full-HD transparent subtitle canvas must not become a 2 MB PSP transfer.
+    Retain palette/alpha and cue numbering, including invisible/empty objects.
+    """
+    if (not 0 < cue.canvas_width <= 65535 or not 0 < cue.canvas_height <= 65535
+            or not 0 < cue.width <= 65535 or not 0 < cue.height <= 65535
+            or len(cue.palette) != 1024 or len(cue.pixels) != cue.width * cue.height):
+        raise ValueError('Invalid PGS sprite geometry')
+    left = max(0, min(480, cue.x * 480 // cue.canvas_width))
+    top = max(0, min(272, cue.y * 272 // cue.canvas_height))
+    right = max(left, min(480, (cue.x + cue.width) * 480 // cue.canvas_width))
+    bottom = max(top, min(272, (cue.y + cue.height) * 272 // cue.canvas_height))
+    if right == left or bottom == top:
+        return replace(cue, x=0, y=0, width=1, height=1, canvas_width=480,
+                       canvas_height=272, palette=bytes(1024), pixels=b'\0')
+    columns = [min(cue.width-1, max(0, (x*cue.canvas_width+cue.canvas_width//2)//480-cue.x))
+               for x in range(left, right)]
+    pixels = bytearray()
+    for y in range(top, bottom):
+        row = min(cue.height-1, max(0, (y*cue.canvas_height+cue.canvas_height//2)//272-cue.y))*cue.width
+        pixels.extend(cue.pixels[row+x] for x in columns)
+    return replace(cue, x=left, y=top, width=right-left, height=bottom-top,
+                   canvas_width=480, canvas_height=272, pixels=bytes(pixels))
 
 
 def _u16(data: bytes, offset: int) -> int:

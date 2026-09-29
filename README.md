@@ -649,6 +649,14 @@ and sprites are packaged too. TV bitmap subtitles and unsupported/oversized
 bitmap-overlay cases retain the existing server burn-in fallback. No network
 fetches remain during playback. Current 960-cue subtitle bounds still apply.
 
+Server 0.1.65 prepares LCD bitmap sprites at 480×272 canvas resolution before
+transfer or packaging, preserving palette, timing and the old LCD sampling.
+Update both server and PSP client: the matching client prefetches sprites in a
+separate worker, never blocking video rendering on a subtitle download. Failed
+cues are skipped for that playback rather than retried every frame. TV burn-in
+and text subtitles are unchanged; existing offline packages are not rewritten.
+See [LCD bitmap recovery](docs/LCD_BITMAP_RECOVERY.md) for the diagnosis and test.
+
 Free Memory Stick space is checked before each file; individual files above
 FAT32's 4 GiB-minus-one-byte limit are rejected. Keep free space on the server:
 converted copies remain until explicitly deleted. Docker stores the queue in

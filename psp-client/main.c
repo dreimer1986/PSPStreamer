@@ -386,7 +386,7 @@ static volatile int subtitle_pages_live, subtitle_page_ready, subtitle_page_posi
 static volatile int subtitle_page_failures;
 static unsigned char *subtitle_font;
 static BitmapCue *bitmap_cues;
-static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1, bitmap_bytes;
+static int bitmap_cue_count, bitmap_client_side, bitmap_loaded_cue = -1;
 static int subtitle_client_side;
 static float current_duration_seconds;
 static char current_media_name[TITLE_SIZE], current_media_title[192];
@@ -753,39 +753,6 @@ static int http_get_wait(const char *path, char *buffer, int buffer_size, int id
 #include "menu_artwork.h"
 #include "media_request.h"
 
-static int http_get_binary(const char *path, unsigned char *buffer, int buffer_size) {
-    struct sockaddr_in server;
-    char request[2048], header[4096], *body = NULL;
-    int socket_fd, received = 0, header_size = 0, body_size, content_length = -1, idle_ms = 0;
-    socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) return -1;
-    if (prepare_server(&server) < 0) {connection_close(socket_fd);return -1;}
-    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) { connection_close(socket_fd); return -1; }
-    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
-    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { connection_close(socket_fd); return -1; }
-    while (header_size < (int)sizeof(header) - 1) {
-        int got = stream_recv(socket_fd, header + header_size, sizeof(header) - 1 - header_size, 250);
-        if (got == -2) { if ((idle_ms += 250) < 20000) continue; connection_close(socket_fd); return -1; }
-        if (got <= 0) { connection_close(socket_fd); return -1; }
-        idle_ms = 0;
-        header_size += got; header[header_size] = 0; body = strstr(header, "\r\n\r\n"); if (body) break;
-    }
-    if (!body || !strstr(header, " 200 ")) { connection_close(socket_fd); return -1; }
-    { char *length_header = strstr(header, "Content-Length:"); if (length_header) content_length = atoi(length_header + 15); }
-    body += 4; body_size = header_size - (int)(body - header);
-    if (body_size > buffer_size) { connection_close(socket_fd); return -1; }
-    memcpy(buffer, body, body_size); received = body_size;
-    while (received < buffer_size && (content_length < 0 || received < content_length)) {
-        int wanted = buffer_size - received;
-        int got;
-        if (content_length >= 0 && wanted > content_length - received) wanted = content_length - received;
-        got = stream_recv(socket_fd, buffer + received, wanted, 250);
-        if (got == -2) { if ((idle_ms += 250) < 20000) continue; connection_close(socket_fd); return -1; }
-        if (got <= 0) break;
-        idle_ms = 0; received += got;
-    }
-    connection_close(socket_fd); return received;
-}
 
 /* The subtitle endpoint deliberately emits a restricted JSON form:
  * {"t":"text","c":[[start,end,"ASCII text"],...]}.  Text has already
@@ -813,7 +780,7 @@ static int prepare_client_subtitles(const char *media_id, int tv_profile) {
         /* TV playback burns bitmap subtitles into the stream. Do not first
          * download/extract the complete track only to discard its cues. */
         if(tv_profile && !offline_active)return 0;
-        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d&timebase=ms", media_id, selected_subtitle_track, tv_profile);
+        snprintf(path, sizeof(path), "/api/bitmap-subtitles/%s?track=%d&tv=%d&timebase=ms&lcd=1", media_id, selected_subtitle_track, tv_profile);
         if(!offline_active) {
             result=media_request_get(path,response,sizeof(response),630000,1);
             if(result<0)return result;
@@ -877,7 +844,10 @@ static void subtitle_parse_prepared_response(void) {
     }
 }
 
+#include "bitmap_overlay.h"
+
 static void subtitle_release(void) {
+    bitmap_stop();
     /* The remote worker is joined before this owner releases either bank. */
     subtitle_pages_live=0;
     if(subtitle_pages)free(subtitle_pages);
@@ -904,20 +874,13 @@ static void subtitle_page_advance(int position_ms) {
     __sync_synchronize();subtitle_page_ready=0;
 }
 
-static void bitmap_present(int frame, const char *media_id) {
-    int index = -1, i, got, x, y, left, top, right, bottom;
+static void bitmap_present(int frame) {
+    int index = -1, x, y, left, top, right, bottom;
     BitmapCue *cue;
     if (!bitmap_client_side || !bitmap_cues) return;
-    for (i = 0; i < bitmap_cue_count; i++) if (frame >= bitmap_cues[i].start && frame < bitmap_cues[i].end) { index = i; break; }
-    if (index < 0) return;
+    const unsigned char *pixels=bitmap_pixels(frame,&index);
+    if (!pixels) return;
     cue = &bitmap_cues[index];
-    if (bitmap_loaded_cue != index) {
-        char path[ID_SIZE + 96];
-        snprintf(path, sizeof(path), "/api/bitmap-sprite/%s?track=%d&cue=%d", media_id, selected_subtitle_track, index);
-        got = offline_active ? offline_bitmap(index,(unsigned char *)response,RESPONSE_SIZE) : http_get_binary(path, (unsigned char *)response, RESPONSE_SIZE);
-        if (got < 1024 + cue->width * cue->height) return;
-        bitmap_bytes = got; bitmap_loaded_cue = index;
-    }
     /* PGS stores a full-HD, palette-indexed sprite.  Sample it once per PSP
      * output pixel rather than writing every source pixel (often 20 times
      * over the same destination).  This both preserves video headroom and
@@ -937,12 +900,12 @@ static void bitmap_present(int frame, const char *media_id) {
         if (source_y < 0) source_y = 0;
         if (source_x >= cue->width) source_x = cue->width - 1;
         if (source_y >= cue->height) source_y = cue->height - 1;
-        color = (unsigned char)response[1024 + source_y * cue->width + source_x];
-        alpha = (unsigned char)response[color * 4 + 3];
+        color = pixels[1024 + source_y * cue->width + source_x];
+        alpha = pixels[color * 4 + 3];
         if (!alpha) continue;
-        red = (unsigned char)response[color * 4];
-        green = (unsigned char)response[color * 4 + 1];
-        blue = (unsigned char)response[color * 4 + 2];
+        red = pixels[color * 4];
+        green = pixels[color * 4 + 1];
+        blue = pixels[color * 4 + 2];
         destination = &playback_draw_target[y * VIDEO_STRIDE + x];
         if (alpha == 255) *destination = red | ((u32)green << 8) | ((u32)blue << 16);
         else {
@@ -1454,7 +1417,7 @@ static int prepare_timed_video(TimedPacket *packet) {
         playback_draw_target = (u32 *)video_staging;
         if (!tvout_video_active) {
             subtitle_present(cue_ms);
-            bitmap_present(cue_ms, audio_media_id);
+            bitmap_present(cue_ms);
             if (video_fullscreen || !receiver_visible) playback_hud(0, playback_paused);
             else receiver_hud(0);
         } else {
@@ -2669,6 +2632,7 @@ static int play_h264(const char *media_id) {
             if (!video_staging) { result = -1325; video_step = "Video staging RAM"; break; }
             memset(video_staging, 0, video_staging_bytes);
             subtitle_parse_prepared_response();
+            bitmap_start();
             audio_start = 1; buffered = timed_playing = 1;
             video_only_tick = sceKernelGetSystemTimeWide();
             video_only_origin = timed_video_origin;
@@ -2775,6 +2739,7 @@ static int play_h264(const char *media_id) {
     }
 done:
     video_watch_ping("stop: close FLV socket");
+    bitmap_running=0;
     timed_running = 0;
     audio_running = 0; audio_start = 1;
     video_first_presented = 0;

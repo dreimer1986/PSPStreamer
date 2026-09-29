@@ -649,13 +649,13 @@ class AppHandler(BaseHTTPRequestHandler):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
                     raise ValueError("Unsupported subtitle track")
-                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms")
+                return self.bitmap_subtitles(parsed.path.rsplit("/", 1)[-1], track, query.get("tv", ["0"])[0] == "1", query.get("timebase", [""])[0] == "ms", query.get('lcd',['0'])[0]=='1')
             if parsed.path.startswith("/api/bitmap-sprite/"):
                 track = int(query.get("track", ["-1"])[0])
                 cue = int(query.get("cue", ["-1"])[0])
                 if not 0 <= track <= 31 or cue < 0:
                     raise ValueError("Unsupported bitmap subtitle")
-                return self.bitmap_sprite(parsed.path.rsplit("/", 1)[-1], track, cue)
+                return self.bitmap_sprite(parsed.path.rsplit("/", 1)[-1], track, cue, query.get('lcd',['0'])[0]=='1')
             if parsed.path.startswith("/api/transcode/"):
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
@@ -1120,19 +1120,24 @@ class AppHandler(BaseHTTPRequestHandler):
             self.server.subtitle_cache[cache_key] = payload
         respond(payload)
 
-    def pgs_cues(self, token: str, track: int) -> list[PgsCue]:
-        cache_key = (token, track)
+    def pgs_cues(self, token: str, track: int, lcd: bool = False) -> list[PgsCue]:
+        cache_key = (token, track, lcd)
         with self.server.pgs_cache_lock:
             cached = self.server.pgs_cache.pop(cache_key, None)
             if cached is not None:
                 self.server.pgs_cache[cache_key] = cached
         if cached is not None:
             return cached
+        def prepared(cues):
+            if lcd:
+                from .pgs import lcd_cue
+                return [lcd_cue(cue) for cue in cues]
+            return cues
         from .external_subtitles import payload as external_payload
         external=external_payload(self.server.library,token,track)
         if external:
             if external[0]!='hdmv_pgs_subtitle':raise ValueError('Selected external subtitle is not PGS')
-            cues=parse_pgs(external[1])
+            cues=prepared(parse_pgs(external[1]))
             with self.server.pgs_cache_lock:
                 self.server.pgs_cache[cache_key]=cues
                 while len(self.server.pgs_cache)>PGS_CACHE_TRACKS:self.server.pgs_cache.popitem(last=False)
@@ -1167,15 +1172,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 if extracted.returncode:
                     raise ValueError("Could not extract PGS subtitle track")
                 target.replace(sup)
-        parsed = parse_pgs(sup.read_bytes())
+        parsed = prepared(parse_pgs(sup.read_bytes()))
         with self.server.pgs_cache_lock:
             self.server.pgs_cache[cache_key] = parsed
             while len(self.server.pgs_cache) > PGS_CACHE_TRACKS:
                 self.server.pgs_cache.popitem(last=False)
         return parsed
 
-    def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False) -> None:
-        cues = self.pgs_cues(token, track)
+    def bitmap_subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False, lcd: bool = False) -> None:
+        cues = self.pgs_cues(token, track, lcd)
         # Frames share the video presentation clock; positions are scaled by
         # the client from the original PGS canvas into 480x272.
         fps = 1000 if milliseconds else (LEGACY_SUBTITLE_FPS_TV if tv_profile else LEGACY_SUBTITLE_FPS_LCD)
@@ -1184,8 +1189,8 @@ class AppHandler(BaseHTTPRequestHandler):
                                        for cue in cues]}
         self.send_json(payload)
 
-    def bitmap_sprite(self, token: str, track: int, cue: int) -> None:
-        cues = self.pgs_cues(token, track)
+    def bitmap_sprite(self, token: str, track: int, cue: int, lcd: bool = False) -> None:
+        cues = self.pgs_cues(token, track, lcd)
         if cue >= len(cues):
             raise ValueError("Bitmap subtitle cue is unavailable")
         selected = cues[cue]
@@ -1379,7 +1384,7 @@ class AppServer(ThreadingHTTPServer):
         self.subtitle_cache_lock = threading.Lock()
         # PGS tracks contain every decoded bitmap of an episode.  Retaining
         # them indefinitely makes a long browsing session consume host RAM.
-        self.pgs_cache: OrderedDict[tuple[str, int], list[PgsCue]] = OrderedDict()
+        self.pgs_cache: OrderedDict[tuple[str, int, bool], list[PgsCue]] = OrderedDict()
         self.pgs_cache_lock = threading.Lock()
         # New video clients use one muxed FLV process; music uses one MP3
         # process. Spare slots allow reconnects and legacy two-stream clients.

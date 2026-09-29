@@ -1,3 +1,12 @@
+# 0.1.65
+
+- Prepare LCD PGS sprites at display resolution, preserving palette, timing and
+  the client's previous nearest-neighbour sampling. This avoids oversized
+  full-HD subtitle transfers freezing LCD playback.
+- Package new offline LCD bitmap overlays at the same bounded resolution.
+- Update the PSP client too: bitmap fetching now runs outside the video renderer.
+- Docker and Home Assistant use the same server implementation.
+
 # 0.1.64
 
 - Show the next queued title and total duration for one pass; unknown durations

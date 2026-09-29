@@ -28,12 +28,16 @@ static int offline_subtitle_json(void) {
     response[size]=0;offline_sprite_base=8+size;return size;
 }
 static int offline_bitmap(int index,unsigned char *out,int capacity) {
-    unsigned int offset=offline_sprite_base;
-    int i,size;
-    for(i=0;i<index;i++)offset+=1024+bitmap_cues[i].width*bitmap_cues[i].height;
-    size=1024+bitmap_cues[index].width*bitmap_cues[index].height;
-    if(size<1024 || size>capacity)return -1;
-    return offline_read_file("subtitles.ovl",out,size,offset);
+    unsigned long long offset=offline_sprite_base,size=0;
+    if(index<0 || index>=bitmap_cue_count || capacity<1024)return -1;
+    for(int i=0;i<=index;i++) {
+        if(bitmap_cues[i].width<=0 || bitmap_cues[i].height<=0)return -1;
+        size=1024+(unsigned long long)bitmap_cues[i].width*bitmap_cues[i].height;
+        if(size>0xffffffffULL || offset>0xffffffffULL-size)return -1;
+        if(i<index)offset+=size;
+    }
+    if(size>(unsigned)capacity)return -1;
+    return offline_read_file("subtitles.ovl",out,(int)size,(unsigned)offset);
 }
 static void offline_prepare_seek(int seconds) {
     char path[512];unsigned char pair[8];
