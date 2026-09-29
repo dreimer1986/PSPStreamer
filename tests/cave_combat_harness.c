@@ -39,15 +39,18 @@ int main(void) {
     assert(s->combat.pending_spawn==1 && !s->combat.health); /* bounded backlog */
     blocked=0;s->combat.spawn_retry=1;cave_combat_step(s,.1f);assert(!s->combat.health);
     for(int i=0;i<11 && !s->combat.health;i++)cave_combat_step(s,.1f);
-    assert(s->combat.health==100 && s->combat.model>=0 && s->combat.model<CAVE_SHIPS);
+    assert(s->combat.health==CAVE_ENEMY_HITS && s->combat.model==CAVE_ENEMY_MODEL);
     assert(!s->combat.pending_spawn && s->combat.spawn>=15 && s->combat.spawn<=20);
     assert(s->combat.enemy[1]>0 && s->combat.enemy[1]<.5f);
     assert(!bolts(s,1));for(int i=0;i<4;i++)cave_combat_step(s,.1f);assert(!bolts(s,1));
     for(int i=0;i<20 && !bolts(s,1);i++)cave_combat_step(s,.1f);
     assert(bolts(s,1));
-    reset(s);s->combat.health=100;s->combat.enemy[1]=2;s->combat.enemy[2]=4;
+    reset(s);s->combat.health=CAVE_ENEMY_HITS;s->combat.enemy[1]=2;s->combat.enemy[2]=4;
     const float muzzle[3]={0,2,3},dir[3]={0,0,1};
-    for(int i=0;i<10;i++){cave_combat_emit(&s->combat,muzzle,dir,0);cave_combat_step(s,.05f);}
+    for(int i=0;i<3;i++) {
+        cave_combat_emit(&s->combat,muzzle,dir,0);cave_combat_step(s,.05f);
+        assert(s->combat.health==2-i && s->game.kills==(i==2?1U:0U));
+    }
     assert(!s->combat.health && s->game.kills==1 && s->game.bonus==100);
     cave_combat_step(s,.05f);assert(s->game.kills==1);
     reset(s);const float incoming[3]={0,2,2.5f},toward[3]={0,0,-1};

@@ -581,7 +581,7 @@ int main(int argc,char **argv) {
                         assert(cave_scene->ship_model==model);
                     }
                     if(f==20) {
-                        CaveCombat *c=&cave_scene->combat;c->health=100;c->model=cave_scene->ship_model;
+                        CaveCombat *c=&cave_scene->combat;c->health=CAVE_ENEMY_HITS;c->model=CAVE_ENEMY_MODEL;
                         c->enemy[2]=cave_scene->motion.travel+5;
                         cave_camera(cave_scene,c->enemy[2],&c->enemy[0],&c->enemy[1]);
                         c->aim[2]=-1;

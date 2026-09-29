@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Flight: enemies destroyed after exactly three shots; enemy fire interval
+  500 ms with player damage unchanged at 10. Disable Square visualization
+  switching throughout the Easter egg and use the prepared turret model.
+- StreamMaster 0.2.9 restores pre-0.2.8 checksum/copy code after a slower hardware
+  run; earlier transport, storage and SHA improvements remain intact.
 - Monkey: retain at most one missed enemy spawn, retry once per second with
   hull-sized clearance on uneven terrain; show selected ship in the flight menu.
 - StreamMaster 0.2.8: exact-compatible unrolled FNV checksums and skip empty

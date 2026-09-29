@@ -28,7 +28,7 @@ static void cave_draw_combat(void) {
             MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
             for(int j=0;j<3;j++) {
                 tri[j]=model->vertices[i+j];float p[3];
-                for(int k=0;k<3;k++)p[k]=center[k]+.65f*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
+                for(int k=0;k<3;k++)p[k]=center[k]+CAVE_ENEMY_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
                 tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];
                 if(c->flash>0)tri[j].color=0xffaaffff;
             }

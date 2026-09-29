@@ -26,8 +26,8 @@ static void cave_combat_emit(CaveCombat *c,const float p[3],const float directio
 static void cave_combat_spawn(CaveScene *s) {
     CaveCombat *c=&s->combat;
     if(c->health>0 || s->ready<10)return;
-    int model=random_step(&c->random)%CAVE_SHIPS;
-    float radius[3];for(int k=0;k<3;k++)radius[k]=.65f*cave_model_half[model][k]+.06f;
+    int model=CAVE_ENEMY_MODEL;
+    float radius[3];for(int k=0;k<3;k++)radius[k]=CAVE_ENEMY_SCALE*cave_model_half[model][k]+.06f;
     /* Curved floors need not be flat across a wide footprint. Fit the hull
      * plus a little passing room; a stationary ship may hover above a slope. */
     for(int depth=0;depth<3;depth++) {
@@ -49,7 +49,7 @@ static void cave_combat_spawn(CaveScene *s) {
             }
             if(!clear || (cave_density(s,px-.6f,py+.25f,z)<.008f &&
                           cave_density(s,px+.6f,py+.25f,z)<.008f))continue;
-            c->health=100;c->model=model;
+            c->health=CAVE_ENEMY_HITS;c->model=model;
             c->enemy[0]=px;c->enemy[1]=py;c->enemy[2]=z;
             c->aim[0]=0;c->aim[1]=0;c->aim[2]=-1;c->visible=0;
             c->enemy_cooldown=CAVE_ENEMY_FIRE_SECONDS;return;
@@ -102,7 +102,9 @@ static void cave_combat_step(CaveScene *s,float dt) {
             if(cave_game_blaster_hit(&s->game,s->flight_barrel!=0))s->flight_impact=.2f;
             b->life=0;
         } else if(hit) {
-            c->health-=CAVE_BLASTER_DAMAGE;c->flash=.18f;b->life=0;
+            /* Enemy hull is counted in exact thirds: no 1% remainder after
+             * three rounded 33-percent hits. Player damage remains 10. */
+            c->health--;c->flash=.18f;b->life=0;
             if(c->health<=0)cave_game_enemy_destroyed(&s->game,100);
         }
         memcpy(b->p,next,sizeof(next));

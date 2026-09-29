@@ -1,5 +1,13 @@
 # StreamMaster firmware changelog
 
+## 0.2.9 — restore the pre-0.2.8 USB hot loops
+
+- Restore the exact scalar FNV and ring-copy code from 0.2.7 on ESP and PSP.
+  The 0.2.8 download measured 411.6 KiB/s versus 479.5 KiB/s previously;
+  the logs do not establish that checksum/copy work caused the slowdown.
+- Keep earlier internal buffers, asynchronous storage/logging and SHA work.
+  Protocol/configuration remains compatible; no new tuning or buffer changes.
+
 ## 0.2.8 — compatible checksum/copy optimization
 
 - Unroll FNV-1a four bytes at a time while preserving exact wire checksums,

@@ -1364,8 +1364,9 @@ At zero shield, the ship disappears in a short particle explosion and **Game
 Over** appears. Five seconds after the fatal hit the ten best scores are shown;
 X or Circle returns to ordinary Monkey. Music continues throughout. The intro's
 Hall of Fame can be viewed without starting a flight and returns to the intro.
-Abandoned flights do not enter the table. Start still stops music; Square can
-still switch visualizations. These actions remain available as emergency exits.
+Abandoned flights do not enter the table. Start still stops music. Square cannot
+switch visualizations while the flight intro/game/results are open; leave with
+L+R (five seconds), or use the menu, before changing the visualization.
 
 Scores are stored locally in `ms0:/PSP/SYSTEM/PSPStreamer-flight-a.dat` and
 `PSPStreamer-flight-b.dat`. Alternating checksummed generations preserve the
@@ -1374,23 +1375,27 @@ files. A write failure is shown on the result screen; the in-memory table still
 works. No server update is required.
 
 Hold **X** for yellow pulsing blaster bolts: one shot every **500 ms** at most.
-There is no delayed burst after a slow frame. Both sides have 100 health and
-take **10 damage per projectile**; a kill earns **100 points**. The full
+There is no delayed burst after a slow frame. The player has 100 health and
+takes **10 damage per enemy projectile**. Enemies take **exactly three hits**
+to destroy (one third per hit, no rounded 1% remainder); a kill earns **100 points**. The full
 double-tap barrel roll protects against projectiles, not wall damage.
 
-Every 15–20 simulation seconds, the game attempts to place one stationary enemy
-ship near the floor or hovering above an uneven slope, with room to pass.
+Every 15–20 simulation seconds, the game attempts to place one stationary turret
+near the floor or above an uneven slope, with room to pass.
 An unsuitable site leaves **one pending spawn**, retried at most once per second.
 Missed opportunities never accumulate; a successful spawn restarts the 15–20
 second interval. At most one enemy and 32 projectiles exist
-at once; enemies left behind are removed. The enemy uses a random ship model,
+at once; enemies left behind are removed. The enemy uses the imported turret model,
 turns toward the player after a short line-of-sight delay, and fires at most once
-every **750 ms** when aligned. Walls block shots. Music pause freezes combat.
+every **500 ms** when aligned. Walls block shots. Music pause freezes combat.
 All selectable ships currently share health, speed and weapons; hull collision
 bounds follow the chosen model. These are choices, not upgrades.
 
-All eight supplied GLBs were imported; the heavier turret is prepared but is
-**not spawned** in this version. The seven playable ships use 234–592 triangles.
+All eight supplied GLBs were imported. The enemy turret uses **613 triangles**
+and a model scale of 0.60 versus 0.45 for the player (one third larger relative
+to the common normalized maximum dimension). It comes from the original
+Kirilllucas asset, the same source as the user's turretMin variants.
+The seven playable ships use 234–592 triangles.
 Large meshes are simplified; embedded texture colours are baked into vertex
 colours, not full-resolution textures. Normal/metallic maps and partial alpha
 are not reproduced. The original ship retains its four music-reactive exhausts;

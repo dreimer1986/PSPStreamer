@@ -1,5 +1,26 @@
 # StreamMaster: complete currently identified optimization inventory
 
+## Current decision: 0.2.9 rollback
+
+The new hardware run transferred 170,143,443 bytes in 403.719 s:
+411.563 KiB/s, versus 479.480 KiB/s for the previous same-sized run
+(346.533 s). Current recovery log, completion tick 1129256; comparison history
+`00E31C993E3527AF`, tick 416333. This is about 14.2% slower, not an improvement.
+Receive-call time is 399.490 s; blocked media writes only 3.686 s. Final
+verification succeeds in 82.459 s (hash 56.544 s).
+
+Bulk read-ahead accounts for 121,748,652 bytes versus previously 158,967,731.
+The remaining bytes are not covered by those bulk-only counters. Checksum work
+is 2.042 s for that bulk subset, so it does not explain the approximately
+57-second body-time increase. The logs do not prove a cause or whether the
+last code change versus other timing/network effects triggered it. No speculative
+scheduling or retry changes are justified by this evidence.
+
+At the user's request, both 0.2.8 hot-loop changes are reverted exactly to the
+0.2.7 source on PSP/ESP; the new package is version 0.2.9 to identify the rollback.
+All earlier gains are retained. Restored throughput still needs a hardware
+comparison; it is not guaranteed by reverting these two changes.
+
 ## Implemented follow-up: 0.2.8 test build
 
 - Same-wire FNV-1a now handles four bytes per loop iteration on ESP and PSP.

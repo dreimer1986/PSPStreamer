@@ -2214,7 +2214,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             music_saved_fullscreen = fullscreen;
             lcd_music_reset(); tv_music_reset();
         }
-        if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
+        if (!cave_flying && (pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
             md_stop();music_visual_active=0;
             visual_preset = visual_preset == 0 ? 4 : visual_preset == 4 ? 6 : 0;
             if (visual_preset) {
