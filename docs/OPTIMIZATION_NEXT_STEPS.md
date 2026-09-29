@@ -1,5 +1,13 @@
 # Optimization status and remaining work
 
+## 2026-09-29: approved HTTPS, SHA and LTO follow-up
+
+PSP-side tiny TLS reads are coalesced, offline SHA input uses Allegrex word-byte
+swapping, and a separate O3+LTO app is ready alongside normal O3. No firmware,
+clock or USB buffer changes. Complete read-back verification remains. Hardware
+gains are not measured yet; see [sizes and validation](PLAYLIST_LTO_0164.md).
+The remaining optional candidates below are not implicitly authorized by this batch.
+
 ## Hardware feedback and closed test items
 
 The user also confirmed the final expression-chain/geometry-batching PSP test

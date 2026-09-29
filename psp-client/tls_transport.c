@@ -9,6 +9,7 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/sha256.h>
 #include "tls_transport.h"
+#include "tls_read_buffer.h"
 
 /* Exported by libpspnet_inet (NID 0x805502DD), omitted from the SDK header. */
 extern int sceNetInetCloseWithRST(int fd);
@@ -18,6 +19,7 @@ typedef struct {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config config;
     mbedtls_ctr_drbg_context random;
+    TlsReadBuffer input;
 } TlsConnection;
 static TlsConnection *connections[8];
 static int lock=-1, certificate_lock=-1;
@@ -47,10 +49,14 @@ static int send_cb(void *ctx,const unsigned char *data,size_t size) {
     int n=sceNetInetSend(c->fd,data,size,0);
     return n<0 ? (would_block()?MBEDTLS_ERR_SSL_WANT_WRITE:MBEDTLS_ERR_SSL_INTERNAL_ERROR) : n;
 }
-static int recv_cb(void *ctx,unsigned char *data,size_t size) {
+static int recv_raw(void *ctx,unsigned char *data,size_t size) {
     TlsConnection *c=ctx;
     int n=sceNetInetRecv(c->fd,data,size,0);
     return n<0 ? (would_block()?MBEDTLS_ERR_SSL_WANT_READ:MBEDTLS_ERR_SSL_INTERNAL_ERROR) : n;
+}
+static int recv_cb(void *ctx,unsigned char *data,size_t size) {
+    TlsConnection *c=ctx;
+    return tls_read_buffer(&c->input,recv_raw,ctx,data,size);
 }
 static int wait_io(int fd,int result,int timeout_ms) {
     struct SceNetInetPollfd p={fd,result==MBEDTLS_ERR_SSL_WANT_WRITE?SCE_NET_INET_POLLOUT:SCE_NET_INET_POLLIN,0};

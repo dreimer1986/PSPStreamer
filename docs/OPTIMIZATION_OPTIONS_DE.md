@@ -1,8 +1,9 @@
 # Erläuterung der zurückgestellten Optimierungen
 
 Stand: 29.09.2026. Die Nummern entsprechen den Punkten 5–13 der aktuellen
-Optimierungsliste. Dies ist eine Erklärung, keine Freigabe oder Zusage eines
-Geschwindigkeitsgewinns. Die stabile Übertragung bleibt unverändert.
+Optimierungsliste. Punkte 11/12 und ein separater LTO-Vergleich aus Punkt 13
+wurden danach freigegeben und umgesetzt; siehe Abschluss unten. Die übrigen
+Punkte bleiben Vorschläge, keine Zusage eines Geschwindigkeitsgewinns.
 
 5. **Paket-Allokationspool:** Speicher für komprimierte Medienpakete wiederverwenden,
    statt laufend unterschiedlich große Blöcke anzufordern und freizugeben. Das
@@ -44,7 +45,7 @@ Geschwindigkeitsgewinns. Die stabile Übertragung bleibt unverändert.
 
 11. **HTTPS:** TLS-Daten günstiger puffern oder Sitzungen wiederverwenden. Letzteres
     hilft hauptsächlich beim erneuten Verbindungsaufbau, nicht automatisch bei einem
-    langen laufenden Download. Zertifikatsprüfung bleibt erhalten. Relevant nur für
+    langen laufenden Download. Die bestehende Zertifikatserfassung bleibt erhalten. Relevant nur für
     HTTPS; HTTP wird dadurch nicht schneller.
 
 12. **Speicherkarte / SHA-256:** Übertragung und abschließende Integritätsprüfung
@@ -63,3 +64,26 @@ Empfehlung: zunächst 5–7 nur bei konkretem Messbedarf; 11 bei einem bewussten
 HTTPS-Schwerpunkt. 8–10 nicht ohne deutlichen Engpassnachweis. 12 und 13 sind
 Feinarbeit ohne garantierten Nutzen. Details und bisherige Messgrenzen stehen in
 [der USB-Übersicht](STREAMMASTER_OPTIMIZATION_INVENTORY.md).
+
+## Freigegebener Abschluss: 11, 12 und LTO (29.09.2026)
+
+- **HTTPS:** Kleine PSP-TLS-Headerlesevorgänge lesen bis zu 2 KiB voraus; große
+  Nutzdaten gehen weiterhin direkt an Mbed TLS. Maximal 2 KiB zusätzlich pro
+  Verbindung, kein Warten auf einen vollen Puffer. Kein Session-Resumption:
+  das tatsächliche Peer-Zertifikat soll pro Neuverbindung weiter erfasst werden.
+  Die bestehende Policy akzeptiert Zertifikatswechsel mit Hinweis und ist
+  **keine CA-Authentifizierung**. ESP-/StreamMaster-TLS bleibt unverändert.
+- **Stick/SHA-256:** Asynchrones Schreiben und Read-Ahead existieren bereits;
+  keine unbegründete Puffervergrößerung. Der Hash lädt die Eingangswörter nun mit
+  wortweisen Zugriffen und Allegrex-Byte-Tausch statt vier einzelnen Bytezugriffen.
+  Ausrichtung und Aliasing bleiben korrekt; Referenztests liefern identische
+  Hashes. Vollständiges erneutes Lesen vom Stick bleibt erhalten. Vorhandene Logs
+  trennen Download, Schreibwartezeit sowie `read_wait_ms` und `hash_ms` der Prüfung.
+- **LTO:** Separate App-Build, nicht automatisch neuer Standard. O3 bleibt die
+  normale Version. Beide Builds enthalten dieselben Änderungen; OC-Plugin und
+  Firmware sind unangetastet. PGO und weitere Taktversuche bleiben zurückgestellt.
+  Größenvergleich und Testanleitung: [Abschlussbericht](PLAYLIST_LTO_0164.md).
+
+Es liegen noch keine neuen Hardware-Durchsatzmessungen vor. Weniger Anweisungen,
+weniger Systemaufrufe oder eine andere Dateigröße sind kein Beleg für einen
+bestimmten KiB/s- oder FPS-Gewinn.

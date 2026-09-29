@@ -11,6 +11,8 @@ New implementation batch (0.1.63, awaiting PSP feedback): Play next, compact
 PSP provider shelves, optional next-video countdown, per-series/folder track
 preferences and waypoint drones. These are no longer unapproved proposals.
 The previous flight/FFT and StreamMaster profile tests are user-confirmed.
+The 0.1.64 follow-up adds web next preview, duration totals, drag reorder and
+entry-specific quality; it awaits the same combined hardware/user test.
 
 ## Classic Winamp comparison
 
@@ -24,7 +26,7 @@ Reference: [official Windows desktop manual](https://support.winamp.com/winamp-d
 | Area | PSPStreamer now | Remaining opportunity |
 |---|---|---|
 | Playback | Audio/video, seek, pause, next/previous, folder order/music shuffle; LCD and TV; queue repeat one/all and separate queue shuffle | No outstanding repeat/shuffle implementation |
-| Lists | One persistent mixed queue, web additions/Play next, web/PSP move/remove/play; provider playlists | Named lists, duplicate entries, drag reorder, duration total, import/export |
+| Lists | One persistent mixed queue, Play next, per-entry quality, next preview, duration total, web drag reorder, web/PSP move/remove/play; provider playlists | Named lists, duplicate entries, import/export |
 | Library | Files/SMB mounts, Plex, Jellyfin, DLNA; cross-source web search | Rich artist/album/genre view for plain files; no need to duplicate provider indexes blindly |
 | Personal access | Favorites, recent items, resume, playback limits | Music ratings and rule-based lists only if wanted; preset ratings already exist |
 | Metadata | Audio tags, ICY titles, covers/backgrounds, provider text and track labels | Optional file-tag editor, but explicitly authorized writes and backups would be essential |
@@ -49,13 +51,13 @@ adds 100 shield, 20-point wall damage with a one-second cooldown, a particle
 explosion/Game Over, survival points and persistent top-ten scores. The intro
 offers Game Start / Hall of Fame / Exit; holding L+R for five seconds leaves.
 Seven selectable ships, preview, anchored turrets, combat and barrel-roll
-projectile protection are now implemented. Latest balance/spawn/model changes
-still have targeted hardware checks in the active ToDo; implementation is not
-the same as user confirmation. Waypoint drones remain a future proposal.
+projectile protection are implemented and confirmed. Waypoint drones are now
+implemented too, awaiting the combined hardware test; implementation is not
+the same as user confirmation.
 
 1. **Shared queue and repeat/shuffle are confirmed working (2026-09-27).**
-   Future candidates: a next-item preview and multiple named lists. Play next is
-   implemented in 0.1.63. Give duplicate entries
+   Future candidates: multiple named lists. Play next is implemented in 0.1.63;
+   next preview, duration, drag reorder and per-entry quality in 0.1.64. Give duplicate entries
    separate entry IDs before allowing the same file twice. Low-to-medium scope,
    negligible steady-state PSP rendering cost.
 2. **M3U8/PLS import/export and offline list bundles.** Resolve paths/URLs into

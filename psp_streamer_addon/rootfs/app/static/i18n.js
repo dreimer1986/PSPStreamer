@@ -1,5 +1,10 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Total (one pass)':'Gesamtdauer (ein Durchlauf)','unknown durations':'unbekannte Laufzeiten',
+ 'Next':'Als Nächstes','Folder order':'Ordnerreihenfolge','No queued successor':'Kein nächster Listeneintrag',
+ 'Drag to reorder':'Zum Umsortieren ziehen','PSP default':'PSP-Vorgabe',
+ 'Invalid playlist quality':'Ungültige Listenqualität',
+ 'Retry unknown durations':'Unbekannte Laufzeiten erneut abfragen',
  'Play next':'Als Nächstes','Scheduled next':'Als Nächstes vorgemerkt',
  'Provider views':'Anbieteransichten',
  'No current track for Play next':'Kein laufender Titel zum Vormerken',

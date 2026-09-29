@@ -11,6 +11,11 @@ PSP_EBOOT_PIC1 = assets/pic1.png
 
 OPT_LEVEL ?= -O3
 CFLAGS = $(OPT_LEVEL) -G0 -Wall -Wextra
+LTO ?= 0
+ifeq ($(LTO),1)
+CFLAGS += -flto
+LDFLAGS += -flto
+endif
 # The compiler specs and build.mak already provide utility and network stubs.
 # Linking either a second time produces non-contiguous import tables on PSP.
 ## Point this at the PSP-built OpenH264 headers and libopenh264_dec_psp.a.
@@ -46,6 +51,7 @@ main.o: menu_artwork.h
 main.o: preset_catalog.h preset_browser.h
 main.o: preset_sequence.h
 main.o tls_transport.o: tls_transport.h
+tls_transport.o: tls_read_buffer.h
 main.o: server_connection.h playback_transport.h playback_recovery.h diagnostic_history.h recovery_log.h app_settings.h
 LIBS += -lpsprtc
 main.o: oc_settings_ui.h oc_settings_io.h ../psp-overclock/config_parse.h
@@ -53,6 +59,7 @@ main.o: streammaster_ui.h ../streammaster/protocol.h
 main.o: streammaster_fields.h
 main.o: offline_source.h offline_ui.h offline_filename.h
 main.o: offline_io.h offline_sha256.h
+main.o: queue_quality.h
 offline_sha256.o: offline_sha256.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h

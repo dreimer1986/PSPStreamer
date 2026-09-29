@@ -1,3 +1,13 @@
+# 0.1.64
+
+- Show the next queued title and total duration for one pass; unknown durations
+  remain explicit and can be retried without blocking playback.
+- Reorder web playlist rows by dragging their handle; arrow buttons remain.
+- Store audio quality and video frame rate per queue entry, with PSP-default
+  inheritance. The matching PSP client applies choices on start and continuation
+  without changing its saved global quality settings.
+- Keep Docker and Home Assistant server/web code identical.
+
 # 0.1.63
 
 - Add Play next in the web library, media controls and shared playlist, with

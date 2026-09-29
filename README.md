@@ -1568,6 +1568,28 @@ its own presentation mode; restarting the app resets music visualization to
 off. No configuration change or server update is required.
 Further references are in [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md).
 
+## Playlist quality and comparison build (server 0.1.64)
+
+The web **Playlist** now shows its next entry and total duration for one pass,
+with unknown durations marked separately. Drag the row handle to reorder, or
+keep using the arrow buttons. Each row can save audio quality and video frame
+rate; music rows hide frame rate. **PSP default** inherits the player's settings
+without carrying over the previous entry's override. Saved choices apply to
+web/PSP starts and automatic continuation. See [Playlist](docs/PLAYLIST.md).
+
+The PSP release remains **O3**. A separately built **O3 + LTO** comparison uses
+the same source, settings and assets; no firmware/plugin changes are required.
+Build it in an isolated temporary object tree with
+`bash tools/build_psp_lto.sh /path/to/PSPStreamer-LTO` (PSP SDK on `PATH`). Copy
+**both** its `EBOOT.PBP` and `PSPStreamer.prx` into the normal PSPStreamer folder
+to test; preserve your CFG/plugins/assets. Restore both normal files to revert.
+Do not mix object files between build modes. See the
+[comparison and focused verification](docs/PLAYLIST_LTO_0164.md).
+
+This version also batches tiny PSP-side TLS reads and uses Allegrex word-byte
+swapping for offline SHA-256 input. Complete read-back verification stays intact;
+StreamMaster firmware, ESP TLS, USB buffers and clock profiles are unchanged.
+
 ## New queue and episode conveniences (server 0.1.63)
 
 - **Play next** in the web library, media controls or playlist schedules one

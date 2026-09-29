@@ -1,4 +1,4 @@
-# Shared playlist — server 0.1.60 and matching PSP client
+# Shared playlist — server 0.1.64 and matching PSP client
 
 The first version provides one ordered, shared queue, with up to 128 unique
 media IDs. Files, Plex, Jellyfin and DLNA entries can be mixed, including music
@@ -10,8 +10,8 @@ preset lists; it does not modify either of them.
 
 - Library: use **Add to playlist**, or check several files and use **Add selected
   to playlist**. Multiple pages/sources can contribute to the same selection.
-- Media details: select audio/subtitle tracks, then **Add to playlist** to keep
-  those indices with this entry. Library bulk additions default to first audio
+- Media details: select audio/subtitle tracks and quality, then **Add to playlist** to keep
+  those choices with this entry. Library bulk additions default to first audio
   and no subtitles. Adding an existing entry does not duplicate or update it;
   remove it first if its saved tracks need changing.
 - Open **Playlist**: Play any entry, move up/down, remove, clear, or select
@@ -24,6 +24,23 @@ preset lists; it does not modify either of them.
 - **Playlist shuffle** uses a saved, stable permutation: visit every entry once
   per cycle. It does not reorder the displayed list. Turning shuffle off/on
   creates a new order; Repeat All cycles the current order. Modes survive updates.
+- Drag the **⠿ handle** onto another entry to move to that position. Up/down
+  buttons remain available on touch devices and keyboards. Dragging edits the
+  stored order, not the active shuffle permutation. Revision conflicts reload
+  rather than silently overwriting another controller's changes.
+- **Next** shows the server-resolved successor, including Repeat One, shuffle
+  and Play Next overrides. With queue mode off it says Folder order; it does not
+  crawl provider folders on every refresh. An offline PSP has no current successor.
+- **Total (one pass)** sums full entry durations, not remaining time or repeated
+  cycles. Unknown durations are shown separately, never silently counted as zero.
+  Only while this page is visible, the browser fetches durations one at a time.
+  Plex/Jellyfin use provider metadata; files/DLNA use bounded ffprobe inspection.
+  Failed lookups do not block playback; **Retry unknown durations** retries them.
+- Every row has **audio quality** (CBR 96/128/160, VBR V6/V5/V4/V3) and, for
+  video only, **20 / 23.976 fps**. **PSP default** inherits the settings from before
+  this queue session, not the previous row's override. Edits are saved immediately
+  and apply on the next start of that item, not halfway through a running stream.
+  Library additions inherit defaults; media-detail additions capture its selectors.
 
 ## Play next (0.1.63 web action)
 
@@ -48,7 +65,10 @@ cancellable request worker; no additional playback polling is introduced.
 
 The saved track choices are loaded initially; playback options on the PSP may
 override them for this start. Later entries use their own saved indices.
-Quality, frame rate, limits and display mode retain the PSP's current settings.
+Saved quality/frame rate apply to both web and native PSP starts and automatic
+continuation. PSP playback options may override them for this start only; entry
+quality overrides do not change global CFG defaults. Limits and display mode
+retain the PSP's current settings. Older clients ignore entry quality fields.
 The playlist is not a download queue and does not include local-only stick files.
 
 ## Persistence and boundaries
@@ -66,8 +86,8 @@ Every edit carries a revision. A stale web editor reloads and asks for a retry;
 the PSP reports the failed edit and reloads its list. There is no silent
 last-writer-wins replacement. The existing password/authentication applies.
 
-Not yet included: multiple named lists, duplicates, drag-and-drop, import/export,
-per-entry quality, or gapless music playback. Repeat modes apply to this playlist,
+Not yet included: multiple named lists, duplicates, import/export,
+or gapless music playback. Repeat modes apply to this playlist,
 not ordinary folder playback or Internet radio.
 
 ## Verification

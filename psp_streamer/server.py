@@ -609,7 +609,13 @@ class AppHandler(BaseHTTPRequestHandler):
                                for row in listing[key]] for key in ('folders','videos')}}
                 return self.send_json(listing)
             if parsed.path == '/api/playlist':
-                return self.send_json(self.server.playlist.snapshot())
+                return self.send_json(self.server.playlist_web_snapshot())
+            if parsed.path == '/api/playlist/duration':
+                from .playlist import media_duration
+                token = query.get('id', [''])[0]
+                if not any(row['id'] == token for row in self.server.playlist.snapshot()['items']):
+                    raise ValueError('Playlist item is unavailable')
+                return self.send_json({'id': token, 'duration': media_duration(self.server, token)})
             if parsed.path == '/api/provider-view':
                 from .provider_views import browse,sections
                 name=query.get('provider',[''])[0]
@@ -755,10 +761,11 @@ class AppHandler(BaseHTTPRequestHandler):
                         queue=self.server.playlist.snapshot()
                         row=next((r for r in queue['items'] if r['id']==request.get('id')),None)
                         if not row:raise ValueError('Playlist item is unavailable')
-                        result=self.server.playlist.change({'action':'enabled','enabled':True,'revision':request.get('revision')},self.server.playlist_item)
-                        self.server.set_remote_command({**row,'action':'play','start':0})
-                    return self.send_json(result)
-                return self.send_json(self.server.playlist.change(request,self.server.playlist_item))
+                        self.server.playlist.change({'action':'enabled','enabled':True,'revision':request.get('revision')},self.server.playlist_item)
+                        self.server.set_remote_command({**row,'action':'play','start':0,'queue_entry':1})
+                    return self.send_json(self.server.playlist_web_snapshot())
+                self.server.playlist.change(request,self.server.playlist_item)
+                return self.send_json(self.server.playlist_web_snapshot())
             if parsed.path.startswith('/api/dlna/'):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=8192:
@@ -1396,6 +1403,13 @@ class AppServer(ThreadingHTTPServer):
         if self.offline.jobs:
             self.offline.start()
 
+    def playlist_web_snapshot(self):
+        player = self.player_status.snapshot()
+        with self.playlist.lock:
+            result = self.playlist.snapshot()
+            result['next'] = self.playlist.next(player.get('id', '')) if player.get('online') else None
+            return result
+
     def playlist_item(self, item):
         token=item.get('id')
         if not isinstance(token,str) or not 0<len(token)<512:raise ValueError('Invalid media id')
@@ -1406,8 +1420,12 @@ class AppServer(ThreadingHTTPServer):
         audio=item.get('audio',0);subtitle=item.get('subtitle',-1)
         if type(audio) is not int or not 0<=audio<=7 or type(subtitle) is not int or not -1<=subtitle<=31:
             raise ValueError('Invalid playlist tracks')
-        return {'id':token,'name':display_text(name),'kind':'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video',
-                'audio':audio,'subtitle':subtitle}
+        from .playlist import quality_options
+        options = quality_options(item)
+        kind = 'audio' if source.suffix.lower() in AUDIO_EXTENSIONS else 'video'
+        if kind == 'audio':options.pop('video_fps', None)
+        return {'id':token,'name':display_text(name),'kind':kind,
+                'audio':audio,'subtitle':subtitle, **options}
 
     def server_close(self):
         if hasattr(self,'dlna'):

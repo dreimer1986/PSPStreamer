@@ -32,7 +32,15 @@ static const uint32_t k[64]={
 static void blocks(uint32_t state[8],const unsigned char *p,size_t count) {
     uint32_t w[16],a[8];
     while(count--) {
-        for(unsigned i=0;i<16;i++,p+=4)w[i]=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];
+        for(unsigned i=0;i<16;i++,p+=4) {
+            /* memcpy preserves unaligned/aliasing correctness. Allegrex GCC
+             * lowers this to word loads + wsbw, instead of four byte loads. */
+#if defined(__GNUC__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            uint32_t word;memcpy(&word,p,sizeof(word));w[i]=__builtin_bswap32(word);
+#else
+            w[i]=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];
+#endif
+        }
         memcpy(a,state,sizeof(a));
             ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],0,0);
             ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],1,1);

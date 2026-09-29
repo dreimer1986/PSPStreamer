@@ -74,7 +74,7 @@ typedef struct {
     char value[ID_SIZE];
     int is_folder;
     int is_audio;
-    int queue_audio,queue_subtitle;
+    int queue_audio,queue_subtitle,queue_quality,queue_fps;
 } LibraryItem;
 
 typedef struct {
@@ -362,6 +362,8 @@ static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static int selected_video_fps;
+#include "queue_quality.h"
+static QueueQuality queue_quality_scope;
 static int next_episode_seconds;
 static char preference_media_id[ID_SIZE];
 static int series_available,series_saved,preferred_audio=-1,preferred_subtitle=-2;
@@ -541,8 +543,8 @@ static int save_playback_settings(void) {
     SceUID file;
     char data[2048];
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
-                          server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
-    length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
+                          server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, queue_quality_scope.active?queue_quality_scope.quality:selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
+    length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", (queue_quality_scope.active?queue_quality_scope.fps:selected_video_fps) ? "24000/1001" : "20");
     length += snprintf(data+length,sizeof(data)-length,"next_episode_seconds=%d\n",next_episode_seconds);
     length += snprintf(data + length, sizeof(data) - length, "play_mode=%s\n",download_before_play?"download":"stream");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
@@ -2972,6 +2974,15 @@ static int json_integer(const char *from, const char *key, int fallback) {
 #include "browser_remote.h"
 
 /* Consume background replies only while the library is idle. */
+static char *offline_json_object_end(char *text);
+static void read_queue_quality(const char *json,int *quality,int *fps) {
+    char setting[20];*quality=*fps=-1;
+    if(json_value(json,"audio_quality",setting,sizeof(setting)))*quality=queue_quality_index(setting);
+    if(json_value(json,"video_fps",setting,sizeof(setting))) {
+        if(!strcmp(setting,"20"))*fps=0;
+        else if(!strcmp(setting,"24000/1001"))*fps=1;
+    }
+}
 static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
                             int *subtitle, int *is_audio, int *start_seconds) {
     int sequence = remote_control_sequence;
@@ -2986,13 +2997,9 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     *audio = json_integer(reply, "audio", 0);
     *subtitle = json_integer(reply, "subtitle", -1);
     {
-        char setting[20];
-        int i;
-        static const char *qualities[] = {"96k", "128k", "160k", "v6", "v5", "v4", "v3"};
-        if (json_value(reply, "audio_quality", setting, sizeof(setting)))
-            for (i = 0; i < 7; i++) if (!strcmp(setting, qualities[i])) selected_audio_quality = i;
-        if (json_value(reply, "video_fps", setting, sizeof(setting)))
-            selected_video_fps = !strcmp(setting, "24000/1001");
+        int quality,fps;read_queue_quality(reply,&quality,&fps);
+        if(json_integer(reply,"queue_entry",0))queue_quality_apply(&queue_quality_scope,&selected_audio_quality,&selected_video_fps,quality,fps);
+        else {if(quality>=0)selected_audio_quality=quality;if(fps>=0)selected_video_fps=fps;}
     }
     *start_seconds = json_integer(reply, "start", 0);
     *is_audio = json_value(reply, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio");
@@ -3138,14 +3145,18 @@ static void parse_library(void) {
         char *object = strchr(cursor, '{');
         if (!object || !json_value(object, "name", items[item_count].title, TITLE_SIZE)) break;
         if (!json_value(object, "id", items[item_count].value, ID_SIZE)) break;
+        /* Bound optional field lookup to this row, not the following entry. */
+        char *object_end=offline_json_object_end(object);
+        if(!object_end)break;
+        char saved_end=*object_end;*object_end=0;
         items[item_count].is_folder = 0;
         items[item_count].queue_audio=json_integer(object,"audio",0);
         items[item_count].queue_subtitle=json_integer(object,"subtitle",-1);
+        read_queue_quality(object,&items[item_count].queue_quality,&items[item_count].queue_fps);
         { char kind[12]; items[item_count].is_audio = json_value(object, "kind", kind, sizeof(kind)) && !strcmp(kind, "audio"); }
+        *object_end=saved_end;
         item_count++;
-        cursor = strchr(object, '}');
-        if (!cursor) break;
-        cursor++;
+        cursor = object_end+1;
     }
 }
 
@@ -3201,6 +3212,7 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     next_name[0]=0;json_value(response,"name",next_name,sizeof(next_name));
     int next_track=json_integer(response,"audio",selected_audio_track);
     int next_subtitle=json_integer(response,"subtitle",selected_subtitle_track);
+    int next_quality,next_fps;read_queue_quality(response,&next_quality,&next_fps);
     if(!is_audio && !next_audio && !direction && !episode_countdown(next_name,0))return 0;
     /* A new Stop/Play during the transition takes precedence over autoplay.
      * Leave it for the normal command consumer; do not create commands here. */
@@ -3211,6 +3223,8 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     strcpy(media_id, next_id);
     remote_next_audio=next_audio;
     remote_next_track=next_track;remote_next_subtitle=next_subtitle;
+    if(next_explicit_tracks)queue_quality_apply(&queue_quality_scope,&selected_audio_quality,&selected_video_fps,next_quality,next_fps);
+    else queue_quality_restore(&queue_quality_scope,&selected_audio_quality,&selected_video_fps);
     return 1;
 }
 
@@ -3647,6 +3661,7 @@ int main(void) {
     }
     while (1) {
         unsigned long long now;
+        queue_quality_restore(&queue_quality_scope,&selected_audio_quality,&selected_video_fps);
         if(app_exit_requested)break;
         playback_clock_idle();
         keep_awake();
@@ -3858,6 +3873,7 @@ int main(void) {
                 if(!strcmp(current_path,":queue:")) {
                     selected_audio_track=items[selected].queue_audio;
                     selected_subtitle_track=items[selected].queue_subtitle;
+                    queue_quality_apply(&queue_quality_scope,&selected_audio_quality,&selected_video_fps,items[selected].queue_quality,items[selected].queue_fps);
                 }
                 if(load_media_metadata(items[selected].value)<0) {
                     show(selected);old_buttons=pad.Buttons;continue;

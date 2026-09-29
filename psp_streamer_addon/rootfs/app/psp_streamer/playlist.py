@@ -6,6 +6,40 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import math
+import subprocess
+
+
+def quality_options(item):
+    """Missing/empty settings inherit the player's defaults, never a prior row."""
+    result = {}
+    for key, allowed in (('audio_quality', ('96k','128k','160k','v6','v5','v4','v3')),
+                         ('video_fps', ('20','24000/1001'))):
+        value = item.get(key)
+        if value is None or value == '':
+            continue
+        if not isinstance(value, str) or value not in allowed:
+            raise ValueError('Invalid playlist quality')
+        result[key] = value
+    return result
+
+
+def media_duration(server, token):
+    """On-demand web summary; never probe all media during queue/playback polling."""
+    try:
+        if token.startswith('plex.'):
+            value = float(server.plex.metadata(token).get('duration') or 0) / 1000
+        elif token.startswith('jellyfin.'):
+            value = float(server.jellyfin.metadata(token).get('RunTimeTicks') or 0) / 10000000
+        else:
+            from .probe_cache import probe
+            source = server.library.decode(token)[1]
+            result = probe(source, ['-show_entries','format=duration','-of','json'], timeout=5)
+            if result.returncode:return None
+            value = float(json.loads(result.stdout).get('format', {}).get('duration', 0))
+        return value if math.isfinite(value) and value > 0 else None
+    except (ValueError, TypeError, OSError, subprocess.TimeoutExpired):
+        return None
 
 
 class Playlist:
@@ -64,7 +98,7 @@ class Playlist:
                     if len(added)!=1 or anchor==added[0]['id'] or not any(r['id']==anchor for r in rows):
                         raise ValueError('Select one different item after the current track')
                     target=added[0]['id']
-                    if 'audio' in request['items'][0] or 'subtitle' in request['items'][0]:
+                    if any(key in request['items'][0] for key in ('audio','subtitle','audio_quality','video_fps')):
                         rows[next(i for i,r in enumerate(rows) if r['id']==target)]=added[0]
                     order=self._ordered(draft)
                     order=[r for r in order if r['id']!=target]
@@ -75,6 +109,14 @@ class Playlist:
                     rows.insert(next(i for i,r in enumerate(rows) if r['id']==anchor)+1,row)
                     draft['up_next']={'after':anchor,'id':target}
                     draft['enabled']=True
+            elif action == 'quality':
+                row = next((r for r in rows if r['id'] == token), None)
+                if row is None:raise ValueError('Playlist item is unavailable')
+                options = quality_options(request)
+                row.pop('audio_quality', None)
+                row.pop('video_fps', None)
+                if row.get('kind') == 'audio':options.pop('video_fps', None)
+                row.update(options)
             elif action in {'remove', 'move'}:
                 index = next((i for i,r in enumerate(rows) if r['id'] == token), -1)
                 if index < 0:
