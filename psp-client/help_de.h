@@ -137,9 +137,9 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
     [HELP_PAGE_FLIGHT]={
         .title="Höhle: selbst fliegen",
         .step1_title="L + R: Flugmenü öffnen",
-        .step1_text="Analogstick: in Abzweige lenken.",
+        .step1_text="LINKS/RECHTS: Schiff. Stick: Flug. X: Feuer.",
         .step2_title="L / R: rollen   HOCH/RUNTER: Tempo",
-        .step2_text="Doppel-L / R: vollständige Fassrolle.",
+        .step2_text="Doppel-L / R: Rolle schützt vor Schüssen.",
         .step3_title="L + R 5 Sekunden halten: verlassen",
         .step3_text="Flug im Vollbild; START stoppt Musik."
     },
@@ -148,7 +148,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_title="Starten / Bestenliste / Verlassen",
         .step1_text="HOCH/RUNTER wählt, X: OK, O: Ende.",
         .step2_title="Wandtreffer: -20 Schild, 1s Schutz",
-        .step2_text="Ein Punkt pro Sekunde; Pause hält an.",
+        .step2_text="Schuss: -10; Abschuss: +100; Sekunde: +1.",
         .step3_title="Game Over: Explosion und Punkte",
         .step3_text="Nach 5s: Top Ten. X / O geht zurück."
     },

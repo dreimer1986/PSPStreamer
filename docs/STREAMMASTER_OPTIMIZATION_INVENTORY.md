@@ -1,5 +1,59 @@
 # StreamMaster: complete currently identified optimization inventory
 
+## September 29 follow-up: what is still worth doing?
+
+This review changes documentation only, not firmware or transport behaviour.
+The older measurements/status notes below are historical snapshots. The user has
+confirmed the subsequent download/SHA work; no new controlled throughput run was
+performed for this review. There is no risk-free implementation change: “low risk”
+means a narrow, reversible change with equivalent outputs and focused tests.
+
+The source already has pointer reply queues, two internal 8 KiB reply buffers,
+asynchronous PSP storage/logging, read-ahead and batched SHA. Importantly,
+`network_worker()` already calls `usb_host_client_unblock()` after publishing a
+reply. The USB loop's 20 ms event timeout is **not** an unavoidable 20 ms delay
+per reply. Reimplementing these completed changes is not an optimization.
+
+One accessible completed 479.472 KiB/s run (346.539 s body, log history
+`00E31C94DE1D036D`, completion tick 838592) attributed approximately 1.196 s to the
+ESP DMA staging copy, 2.882 s to checksums and 9.253 s to ring copying. These
+overlap other work and cover the measured bulk window, not exclusive wall time.
+Even completely removing the measured DMA copy would account for only about
+0.35% of that body's wall time; checksum time is about 0.83%. This does **not**
+prove a corresponding speedup, nor that today's critical path is unchanged.
+
+| Remaining option | Recommendation | Risk / complexity |
+| --- | --- | --- |
+| Same-file attribution using existing counters | Best prerequisite; compare HTTP, same card/clock, body versus final verification separately | Low risk; no production change needed |
+| Existing block/depth profiles | Compare 8×2 with 8×4 first, keeping hot replies internal; larger 16/32 KiB profiles only as explicit comparisons | Low implementation effort, but runtime RAM/control-latency risk; not a blind new default |
+| FNV hot loop, same bytes and exact result | Small, bounded candidate if profiling justifies it; keep format and corruption checks identical | Low–medium risk; likely small benefit; protocol and malformed-frame tests required |
+| Diagnostic formatting/UI frequency | Only remove demonstrated redundant work; background logging is already implemented | Low–medium risk; preserve cancellation, useful diagnostics and audio fairness |
+| HTTP/server delivery and reuse | Useful when source/SMB stalls or many small requests dominate; not when the ESP receive ring is already full | Low–medium risk; reuse requires lifecycle/auth/reconnect checks |
+| AP/channel/link conditions | Worth checking when the ring empties; no PSP protocol change | Low code risk; environmental changes still need comparison |
+| Receive bursts, CPU affinity and task priorities | Only if worker scheduling is measured on the critical path; current idle yield and USB wakeups must survive | **Complex**, medium–high risk: watchdog, control and socket fairness |
+| Hot internal RAM/IRAM placement | Target individual measured hot objects/functions; retain internal hot replies | **Complex**, medium risk: scarce contiguous DMA/internal RAM; no general PSRAM expansion |
+| TCP/lwIP/Wi-Fi buffer balance | Only if radio/TCP starvation remains; current window is 32 KiB and receive mailbox 26 | **Complex**, medium risk across six channels and total RAM budget |
+| Fuse ring copy and checksum | Could remove a memory pass without changing the protocol, but only worthwhile if cache/memory cost dominates | **Complex**, medium risk: wrap boundaries, locks, exact checksum order |
+| Direct-to-DMA reply ownership | Removes the remaining staging copy, but the measured cost is small | **Complex**, high risk: callbacks, detach, cancellation, buffer lifetime; low priority |
+| Continuous credit-based receive | Most substantial remaining transport redesign; can remove request/group gaps rather than micro-optimize copying | **Complex**, very high effort: bounded flow control, multiple channels, fairness and recovery |
+| PSP shared/pinned zero-copy buffers | Only after proving kernel/user copies dominate | **Complex**, very high risk: cache coherency, DMA and buffer ownership; not recommended now |
+| Negotiated replacement checksum | Only if exact-compatible FNV work is insufficient and checksums genuinely dominate | **Complex**, medium–high risk: version negotiation and equivalent detection; not recommended for current timings |
+| TLS record buffering/session reuse/crypto | Relevant to HTTPS only; separate handshake/startup from sustained body cost | **Complex**, medium–high risk; must retain certificate verification; no HTTP gain |
+| PSP storage chunk/alignment tuning | Investigate residual write stalls, preserving completed-prefix resume; overlap already exists | Medium–high risk; a third buffer cannot make the physical card faster |
+| Further SHA/read-back tuning | Improves finishing/verification time, not USB body throughput; latest rolling schedule remains | Low–medium risk for exact-output hot-loop work, **complex** for pipeline changes; do not skip read-back |
+| Targeted O3/LTO/PGO | Only on measured hotspots; previous firmware O3 comparison did not establish a win | **Complex**, medium risk/build effort; code size can negate gains |
+| Existing PSP clock policy | Controlled comparison at already proven settings, not new PLL experiments | Runtime stability/power risk; not a free optimization |
+| Pipelined PSP uploads | Useful only for a future reverse-direction feature | **Complex**, medium–high effort; no current download benefit |
+| Parallel ranges/multiple downloads | Shared USB/card bottleneck makes benefit doubtful | **Complex**, high effort and resume/order risk; defer |
+
+Recommended next step, if speed work resumes: one same-file counter comparison,
+then existing 8 KiB depth tuning or exact-output FNV work **only if indicated**.
+There is no compelling measured reason to destabilize buffer ownership for a
+sub-percent staging-copy target. Credit-based streaming remains a separate,
+optional larger project, not a promised increase or part of the current build.
+
+---
+
 This is the complete set of avenues identified during the September 27 review,
 not a claim that future measurements cannot reveal another bottleneck. Potential
 is conditional: no percentage gain is promised for unmeasured changes. Items below

@@ -32,6 +32,8 @@ void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll
         s->flight_barrel=s->flight_last_roll=s->flight_tap_roll=0;s->flight_tap_time=0;
         s->flight_roll=s->motion.roll-s->motion.bank;
         s->flight_initialized=0;
+        memset(&s->combat,0,sizeof(s->combat));s->combat.random=s->paths.random^s->random^0x61b59U;
+        s->combat.spawn=15+(s->combat.random%5001)*.001f;
         if(s->flight)cave_camera(s,s->motion.travel+2,&s->flight_x,&s->flight_y);
     }
     if(!s->flight)return;
@@ -122,7 +124,8 @@ static int ship_axis(const float v[3][3],const float h[3],const float axis[3],fl
     return 1;
 }
 static int cave_ship_mesh_contact(const CaveScene *s,const float center[3],const float basis[3][3],float normal[3]) {
-    const float h[3]={CAVE_SHIP_HALF_X,CAVE_SHIP_HALF_Y,CAVE_SHIP_HALF_Z};
+    const float h[3]={s->ship_half[0]>0?s->ship_half[0]:CAVE_SHIP_HALF_X,
+        s->ship_half[1]>0?s->ship_half[1]:CAVE_SHIP_HALF_Y,s->ship_half[2]>0?s->ship_half[2]:CAVE_SHIP_HALF_Z};
     float extent[3],deepest=-1;int hit=0;
     for(int k=0;k<3;k++)extent[k]=h[0]*fabsf(basis[0][k])+h[1]*fabsf(basis[1][k])+h[2]*fabsf(basis[2][k]);
     for(int i=0;i<CAVE_SLICES;i++) {
@@ -543,6 +546,7 @@ static unsigned random_step(unsigned *state) {
 CaveScene *cave_create_seed(unsigned random) {
     CaveScene *s=memalign(64,sizeof(*s));if(!s)return NULL;
     memset(s,0,sizeof(*s));
+    s->ship_model=1; /* Preserve the original Low Poly 2 as default. */
     s->planes[0].z=s->planes[1].z=-1;
     for(int i=0;i<CAVE_SLICES;i++)s->slices[i].index=-1;
     /* Original field initialization seeds sixteen temporary XYZ contributors
@@ -591,6 +595,7 @@ static void cave_rebase(CaveScene *s) {
         }
     }
 }
+#include "cave_combat_impl.h"
 CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,unsigned long long now) {
     (void)level;
     double elapsed=s->motion.previous && now>=s->motion.previous?(now-s->motion.previous)*.000001:0;
@@ -690,6 +695,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
         s->motion.bank+=(target-s->motion.bank)*(1-powf(.43f+.5f*powf(.86f,step),14*dt));
     }
     cave_rebase(s);
+    cave_combat_step(s,dt);
     int first=(int)floorf(s->motion.travel);
     /* Keep the original forward horizon AND three rear slabs. A banked view
      * can still see those at its edges; do not recycle them at camera Z. */

@@ -241,6 +241,7 @@ static void md_target(int offset, int stride, int width, int height) {
 }
 #include "milkdrop_decor_gu.h"
 #include "cave_gu.h"
+#include "cave_combat_gu.h"
 #include "milkdrop_title.h"
 #include "cave_game_gu.h"
 /* Copy before list reuse; renderer-owned scratch avoids stack growth. */
@@ -406,6 +407,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         md_trace("Cave geometry");
         cave_draw(width,height);
         cave_draw_ship(width,height);
+        cave_draw_combat();
         cave_game_draw_explosion();
         if(cave_scene->game.phase==CAVE_GAME_OFF)md_title_draw(now,1);
         goto present_scene;

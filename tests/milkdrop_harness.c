@@ -561,14 +561,32 @@ int main(int argc,char **argv) {
                     cave_scene->style=cave_test_style=(f/3)%9;
                     cave_scene->black=(f%7)==0;
                     cave_scene->texture_style=(f%3)!=0;
-                    md_cave_control(f==16 || f==25,200,70,1,1,test_time);
-                    if(f==17) {assert(cave_scene->game.phase==CAVE_GAME_INTRO);md_cave_game_menu(1,1,0);assert(cave_scene->game.phase==CAVE_GAME_HALL);}
-                    if(f==18) {md_cave_game_menu(0,0,1);assert(cave_scene->game.phase==CAVE_GAME_INTRO);}
-                    if(f==19) {md_cave_game_menu(-1,1,0);assert(cave_scene->flight && cave_scene->game.phase==CAVE_GAME_ALIVE);}
+                    md_cave_control(f==16 || f==25,200,70,1,1,0,test_time);
+                    if(f==17) {assert(cave_scene->game.phase==CAVE_GAME_INTRO);md_cave_game_menu(1,0,1,0);assert(cave_scene->game.phase==CAVE_GAME_HALL);}
+                    if(f==18) {md_cave_game_menu(0,0,0,1);assert(cave_scene->game.phase==CAVE_GAME_INTRO);}
+                    if(f==19) {
+                        int model=(resolution*4+tv*2+full)%CAVE_SHIPS;
+                        cave_scene->ship_model=(model+CAVE_SHIPS-1)%CAVE_SHIPS;
+                        md_cave_game_menu(-1,1,1,0);
+                        assert(cave_scene->flight && cave_scene->game.phase==CAVE_GAME_ALIVE);
+                        assert(cave_scene->ship_model==model);
+                    }
+                    if(f==20) {
+                        CaveCombat *c=&cave_scene->combat;c->health=100;c->model=cave_scene->ship_model;
+                        c->enemy[2]=cave_scene->motion.travel+5;
+                        cave_camera(cave_scene,c->enemy[2],&c->enemy[0],&c->enemy[1]);
+                        c->aim[2]=-1;
+                        for(int i=0;i<CAVE_BOLTS;i++) {
+                            c->bolts[i].life=1;c->bolts[i].enemy=i&1;
+                            memcpy(c->bolts[i].p,c->enemy,sizeof(c->enemy));
+                            c->bolts[i].p[0]+=.1f*(i%4);c->bolts[i].p[2]+=i*.05f;
+                            c->bolts[i].v[2]=10;
+                        }
+                    }
                     if(f==21) {cave_scene->game.health=20;cave_scene->game.protection=0;assert(cave_game_wall_hit(&cave_scene->game));}
                     if(f==23)test_time+=5000000;
-                    if(f==24) {assert(cave_scene->game.phase==CAVE_GAME_HALL);md_cave_game_menu(0,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
-                    if(f==26) {md_cave_game_menu(1,0,0);md_cave_game_menu(1,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
+                    if(f==24) {assert(cave_scene->game.phase==CAVE_GAME_HALL);md_cave_game_menu(0,0,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
+                    if(f==26) {md_cave_game_menu(1,0,0,0);md_cave_game_menu(1,0,1,0);assert(cave_scene->game.phase==CAVE_GAME_OFF);}
                 }
                 test_time+=100000;assert(md_frame(tv,full,bands,75,test_time,mode)==1);
                 assert(covered_width==expected_width);

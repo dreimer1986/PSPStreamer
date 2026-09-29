@@ -16,7 +16,7 @@ void md_cave_game_ui(const unsigned char *font,int paused,const char *const labe
         cave_scene->game.paused=!!paused;
     }
 }
-int md_cave_game_menu(int move,int confirm,int back) {
+int md_cave_game_menu(int move,int ship_move,int confirm,int back) {
     if(!cave_scene)return 0;
     CaveGame *g=&cave_scene->game;
     if(g->phase==CAVE_GAME_HALL) {
@@ -24,11 +24,14 @@ int md_cave_game_menu(int move,int confirm,int back) {
         return 1;
     }
     if(g->phase==CAVE_GAME_EXPLODING)return 1;
+    if(g->phase==CAVE_GAME_ALIVE)return 1;
     if(g->phase!=CAVE_GAME_INTRO)return 0;
+    if(ship_move)cave_scene->ship_model=(cave_scene->ship_model+(ship_move>0?1:CAVE_SHIPS-1))%CAVE_SHIPS;
     if(move)g->selection=(g->selection+(move>0?1:2))%3;
     if(back || (confirm && g->selection==2)){g->phase=CAVE_GAME_OFF;cave_scene->flight=0;}
     else if(confirm && g->selection==0) {
         int paused=g->paused;
+        for(int k=0;k<3;k++)cave_scene->ship_half[k]=cave_models[cave_scene->ship_model].half[k]*CAVE_SHIP_SCALE+CAVE_SHIP_SKIN;
         cave_flight_input(cave_scene,1,128,128,0,0);g->paused=paused;
         cave_scene->motion.previous=0;
     } else if(confirm && g->selection==1){g->phase=CAVE_GAME_HALL;g->completed=0;}
@@ -99,6 +102,8 @@ static void cave_game_draw_hud(int left,int top,int width,int height) {
     if(g->phase==CAVE_GAME_INTRO) {
         cave_hud_rect(left+width*.05f,top+height*.04f,width*.9f,height*.92f,0xee000000);
         cave_hud_logo(left+width*.15f,top+height*.08f,width*.7f);
+        snprintf(text,sizeof(text),"<  Low Poly %d / %d  >",cave_scene->ship_model+1,CAVE_SHIPS);
+        cave_hud_text(left+width*.24f,top+height*.79f,.65f*scale,text,0xff40eaff);
         for(int i=0;i<3;i++) {
             float row=top+height*.46f+i*27*scale;
             if(i==g->selection)cave_hud_rect(left+width*.23f,row-2*scale,width*.54f,25*scale,0xff304a20);

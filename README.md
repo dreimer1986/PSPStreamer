@@ -1329,7 +1329,8 @@ additional memory, released when leaving the renderer. With diagnostics enabled,
 
 During Cave playback, press **L+R together** to open the flight intro with its
 Monkey-inspired logo. Choose **Game Start / Hall of Fame / Exit** with Up/Down
-and confirm with X; Circle leaves the menu. During flight, hold **L+R for five
+and confirm with X; Circle leaves the menu. **Left/Right selects one of seven
+ships** before starting (Low Poly 2 is the original/default ship). During flight, hold **L+R for five
 seconds** to leave (a progress indicator appears). The entry press must be
 released first; continuing to hold it does not immediately leave again.
 The Easter egg uses fullscreen on LCD and TV and restores your previous view
@@ -1372,10 +1373,31 @@ previous valid table if a write is interrupted. Updates do not replace these
 files. A write failure is shown on the result screen; the in-memory table still
 works. No server update is required.
 
-Enemies are **not implemented yet**. The score hook reserves a default reward
-of 100 points per destroyed enemy, with larger explicit rewards for stronger
-types; nothing currently awards these bonuses. Projectile damage and barrel-roll
-projectile protection remain future work.
+Hold **X** for yellow pulsing blaster bolts: one shot every **500 ms** at most.
+There is no delayed burst after a slow frame. Both sides have 100 health and
+take **10 damage per projectile**; a kill earns **100 points**. The full
+double-tap barrel roll protects against projectiles, not wall damage.
+
+Every 15–20 simulation seconds, the game attempts to place one stationary enemy
+ship near the floor of a sufficiently open chamber. An unsuitable site is
+skipped until the next opportunity. At most one enemy and 32 projectiles exist
+at once; enemies left behind are removed. The enemy uses a random ship model,
+turns toward the player after a short line-of-sight delay, and fires at most once
+every **750 ms** when aligned. Walls block shots. Music pause freezes combat.
+All selectable ships currently share health, speed and weapons; hull collision
+bounds follow the chosen model. These are choices, not upgrades.
+
+All eight supplied GLBs were imported; the heavier turret is prepared but is
+**not spawned** in this version. The seven playable ships use 234–592 triangles.
+Large meshes are simplified; embedded texture colours are baked into vertex
+colours, not full-resolution textures. Normal/metallic maps and partial alpha
+are not reproduced. The original ship retains its four music-reactive exhausts;
+the other models do not yet have individually tagged exhaust locations.
+Original GLBs, attribution and per-model conversion counts are in
+[flight model credits](psp-client/assets/ships/CREDITS.md).
+Regenerate with `python3 tools/import_cave_models.py psp-client/assets/ships psp-client/cave_models_data.h`
+(requires NumPy and Pillow). The meshes are embedded in EBOOT/PRX, so there are
+no additional model files to copy to the PSP.
 
 Flight starts disabled, is not saved, and is reset when the renderer is closed
 (including opening its options). When disabled, flight performs no field checks

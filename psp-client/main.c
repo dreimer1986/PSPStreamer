@@ -2143,6 +2143,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         unsigned flight_pressed=pad.Buttons&~old;
         int flight_dismissed=visual_preset==6 && music_visual_active &&
             md_cave_game_menu(!!(flight_pressed&PSP_CTRL_DOWN)-!!(flight_pressed&PSP_CTRL_UP),
+                !!(flight_pressed&PSP_CTRL_RIGHT)-!!(flight_pressed&PSP_CTRL_LEFT),
                 !!(flight_pressed&PSP_CTRL_CROSS),!!(flight_pressed&PSP_CTRL_CIRCLE));
         if(!flight_dismissed && music_visual_active && (pad.Buttons&PSP_CTRL_CROSS) && !(old&PSP_CTRL_CROSS) && !(pad.Buttons&PSP_CTRL_TRIANGLE))
             md_title(subtitle_font,live?radio_station:current_media_artist,live?radio_song:current_media_title[0]?current_media_title:title,sceKernelGetSystemTimeWide(),1);
@@ -2178,7 +2179,7 @@ static int play_audio_once(const char *media_id, const char *title) {
             int both=(pad.Buttons&shoulders)==shoulders;
             int roll=both?0:!!(pad.Buttons&PSP_CTRL_RTRIGGER)-!!(pad.Buttons&PSP_CTRL_LTRIGGER);
             int throttle=!!(pad.Buttons&PSP_CTRL_UP)-!!(pad.Buttons&PSP_CTRL_DOWN);
-            cave_flying=md_cave_control(both && !(pad.Buttons&PSP_CTRL_SELECT),pad.Lx,pad.Ly,throttle,roll,sceKernelGetSystemTimeWide());
+            cave_flying=md_cave_control(both && !(pad.Buttons&PSP_CTRL_SELECT),pad.Lx,pad.Ly,throttle,roll,!!(pad.Buttons&PSP_CTRL_CROSS),sceKernelGetSystemTimeWide());
         }
         if(cave_flying && !cave_screen_override) {
             cave_previous_fullscreen=fullscreen;cave_screen_override=1;fullscreen=1;

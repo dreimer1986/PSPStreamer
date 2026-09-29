@@ -25,6 +25,12 @@ int main(int argc,char **argv) {
     cave_game_tick(&g,5.5);assert(cave_game_score(&g).seconds==15);
     g.bonus=CAVE_SCORE_MAX-1;cave_game_enemy_destroyed(&g,~0U);
     assert(cave_game_score(&g).points==CAVE_SCORE_MAX);
+    cave_game_start(&g);g.protection=0;
+    assert(!cave_game_blaster_hit(&g,1) && g.health==100);
+    g.paused=1;assert(!cave_game_blaster_hit(&g,0));g.paused=0;
+    for(int i=0;i<10;i++)assert(cave_game_blaster_hit(&g,0));
+    assert(g.health==0 && g.phase==CAVE_GAME_EXPLODING);
+    assert(!cave_game_blaster_hit(&g,0));
     CaveExitHold hold={0};double progress;
     assert(cave_game_shoulders(&hold,1,0,100,&progress)==1);
     assert(!cave_game_shoulders(&hold,1,1,9000000,&progress) && progress==0);

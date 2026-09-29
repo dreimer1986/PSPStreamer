@@ -51,6 +51,12 @@ static inline int cave_game_wall_hit(CaveGame *g) {
     if(g->health<=0){g->health=0;g->phase=CAVE_GAME_EXPLODING;g->death_seconds=0;g->completed=1;}
     return 1;
 }
+static inline int cave_game_blaster_hit(CaveGame *g,int rolling) {
+    if(g->phase!=CAVE_GAME_ALIVE || g->paused || rolling || g->protection>0)return 0;
+    g->health-=10;
+    if(g->health<=0){g->health=0;g->phase=CAVE_GAME_EXPLODING;g->death_seconds=0;g->completed=1;}
+    return 1;
+}
 /* Future enemy code calls this ONCE on destruction, never for each projectile.
  * 100 is a normal enemy; stronger types supply their explicit reward. */
 static inline void cave_game_enemy_destroyed(CaveGame *g,unsigned reward) {

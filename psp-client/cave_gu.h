@@ -4,18 +4,21 @@
 #include "cave_textures.h"
 static CaveScene *cave_scene;
 /* Extra HUD/particle space only while playing; normal Monkey is unchanged. */
-#define CAVE_GU_TAIL (cave_scene->game.phase==CAVE_GAME_OFF?65536:98304)
+#define CAVE_GU_TAIL (cave_scene->game.phase==CAVE_GAME_OFF?65536:196608)
 static CaveClip cave_frame_clip;
 #include "cave_ship_data.h"
+typedef struct { const MdVertex *vertices;int count;float half[3]; } CaveModel;
+#include "cave_models_data.h"
 #include "cave_engine.h"
 static CaveExitHold cave_exit_hold;
-int md_cave_control(int shoulders,int x,int y,int throttle,int roll,unsigned long long now) {
+int md_cave_control(int shoulders,int x,int y,int throttle,int roll,int fire,unsigned long long now) {
     if(!cave_scene)return 0;
     CaveGame *g=&cave_scene->game;
     int action=cave_game_shoulders(&cave_exit_hold,shoulders,g->phase!=CAVE_GAME_OFF,now,&g->exit_hold);
     if(action==1){memset(g,0,sizeof(*g));g->phase=CAVE_GAME_INTRO;}
     else if(action==-1){g->phase=CAVE_GAME_OFF;cave_scene->flight=0;}
     if(g->phase==CAVE_GAME_ALIVE)cave_flight_input(cave_scene,0,x,y,throttle,roll);
+    cave_scene->combat.fire=fire && g->phase==CAVE_GAME_ALIVE;
     return cave_scene && cave_scene->game.phase!=CAVE_GAME_OFF;
 }
 static void cave_draw_ship(int width,int height) {
@@ -24,7 +27,7 @@ static void cave_draw_ship(int width,int height) {
     float opacity=cave_ship_opacity(cave_scene);
     if(opacity<=0)return;
     /* Draw the third-person ship in world space, inside the renderer's
-     * reserved game tail (96 KiB including HUD). No ship allocation when off. */
+     * reserved game tail (192 KiB including combat/HUD). No ship allocation when off. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
     enum {SHIP_CAPACITY=61440/sizeof(MdVertex)};
     MdVertex *ship=sceGuGetMemory(SHIP_CAPACITY*sizeof(MdVertex));
@@ -34,11 +37,12 @@ static void cave_draw_ship(int width,int height) {
     /* Keep headroom for transients: sustained loud bass must not pin the
      * light at maximum and hide every following beat. */
     float glow=.08f+.65f*cave_scene->motion.bass+1.5f*cave_scene->motion.pulse;
-    for(int i=0;i<CAVE_SHIP_VERTICES;i+=3) {
+    const CaveModel *model=&cave_models[cave_scene->ship_model];
+    for(int i=0;i<model->count;i+=3) {
         MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
         for(int j=0;j<3;j++) {
-            tri[j]=cave_ship_mesh[i+j];float p[3];
-            tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
+            tri[j]=model->vertices[i+j];float p[3];
+            if(cave_scene->ship_model==1)tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
             tri[j].color=(tri[j].color&0xffffffU)|((unsigned)(255*opacity)<<24);
             for(int k=0;k<3;k++)p[k]=center[k]+CAVE_SHIP_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
             tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];

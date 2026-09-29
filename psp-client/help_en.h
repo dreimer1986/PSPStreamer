@@ -137,9 +137,9 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
     [HELP_PAGE_FLIGHT]={
         .title="Cave: take the controls",
         .step1_title="L + R: open the flight menu",
-        .step1_text="Analog stick steers into branches.",
+        .step1_text="LEFT/RIGHT: ship. Stick: steer. X: fire.",
         .step2_title="L / R: roll   UP / DOWN: speed",
-        .step2_text="Double L / R: full barrel roll.",
+        .step2_text="Double L / R: roll blocks projectiles.",
         .step3_title="Hold L + R for 5 seconds to exit",
         .step3_text="Fullscreen while flying; START stops."
     },
@@ -148,7 +148,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step1_title="Menu: Game Start / Hall of Fame / Exit",
         .step1_text="UP/DOWN selects, X confirms, O exits.",
         .step2_title="Wall hit: -20 shield; 1s protection",
-        .step2_text="One point per second; pause freezes it.",
+        .step2_text="Shot: -10; kill: +100; second: +1 point.",
         .step3_title="Game Over: explosion, then scores",
         .step3_text="After 5s: top ten. X / O returns."
     },

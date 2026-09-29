@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Monkey flight: seven selectable ships, bounded stationary enemy encounters,
+  yellow blaster projectiles (player 500 ms, enemy 750 ms), 10-point projectile
+  damage, barrel-roll protection and 100-point kill rewards. Import all supplied
+  GLBs with CC-BY credits; prepare but do not spawn the turret model.
 - Add an isolated VAAPI Main/CABAC test-package generator with a software control,
   shared production FLV/MP3 timing, header checks and PSP offline manifests. No
   production encoder changes; Intel encoding and PSP validation pending.
