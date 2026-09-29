@@ -49,6 +49,18 @@ VAAPI SPS, and full host decoding. **Host checks do not prove PSP compatibility.
 ## Current validation status
 
 Command-isolation and software package/hash/index/host-decode tests pass locally.
-No `/dev/dri` device is exposed in the development environment, and SSH access to
-the NUC is blocked there. The VAAPI package has therefore **not yet been generated
-or tested**. Actual Intel encoding and PSP playback remain external test steps.
+September 29: after access became available, both TV packages were generated on
+the Intel NUC in a disposable container based on the existing 0.1.62 add-on image.
+Only that container received Alpine's intel-media-driver 24.4.3-r0; production
+settings, image and process were unchanged. Media mounts were read-only.
+
+Source: A Certain Scientific Accelerator S01E01, seconds 60..120, first audio
+track, no subtitles. Both packages passed host validation; VAAPI SPS/PPS confirm
+profile_idc=77, level_idc=30, max_num_ref_frames=1, entropy_coding_mode_flag=1.
+The packages and diagnostics are in
+`~/Downloads/PSP-VAAPI-Main-Test-20260929/output/`:
+
+- `39d3a0579c2c4d20957ff494c18ab231`: Software-TV control.
+- `f6ec3208a55d413f940085e2f6782ed1`: VAAPI-TV.
+
+**Actual PSP decoding remains untested.** Copy both folders as described above.
