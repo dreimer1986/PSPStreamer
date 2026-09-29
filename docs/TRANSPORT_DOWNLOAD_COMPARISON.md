@@ -1,5 +1,27 @@
 # Transport measurement status
 
+## 2026-09-29: HTTP retest of 0.2.8 versus 0.2.9
+
+Both downloads were interrupted by the user on a slow AP and resumed after
+reconnecting. Only the successful resumed body transfers are compared:
+
+| Variant | Transferred bytes (excluding resume offset) | Body time | Average |
+| --- | ---: | ---: | ---: |
+| 0.2.8 optimized | 164,376,275 | 334.146 s | 480.40 KiB/s |
+| 0.2.9 rollback | 151,269,075 | 305.095 s | 484.19 KiB/s |
+
+Evidence: `PSPStreamer-recovery.txt.history-00E31C9ED1812796`, completion
+tick 475806 (resume 5,767,168), and `PSPStreamer-recovery.txt`, completion
+tick 468416 (resume 18,874,368). Both refer to the same 170,143,443-byte file.
+The entire file was subsequently hashed in 93.341 s / 92.789 s respectively.
+The body averages exclude both hashing and the discarded slow attempts.
+The rollback result is 3.79 KiB/s (0.79%) faster: one run per version and different
+resume offsets cannot establish such a small effect. Keep the simpler 0.2.9
+loops; these samples do not demonstrate a benefit from the unrolled checksum
+and zero-length-copy guard. Both recover the previous HTTP throughput range;
+the earlier HTTPS-versus-HTTP comparison was confounded by the server route.
+
+
 Firmware 0.2.3's larger buffers and shorter waits achieved a completed download
 of 170,480,059 bytes in 552.635 s: **301.26 KiB/s**. The 107 recorded five-second
 intervals had median 328 KiB/s, maximum 350 KiB/s and minimum 30 KiB/s. Nine were

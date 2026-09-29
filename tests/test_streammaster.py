@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_saved_network_profiles(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'profiles'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=address,undefined', '-I', str(ROOT),
+                            str(ROOT / 'tests/streammaster_profiles_harness.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=5)
+
     def test_ring_copy_boundaries(self):
         source=(ROOT/'streammaster/main/sockets.c').read_text()
         functions=source[source.index('static void copy_out('):source.index('static int would_block(')]

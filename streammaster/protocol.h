@@ -13,10 +13,13 @@
 #define SM_USB_PROTOCOL 0x01
 enum {SM_INFO=1,SM_CONFIG_GET,SM_CONFIG_SET,SM_SCAN,SM_CONNECT,SM_DISCONNECT,SM_ECHO,SM_HTTP_OPEN,SM_HTTP_READ,SM_HTTP_CLOSE,SM_NETWORK_INFO,SM_CAPABILITIES};
 #define SM_USB_METRICS 13U
+enum {SM_PROFILES_GET=14,SM_PROFILE_SAVE,SM_PROFILE_SELECT,SM_PROFILE_DELETE,SM_PROFILE_AUTO};
+#define SM_PROFILE_COUNT 5U
 #define SM_CAP_COMPACT 1U
 #define SM_CAP_BULK_PAIR 2U
 #define SM_CAP_BULK_EXT 4U
 #define SM_CAP_USB_METRICS 8U
+#define SM_CAP_PROFILES 16U
 #define SM_BULK_FRAME_SIZE 8192U
 #define SM_BULK_MAX_FRAME_SIZE 32768U
 #define SM_BULK_MAX_DEPTH 4U
@@ -92,6 +95,13 @@ typedef struct {
     char ip[16],mask[16],gateway[16],dns[16],dns2[16];
     unsigned char reserved[2];
 } SmConfig;
+/* Passwords are cleared in replies; HAS_PASSWORD permits slot-local retention. */
+typedef struct {
+    uint32_t version,active,automatic;
+    SmConfig slot[SM_PROFILE_COUNT];
+} SmProfiles;
+typedef struct {uint32_t slot;SmConfig config;} SmProfileSave;
+_Static_assert(sizeof(SmProfiles)==932,"Profile storage and wire layout");
 typedef struct {
     char firmware[32],ip[16],gateway[16],dns[16],dns2[16];
     uint32_t wifi_state,disconnect_reason,free_heap,usb_requests;

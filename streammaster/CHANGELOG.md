@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.0 — Saved Wi-Fi networks
+
+- Store five independent WLAN profiles, including passwords and IP/DNS settings.
+- Add profile selection, automatic network choice and confirmed deletion in the PSP app.
+- Migrate the existing single-network configuration without erasing NVS.
+- Prefer the strongest visible saved network/AP on connection setup; retry other
+  saved networks after failed association, with no background scanning while connected.
+- Keep the simpler 0.2.9 USB loops: the HTTP comparison measured 480.40 KiB/s
+  with 0.2.8 optimizations versus 484.19 KiB/s without them (one run each, inconclusive).
+
 ## 0.2.9 — restore the pre-0.2.8 USB hot loops
 
 - Restore the exact scalar FNV and ring-copy code from 0.2.7 on ESP and PSP.

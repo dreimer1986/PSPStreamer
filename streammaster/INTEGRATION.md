@@ -298,3 +298,23 @@ BSD-licensed drop-in. Review compatibility with your application's license and
 retain third-party notices, including the bridge's PSPLINK attribution and the
 ESP-IDF/vendor license bundle. See [LICENSE](../LICENSE),
 [PSPLINK-license.txt](PSPLINK-license.txt) and the packaged `licenses/` directory.
+# Saved network profiles (firmware 0.3.0)
+
+`SM_CAP_PROFILES` advertises five saved network slots. This is an additive
+protocol-v1 extension; existing socket, frame, configuration and info layouts
+remain unchanged. Use `SM_PROFILES_GET` for a `SmProfiles` reply (version 1),
+`SM_PROFILE_SAVE` with `SmProfileSave`, and `SM_PROFILE_SELECT` / `SM_PROFILE_DELETE`
+with a uint32 slot index (0..4). `SM_PROFILE_AUTO` takes a uint32 boolean.
+
+Replies never expose passwords. `SM_CFG_HAS_PASSWORD` indicates their presence;
+save with `SM_CFG_KEEP_PASSWORD` only for the same slot and unchanged SSID.
+SELECT persists a manual choice and connects. SAVE persists that slot and
+connects without changing the automatic-selection policy. AUTO=1 scans/connects;
+AUTO=0 pins the current network without disconnecting. DELETE persists first,
+then reconnects only if the live slot was deleted. All mutations are explicit
+NVS writes; scanning and reconnects do not repeatedly write flash.
+
+The reply's active slot identifies the current attempted/live profile. Automatic
+selection prefers highest visible RSSI, then the saved preference on a tie;
+healthy connections are not scanned periodically. Older firmware replies
+`SM_INVALID` to these operations; fall back to CONFIG_GET/SET and CONNECT.

@@ -899,6 +899,13 @@ The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1
 
 ### StreamMaster USB / Onju Voice V3
 
+Firmware **0.3.0** adds five saved Wi-Fi profiles, selectable or automatic by
+signal strength, with separate passwords and IP/DNS settings. Configure them
+under **Settings → StreamMaster USB → Profile**. See the
+[profile and update instructions](streammaster/README.md#saved-wi-fi-profiles-firmware-030).
+To retain profiles when upgrading, flash `streammaster_onju_v3.bin` at `0x10000`,
+not the merged factory image at `0x0` (which overwrites the NVS area).
+
 An optional ESP32-S3 bridge and PSP USB driver are available for the original
 Onju Voice PCB V3. **Select → Settings → StreamMaster USB** configures its Wi-Fi,
 DHCP/static IPv4 and DNS, and provides USB integrity/throughput and server tests.

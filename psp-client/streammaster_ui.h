@@ -11,6 +11,9 @@ static int sm_job,sm_http_status;
 static unsigned sm_rate,sm_bytes;
 static SmFrame sm_response;
 static SmConfig sm_draft;
+static SmProfiles sm_profiles;
+static int sm_profiles_supported;
+static uint32_t sm_slot,sm_profile_value;
 static SmInfo sm_info;
 static SmNetworkInfo sm_network;
 static SmScan sm_scan;
@@ -48,9 +51,30 @@ static int sm_load(void) {
     sm_step(stm_stage(),rc);
     return rc<0?rc:sm_read_info();
 }
+static void sm_profile_draft(void) {
+    sm_draft=sm_profiles.slot[sm_slot];
+    if(!sm_draft.ssid[0])sm_draft.flags=SM_CFG_DHCP|SM_CFG_AUTO_DNS;
+    else sm_draft.flags=(sm_draft.flags&(SM_CFG_DHCP|SM_CFG_AUTO_DNS))|SM_CFG_KEEP_PASSWORD;
+    memset(sm_draft.password,0,sizeof(sm_draft.password));
+    memset(&sm_network,0,sizeof(sm_network));
+}
+static int sm_read_profiles(void) {
+    int rc=sm_rpc(SM_PROFILES_GET,NULL,0);
+    if(rc<0)return rc;
+    if(sm_response.length!=sizeof(sm_profiles))return SM_IO;
+    memcpy(&sm_profiles,sm_response.payload,sizeof(sm_profiles));
+    if(sm_profiles.version!=1 || sm_profiles.active>=SM_PROFILE_COUNT || sm_profiles.automatic>1)return SM_IO;
+    for(unsigned i=0;i<SM_PROFILE_COUNT;i++) {
+        SmConfig *c=&sm_profiles.slot[i];
+        c->ssid[32]=c->ip[15]=c->mask[15]=c->gateway[15]=c->dns[15]=c->dns2[15]=0;
+        memset(c->password,0,sizeof(c->password));
+    }
+    return 0;
+}
 static int sm_worker(SceSize size,void *args) {
     (void)size;(void)args;int rc=0;
     if(sm_job==SM_JOB_ATTACH) {
+        sm_profiles_supported=0;sm_slot=0;memset(&sm_profiles,0,sizeof(sm_profiles));
         rc=sm_load();
         if(rc>=0) {
             rc=sm_rpc(SM_CONFIG_GET,NULL,0);
@@ -61,6 +85,11 @@ static int sm_worker(SceSize size,void *args) {
                     memset(sm_draft.password,0,sizeof(sm_draft.password));
                     sm_draft.ssid[32]=sm_draft.ip[15]=sm_draft.mask[15]=sm_draft.gateway[15]=sm_draft.dns[15]=sm_draft.dns2[15]=0;}
             }
+        }
+        if(rc>=0) {
+            int pr=sm_read_profiles();
+            if(pr>=0){sm_profiles_supported=1;sm_slot=sm_profiles.active;sm_profile_draft();rc=sm_read_info();}
+            else if(pr!=SM_INVALID)rc=pr; /* Old firmware still supports one network. */
         }
     } else if(sm_job==SM_JOB_BENCH) {
         static unsigned char pattern[SM_PAYLOAD_SIZE];
@@ -93,6 +122,13 @@ static int sm_worker(SceSize size,void *args) {
         }
         if(!sm_cancel)sm_rpc(SM_HTTP_CLOSE,NULL,0);
         if(rc>=0 && (sm_http_status!=200 || !sm_bytes))rc=SM_IO;
+    } else if(sm_job==SM_PROFILE_SAVE) {
+        SmProfileSave request={.slot=sm_slot,.config=sm_draft};
+        rc=sm_rpc(SM_PROFILE_SAVE,&request,sizeof(request));memset(&request,0,sizeof(request));
+        if(rc>=0){rc=sm_read_profiles();if(rc>=0)sm_profile_draft();}
+    } else if(sm_job==SM_PROFILE_SELECT || sm_job==SM_PROFILE_DELETE || sm_job==SM_PROFILE_AUTO) {
+        rc=sm_rpc(sm_job,&sm_profile_value,sizeof(sm_profile_value));
+        if(rc>=0){rc=sm_read_profiles();if(rc>=0)sm_profile_draft();}
     } else if(sm_job==SM_CONFIG_SET) {
         rc=sm_rpc(SM_CONFIG_SET,&sm_draft,sizeof(sm_draft));
         if(rc>=0){memset(sm_draft.password,0,sizeof(sm_draft.password));sm_draft.flags|=SM_CFG_KEEP_PASSWORD;memset(&sm_network,0,sizeof(sm_network));}
@@ -187,12 +223,13 @@ static void sm_choose_ap(void) {
     }
 }
 static void streammaster_settings(void) {
-    enum {M_ATTACH,M_INFO,M_SCAN,M_SSID,M_PASSWORD,M_DHCP,M_AUTO_DNS,M_IP,M_MASK,M_GATEWAY,M_DNS,M_DNS2,M_SAVE,M_CONNECT,M_BENCH,M_SERVER,M_COUNT};
-    static const TextId labels[M_COUNT]={TXT_SM_ATTACH,TXT_SM_INFO,TXT_SM_SCAN,TXT_SM_SSID,TXT_SM_PASSWORD,
+    enum {M_ATTACH,M_INFO,M_PROFILE,M_AUTOMATIC,M_SCAN,M_SSID,M_PASSWORD,M_DHCP,M_AUTO_DNS,M_IP,M_MASK,M_GATEWAY,M_DNS,M_DNS2,M_SAVE,M_CONNECT,M_DELETE,M_BENCH,M_SERVER,M_COUNT};
+    static const TextId labels[M_COUNT]={TXT_SM_ATTACH,TXT_SM_INFO,TXT_SM_PROFILE,TXT_SM_AUTOMATIC,TXT_SM_SCAN,TXT_SM_SSID,TXT_SM_PASSWORD,
         TXT_SM_DHCP,TXT_SM_AUTO_DNS,TXT_SM_IP,TXT_SM_MASK,TXT_SM_GATEWAY,TXT_SM_DNS,TXT_SM_DNS2,
-        TXT_SM_SAVE,TXT_SM_CONNECT,TXT_SM_BENCH,TXT_SM_SERVER};
+        TXT_SM_SAVE,TXT_SM_CONNECT,TXT_SM_DELETE,TXT_SM_BENCH,TXT_SM_SERVER};
     int selected=0,dirty=1,rc=0,ready=0;char detail[80]="";
     unsigned old=PSP_CTRL_CROSS;unsigned long long repeat=0;
+    int delete_confirm=0;
     /* Reload the ESP's persisted configuration and current DHCP lease on
      * every visit; clearing the local password draft on exit is intentional. */
     rc=sm_run(SM_JOB_ATTACH);
@@ -204,6 +241,8 @@ static void streammaster_settings(void) {
             settings_shell("StreamMaster / Onju V3");
             for(int i=selected/8*8;i<M_COUNT && i<selected/8*8+8;i++) {
                 char value[40]="[X]",line[88];
+                if(i==M_PROFILE)snprintf(value,sizeof(value),"%u/5 %s",(unsigned)sm_slot+1,sm_draft.ssid[0]?"":tr(TXT_SM_EMPTY));
+                if(i==M_AUTOMATIC)snprintf(value,sizeof(value),"%s",tr(sm_profiles_supported && sm_profiles.automatic?TXT_SETTINGS_ON:TXT_OFF));
                 if(i==M_SSID)snprintf(value,sizeof(value),"%s",sm_draft.ssid);
                 if(i==M_PASSWORD)snprintf(value,sizeof(value),"%s",tr(sm_draft.flags&SM_CFG_KEEP_PASSWORD?TXT_SM_RETAIN:sm_draft.password[0]?TXT_SM_HIDDEN:TXT_OFF));
                 if(i==M_DHCP || i==M_AUTO_DNS)snprintf(value,sizeof(value),"%s",tr(sm_draft.flags&(i==M_DHCP?SM_CFG_DHCP:SM_CFG_AUTO_DNS)?TXT_SETTINGS_ON:TXT_OFF));
@@ -222,6 +261,17 @@ static void streammaster_settings(void) {
             if(selected==M_ATTACH){ready=0;rc=sm_run(SM_JOB_ATTACH);if(rc>=0)ready=1;}
             else if(!ready)rc=SM_OFFLINE;
             else if(sm_reap()<0)rc=SM_BUSY;
+            else if(selected==M_PROFILE) {
+                if(!sm_profiles_supported)rc=SM_INVALID;
+                else {sm_slot=(sm_slot+1)%SM_PROFILE_COUNT;sm_profile_draft();}
+            } else if(selected==M_AUTOMATIC) {
+                if(!sm_profiles_supported)rc=SM_INVALID;
+                else {sm_profile_value=!sm_profiles.automatic;rc=sm_run(SM_PROFILE_AUTO);}
+            } else if(selected==M_DELETE) {
+                if(!sm_profiles_supported)rc=SM_INVALID;
+                else if(!delete_confirm){delete_confirm=1;snprintf(detail,sizeof(detail),"%s",tr(TXT_SM_DELETE_CONFIRM));}
+                else {sm_profile_value=sm_slot;rc=sm_run(SM_PROFILE_DELETE);delete_confirm=0;}
+            }
             else if(selected==M_INFO) {
                 rc=sm_run(SM_INFO);
                 if(rc>=0)snprintf(detail,sizeof(detail),"%s / %s / %d dBm",tr((TextId)(TXT_SM_IDLE+sm_info.wifi_state%4)),sm_info.ip,(int)sm_info.rssi);
@@ -230,8 +280,12 @@ static void streammaster_settings(void) {
             else if(selected==M_AUTO_DNS){if(sm_draft.flags&SM_CFG_DHCP)sm_draft.flags^=SM_CFG_AUTO_DNS;else rc=SM_INVALID;}
             else if(selected==M_SAVE) {
                 if(!sm_config_valid(&sm_draft,1))rc=SM_INVALID;
-                else {rc=sm_run(SM_CONFIG_SET);if(rc>=0)snprintf(detail,sizeof(detail),"%s",tr(TXT_SM_SAVED));}
-            } else if(selected==M_CONNECT){rc=sm_run(SM_CONNECT);memset(&sm_network,0,sizeof(sm_network));}
+                else {rc=sm_run(sm_profiles_supported?SM_PROFILE_SAVE:SM_CONFIG_SET);if(rc>=0)snprintf(detail,sizeof(detail),"%s",tr(TXT_SM_SAVED));}
+            } else if(selected==M_CONNECT){
+                if(sm_profiles_supported && !sm_profiles.automatic){sm_profile_value=sm_slot;rc=sm_run(SM_PROFILE_SELECT);}
+                else rc=sm_run(SM_CONNECT);
+                memset(&sm_network,0,sizeof(sm_network));
+            }
             else if(selected==M_BENCH) {
                 rc=sm_run(SM_JOB_BENCH);
                 if(rc>=0)snprintf(detail,sizeof(detail),"USB: %u KiB/s / %u KiB OK",sm_rate,sm_bytes/1024);
@@ -259,6 +313,7 @@ static void streammaster_settings(void) {
         unsigned movement=pad.Buttons&(PSP_CTRL_UP|PSP_CTRL_DOWN);
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(movement && ((pressed&movement)||now>=repeat)) {
+            delete_confirm=0;
             selected=(selected+(movement&PSP_CTRL_UP?M_COUNT-1:1))%M_COUNT;
             repeat=now+((pressed&movement)?400000:150000);dirty=1;
         }

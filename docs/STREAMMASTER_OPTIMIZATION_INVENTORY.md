@@ -2,6 +2,13 @@
 
 ## Current decision: 0.2.9 rollback
 
+HTTP retest now completed: 0.2.8 optimized **480.40 KiB/s**, 0.2.9 rollback
+**484.19 KiB/s**, excluding both interrupted slow-AP attempts. No meaningful
+gain established; retain the simpler rollback loops in firmware 0.3.0.
+See [exact bytes, offsets and timings](TRANSPORT_DOWNLOAD_COMPARISON.md).
+The earlier slow runs below were HTTPS and are not a controlled optimization
+comparison against the older HTTP result.
+
 The new hardware run transferred 170,143,443 bytes in 403.719 s:
 411.563 KiB/s, versus 479.480 KiB/s for the previous same-sized run
 (346.533 s). Current recovery log, completion tick 1129256; comparison history
@@ -18,8 +25,8 @@ scheduling or retry changes are justified by this evidence.
 
 At the user's request, both 0.2.8 hot-loop changes are reverted exactly to the
 0.2.7 source on PSP/ESP; the new package is version 0.2.9 to identify the rollback.
-All earlier gains are retained. Restored throughput still needs a hardware
-comparison; it is not guaranteed by reverting these two changes.
+All earlier gains are retained. The subsequent HTTP comparison above confirms
+the previous throughput range, not a causal benefit from the rollback itself.
 
 ## Implemented follow-up: 0.2.8 test build
 

@@ -5,6 +5,43 @@ source dependencies, build setup, socket/TLS semantics, ownership, configuration
 and transport limitations. This is an application-local adapter, not a global
 replacement for the PSP WLAN driver.
 
+## Saved Wi-Fi profiles (firmware 0.3.0)
+
+Five networks can be stored on the Onju, each with its own password and DHCP,
+static IP, gateway and DNS settings. In PSP settings > StreamMaster:
+
+1. Press X on **Profile (X: next)** to cycle through the five slots. Changing
+   slots discards unsaved edits but does not change the live connection.
+2. Scan/select an SSID (or type a hidden SSID), enter the password and optionally
+   adjust IP/DNS, then choose **Save to Onju + connect**. Save before changing slots.
+3. **Auto network** is enabled by default. At startup or explicit reconnect the
+   firmware scans saved networks and selects the strongest visible signal;
+   equal signals prefer the selected network. Hidden networks are tried directly
+   if no saved visible network is found. After exhausted connection retries it
+   tries another saved profile; once all have failed it waits 30 seconds and retries.
+4. For a particular network, turn Auto network off, select its profile, then
+   choose **Reconnect Wi-Fi**. Manual selection survives a power cycle.
+5. **Delete profile** requires X twice. The old single-network configuration is
+   imported into slot 1 automatically. Passwords are never returned to the PSP;
+   a retained password belongs only to its original slot and SSID.
+
+There is no periodic scanning or roaming while a connection is healthy. Within
+one SSID, connection setup scans all channels and prefers the strongest AP.
+This cannot guarantee uninterrupted roaming or override changing radio conditions.
+Profiles persist in NVS when updating the application binary at **0x10000**:
+
+```sh
+esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 write_flash \
+  --flash_mode dio --flash_size 16MB --flash_freq 40m \
+  0x10000 streammaster_onju_v3.bin
+```
+
+Full flash erasure **or flashing the merged factory image at 0x0** removes them
+(the factory image spans the NVS area). Use the split app binary for upgrades
+with the existing partition layout. The legacy single-profile key is retained for firmware rollback and is not
+kept in sync with edits made by 0.3.0. The older PSP app still works with the new
+firmware; the new app falls back to single-network setup on older firmware.
+
 ## Transport measurements
 
 ### Experimental O3 comparison
