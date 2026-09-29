@@ -30,8 +30,11 @@ requested. Two 8×2 hardware runs recovered 464.091 and 479.472 KiB/s, respectiv
 against the earlier 483.324 KiB/s best (similar-sized, not identical files).
 The latest run still has brief stalls: 5.689 s blocked media writes and 15.720 s
 outside receive/write-wait counters. PSP logging now uses its own bounded writer;
-new submission/reporting/log-I/O timings separate these costs. This PSP build needs
-a fresh hardware comparison; firmware remains 0.2.7, no ESP RAM/profile change.
+new submission/reporting/log-I/O timings separate these costs. The asynchronous-log
+build achieved 485.279 KiB/s with successful verification and no USB errors.
+Transport/logging optimization is paused at the user's request. Only the 16-word
+SHA schedule change now awaits comparison: baseline hash CPU 66.672 s,
+verification total 95.727 s. Firmware remains 0.2.7.
 
 - Offline-only SHA-256 batch compression, identical digests checked against Mbed
   TLS; full card read-back retained. Compare hash time separately from USB speed.

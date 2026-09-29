@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Offline SHA-256: use a 16-word rolling schedule with grouped rounds to reduce
+  schedule storage and loop overhead. Reference digest/state tests pass; PSP
+  verification-speed comparison pending. Transport and TLS remain unchanged.
 - PSP offline downloads: move periodic diagnostic card writes to a bounded,
   dedicated writer so reception can continue. Join and drain on exit; retain
   double-buffered media writes and full read-back verification. Add separate

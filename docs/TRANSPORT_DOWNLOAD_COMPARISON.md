@@ -25,6 +25,18 @@ Do not compare playback demand or USB echo throughput with file-download speed.
 
 ## Download bottleneck instrumentation
 
+The subsequent asynchronous-log build completed the same-sized 170,143,443-byte
+file in 342.392 s (**485.279 KiB/s**), with no USB errors and successful verification.
+Media-write blocking was 9.640 s; write submission 58 ms and reporting 39 ms.
+Background log I/O took 15.227 s, maximum 2.045 s per completed batch, overlapping
+reception. Verification took 95.727 s: 29.001 s read waits, **66.672 s hash updates**.
+This is the comparison baseline for the next SHA-only build. It replaces the
+64-word precomputed schedule with a 16-word rolling schedule and grouped rounds.
+The SHA object grows from 3,028 to 5,856 bytes, trading code size for less loop
+administration. Expected digests, full card read-back and Mbed TLS finalization
+are unchanged. No speed gain is claimed until measured on PSP. Compare `hash_ms`
+at the same CPU clock and on the same file; other transfer code/firmware is frozen.
+
 September 29 follow-up with firmware 0.2.7: 170,143,443 bytes in 346.539 s =
 **479.472 KiB/s**, versus 464.091 KiB/s in the preceding run and the earlier
 483.324 KiB/s best. Similar file sizes, not byte-identical inputs. Blocked media

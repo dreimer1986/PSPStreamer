@@ -21,29 +21,56 @@ static const uint32_t k[64]={
 #define S1(x) (ROT(x,17)^ROT(x,19)^((x)>>10))
 #define S2(x) (ROT(x,2)^ROT(x,13)^ROT(x,22))
 #define S3(x) (ROT(x,6)^ROT(x,11)^ROT(x,25))
-#define ROUND(a,b,c,d,e,f,g,h,j) do { \
-    uint32_t t=(h)+S3(e)+((g)^((e)&((f)^(g))))+k[j]+w[j]; \
+#define ROUND(a,b,c,d,e,f,g,h,j,slot) do { \
+    uint32_t t=(h)+S3(e)+((g)^((e)&((f)^(g))))+k[j]+w[slot]; \
     (d)+=t; (h)=t+S2(a)+(((a)&(b))|((c)&((a)|(b)))); \
 } while(0)
+/* The schedule needs only its previous 16 words. Constant slots avoid the
+ * per-word schedule loop/indexing and keep the working set small on Allegrex.
+ * Expand immediately before use; unsigned arithmetic wraps modulo 2^32. */
+#define EXPAND(j) (w[j]+=S1(w[((j)+14)&15])+w[((j)+9)&15]+S0(w[((j)+1)&15]))
 static void blocks(uint32_t state[8],const unsigned char *p,size_t count) {
-    uint32_t w[64],a[8];
+    uint32_t w[16],a[8];
     while(count--) {
         for(unsigned i=0;i<16;i++,p+=4)w[i]=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];
-        for(unsigned i=16;i<64;i++)w[i]=S1(w[i-2])+w[i-7]+S0(w[i-15])+w[i-16];
         memcpy(a,state,sizeof(a));
-        for(unsigned i=0;i<64;i+=8) {
-            ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],i);
-            ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],i+1);
-            ROUND(a[6],a[7],a[0],a[1],a[2],a[3],a[4],a[5],i+2);
-            ROUND(a[5],a[6],a[7],a[0],a[1],a[2],a[3],a[4],i+3);
-            ROUND(a[4],a[5],a[6],a[7],a[0],a[1],a[2],a[3],i+4);
-            ROUND(a[3],a[4],a[5],a[6],a[7],a[0],a[1],a[2],i+5);
-            ROUND(a[2],a[3],a[4],a[5],a[6],a[7],a[0],a[1],i+6);
-            ROUND(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[0],i+7);
+            ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],0,0);
+            ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],1,1);
+            ROUND(a[6],a[7],a[0],a[1],a[2],a[3],a[4],a[5],2,2);
+            ROUND(a[5],a[6],a[7],a[0],a[1],a[2],a[3],a[4],3,3);
+            ROUND(a[4],a[5],a[6],a[7],a[0],a[1],a[2],a[3],4,4);
+            ROUND(a[3],a[4],a[5],a[6],a[7],a[0],a[1],a[2],5,5);
+            ROUND(a[2],a[3],a[4],a[5],a[6],a[7],a[0],a[1],6,6);
+            ROUND(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[0],7,7);
+            ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],8,8);
+            ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],9,9);
+            ROUND(a[6],a[7],a[0],a[1],a[2],a[3],a[4],a[5],10,10);
+            ROUND(a[5],a[6],a[7],a[0],a[1],a[2],a[3],a[4],11,11);
+            ROUND(a[4],a[5],a[6],a[7],a[0],a[1],a[2],a[3],12,12);
+            ROUND(a[3],a[4],a[5],a[6],a[7],a[0],a[1],a[2],13,13);
+            ROUND(a[2],a[3],a[4],a[5],a[6],a[7],a[0],a[1],14,14);
+            ROUND(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[0],15,15);
+        for(unsigned i=16;i<64;i+=16) {
+            EXPAND(0); ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],i+0,0);
+            EXPAND(1); ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],i+1,1);
+            EXPAND(2); ROUND(a[6],a[7],a[0],a[1],a[2],a[3],a[4],a[5],i+2,2);
+            EXPAND(3); ROUND(a[5],a[6],a[7],a[0],a[1],a[2],a[3],a[4],i+3,3);
+            EXPAND(4); ROUND(a[4],a[5],a[6],a[7],a[0],a[1],a[2],a[3],i+4,4);
+            EXPAND(5); ROUND(a[3],a[4],a[5],a[6],a[7],a[0],a[1],a[2],i+5,5);
+            EXPAND(6); ROUND(a[2],a[3],a[4],a[5],a[6],a[7],a[0],a[1],i+6,6);
+            EXPAND(7); ROUND(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[0],i+7,7);
+            EXPAND(8); ROUND(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],i+8,8);
+            EXPAND(9); ROUND(a[7],a[0],a[1],a[2],a[3],a[4],a[5],a[6],i+9,9);
+            EXPAND(10); ROUND(a[6],a[7],a[0],a[1],a[2],a[3],a[4],a[5],i+10,10);
+            EXPAND(11); ROUND(a[5],a[6],a[7],a[0],a[1],a[2],a[3],a[4],i+11,11);
+            EXPAND(12); ROUND(a[4],a[5],a[6],a[7],a[0],a[1],a[2],a[3],i+12,12);
+            EXPAND(13); ROUND(a[3],a[4],a[5],a[6],a[7],a[0],a[1],a[2],i+13,13);
+            EXPAND(14); ROUND(a[2],a[3],a[4],a[5],a[6],a[7],a[0],a[1],i+14,14);
+            EXPAND(15); ROUND(a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[0],i+15,15);
         }
         for(unsigned i=0;i<8;i++)state[i]+=a[i];
     }
-    volatile uint32_t *erase=w;for(unsigned i=0;i<64;i++)erase[i]=0;
+    volatile uint32_t *erase=w;for(unsigned i=0;i<16;i++)erase[i]=0;
     erase=a;for(unsigned i=0;i<8;i++)erase[i]=0;
 }
 int offline_sha256_update(mbedtls_sha256_context *ctx,const unsigned char *data,size_t size) {

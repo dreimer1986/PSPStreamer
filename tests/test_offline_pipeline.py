@@ -78,12 +78,28 @@ int main(void) {
             assert(!memcmp(a,b,32));mbedtls_sha256_free(&stock);mbedtls_sha256_free(&fast);
         }
     }
+    /* Unaligned sources and mixed chunks across library-handled partial blocks. */
+    for(unsigned offset=0;offset<4;offset++) {
+        mbedtls_sha256_context stock,fast;
+        mbedtls_sha256_init(&stock);mbedtls_sha256_init(&fast);
+        assert(!mbedtls_sha256_starts_ret(&stock,0));assert(!mbedtls_sha256_starts_ret(&fast,0));
+        unsigned random=0x712398abU;
+        for(unsigned pos=0;pos<1500000;) {
+            random=random*1664525U+1013904223U;
+            unsigned n=1+(random%8193);if(n>1500000-pos)n=1500000-pos;
+            assert(!mbedtls_sha256_update_ret(&stock,bytes+offset+pos,n));
+            assert(!offline_sha256_update(&fast,bytes+offset+pos,n));pos+=n;
+            assert(!memcmp(stock.state,fast.state,sizeof(stock.state)));
+        }
+        assert(!mbedtls_sha256_finish_ret(&stock,a));assert(!mbedtls_sha256_finish_ret(&fast,b));
+        assert(!memcmp(a,b,32));mbedtls_sha256_free(&stock);mbedtls_sha256_free(&fast);
+    }
     /* Counter carry without allocating a 4 GiB file. */
     mbedtls_sha256_context stock,fast;mbedtls_sha256_init(&stock);
     assert(!mbedtls_sha256_starts_ret(&stock,0));stock.total[0]=0xffffffc0U;fast=stock;
     assert(!mbedtls_sha256_update_ret(&stock,bytes,128));assert(!offline_sha256_update(&fast,bytes,128));
     assert(fast.total[0]==64 && fast.total[1]==1 && !memcmp(stock.state,fast.state,sizeof(stock.state)));
-    puts("Batched SHA-256: 98 chunk/boundary combinations and counter carry match Mbed TLS");
+    puts("SHA-256: 98 boundary cases, 4 unaligned mixed-chunk streams and counter carry match Mbed TLS");
 }
 '''
         with tempfile.TemporaryDirectory() as folder:
