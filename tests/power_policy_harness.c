@@ -15,7 +15,7 @@ static int sceIoDevctl(const char *device,unsigned cmd,void *in,int il,void *out
 }
 #include "power_policy.h"
 int main(void){
-    assert(!music_cpu_mhz&&!milkdrop_cpu_mhz&&!video_cpu_mhz&&!idle_cpu_mhz);
+    assert(music_cpu_mhz==133&&milkdrop_cpu_mhz==266&&video_cpu_mhz==333&&idle_cpu_mhz==222&&download_cpu_mhz==333);
     playback_clock(0);assert(!calls);
     assert(clock_control_status()==0);
     assert(playback_clock_valid(0)&&playback_clock_valid(66)&&playback_clock_valid(471));

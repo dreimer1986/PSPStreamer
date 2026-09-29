@@ -28,6 +28,7 @@ static int music_preset_auto,music_preset_seconds=60,music_preset_fade_ms=1500;
 static int debug_enabled;
 static int md_high_resolution=1;
 static int music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle;
+static int download_cpu_mhz=333;
 static int playback_clock_valid(int mhz){return mhz==0||(mhz>=66&&mhz<=471);}
 static int clock_choice(int mhz,int direction){(void)mhz;return direction>0?66:471;}
 static int clock_error;
@@ -133,16 +134,20 @@ int main(void) {
     assert(settings_text(text,sizeof(text),0,"text")==1&&!strcmp(text,"!"));
     /* Both submenus are reachable without audio running. OC cancel has no
      * filesystem side effects. A preset remains a draft until outer START. */
-    const unsigned int usb_open[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
-    sequence(usb_open,11);assert(app_settings()==0&&streammaster_visits==1);
+    const unsigned int usb_open[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
+    sequence(usb_open,13);assert(app_settings()==0&&streammaster_visits==1);
     assert(TXT_SETTINGS_STREAMMASTER-TXT_SETTINGS_HOST==SET_STREAMMASTER);
-    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
-    sequence(oc_cancel,15);assert(app_settings()==0);
+    const unsigned int oc_cancel[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE,0,PSP_CTRL_CIRCLE};
+    sequence(oc_cancel,17);assert(app_settings()==0);
     assert(TXT_SETTINGS_TRANSPORT-TXT_SETTINGS_HOST==SET_TRANSPORT);
-    const unsigned int transport[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_START};
-    sequence(transport,9);assert(app_settings()==1 && network_transport==1);
+    const unsigned int transport[]={0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,0,PSP_CTRL_UP,PSP_CTRL_CROSS,0,PSP_CTRL_START};
+    sequence(transport,11);assert(app_settings()==1 && network_transport==1);
     assert(TXT_SETTINGS_EPISODE_SECONDS-TXT_SETTINGS_HOST==SET_EPISODE_SECONDS);
-    AppSettings delay;settings_capture(&delay);delay.value[SET_EPISODE_SECONDS]=7;
+    AppSettings delay;settings_capture(&delay);
+    assert(delay.value[SET_CPU_DOWNLOAD]==333);
+    assert(TXT_SETTINGS_CPU_DOWNLOAD-TXT_SETTINGS_HOST==SET_CPU_DOWNLOAD);
+    delay.value[SET_CPU_DOWNLOAD]=400;settings_apply(&delay);assert(download_cpu_mhz==400);
+    settings_capture(&delay);assert(delay.value[SET_CPU_DOWNLOAD]==400);delay.value[SET_EPISODE_SECONDS]=7;
     settings_apply(&delay);assert(next_episode_seconds==7);
     settings_capture(&delay);assert(delay.value[SET_EPISODE_SECONDS]==7);
     for(int accept=0;accept<2;accept++) {

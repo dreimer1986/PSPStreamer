@@ -11,7 +11,7 @@ PSP_EBOOT_PIC1 = assets/pic1.png
 
 OPT_LEVEL ?= -O3
 CFLAGS = $(OPT_LEVEL) -G0 -Wall -Wextra
-LTO ?= 0
+LTO ?= 1
 ifeq ($(LTO),1)
 CFLAGS += -flto
 LDFLAGS += -flto
@@ -25,6 +25,10 @@ LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg m
 EXTRA_TARGETS = EBOOT.PBP
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+# Rebuild objects when the project's default compiler options change.
+# Use make clean before overriding LTO/OPT_LEVEL on the command line.
+$(OBJS): Makefile
 
 main.o: streammaster_redirect.h streammaster_transport.h
 streammaster_transport.o: streammaster_transport.h ../streammaster/protocol.h
@@ -61,6 +65,7 @@ main.o: offline_source.h offline_ui.h offline_filename.h
 main.o: offline_io.h offline_sha256.h
 main.o: queue_quality.h
 main.o: bitmap_overlay.h
+main.o: wifi_status.h
 offline_sha256.o: offline_sha256.h
 main.o: offline_preroll.h mp3_preroll.h
 main.o: pts_drain.h subtitle_pages.h

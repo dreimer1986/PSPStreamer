@@ -187,6 +187,7 @@ static void tv_shell(const char *section) {
     } else memset(tv_canvas.pixels, 0, TV_GUI_BYTES);
     tv_text(31, 27, 50, 1, TV_WHITE, "PSP STREAMER // %s", section);
     tv_receiver();
+    wifi_status_draw(1);
 }
 
 static void tv_help(const char *text) {

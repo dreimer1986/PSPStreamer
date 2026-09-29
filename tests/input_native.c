@@ -18,6 +18,11 @@ static int remote_http_get_budget(const char *path,char *buffer,int capacity,vol
     (void)path;(void)buffer;(void)capacity;(void)run;(void)ms;return -1;
 }
 static void network_worker_finished(const char *name){(void)name;}
+#define PSP_WIFI_STATUS_H
+static int wifi_status,wifi_pending,tv_ui_active;
+static int wifi_status_menu_active(void){return 1;}
+static void wifi_status_collect(volatile int *running){(void)running;}
+static void wifi_status_draw(int tv){(void)tv;}
 #include "remote_input_impl.h"
 int main(void){
     SceCtrlData p={8,128,128};tick=100;

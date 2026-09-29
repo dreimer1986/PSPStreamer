@@ -8,10 +8,12 @@ static int input_text_ready;
 /* Settings control is deliberately not real-time. Leave breathing room
  * between TLS connections, including while keys are held or requests fail. */
 #define INPUT_POLL_INTERVAL_US 2000000ULL
+#include "wifi_status.h"
 
 static int input_worker(SceSize args,void *argp) {
     (void)args;(void)argp;
     input_result=remote_http_get_budget(input_path,input_reply,sizeof(input_reply),&input_running,5000);
+    if(input_running)wifi_status_collect(&input_running);
     network_worker_finished("GUI input");
     __sync_synchronize();input_done=1;
     return 0;
@@ -85,6 +87,8 @@ static void input_remote_tick(SceCtrlData *pad) {
         if(sceKernelWaitThreadEnd(input_thread,&wait)>=0) {
             sceKernelDeleteThread(input_thread);input_thread=-1;
             __sync_synchronize();
+            wifi_status=wifi_pending;
+            if(wifi_status_menu_active())wifi_status_draw(tv_ui_active);
             if(input_result>=0 && input_running)input_receive(now);
             else {input_clear_keys();memset(input_reply,0,sizeof(input_reply));input_next=now+INPUT_POLL_INTERVAL_US;}
             input_done=input_running=0;

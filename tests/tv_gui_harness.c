@@ -86,6 +86,8 @@ static int remote_http_get_budget(const char *path,char *out,int cap,volatile in
     (void)path;(void)out;(void)cap;(void)running;(void)budget;return -1;
 }
 #include "menu_artwork.h"
+static void wifi_status_draw(int tv){(void)tv;}
+static int series_available,series_saved,preferred_audio,preferred_subtitle;
 #include "tv_gui.h"
 
 static void dump_frame(const char *directory, const char *language, int view, int variant) {

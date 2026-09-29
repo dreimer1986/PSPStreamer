@@ -517,6 +517,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line,"music_cpu_mhz=",14))music_cpu_mhz=atoi(line+14);
             else if (!strncmp(line,"milkdrop_cpu_mhz=",17))milkdrop_cpu_mhz=atoi(line+17);
             else if (!strncmp(line,"idle_cpu_mhz=",13))idle_cpu_mhz=atoi(line+13);
+            else if (!strncmp(line,"download_cpu_mhz=",17))download_cpu_mhz=atoi(line+17);
             else if (!strncmp(line,"video_cpu_mhz=",14))video_cpu_mhz=atoi(line+14);
             else if (!strncmp(line,"screen_idle=",12))screen_idle=atoi(line+12);
         }
@@ -532,6 +533,7 @@ static void load_playback_settings(void) {
     if(!playback_clock_valid(music_cpu_mhz))music_cpu_mhz=0;
     if(!playback_clock_valid(milkdrop_cpu_mhz))milkdrop_cpu_mhz=0;
     if(!playback_clock_valid(idle_cpu_mhz))idle_cpu_mhz=0;
+    if(!playback_clock_valid(download_cpu_mhz))download_cpu_mhz=333;
     if(!playback_clock_valid(video_cpu_mhz))video_cpu_mhz=0;
     if(screen_idle<0||screen_idle>2)screen_idle=0;
     if(music_preset_auto<0 || music_preset_auto>3) music_preset_auto=0;
@@ -556,6 +558,7 @@ static int save_playback_settings(void) {
     length += snprintf(data+length,sizeof(data)-length,"debug=%d\n",debug_enabled);
     length += snprintf(data+length,sizeof(data)-length,"music_cpu_mhz=%d\nvideo_cpu_mhz=%d\nscreen_idle=%d\n",music_cpu_mhz,video_cpu_mhz,screen_idle);
     length += snprintf(data+length,sizeof(data)-length,"milkdrop_cpu_mhz=%d\nidle_cpu_mhz=%d\n",milkdrop_cpu_mhz,idle_cpu_mhz);
+    length += snprintf(data+length,sizeof(data)-length,"download_cpu_mhz=%d\n",download_cpu_mhz);
     for(int i=0;i<VISUAL_OPTION_COUNT;i++) {
         if(length<0 || length>=(int)sizeof(data))return -1;
         length+=snprintf(data+length,sizeof(data)-length,"%s=%d\n",visual_options[i].key,*visual_options[i].value);
@@ -1119,15 +1122,15 @@ static void receiver_hud(int frames);
  * already shipped Latin-1 atlas at a deliberately slim 6x8 size for UI text.
  * This is direct VRAM drawing, just like subtitles, and is never used while
  * the hardware AVC path is presenting frames. */
-static void gui_draw_small_glyph(u32 *vram, int glyph, int left, int top, u32 color) {
+static void gui_small_glyph(u32 *vram, int stride, int width, int height, int glyph, int left, int top, u32 color) {
     const unsigned char *bitmap;
     int x, y;
     if (!subtitle_font || glyph < 0 || glyph > 255) return;
     bitmap = subtitle_font + (glyph >> 4) * SUBTITLE_FONT_CELL_HEIGHT * (SUBTITLE_FONT_CELL_WIDTH * 16) +
              (glyph & 15) * SUBTITLE_FONT_CELL_WIDTH;
     for (y = 0; y < 8; y++) for (x = 0; x < 6; x++) {
-        /* Nearest sampling retains the font's deliberately clean pixel
-         * contours instead of adding costly alpha blending to the browser. */
+        /* Retain thin strokes and the existing footprint, but preserve alpha
+         * coverage instead of reducing every edge to an on/off threshold. */
         int alpha = bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2];
         if (bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1] > alpha)
             alpha = bitmap[(y * 2) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1];
@@ -1135,12 +1138,20 @@ static void gui_draw_small_glyph(u32 *vram, int glyph, int left, int top, u32 co
             alpha = bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2];
         if (bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1] > alpha)
             alpha = bitmap[(y * 2 + 1) * SUBTITLE_FONT_CELL_WIDTH * 16 + x * 2 + 1];
-        if (alpha > 100) {
+        if (alpha) {
             int px = left + x, py = top + y;
-            if (px >= 0 && px < VIDEO_WIDTH && py >= 0 && py < VIDEO_HEIGHT)
-                vram[py * VIDEO_STRIDE + px] = color;
+            if (px >= 0 && px < width && py >= 0 && py < height) {
+                u32 old=vram[py * stride + px], blended=0;
+                for(int shift=0;shift<24;shift+=8)
+                    blended|=(( ((old>>shift)&255)*(255-alpha)+((color>>shift)&255)*alpha+127)/255)<<shift;
+                vram[py * stride + px] = blended;
+            }
         }
     }
+}
+
+static void gui_draw_small_glyph(u32 *vram,int glyph,int left,int top,u32 color) {
+    gui_small_glyph(vram,VIDEO_STRIDE,VIDEO_WIDTH,VIDEO_HEIGHT,glyph,left,top,color);
 }
 
 static void gui_text(int left, int top, u32 color, const char *format, ...) {
@@ -1781,6 +1792,28 @@ cleanup:
 
 #include "music_ui.h"
 #include "tv_gui.h"
+
+static int wifi_status_menu_active(void) { return !audio_running && !timed_active; }
+static void wifi_status_draw(int tv) {
+    if(tvout_video_active || !wifi_status.stamp)return;
+    int width=tv?TV_GUI_WIDTH:VIDEO_WIDTH,stride=tv?TV_GUI_STRIDE:VIDEO_STRIDE;
+    int height=tv?TV_GUI_HEIGHT:VIDEO_HEIGHT,x=tv?578:340,y=tv?12:1;
+    u32 *pixels=tv?tv_canvas.pixels:(u32 *)0x44000000;
+    const unsigned char *skin=tv?receiver_tv_skin:receiver_skin;
+    if(!pixels)return;
+    for(int row=0;row<9;row++)memcpy(pixels+(y+row)*stride+x,skin+((y+row)*width+x)*4,112*4);
+    subtitle_load_font();
+    int live=wifi_status.connected && wifi_status.usb==stm_enabled() &&
+        (unsigned long long)sceKernelGetSystemTimeWide()-wifi_status.stamp<15000000ULL;
+    const char *cursor=live?wifi_status.ssid:"Wi-Fi --";
+    for(int i=0;i<13 && *cursor;i++) {
+        int glyph=subtitle_utf8_char(&cursor);
+        if(i==12 && *cursor)glyph='.';
+        gui_small_glyph(pixels,stride,width,height,glyph,x+i*7,y,0x00DBDFDF);
+    }
+    for(int bar=0;bar<4;bar++)for(int row=0;row<2+bar*2;row++)for(int col=0;col<2;col++)
+        pixels[(y+7-row)*stride+x+96+bar*4+col]=live&&bar<wifi_status.bars?0x00D8CE70:0x00494840;
+}
 #include "lcd_music.h"
 #include "spectrum_fullscreen.h"
 #include "music_caption.h"
@@ -3261,6 +3294,7 @@ static void gui_library_shell(const char *section) {
         if(!strcmp(section,tr(TXT_PREPARING_MEDIA)) || !strcmp(section,tr(TXT_STREAM_OPTIONS)))
             menu_art_draw(vram,VIDEO_STRIDE,376,110,71,LCD_RIGHT_B-110,1);
         gui_text(27, 11, 0x00FFFFFF, "PSP STREAMER // %s", section);
+        wifi_status_draw(0);
         return;
     }
     gui_rect(vram, 0, 0, VIDEO_WIDTH, VIDEO_HEIGHT, 0x00080E14);

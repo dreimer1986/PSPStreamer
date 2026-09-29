@@ -444,8 +444,9 @@ static int offline_transfer(const char *key,const char *post) {
     download_bytes=download_total=download_speed=0;download_error[0]=0;
     SceUID worker=sceKernelCreateThread("OfflineDownload",offline_download_worker,0x30,0x20000,0,NULL);
     if(worker<0)return worker;
+    if(download_cpu_mhz)playback_clock(download_cpu_mhz);
     int started=sceKernelStartThread(worker,0,NULL);
-    if(started<0){sceKernelDeleteThread(worker);return started;}
+    if(started<0){sceKernelDeleteThread(worker);playback_clock_idle();return started;}
     unsigned int old=PSP_CTRL_CROSS;
     while(!download_done) {
         SceCtrlData pad;keep_awake();sceCtrlReadBufferPositive(&pad,1);
@@ -473,6 +474,7 @@ static int offline_transfer(const char *key,const char *post) {
     }
     sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);
     download_running=0;
+    playback_clock_idle();
     if(download_result<0) {
         snprintf(status,sizeof(status),"%s: %.100s",tr(TXT_DOWNLOAD_RETRY),download_error);
         settings_shell(tr(TXT_DOWNLOADS));settings_line(1,0,tr(TXT_DOWNLOAD_RETRY));settings_line(3,0,download_error);

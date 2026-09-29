@@ -974,10 +974,11 @@ port=8091
 server_password=
 https=0
 debug=0
-music_cpu_mhz=0
-milkdrop_cpu_mhz=0
-video_cpu_mhz=0
-idle_cpu_mhz=0
+music_cpu_mhz=133
+milkdrop_cpu_mhz=266
+video_cpu_mhz=333
+idle_cpu_mhz=222
+download_cpu_mhz=333
 screen_idle=0
 audio=0
 subtitle=-1
@@ -1012,13 +1013,17 @@ when both are present the last setting wins. `port` is explicit in either mode.
 Enter just the hostname/IP in the app's Server host field, not a URL.
 
 Optional CPU profiles in Settings: `music_cpu_mhz` is music with the spectrum
-display, `milkdrop_cpu_mhz` is music with MilkDrop, `video_cpu_mhz` is video,
-and `idle_cpu_mhz` is the media browser. Each accepts `0` (default: plugin's
-INI target) or 66–471 MHz. Left/Right changes by **1 MHz**; Cross opens direct
+display (133 MHz), `milkdrop_cpu_mhz` is music with MilkDrop **or Monkey**
+(266 MHz), `video_cpu_mhz` is video (333 MHz), and `idle_cpu_mhz` is the media
+browser (222 MHz). `download_cpu_mhz` controls the download workflow including
+the final SHA-256 check (333 MHz); completion, cancellation and failure restore
+the browser profile. Existing saved choices are preserved. Each accepts `0`
+(no profile override) or 66–471 MHz. Left/Right changes by **1 MHz**; Cross opens direct
 number entry. The optional [StreamerOC plugin](psp-overclock/README.md) needs
 `enabled=1` and `app_control=1`. Above 333 MHz, requests are limited to the
 plugin's configured `target_mhz`; set that only to an overclock you have tested.
-Without the plugin no clocks are changed. All profiles default to disabled.
+Without the plugin no clocks are changed. Defaults above apply when a CFG key
+is absent; an explicit `0` remains respected.
 Track/episode changes, seeks and radio reconnects keep the current clock while
 loading. The next active renderer requests its profile only if it differs;
 there is no intermediate return to the INI target or browser clock. Returning
@@ -1585,14 +1590,26 @@ rate; music rows hide frame rate. **PSP default** inherits the player's settings
 without carrying over the previous entry's override. Saved choices apply to
 web/PSP starts and automatic continuation. See [Playlist](docs/PLAYLIST.md).
 
-The PSP release remains **O3**. A separately built **O3 + LTO** comparison uses
-the same source, settings and assets; no firmware/plugin changes are required.
-Build it in an isolated temporary object tree with
+The PSP release now defaults to **O3 + LTO**, following successful hardware
+tests. The plain O3 fallback uses the same source, settings and assets; no
+firmware/plugin changes are required. Build LTO in an isolated object tree with
 `bash tools/build_psp_lto.sh /path/to/PSPStreamer-LTO` (PSP SDK on `PATH`). Copy
 **both** its `EBOOT.PBP` and `PSPStreamer.prx` into the normal PSPStreamer folder
-to test; preserve your CFG/plugins/assets. Restore both normal files to revert.
-Do not mix object files between build modes. See the
+to install; preserve your CFG/plugins/assets. A plain O3 build uses
+`make clean` followed by `make LTO=0`. Do not mix object files between build
+modes; clean before changing compiler flags. See the historical
 [comparison and focused verification](docs/PLAYLIST_LTO_0164.md).
+
+The GUI now shows a compact connected-network name and four signal bars in
+the upper right on LCD and TV. Long names are shortened. Native Wi-Fi uses
+the PSP's signal percentage; StreamMaster uses live SSID/RSSI from firmware
+supporting `SM_NETWORK_INFO`. Bars are qualitative, not directly comparable
+measurements between adapters. Queries are throttled to at most once per five
+seconds in the existing GUI worker; there is no AP scan or extra HTTP poll.
+They pause during media playback, and stale samples display `Wi-Fi --` when
+redrawn. The indicator is not a fullscreen video overlay.
+LCD menu text retains its 6×8 footprint and all existing layout bounds, but
+now blends the font atlas's alpha edges instead of applying a binary threshold.
 
 This version also batches tiny PSP-side TLS reads and uses Allegrex word-byte
 swapping for offline SHA-256 input. Complete read-back verification stays intact;

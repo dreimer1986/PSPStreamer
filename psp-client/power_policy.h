@@ -1,6 +1,7 @@
 /* Optional plugin cooperation; never set Sony clocks behind another plugin. */
 #include "../psp-overclock/control_api.h"
-static int music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle,power_music;
+static int music_cpu_mhz=133,milkdrop_cpu_mhz=266,video_cpu_mhz=333,idle_cpu_mhz=222,screen_idle,power_music;
+static int download_cpu_mhz=333;
 static int clock_lease,clock_requested=-1,clock_error;
 static unsigned long long clock_retry;
 static int power_allow_display_idle(int tv){return !tv&&(screen_idle==2||(screen_idle==1&&power_music));}
