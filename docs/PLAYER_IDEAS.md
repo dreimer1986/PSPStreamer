@@ -1,8 +1,11 @@
-# Player comparison and flight proposals — 2026-09-26
+# Player comparison and flight proposals — updated 2026-09-29
 
 Discussion only: these proposals are **not approved implementation work**.
 The comparison targets classic Winamp for Windows, not its new mobile/cloud
-product. Our status includes the new shared playlist, still awaiting a PSP run.
+product. Shared playlist modes and provider web views were confirmed on hardware
+on 2026-09-27. Remaining opportunities below are proposals, not missing release
+requirements. The user's consolidated active list is
+`/home/dreimer/psp-streamer/psp-client/release/Probleme und Ideen.txt`.
 
 ## Classic Winamp comparison
 
@@ -15,7 +18,7 @@ Reference: [official Windows desktop manual](https://support.winamp.com/winamp-d
 
 | Area | PSPStreamer now | Remaining opportunity |
 |---|---|---|
-| Playback | Audio/video, seek, pause, next/previous, folder order/music shuffle; LCD and TV | Repeat one/all; explicitly separate queue shuffle from folder shuffle |
+| Playback | Audio/video, seek, pause, next/previous, folder order/music shuffle; LCD and TV; queue repeat one/all and separate queue shuffle | No outstanding repeat/shuffle implementation |
 | Lists | One persistent mixed queue, web additions, web/PSP move/remove/play; provider playlists | Named lists, duplicate entries, drag reorder, play-next, duration total, import/export |
 | Library | Files/SMB mounts, Plex, Jellyfin, DLNA; cross-source web search | Rich artist/album/genre view for plain files; no need to duplicate provider indexes blindly |
 | Personal access | Favorites, recent items, resume, playback limits | Music ratings and rule-based lists only if wanted; preset ratings already exist |
@@ -40,8 +43,10 @@ These supersede their proposal descriptions below. The 2026-09-27 flight build
 adds 100 shield, 20-point wall damage with a one-second cooldown, a particle
 explosion/Game Over, survival points and persistent top-ten scores. The intro
 offers Game Start / Hall of Fame / Exit; holding L+R for five seconds leaves.
-Enemy models, combat and projectile protection remain future work; the barrel
-roll is currently a flight maneuver.
+Seven selectable ships, preview, anchored turrets, combat and barrel-roll
+projectile protection are now implemented. Latest balance/spawn/model changes
+still have targeted hardware checks in the active ToDo; implementation is not
+the same as user confirmation. Waypoint drones remain a future proposal.
 
 1. **Shared queue and repeat/shuffle are confirmed working (2026-09-27).**
    Future candidates: a next-item preview, play-next and multiple named lists. Give duplicate entries
@@ -76,8 +81,8 @@ separate music product and is not silently treated as the standard Plex client.
 
 | Area | PSPStreamer now | Useful gap / proposed next step |
 |---|---|---|
-| Progress | Plex playback reports, provider resume/watched status; own recent/continue lists | Provider-wide Continue Watching, including titles started on another Plex client |
-| Browsing | Libraries, seasons, albums, playlists, cover art, backgrounds, descriptions and cross-source search | Collections, recently added and unwatched filters; first on the web, compact PSP rows later |
+| Progress | Plex playback reports, provider resume/watched status; own lists and provider-wide Continue Watching on the web, including other clients | Compact provider-wide PSP rows |
+| Browsing | Libraries, seasons, albums, playlists, artwork, descriptions, cross-source search; collections/recent/unwatched web shelves with cover views | Compact provider shelves on the PSP |
 | Watchlist | Our favorites and new play queue | Optional Plex Watchlist bridge; do not confuse a show-level watchlist with an episode queue |
 | Episodes | Automatic next episode, manual transport and seek | Optional next-episode countdown/cancel, especially useful before switching series |
 | Markers | Chapter controls and skip buttons from supplied Plex intro/credits markers | Keep provider markers authoritative; do not guess from arbitrary chapter names |
@@ -102,9 +107,9 @@ markers and entitlements. Do not promise either universally.
 [Downloads](https://support.plex.tv/articles/downloads-overview/),
 [credits](https://support.plex.tv/articles/credits-detection/).
 
-**My priority:** provider-wide Continue Watching → unwatched/recent filters →
-collections → optional managed offline-next-episodes. Watchlist comes after
-that; provider playback reports must stay authoritative. A shared provider
+**Remaining priority proposal:** compact PSP provider shelves, then optional
+managed offline-next-episodes. The provider-wide web views are already complete.
+Watchlist comes after that; provider playback reports must stay authoritative. A shared provider
 interface should offer the same convenience for Jellyfin where supported.
 These are medium-sized server/UI features, not changes to the stable decoder.
 
@@ -117,8 +122,10 @@ the current PSP encoding path remains the safe default.
 ## Monkey Easter egg — proposals for approval
 
 Normal Monkey remains untouched until the Easter egg is activated. Wall recovery,
-barrel rolls, shield/wall damage and Game Over below are implemented; enemy and
-projectile proposals are still pending. See the README for current controls.
+barrel rolls, shield/wall damage, Game Over, anchored turrets and projectile
+protection are implemented. The bullets below preserve the original design
+rationale, not an unfinished-task list. See the README for current controls and
+MONKEY_FOLLOWUP.md for remaining scope.
 
 - **Wall recovery first:** one contact event, a short outward impulse and
   tangential sliding; keep forward progress where geometry permits. Contact
@@ -142,5 +149,5 @@ projectile proposals are still pending. See the README for current controls.
   simple swept collision for projectiles avoid tunneling and unbounded work.
   A short fixed-seed flight test is more useful than random enemy density.
 
-Recommended flight order: recovery → roll/feedback → health → turrets → optional
-drones. Keep it an optional Easter egg, not a prerequisite for music playback.
+Remaining flight proposal: optional waypoint drones; full free-flying AI would
+be separate work. Keep it an optional Easter egg, not a prerequisite for music playback.

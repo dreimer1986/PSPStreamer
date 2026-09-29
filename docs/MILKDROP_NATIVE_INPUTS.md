@@ -59,7 +59,14 @@ On PSP, check that this demo animates without errors, retains clean audio and
 can switch back to existing presets and video. Higher rotation may noticeably
 change the appearance of existing presets; that is intentional.
 
-## Ordered remaining work (current, not historical milestones)
+## Historical next steps (superseded)
+
+This list predates the later import/sparse-memory work, higher feedback
+resolution and live transitions. It is not the current backlog. See
+[resource limits](MILKDROP_RESOURCE_LIMITS.md) and
+[optimization status](OPTIMIZATION_NEXT_STEPS.md); the user's active ToDo
+collects remaining candidates and hardware checks. In particular, the old
+collection failure counts above must not be reported as current failures.
 
 1. Completed current geometry/range package: [offscreen shapes](MILKDROP_OFFSCREEN_SHAPES.md),
    [wave clipping and safe expanded transforms](MILKDROP_GEOMETRY_RANGES.md).
@@ -73,4 +80,4 @@ change the appearance of existing presets; that is intentional.
 
 Shape batching and the first formula-memory expansion are complete. Textures
 are implemented. Desktop HLSL shader execution remains deliberately excluded.
-Older step-specific documents describe their historical state, not this list.
+This document also describes a historical step, not the current task list.
