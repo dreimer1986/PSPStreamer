@@ -1,5 +1,11 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Play next':'Als Nächstes','Scheduled next':'Als Nächstes vorgemerkt',
+ 'Provider views':'Anbieteransichten',
+ 'No current track for Play next':'Kein laufender Titel zum Vormerken',
+ 'Save tracks for series/folder':'Spuren für Serie/Ordner merken',
+ 'Forget series/folder preferences':'Serien-/Ordnervorlieben löschen',
+ 'Preferences removed':'Vorlieben gelöscht','Preferences saved':'Vorlieben gespeichert',
  'Repeat off':'Wiederholung aus','Repeat one':'Eine Datei wiederholen','Repeat all':'Alle wiederholen',
  'Playlist repeat':'Listen-Wiederholung','Playlist shuffle (independent of folder shuffle)':'Listen-Zufall (unabhängig vom Ordner-Zufall)',
  'Provider library':'Medienserver-Ansichten','Provider':'Medienserver','View':'Ansicht',

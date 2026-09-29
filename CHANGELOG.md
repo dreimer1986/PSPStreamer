@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- Add web Play next, compact Plex/Jellyfin shelves on PSP, persistent per-series
+  language/subtitle preferences and an optional cancellable next-video countdown.
+- Add floor-hovering waypoint drones using non-player ships and inverted colors,
+  retaining bounded combat, firing rate, damage and scoring rules.
+- Confirm previous recovery, StreamMaster profile and flight tests; generic
+  ESP32-S2/S3 images remain untested. New conveniences await PSP feedback.
+
 - Prevent network-recovery failures from advancing the playlist: track clean
   music EOF separately from transport failures, reject premature video ends,
   and recheck reader errors after queue waits and worker teardown. Recovery

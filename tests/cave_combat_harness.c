@@ -58,5 +58,19 @@ int main(void) {
     s->flight_barrel=1;cave_combat_emit(&s->combat,incoming,toward,1);cave_combat_step(s,.05f);assert(s->game.health==90);
     s->flight_barrel=0;blocked=1;cave_combat_emit(&s->combat,incoming,toward,1);cave_combat_step(s,.05f);assert(s->game.health==90);
     reset(s);for(int i=0;i<100;i++)cave_combat_emit(&s->combat,muzzle,dir,0);assert(bolts(s,0)==CAVE_BOLTS);
-    free(s);puts("Combat: bounded pool/backlog, fire rate, pause, deferred spawn, acquisition, damage, kill reward, wall/roll protection OK");
+    int drones=0,turrets=0;
+    for(unsigned seed=1;seed<100;seed++) {
+        reset(s);s->ship_model=seed%CAVE_SHIPS;s->combat.random=seed;cave_combat_spawn(s);
+        assert(s->combat.health==CAVE_ENEMY_HITS);
+        if(s->combat.drone){drones++;assert(s->combat.model!=s->ship_model && s->combat.model<CAVE_SHIPS);}
+        else {turrets++;assert(s->combat.model==CAVE_ENEMY_MODEL);}
+    }
+    assert(drones && turrets);
+    reset(s);s->combat.drone=1;s->combat.model=1;s->combat.health=3;
+    s->combat.enemy[1]=2;s->combat.enemy[2]=10;
+    memcpy(s->combat.waypoint,s->combat.enemy,sizeof(s->combat.enemy));
+    s->combat.waypoint[0]=.5f;s->combat.waypoint_wait=1;
+    cave_drone_step(s,.1f);assert(s->combat.enemy[0]>0 && s->combat.enemy[0]<.06f);
+    blocked=1;float x=s->combat.enemy[0];cave_drone_step(s,.1f);assert(s->combat.enemy[0]==x);
+    free(s);puts("Combat: bounded pools, fire, damage, spawn, drone model exclusion and swept patrol OK");
 }

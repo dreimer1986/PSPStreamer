@@ -26,7 +26,8 @@ static void cave_combat_emit(CaveCombat *c,const float p[3],const float directio
 static void cave_combat_spawn(CaveScene *s) {
     CaveCombat *c=&s->combat;
     if(c->health>0 || s->ready<10)return;
-    int model=CAVE_ENEMY_MODEL;
+    int drone=(random_step(&c->random)&0x10000)!=0;
+    int model=drone?(s->ship_model+1+random_step(&c->random)%(CAVE_SHIPS-1))%CAVE_SHIPS:CAVE_ENEMY_MODEL;
     float radius[3];for(int k=0;k<3;k++)radius[k]=CAVE_ENEMY_SCALE*cave_model_half[model][k]+.06f;
     /* Curved floors need not be flat across a wide footprint. Fit the hull
      * plus a little passing room; a stationary ship may hover above a slope. */
@@ -37,9 +38,9 @@ static void cave_combat_spawn(CaveScene *s) {
         for(int attempt=0;attempt<6;attempt++) {
             float px=x+(attempt%3==1?.55f:attempt%3==2?-.55f:0),py=y;
             if(cave_density(s,px,py,z)<.008f)continue;
-            if(attempt<3) {
+            if(attempt<3 || drone) {
                 while(py>-5 && cave_density(s,px,py-.1f,z)>.008f)py-=.1f;
-                py+=radius[1]+.06f;
+                py+=radius[1]+(drone?.35f:.06f);
             } else py-=.25f;
             if(fabsf(px)+radius[0]>5.5f || fabsf(py)+radius[1]>5.5f)continue;
             int clear=cave_density(s,px,py,z)>.008f;
@@ -49,11 +50,49 @@ static void cave_combat_spawn(CaveScene *s) {
             }
             if(!clear || (cave_density(s,px-.6f,py+.25f,z)<.008f &&
                           cave_density(s,px+.6f,py+.25f,z)<.008f))continue;
-            c->health=CAVE_ENEMY_HITS;c->model=model;
+            c->health=CAVE_ENEMY_HITS;c->model=model;c->drone=drone;c->waypoint_wait=0;
             c->enemy[0]=px;c->enemy[1]=py;c->enemy[2]=z;
             c->aim[0]=0;c->aim[1]=0;c->aim[2]=-1;c->visible=0;
             c->enemy_cooldown=CAVE_ENEMY_FIRE_SECONDS;return;
         }
+    }
+}
+static int cave_drone_fits(const CaveScene *s,const float p[3]) {
+    const CaveCombat *c=&s->combat;
+    if(p[2]<s->motion.travel+1 || p[2]>=s->next-2 || cave_density(s,p[0],p[1],p[2])<.008f)return 0;
+    for(int k=0;k<6;k++) {
+        float q[3];memcpy(q,p,sizeof(q));
+        q[k/2]+=(CAVE_ENEMY_SCALE*cave_model_half[c->model][k/2]+.09f)*(k&1?1:-1);
+        if(fabsf(q[0])>5.5f || fabsf(q[1])>5.5f || cave_density(s,q[0],q[1],q[2])<.008f)return 0;
+    }
+    return 1;
+}
+static void cave_drone_step(CaveScene *s,float dt) {
+    CaveCombat *c=&s->combat;if(!c->drone || c->health<=0)return;
+    c->waypoint_wait-=dt;
+    if(c->waypoint_wait<=0) {
+        memcpy(c->waypoint,c->enemy,sizeof(c->waypoint));c->waypoint_wait=1.5f;
+        /* A short floor-following patrol, not free-flight AI. Fixed attempts
+         * and swept hull samples keep CPU cost and geometry ownership bounded. */
+        for(int attempt=0;attempt<4;attempt++) {
+            float p[3];memcpy(p,c->enemy,sizeof(p));
+            p[0]+=((int)(random_step(&c->random)%1001)-500)*.0014f;
+            p[2]+=((int)(random_step(&c->random)%1001)-500)*.0014f;
+            float floor=p[1];
+            for(int n=0;n<50 && floor>-5 && cave_density(s,p[0],floor-.1f,p[2])>.008f;n++)floor-=.1f;
+            p[1]=floor+CAVE_ENEMY_SCALE*cave_model_half[c->model][1]+.35f;
+            if(cave_drone_fits(s,p) && cave_combat_clear(s,c->enemy,p)) {
+                memcpy(c->waypoint,p,sizeof(p));break;
+            }
+        }
+    }
+    float delta[3],length=0;
+    for(int k=0;k<3;k++){delta[k]=c->waypoint[k]-c->enemy[k];length+=delta[k]*delta[k];}
+    length=sqrtf(length);float step=fminf(length,fminf(dt,.1f)*.55f);
+    if(length>1e-6f) {
+        float next[3];for(int k=0;k<3;k++)next[k]=c->enemy[k]+delta[k]*step/length;
+        if(cave_drone_fits(s,next) && cave_combat_clear(s,c->enemy,next))memcpy(c->enemy,next,sizeof(next));
+        else c->waypoint_wait=0;
     }
 }
 static void cave_combat_step(CaveScene *s,float dt) {
@@ -74,6 +113,7 @@ static void cave_combat_step(CaveScene *s,float dt) {
         cave_combat_emit(c,muzzle,dir,0);c->fire_cooldown=CAVE_PLAYER_FIRE_SECONDS;
     }
     if(c->health>0) {
+        cave_drone_step(s,dt);
         int visible=cave_combat_clear(s,c->enemy,player);
         c->visible=visible?c->visible+dt:0;
         if(c->visible>.55f) {

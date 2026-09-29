@@ -3,6 +3,9 @@ import re
 
 
 def browse(server, root=0, path=''):
+    if path.startswith(':shelf:'):
+        from .provider_views import compact
+        return compact(server,path)
     if path == ':queue:':
         queue=server.playlist.snapshot()
         return dict(root=0,path=path,parent='',folders=[],videos=queue['items'],
@@ -28,9 +31,13 @@ def browse(server, root=0, path=''):
             folders.append({'name': 'Internet Radio', 'path': ':radio:'})
         return dict(root=0, path='', parent=None, folders=folders, videos=[])
     if path.startswith(':plex:'):
-        return server.plex.browse(root, path)
+        result=server.plex.browse(root, path)
+        if path==':plex:':result['folders'].insert(0,{'name':'Provider views','path':':shelf:plex'})
+        return result
     if path.startswith(':jellyfin:'):
-        return server.jellyfin.browse(root, path)
+        result=server.jellyfin.browse(root, path)
+        if path==':jellyfin:':result['folders'].insert(0,{'name':'Provider views','path':':shelf:jellyfin'})
+        return result
     if path.startswith(':dlna:'):
         return server.dlna.browse(root,path)
     if path == ':radio:' and sources['radio']:

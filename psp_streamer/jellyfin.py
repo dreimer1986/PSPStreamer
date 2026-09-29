@@ -287,7 +287,7 @@ class Jellyfin(Plex):
         if not rows or rows[0].get('Type') not in ('Movie', 'Episode', 'Audio', 'MusicVideo', 'Video'):
             return {}
         return dict(id=self.token(rows[0]['Id'], kind, parent, wanted),
-                    kind='audio' if rows[0]['Type']=='Audio' else 'video')
+                    kind='audio' if rows[0]['Type']=='Audio' else 'video',name=display_text(rows[0].get('Name')))
 
     def details(self, token):
         row = self.metadata(token); user = row.get('UserData') or {}

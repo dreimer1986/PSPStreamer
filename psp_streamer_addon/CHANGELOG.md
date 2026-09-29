@@ -1,3 +1,12 @@
+# 0.1.63
+
+- Add Play next in the web library, media controls and shared playlist, with
+  persistent order and independent shuffle handling; no immediate playback command.
+- Expose compact Plex/Jellyfin shelves through the PSP catalogue.
+- Persist series audio/subtitle preferences by language/title; direct files use
+  folder scope. Settings survive updates in the existing state volume.
+- Same implementation and web assets in Docker and the Home Assistant app.
+
 # 0.1.62
 
 - Reuse identical offline conversion jobs and intact ready packages instead of

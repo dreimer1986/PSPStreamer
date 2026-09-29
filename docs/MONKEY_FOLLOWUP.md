@@ -14,13 +14,14 @@ enemy hits cost 10 shield, and a kill earns 100 points. Barrel rolls protect
 against projectiles, not walls. One missed spawn can be retried, without building
 an enemy backlog. Square cannot change visualization during the game.
 
-The latest model, balance, spawn-retry and control changes still need the targeted
-hardware checks listed in the user's active ToDo. Do not reopen already confirmed
-exhaust, fade-in, recovery or basic barrel-roll tests.
+The user confirmed model, balance, spawn-retry, controls and Desktop FFT on
+2026-09-29. Do not reopen these tests. The new floor-hovering waypoint drones
+now need hardware feedback: they use a non-player ship with inverted colors,
+bounded short patrol segments and hull-clearance checks. Turrets remain in the
+spawn mix; at most one enemy is active. Damage, firing and rewards are unchanged.
 
 Remaining proposals, not approved implementation work:
 
-- Waypoint-following drones as moving enemies.
 - Full free-flying enemy AI only as a separate, larger project.
 
 The consolidated active checklist is

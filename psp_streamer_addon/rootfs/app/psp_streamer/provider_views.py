@@ -7,6 +7,34 @@ from .jellyfin import identifier
 PAGE=50
 
 
+def compact(server,path):
+    """Virtual folders reuse the ordinary cancellable PSP catalogue worker."""
+    parts=path.split(':')[2:]
+    if not 1<=len(parts)<=4 or parts[0] not in ('plex','jellyfin'):
+        raise ValueError('Invalid provider shelf')
+    name=parts[0];provider=getattr(server,name);provider.require()
+    base=':shelf:'+name
+    result=dict(root=0,path=path,parent=':'+name+':',folders=[],videos=[])
+    if len(parts)==1:
+        result['folders']=[dict(name=label,path=base+':'+view) for view,label in
+            [('continue','Continue watching'),('recent','Recently added'),('unwatched','Unwatched'),('collections','Collections')]]
+        return result
+    view=parts[1]
+    if view not in ('continue','recent','unwatched','collections'):raise ValueError('Invalid provider shelf')
+    result['parent']=base
+    if len(parts)==2 and view!='continue':
+        result['folders']=[dict(name=r['name'],path=path+':'+r['id']) for r in sections(provider,name)]
+        return result
+    section=parts[2] if len(parts)>2 else ''
+    offset=int(parts[3]) if len(parts)>3 else 0
+    data=browse(provider,name,view,section,offset)
+    result.update(folders=data['folders'],videos=data['videos'])
+    if section:result['parent']=base+':'+view
+    if data['next'] is not None:
+        result['folders'].append(dict(name='Next page',path=f'{base}:{view}:{section}:{data["next"]}'))
+    return result
+
+
 def sections(provider, name):
     provider.require()
     if name=='plex':

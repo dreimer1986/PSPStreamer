@@ -362,6 +362,10 @@ static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static int selected_video_fps;
+static int next_episode_seconds;
+static char preference_media_id[ID_SIZE];
+static int series_available,series_saved,preferred_audio=-1,preferred_subtitle=-2;
+static int next_explicit_tracks;
 static char music_preset_file[256]="active.milk";
 static int music_preset_auto=0,music_preset_seconds=60,music_preset_fade_ms=1500;
 #include "visual_options.h"
@@ -484,6 +488,7 @@ static void load_playback_settings(void) {
                 }
             } else if (!strncmp(line, "port=", 5)) server_port = atoi(line + 5);
             else if (!strncmp(line,"https=",6)) server_https=atoi(line+6)!=0;
+            else if (!strncmp(line,"next_episode_seconds=",21)) {int n=atoi(line+21);next_episode_seconds=n>=0&&n<=30?n:0;}
             else if (!strncmp(line,"network_transport=",18)) network_transport=!strcmp(line+18,"streammaster");
             else if (!strncmp(line,"streammaster_bulk_kib=",21)) streammaster_bulk_kib=atoi(line+21);
             else if (!strncmp(line,"streammaster_bulk_depth=",23)) streammaster_bulk_depth=atoi(line+23);
@@ -538,6 +543,7 @@ static int save_playback_settings(void) {
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", selected_video_fps ? "24000/1001" : "20");
+    length += snprintf(data+length,sizeof(data)-length,"next_episode_seconds=%d\n",next_episode_seconds);
     length += snprintf(data + length, sizeof(data) - length, "play_mode=%s\n",download_before_play?"download":"stream");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
     length += snprintf(data+length,sizeof(data)-length,"preset_auto=%d\npreset_seconds=%d\npreset_fade_ms=%d\n",music_preset_auto,music_preset_seconds,music_preset_fade_ms);
@@ -738,11 +744,6 @@ static int http_get_wait(const char *path, char *buffer, int buffer_size, int id
     body += 4;
     memmove(buffer, body, (size_t)(buffer + received - body + 1));
     return (int)strlen(buffer);
-}
-
-static int http_get(const char *path, char *buffer, int buffer_size) {
-    /* Browsing and metadata must never strand the UI after a Wi-Fi dropout. */
-    return http_get_wait(path, buffer, buffer_size, 20000);
 }
 
 #include "remote_http.h"
@@ -2917,6 +2918,8 @@ static void parse_stream_tracks(const char *array_key, StreamTrack *tracks, int 
 }
 
 static int load_media_metadata(const char *media_id) {
+    snprintf(preference_media_id,sizeof(preference_media_id),"%s",media_id);
+    series_available=series_saved=0;preferred_audio=-1;preferred_subtitle=-2;
     current_media_plex=!strncmp(media_id,"plex.",5) || !strncmp(media_id,"jellyfin.",9);
     char path[ID_SIZE + 32], duration[24];
     int result;
@@ -2934,6 +2937,10 @@ static int load_media_metadata(const char *media_id) {
         return result;
     }
     json_value(response,"name",current_media_name,sizeof(current_media_name));
+    char scope[16];series_available=json_value(response,"series_scope",scope,sizeof(scope)) && scope[0];
+    series_saved=json_integer(response,"series_saved",0);
+    preferred_audio=json_integer(response,"preferred_audio",-1);
+    preferred_subtitle=json_integer(response,"preferred_subtitle",-2);
     json_value(response,"title",current_media_title,sizeof(current_media_title));
     json_value(response,"artist",current_media_artist,sizeof(current_media_artist));
     json_value(response,"album",current_media_album,sizeof(current_media_album));
@@ -3113,6 +3120,12 @@ static void parse_library(void) {
         if (!json_value(object, "path", items[item_count].value, ID_SIZE)) break;
         if(!strcmp(items[item_count].value,":radio:"))snprintf(items[item_count].title,TITLE_SIZE,"%s",tr(TXT_RADIO));
         if(!strcmp(items[item_count].value,":queue:"))snprintf(items[item_count].title,TITLE_SIZE,"%s",tr(TXT_PLAYLIST));
+        if(!strncmp(items[item_count].value,":shelf:",7)) {
+            const char *names[]={"Provider views","Continue watching","Recently added","Unwatched","Collections","Next page"};
+            for(int n=0;n<6;n++)if(!strcmp(items[item_count].title,names[n])) {
+                snprintf(items[item_count].title,TITLE_SIZE,"%s",tr((TextId)(TXT_PROVIDER_VIEWS+n)));break;
+            }
+        }
         items[item_count].is_folder = 1;
         item_count++;
         cursor = strchr(object, '}');
@@ -3154,7 +3167,7 @@ static void url_encode(const char *source, char *destination, size_t length) {
 
 static void parent_path(void) {
     if(!strncmp(current_path,":plex:",6) || !strncmp(current_path,":jellyfin:",10) ||
-       !strncmp(current_path,":dlna:",6) || !strncmp(current_path,":versions:",10)) {
+       !strncmp(current_path,":dlna:",6) || !strncmp(current_path,":shelf:",7) || !strncmp(current_path,":versions:",10)) {
         snprintf(current_path,sizeof(current_path),"%s",current_parent_path);
         return;
     }
@@ -3162,46 +3175,33 @@ static void parent_path(void) {
     if (last) *last = '\0'; else current_path[0] = '\0';
 }
 
-/* Continue within the same kind of media.  A music album must never spill
- * into a video merely because both happen to share a folder. */
-static int next_media_index(int selected, int is_audio) {
-    int index, candidates = 0, wanted;
-    static unsigned int shuffle_state;
-    if (is_audio && audio_shuffle) {
-        for (index = 0; index < item_count; index++)
-            if (index != selected && !items[index].is_folder && items[index].is_audio) candidates++;
-        if (!candidates) return -1;
-        if (!shuffle_state) shuffle_state = (unsigned int)sceKernelGetSystemTimeWide() | 1U;
-        shuffle_state = shuffle_state * 1103515245U + 12345U;
-        wanted = (shuffle_state >> 8) % candidates;
-        for (index = 0; index < item_count; index++)
-            if (index != selected && !items[index].is_folder && items[index].is_audio && wanted-- == 0) return index;
-        return -1;
-    }
-    for (index = selected + 1; index < item_count; index++)
-        if (!items[index].is_folder && items[index].is_audio == is_audio) return index;
-    return -1;
-}
-
 /* Remote playback has no relationship to the PSP's currently browsed folder.
  * Resolve successors from the media ID on the server, only after natural EOF. */
 static int remote_next_audio;
 static int remote_next_track,remote_next_subtitle;
 static int playlist_revision,playlist_enabled,playlist_repeat,playlist_shuffle;
+static int episode_countdown(const char *name,int local);
+static void apply_series_preferences(void) {
+    if(preferred_audio>=0 && preferred_audio<audio_track_count)selected_audio_track=preferred_audio;
+    if(preferred_subtitle>=-1 && preferred_subtitle<subtitle_track_count)selected_subtitle_track=preferred_subtitle;
+}
 static int remote_next_media(char *media_id, size_t capacity, int is_audio, int direction) {
-    char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16];
+    char path[ID_SIZE + 64], next_id[ID_SIZE], kind[16],next_name[TITLE_SIZE];
     int result;
     snprintf(path, sizeof(path), "/api/media-next/%s?shuffle=%d&direction=%s&manual=%d", media_id,
              is_audio && audio_shuffle, direction<0?"previous":"next",direction!=0);
-    result = http_get(path, response, sizeof(response));
+    result = media_request_get(path, response, sizeof(response),15000,0);
     if (result < 0) return result;
     if (!json_value(response, "id", next_id, sizeof(next_id))) return 0;
     if (!json_value(response, "kind", kind, sizeof(kind)) ||
         (strcmp(kind,"audio") && strcmp(kind,"video")) || (!strcmp(media_id, next_id) && !json_integer(response,"repeat_current",0)) ||
         strlen(next_id) >= capacity) return 0;
     int next_audio=!strcmp(kind,"audio");
+    next_explicit_tracks=strstr(response,"\"audio\":")!=NULL;
+    next_name[0]=0;json_value(response,"name",next_name,sizeof(next_name));
     int next_track=json_integer(response,"audio",selected_audio_track);
     int next_subtitle=json_integer(response,"subtitle",selected_subtitle_track);
+    if(!is_audio && !next_audio && !direction && !episode_countdown(next_name,0))return 0;
     /* A new Stop/Play during the transition takes precedence over autoplay.
      * Leave it for the normal command consumer; do not create commands here. */
     snprintf(path, sizeof(path), "/api/remote/next?after=%d", remote_control_sequence);
@@ -3422,6 +3422,7 @@ static void media_info(int selected) {
 /* A compact pre-playback dialog.  Track numbers follow ffprobe/ffmpeg's
  * stream order; a later metadata pass can attach language labels without
  * changing the streaming protocol. */
+static void comfort_hex(char *out,const char *in);
 static int playback_options(int audio_only) {
     SceCtrlData pad;
     unsigned int old = 0;
@@ -3471,10 +3472,20 @@ static int playback_options(int audio_only) {
                 gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
                 gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_PLAY));
                 gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_BACK));
-                gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_VIDEO_SETUP_CONTROLS));
+                gui_text(38,177,0x00FFFFFF,"%s",tr(series_available?
+                    (series_saved && selected_audio_track==preferred_audio && selected_subtitle_track==preferred_subtitle?TXT_SERIES_REMOVE:TXT_SERIES_SAVE):TXT_VIDEO_SETUP_CONTROLS));
             }
         }
         sceCtrlReadBufferPositive(&pad, 1);
+        if(!audio_only && series_available && (pad.Buttons&PSP_CTRL_TRIANGLE) && !(old&PSP_CTRL_TRIANGLE)) {
+            char hex[ID_SIZE*2+1],body[ID_SIZE*2+128];comfort_hex(hex,preference_media_id);
+            int remove=series_saved && selected_audio_track==preferred_audio && selected_subtitle_track==preferred_subtitle;
+            snprintf(body,sizeof(body),"{\"id_hex\":\"%s\",\"audio\":%d,\"subtitle\":%d,\"remove\":%s}",
+                hex,selected_audio_track,selected_subtitle_track,remove?"true":"false");
+            int saved=media_request_perform("/api/series-preferences",response,sizeof(response),60000,0,body);
+            if(saved>=0){series_saved=!remove;preferred_audio=selected_audio_track;preferred_subtitle=selected_subtitle_track;}
+            else {snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),saved);old=pad.Buttons;return 0;}
+        }
         if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
         if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
@@ -3512,6 +3523,32 @@ static int playback_options(int audio_only) {
 #include "app_settings.h"
 #include "streammaster_ui.h"
 #include "comfort_ui.h"
+static int episode_countdown(const char *name,int local) {
+    if(!next_episode_seconds)return 1;
+    ui_restore_after_playback();
+    unsigned long long end=sceKernelGetSystemTimeWide()+(unsigned long long)next_episode_seconds*1000000ULL;
+    unsigned int old=~0U;int shown=-1;
+    while(1) {
+        keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);
+        unsigned int pressed=pad.Buttons&~old;old=pad.Buttons;
+        if(pressed&(PSP_CTRL_CIRCLE|PSP_CTRL_START))return 0;
+        if(pressed&PSP_CTRL_CROSS)return 1;
+        unsigned long long now=sceKernelGetSystemTimeWide();
+        if(now>=end)return 1;
+        int left=(int)((end-now+999999)/1000000);
+        if(left!=shown) {
+            char line[96];snprintf(line,sizeof(line),tr(TXT_EPISODE_COUNTDOWN),left);
+            settings_shell(tr(TXT_VIDEO));settings_line(1,0,name);settings_line(3,0,line);
+            settings_help(tr(TXT_EPISODE_COUNTDOWN_HELP));shown=left;
+            if(!local) {
+                char path[96],action[16];snprintf(path,sizeof(path),"/api/remote/next?after=%d",remote_control_sequence);
+                if(media_request_get(path,response,sizeof(response),1500,0)<0)return 0;
+                if(json_value(response,"action",action,sizeof(action)) && strcmp(action,"idle"))return 0;
+            }
+        }
+        sceKernelDelayThread(20000);
+    }
+}
 #include "offline_ui.h"
 
 /* Queue edits share the cancellable HTTP worker with metadata requests. No
@@ -3702,6 +3739,7 @@ int main(void) {
                     selected_audio_track = remote_audio;
                     selected_subtitle_track = remote_subtitle;
                     if((result=load_media_metadata(remote_media_id))<0)break;
+                    if(!next_explicit_tracks)apply_series_preferences();
                     sceKernelDelayThread(500000);
                 } while (1);
                 ui_restore_after_playback();
@@ -3824,6 +3862,7 @@ int main(void) {
                 if(load_media_metadata(items[selected].value)<0) {
                     show(selected);old_buttons=pad.Buttons;continue;
                 }
+                if(strcmp(current_path,":queue:"))apply_series_preferences();
                 if (!playback_options(radio_is_live(items[selected].value)?2:items[selected].is_audio)) { dirty = 1; old_buttons = pad.Buttons; continue; }
                 if(!items[selected].is_audio && !download_before_play && !comfort_resume_prompt(items[selected].value,0)) {
                     dirty=1;old_buttons=PSP_CTRL_CROSS|PSP_CTRL_CIRCLE;continue;
@@ -3837,7 +3876,6 @@ int main(void) {
                 comfort_notice(status);refresh_library();dirty=1;old_buttons=pad.Buttons;continue;
             }
             do {
-                int next;
                 snprintf(status, sizeof(status), "%s", items[selected].is_audio ? tr(TXT_STARTING_MUSIC) : tr(TXT_STARTING_VIDEO));
                 if(!music_transition || !items[selected].is_audio)show(selected);
                 result = items[selected].is_audio ? comfort_play_audio(items[selected].value, items[selected].title) : comfort_play_video(items[selected].value);
@@ -3859,7 +3897,7 @@ int main(void) {
                     break;
                 }
                 resume_pending = 0;
-                if((!strcmp(current_path,":queue:") || item_count==1 || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9) || !strncmp(items[selected].value,"dlna.",5)) && (playback_reached_end || video_file_direction)) {
+                if(playback_reached_end || video_file_direction) {
                     char following_id[ID_SIZE];
                     snprintf(following_id,sizeof(following_id),"%s",items[selected].value);
                     int following=remote_next_media(following_id,sizeof(following_id),items[selected].is_audio,video_file_direction);
@@ -3869,33 +3907,15 @@ int main(void) {
                         selected_audio_track=remote_next_track;selected_subtitle_track=remote_next_subtitle;
                         stream_start_seconds=0;
                         if(load_media_metadata(following_id)<0)break;
+                        if(!next_explicit_tracks)apply_series_preferences();
                         snprintf(items[selected].title,sizeof(items[selected].title),"%s",current_media_name);
                         continue;
                     }
                     break;
                 }
-                next = (playback_reached_end || video_file_direction>0) ? next_media_index(selected, items[selected].is_audio) : -1;
-                if(video_file_direction<0) {
-                    for(next=selected-1;next>=0;next--)
-                        if(!items[next].is_folder && items[next].is_audio==items[selected].is_audio) break;
-                }
-                if (next < 0) {
-                    if(!debug_enabled)
-                        snprintf(status,sizeof(status),"%s",tr(items[selected].is_audio?TXT_MUSIC_FINISHED:TXT_VIDEO_FINISHED));
-                    else if (items[selected].is_audio)
-                        snprintf(status, sizeof(status), tr(TXT_MUSIC_ENDED), audio_state);
-                    else
-                        snprintf(status, sizeof(status), tr(TXT_VIDEO_ENDED), result);
-                    break;
-                }
-                selected = next;
-                resume_pending = 0;
-                stream_start_seconds = 0;
-                snprintf(status, sizeof(status), items[selected].is_audio ? tr(TXT_NEXT_TRACK) : tr(TXT_NEXT_EPISODE), items[selected].title);
-                if(!music_transition)show(selected);
-                if(load_media_metadata(items[selected].value)<0)break;
+                break;
             } while (1);
-            if(!strcmp(current_path,":queue:") || !strncmp(items[selected].value,"plex.",5) || !strncmp(items[selected].value,"jellyfin.",9)) {
+            if(network_ready) {
                 refresh_library();
                 if(selected>=item_count)selected=item_count?item_count-1:0;
             }

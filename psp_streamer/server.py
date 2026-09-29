@@ -225,7 +225,7 @@ class Library:
         else:
             return {}
         return {"id": self.encode(MediaItem(item.root, following.relative_to(root).as_posix())),
-                "kind": "audio" if is_audio else "video"}
+                "kind": "audio" if is_audio else "video", "name": display_text(following.name)}
 
     def browse(self, root_index: int, relative: str = "") -> dict:
         if not self.roots and root_index == 0 and not relative:
@@ -564,6 +564,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/remote/next":
                 self.server.player_status.report(query)
+                if query.get('state',[''])[0]=='playing' and query.get('started',['1'])[0]!='0':
+                    try:self.server.playlist.observe((query.get('media') or query.get('plex') or [''])[0])
+                    except OSError:pass  # Queue persistence must never interrupt playback controls.
                 self.server.comfort.report(query, self.server.player_status.snapshot())
                 media = query.get('media') or query.get('plex')
                 if media and query.get('state', [''])[0] in {'paused', 'playing', 'stopped'}:
@@ -625,7 +628,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     parsed.path.rsplit("/", 1)[-1], query.get("shuffle", ["0"])[0] == "1",
                     query.get("direction", ["next"])[0] == "previous"))
             if parsed.path.startswith("/api/metadata/"):
-                return self.metadata(parsed.path.rsplit("/", 1)[-1])
+                return self.send_json(self.metadata(parsed.path.rsplit("/", 1)[-1]))
             if parsed.path.startswith("/api/subtitles/"):
                 track = int(query.get("track", ["-1"])[0])
                 if not 0 <= track <= 31:
@@ -719,6 +722,17 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_error_json(HTTPStatus.BAD_REQUEST,'Invalid comfort request size')
                 data=json.loads(self.rfile.read(length))
                 return self.send_json(self.server.comfort.sync(data) if parsed.path.endswith('/sync') else self.server.comfort.change(data))
+            if parsed.path == '/api/series-preferences':
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=4096:
+                    self.close_connection=True
+                    raise ValueError('Invalid preference size')
+                request=json.loads(self.rfile.read(length))
+                if isinstance(request,dict) and isinstance(request.get('id_hex'),str):
+                    request['id']=bytes.fromhex(request['id_hex']).decode('utf-8')
+                if not isinstance(request,dict) or not isinstance(request.get('id'),str):raise ValueError('Invalid preference')
+                token=request['id']
+                return self.send_json(self.server.series_preferences.save(self.server,token,self.metadata(token),request))
             if parsed.path == '/api/playlist':
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=200000:
@@ -726,6 +740,13 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError('Invalid playlist request size')
                 request=json.loads(self.rfile.read(length))
                 if not isinstance(request,dict):raise ValueError('Invalid playlist request')
+                if request.get('action')=='consume_next':raise ValueError('Internal playlist action')
+                if request.get('action')=='play_next':
+                    player=self.server.player_status.snapshot()
+                    if not player.get('online') or player.get('state') not in ('playing','paused','buffering') or player.get('live'):
+                        raise ValueError('No current track for Play next')
+                    request['after']=player['id']
+                    # Playlist resolves/adds the anchor in the same transaction.
                 if 'id_hex' in request:
                     if not isinstance(request['id_hex'],str):raise ValueError('Invalid playlist identifier')
                     request['id']=bytes.fromhex(request['id_hex']).decode('utf-8')
@@ -972,18 +993,18 @@ class AppHandler(BaseHTTPRequestHandler):
         secure = bool(self.server.tls_context) or self.headers.get('Origin', '').startswith('https://')
         return f'psp_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}' + ('; Secure' if secure else '')
 
-    def metadata(self, token: str) -> None:
+    def metadata(self, token: str) -> dict:
         if token.startswith('radio.'):
             station = self.server.radio.get(token)
-            return self.send_json({'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])})
+            return {'a': [], 's': [], 'd': '0', 'live': True, 'name': display_text(station['name'])}
         _, source = self.server.library.decode(token)
         identity = file_identity(source)
         cache_key = (token, identity)
         cached = self.server.metadata_cache.get(cache_key) if identity is not None else None
         if cached is not None and not token.startswith(('plex.', 'jellyfin.')):
             self.server.player_status.remember(token, cached, cached.get('kind', 'video'))
-            return self.send_json(cached if self.headers.get('X-PSP-Web') else
-                                  {k:v for k,v in cached.items() if k not in ('artwork', 'chapters', 'markers')})
+            cached=self.server.series_preferences.attach(self.server,token,cached)
+            return cached if self.headers.get('X-PSP-Web') else {k:v for k,v in cached.items() if k not in ('artwork', 'chapters', 'markers')}
         result = cached_probe(source,
             ["-show_entries", "chapter=start_time,end_time:chapter_tags=title:format=duration:format_tags=title,artist,album,album_artist:stream=index,codec_type,codec_name:stream_disposition=forced,hearing_impaired,default:stream_tags=language,title,artist,album,album_artist,NUMBER_OF_BYTES,NUMBER_OF_BYTES-eng,NUMBER_OF_FRAMES,NUMBER_OF_FRAMES-eng", "-of", "json"])
         if result.returncode:
@@ -1035,8 +1056,8 @@ class AppHandler(BaseHTTPRequestHandler):
         if not payload.get('chapters'):
             payload['chapters'] = file_chapters
         self.server.player_status.remember(token, payload, payload['kind'])
-        self.send_json(payload if self.headers.get('X-PSP-Web') else
-                       {k:v for k,v in payload.items() if k not in ('artwork', 'chapters', 'markers')})
+        payload=self.server.series_preferences.attach(self.server,token,payload)
+        return payload if self.headers.get('X-PSP-Web') else {k:v for k,v in payload.items() if k not in ('artwork', 'chapters', 'markers')}
 
     def subtitles(self, token: str, track: int, tv_profile: bool = False, milliseconds: bool = False,
                   paged: bool = False, offset: int | None = None, at_ms: int = 0) -> None:
@@ -1367,6 +1388,8 @@ class AppServer(ThreadingHTTPServer):
         self.player_status = PlayerStatus(self.plex.path.parent)
         from .playlist import Playlist
         self.playlist = Playlist(state_root)
+        from .series_preferences import SeriesPreferences
+        self.series_preferences = SeriesPreferences(state_root)
         from .offline import OfflineQueue
         cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(state_root / 'downloads')
         self.offline = OfflineQueue(cache_root, library, ffmpeg_command, parse_srt_cues, self.transcode_slots)

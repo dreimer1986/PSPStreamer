@@ -57,6 +57,7 @@ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dat
 function timeLabel(seconds){return Math.floor(seconds/60)+':'+String(Math.floor(seconds%60)).padStart(2,'0');}
 function selectionCount(){ $('#selectionCount').textContent=t('{n} selected',{n:checked.size});$('#prepareSelected').disabled=!checked.size;}
 function folderLabel(folder){
+  if(folder.path.startsWith(':shelf:')&&['Provider views','Continue watching','Recently added','Unwatched','Collections','Next page'].includes(folder.name))return t(folder.name);
   const system=[':queue:',':files:',':plex:',':jellyfin:',':dlna:',':radio:',':plex:playlists',':jellyfin:playlists'].includes(folder.path)||
     ((folder.path.startsWith(':plex:')||folder.path.startsWith(':jellyfin:')||folder.path.startsWith(':dlna:'))&&folder.path.includes('@')&&['Previous page','Next page'].includes(folder.name));
   return system?t(folder.name):folder.name;
@@ -105,10 +106,17 @@ async function choose(v,follow=false){
     for(const a of d.a||[])option($('#audio'),a.n,`${a.l||'und'} ${a.t||''}`.trim());
     for(const s of d.s||[])option($('#subtitle'),s.n,`${s.l||'und'} ${s.t||''}`.trim());
     const a=restoreTrack($('#audio'),preferences.audio),s=restoreTrack($('#subtitle'),preferences.subtitle);
+    if(d.series_saved){$('#audio').value=d.preferred_audio;$('#subtitle').value=d.preferred_subtitle;}
     $('#seek').max=Math.floor(+d.d||0);$('#seek').value=0;$('#seekLabel').textContent='0:00';
     showChapters();
     $('#queue').textContent=t(audio?'Prepare MP3 download':'Convert for download');
     $('#details').textContent=[d.artist,d.album,d.title,d.year,+d.d>0?timeLabel(+d.d):'',d.summary].filter(Boolean).join(' · ')||t(live?'Live radio':audio?'Music stream':'Ready to play');
+    if(d.series_scope&&!audio){
+      for(const remove of [false,true])$('#details').append(button(t(remove?'Forget series/folder preferences':'Save tracks for series/folder'),async()=>{
+        await post('/api/series-preferences',{id:v.id,audio:+$('#audio').value,subtitle:+$('#subtitle').value,remove});
+        message(t(remove?'Preferences removed':'Preferences saved'));
+      }));
+    }
     if(d.provider==='plex'||d.provider==='jellyfin'){
       themeButton.hidden=audio;
       const state=document.createElement('p');state.textContent=t(d.watched?'Watched':'Unwatched');$('#details').append(state);

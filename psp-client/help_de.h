@@ -69,7 +69,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step2_title="Ton und Untertitel: Spur wählen",
         .step2_text="Aus: keine Untertitel. []: Hilfe.",
         .step3_title="X: starten   O: zurück zu Dateien",
-        .step3_text="Die Auswahl gilt auch für später."
+        .step3_text="Dreieck: Serienspuren merken/löschen."
     },
     [HELP_PAGE_QUALITY]={
         .title="Qualität und Wiedergabeart",

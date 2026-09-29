@@ -1,7 +1,7 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_STREAMMASTER,SET_TRANSPORT,SET_COUNT};
+      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_STREAMMASTER,SET_TRANSPORT,SET_EPISODE_SECONDS,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
@@ -12,12 +12,14 @@ static void settings_capture(AppSettings *s) {
         music_cpu_mhz,milkdrop_cpu_mhz,video_cpu_mhz,idle_cpu_mhz,screen_idle,md_high_resolution,spectrum_analysis_mode,spectrum_band_count,spectrum_tv_band_count,spectrum_gain_db,spectrum_style,spectrum_segments,spectrum_peak_hold,spectrum_led_count};
     memcpy(s->value,values,sizeof(values));
     s->value[SET_TRANSPORT]=network_transport;
+    s->value[SET_EPISODE_SECONDS]=next_episode_seconds;
 }
 static void settings_apply(const AppSettings *s) {
     input_remote_stop();
     strcpy(server_host,s->host);strcpy(server_password,s->password);strcpy(music_preset_file,s->preset);
     server_port=s->value[SET_PORT];server_https=s->value[SET_HTTPS];
     network_transport=s->value[SET_TRANSPORT];
+    next_episode_seconds=s->value[SET_EPISODE_SECONDS];
     stm_server(server_host,server_port,server_https);
     language_set_code(s->value[SET_LANGUAGE]?"de":"en");tv_ui_auto=s->value[SET_TV];
     selected_audio_track=s->value[SET_AUDIO];selected_subtitle_track=s->value[SET_SUBTITLE];
@@ -102,7 +104,7 @@ static int app_settings(void) {
     int selected=-2,dirty=1,result=0;
     unsigned int old=PSP_CTRL_SELECT;unsigned long long repeat=0;
     static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0,0,0,0,0,0,0,0,12,12,-24,0,0,0,8};
-    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1,1,64,64,24,4,1,1,32,[SET_TRANSPORT]=1};
+    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1,1,64,64,24,4,1,1,32,[SET_TRANSPORT]=1,[SET_EPISODE_SECONDS]=30};
     while(1) {
         keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;

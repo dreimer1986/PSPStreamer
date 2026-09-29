@@ -5,6 +5,8 @@
 static int resume_pending,seek_requested,playback_reached_end,video_file_direction;
 static int stream_start_seconds,scenario,calls,first_calls,next_calls,metadata_calls;
 static int remote_next_audio,remote_next_track,remote_next_subtitle;
+static int next_explicit_tracks=1;
+static void apply_series_preferences(void) {}
 static int comfort_play_video(const char *id) {
     assert(++calls<8);
     playback_reached_end=video_file_direction=0;

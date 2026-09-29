@@ -719,6 +719,8 @@ static void offline_browser(void) {
                         break;
                     }
                     if(next<0)break;
+                    if(!offline_entries[selected].is_audio && !video_file_direction &&
+                       !episode_countdown(offline_entries[next].name,1))break;
                     selected=next;sceKernelDelayThread(250000);
                 } while(1);
             }

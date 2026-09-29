@@ -7,6 +7,11 @@ on 2026-09-27. Remaining opportunities below are proposals, not missing release
 requirements. The user's consolidated active list is
 `/home/dreimer/psp-streamer/psp-client/release/Probleme und Ideen.txt`.
 
+New implementation batch (0.1.63, awaiting PSP feedback): Play next, compact
+PSP provider shelves, optional next-video countdown, per-series/folder track
+preferences and waypoint drones. These are no longer unapproved proposals.
+The previous flight/FFT and StreamMaster profile tests are user-confirmed.
+
 ## Classic Winamp comparison
 
 Winamp documents editable/saved playlists, shuffle/repeat, a searchable library,
@@ -19,7 +24,7 @@ Reference: [official Windows desktop manual](https://support.winamp.com/winamp-d
 | Area | PSPStreamer now | Remaining opportunity |
 |---|---|---|
 | Playback | Audio/video, seek, pause, next/previous, folder order/music shuffle; LCD and TV; queue repeat one/all and separate queue shuffle | No outstanding repeat/shuffle implementation |
-| Lists | One persistent mixed queue, web additions, web/PSP move/remove/play; provider playlists | Named lists, duplicate entries, drag reorder, play-next, duration total, import/export |
+| Lists | One persistent mixed queue, web additions/Play next, web/PSP move/remove/play; provider playlists | Named lists, duplicate entries, drag reorder, duration total, import/export |
 | Library | Files/SMB mounts, Plex, Jellyfin, DLNA; cross-source web search | Rich artist/album/genre view for plain files; no need to duplicate provider indexes blindly |
 | Personal access | Favorites, recent items, resume, playback limits | Music ratings and rule-based lists only if wanted; preset ratings already exist |
 | Metadata | Audio tags, ICY titles, covers/backgrounds, provider text and track labels | Optional file-tag editor, but explicitly authorized writes and backups would be essential |
@@ -49,7 +54,8 @@ still have targeted hardware checks in the active ToDo; implementation is not
 the same as user confirmation. Waypoint drones remain a future proposal.
 
 1. **Shared queue and repeat/shuffle are confirmed working (2026-09-27).**
-   Future candidates: a next-item preview, play-next and multiple named lists. Give duplicate entries
+   Future candidates: a next-item preview and multiple named lists. Play next is
+   implemented in 0.1.63. Give duplicate entries
    separate entry IDs before allowing the same file twice. Low-to-medium scope,
    negligible steady-state PSP rendering cost.
 2. **M3U8/PLS import/export and offline list bundles.** Resolve paths/URLs into
@@ -81,12 +87,12 @@ separate music product and is not silently treated as the standard Plex client.
 
 | Area | PSPStreamer now | Useful gap / proposed next step |
 |---|---|---|
-| Progress | Plex playback reports, provider resume/watched status; own lists and provider-wide Continue Watching on the web, including other clients | Compact provider-wide PSP rows |
-| Browsing | Libraries, seasons, albums, playlists, artwork, descriptions, cross-source search; collections/recent/unwatched web shelves with cover views | Compact provider shelves on the PSP |
+| Progress | Plex playback reports, provider resume/watched status; own lists and provider-wide Continue Watching on web/PSP, including other clients | No outstanding shelf implementation |
+| Browsing | Libraries, seasons, albums, playlists, artwork, descriptions, cross-source search; collections/recent/unwatched shelves on web/PSP | No outstanding compact shelf implementation |
 | Watchlist | Our favorites and new play queue | Optional Plex Watchlist bridge; do not confuse a show-level watchlist with an episode queue |
-| Episodes | Automatic next episode, manual transport and seek | Optional next-episode countdown/cancel, especially useful before switching series |
+| Episodes | Automatic next episode, manual transport and seek; optional countdown/cancel | No outstanding countdown implementation |
 | Markers | Chapter controls and skip buttons from supplied Plex intro/credits markers | Keep provider markers authoritative; do not guess from arbitrary chapter names |
-| Tracks/versions | Audio/subtitle selection, text/bitmap handling, alternative media versions | Better per-series preferences could save repetitive choices; not a missing basic decoder |
+| Tracks/versions | Audio/subtitle selection, text/bitmap handling, alternative versions; per-series/folder preferences | No outstanding series-preference implementation |
 | Offline | Own PSP encoding/downloads and USB bundles | A bounded “keep next N unwatched episodes” job; only delete managed cache copies, never originals |
 | Remote | Our web/HACS controller | Not a registered Plex Companion receiver; optional discovery/control bridge is separate work |
 
@@ -107,8 +113,8 @@ markers and entitlements. Do not promise either universally.
 [Downloads](https://support.plex.tv/articles/downloads-overview/),
 [credits](https://support.plex.tv/articles/credits-detection/).
 
-**Remaining priority proposal:** compact PSP provider shelves, then optional
-managed offline-next-episodes. The provider-wide web views are already complete.
+**Remaining priority proposal:** optional managed offline-next-episodes.
+Provider-wide web views and compact PSP shelves are implemented.
 Watchlist comes after that; provider playback reports must stay authoritative. A shared provider
 interface should offer the same convenience for Jellyfin where supported.
 These are medium-sized server/UI features, not changes to the stable decoder.
@@ -149,5 +155,5 @@ MONKEY_FOLLOWUP.md for remaining scope.
   simple swept collision for projectiles avoid tunneling and unbounded work.
   A short fixed-seed flight test is more useful than random enemy density.
 
-Remaining flight proposal: optional waypoint drones; full free-flying AI would
+Waypoint drones are implemented in the current batch. Full free-flying AI would
 be separate work. Keep it an optional Easter egg, not a prerequisite for music playback.

@@ -69,7 +69,7 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step2_title="Audio and subtitles: pick a track",
         .step2_text="Off means no subtitles. []: help.",
         .step3_title="X: start   O: return to files",
-        .step3_text="Your choices are saved for later."
+        .step3_text="Triangle: save/forget series tracks."
     },
     [HELP_PAGE_QUALITY]={
         .title="Quality and playback mode",

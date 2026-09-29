@@ -25,6 +25,18 @@ preset lists; it does not modify either of them.
   per cycle. It does not reorder the displayed list. Turning shuffle off/on
   creates a new order; Repeat All cycles the current order. Modes survive updates.
 
+## Play next (0.1.63 web action)
+
+Schedule a different item after the currently reported online track without
+stopping it. The server enables the shared queue and adds the current item if
+needed, atomically with the insertion. Existing entries move rather than
+duplicate. A one-shot override bypasses Repeat One; it is consumed only when
+the PSP reports the selected item playing, never merely by looking up Next.
+Shuffle retains the adjusted order. Subsequent items follow this queue, not
+the original folder. Disable queue mode to return to folder continuation.
+Live radio and local-only PSP media cannot be anchors. The web library, media
+details and playlist expose this action; PSP successor lookup honors it too.
+
 ## PSP controls
 
 Open **Playlist** at the library root. **X** opens the usual playback options

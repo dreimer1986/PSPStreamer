@@ -34,6 +34,7 @@ playlistTools.append(button(t('Clear playlist'),()=>{
  if(confirm(t('Clear playlist? Files are kept.')))return changePlaylist({action:'clear'});
 }));playlistNote.after(playlistTools);
 async function addToPlaylist(items){await loadPlaylist();await changePlaylist({action:'add',items});message(t('Added to playlist'));}
+async function playNext(item){await loadPlaylist();await changePlaylist({action:'play_next',items:[item]});message(t('Scheduled next'));}
 function renderPlaylist(){
  playlistRows.replaceChildren();playlistMode.checked=playlistState.enabled;
  queueRepeat.value=playlistState.repeat||0;queueShuffle.checked=!!playlistState.shuffle;
@@ -43,7 +44,7 @@ function renderPlaylist(){
   const play=button(t('Play'),()=>changePlaylist({action:'play',id:item.id}));
   const up=button('↑',()=>changePlaylist({action:'move',id:item.id,position:index-1}));up.disabled=index===0;up.title=t('Move up');
   const down=button('↓',()=>changePlaylist({action:'move',id:item.id,position:index+1}));down.disabled=index===playlistState.items.length-1;down.title=t('Move down');
-  row.append(label,play,up,down,button(t('Remove'),()=>changePlaylist({action:'remove',id:item.id})));playlistRows.append(row);
+  row.append(label,play,button(t('Play next'),()=>playNext(item)),up,down,button(t('Remove'),()=>changePlaylist({action:'remove',id:item.id})));playlistRows.append(row);
  }
  if(!playlistState.items.length)playlistRows.textContent=t('No entries yet.');
 }
@@ -51,7 +52,7 @@ const playlistLibraryRender=renderLibrary;
 renderLibrary=function(){
  playlistLibraryRender();if(!listing||path===':queue:')return;
  const rows=Array.from($('#library').children).slice(listing.folders.length);
- listing.videos.forEach((item,index)=>{if(!item.live&&!item.id.startsWith('radio.'))rows[index]?.append(button(t('Add to playlist'),()=>addToPlaylist([item])));});
+ listing.videos.forEach((item,index)=>{if(!item.live&&!item.id.startsWith('radio.'))rows[index]?.append(button(t('Add to playlist'),()=>addToPlaylist([item])),button(t('Play next'),()=>playNext(item)));});
 };
 $('#prepareSelected').after(button(t('Add selected to playlist'),()=>addToPlaylist([...checked.values()])));
 $('#play').after(button(t('Add to playlist'),()=>{
@@ -59,3 +60,7 @@ $('#play').after(button(t('Add to playlist'),()=>{
  return addToPlaylist([{...selected,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'||$('#subtitle').value===''?-1:+$('#subtitle').value}]);
 }));
 setInterval(()=>{if(view==='playlist'&&!playlistBusy)loadPlaylist().catch(fail)},3000);
+$('#play').after(button(t('Play next'),()=>{
+ if(!selected||!media||selected.live)return;
+ return playNext({...selected,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:+$('#subtitle').value});
+}));

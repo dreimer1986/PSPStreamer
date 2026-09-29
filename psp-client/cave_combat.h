@@ -12,6 +12,8 @@ typedef struct {
     float enemy[3],aim[3],spawn,visible,enemy_cooldown,fire_cooldown,flash;
     int health,model,fire,pending_spawn;
     float spawn_retry;
+    float waypoint[3],waypoint_wait;
+    int drone;
     unsigned random;
 } CaveCombat;
 #endif

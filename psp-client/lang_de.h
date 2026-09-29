@@ -350,5 +350,18 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_FLIGHT_EXIT] = "Verlassen",
     [TXT_FLIGHT_HOLD_EXIT] = "L + R: verlassen",
     [TXT_FLIGHT_EMPTY] = "Noch keine Punkte",
-    [TXT_FLIGHT_MENU_HELP] = "HOCH / RUNTER   X: OK   O: Ende"
+    [TXT_FLIGHT_MENU_HELP] = "HOCH / RUNTER   X: OK   O: Ende",
+
+    [TXT_SETTINGS_EPISODE_SECONDS] = "Folge-Wartezeit (0=aus)",
+    [TXT_PROVIDER_VIEWS] = "Anbieteransichten",
+    [TXT_PROVIDER_CONTINUE] = "Weiterschauen",
+    [TXT_PROVIDER_RECENT] = "Neu hinzugefügt",
+    [TXT_PROVIDER_UNWATCHED] = "Ungesehen",
+    [TXT_PROVIDER_COLLECTIONS] = "Sammlungen",
+    [TXT_PROVIDER_PAGE] = "Nächste Seite",
+
+    [TXT_EPISODE_COUNTDOWN] = "Nächstes Video in %d Sekunden",
+    [TXT_EPISODE_COUNTDOWN_HELP] = "X: Sofort   O / START: Abbruch",
+    [TXT_SERIES_SAVE] = "X Start O Zurück [] Hilfe /\\ Merken",
+    [TXT_SERIES_REMOVE] = "X Start O Zurück [] Hilfe /\\ Vergessen"
 };

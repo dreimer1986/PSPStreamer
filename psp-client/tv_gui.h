@@ -292,7 +292,8 @@ static void tv_compose_view(int view, int selected, int row, int audio_only,
         tv_text(562, 132, 10, 1, TV_MUTED, "%s", tr(TXT_TV_SAVED_LINE1));
         tv_text(562, 150, 10, 1, TV_MUTED, "%s", tr(TXT_TV_SAVED_LINE2));
         tv_text(562, 168, 10, 1, TV_MUTED, "%s", tr(TXT_TV_SAVED_LINE3));
-        tv_help(tr(audio_only ? TXT_MUSIC_SETUP_CONTROLS : TXT_VIDEO_SETUP_CONTROLS));
+        tv_help(tr(audio_only?TXT_MUSIC_SETUP_CONTROLS:series_available?
+            (series_saved && selected_audio_track==preferred_audio && selected_subtitle_track==preferred_subtitle?TXT_SERIES_REMOVE:TXT_SERIES_SAVE):TXT_VIDEO_SETUP_CONTROLS));
     } else {
         if (fullscreen) tv_rect(&tv_canvas, 25, 59, 673, 239, 0x000C0C0A);
         if(!music_visual_active)tv_music_title_bottom = tv_text(34, 65, fullscreen ? 50 : 38, 2, TV_WHITE, "%s", title);

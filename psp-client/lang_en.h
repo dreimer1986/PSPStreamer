@@ -343,5 +343,18 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_FLIGHT_EXIT] = "Exit",
     [TXT_FLIGHT_HOLD_EXIT] = "L + R: exit",
     [TXT_FLIGHT_EMPTY] = "No scores yet",
-    [TXT_FLIGHT_MENU_HELP] = "UP / DOWN   X: OK   O: Exit"
+    [TXT_FLIGHT_MENU_HELP] = "UP / DOWN   X: OK   O: Exit",
+
+    [TXT_SETTINGS_EPISODE_SECONDS] = "Next video delay (0=off)",
+    [TXT_PROVIDER_VIEWS] = "Provider views",
+    [TXT_PROVIDER_CONTINUE] = "Continue watching",
+    [TXT_PROVIDER_RECENT] = "Recently added",
+    [TXT_PROVIDER_UNWATCHED] = "Unwatched",
+    [TXT_PROVIDER_COLLECTIONS] = "Collections",
+    [TXT_PROVIDER_PAGE] = "Next page",
+
+    [TXT_EPISODE_COUNTDOWN] = "Next video in %d seconds",
+    [TXT_EPISODE_COUNTDOWN_HELP] = "X: Play now   O / START: Cancel",
+    [TXT_SERIES_SAVE] = "X Start  O Back  [] Help  /\\ Save tracks",
+    [TXT_SERIES_REMOVE] = "X Start  O Back  [] Help  /\\ Forget tracks"
 };

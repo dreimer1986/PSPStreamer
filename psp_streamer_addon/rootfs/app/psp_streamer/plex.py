@@ -341,7 +341,7 @@ class Plex:
             return {}
         row = rows[0]
         return {'id': self.token(f"{row['ratingKey']}.{kind}{key}.{wanted}"),
-                'kind': 'audio' if row['type'] == 'track' else 'video'}
+                'kind': 'audio' if row['type'] == 'track' else 'video','name':display_text(row.get('title'))}
 
     def details(self, token):
         row = self.metadata(token)

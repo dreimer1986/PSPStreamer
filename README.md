@@ -1568,6 +1568,42 @@ its own presentation mode; restarting the app resets music visualization to
 off. No configuration change or server update is required.
 Further references are in [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md).
 
+## New queue and episode conveniences (server 0.1.63)
+
+- **Play next** in the web library, media controls or playlist schedules one
+  item after the currently reported track. It does not stop playback. The shared
+  queue is enabled; a current folder item is added to it when necessary. Existing
+  entries are moved, not duplicated. The explicit choice takes precedence over
+  Repeat One once, and shuffle keeps the adjusted order. Subsequent playback
+  follows the shared queue, not the original folder; disable queue mode to return
+  to folder continuation. Local-only PSP files and live radio are not supported
+  as the current queue anchor.
+- Open **Plex/Jellyfin → Provider views** on the PSP for Continue Watching,
+  Recently Added, Unwatched and Collections. The latter three first ask for a
+  library. Pages reuse the cancellable browser request, without playback polling.
+- In a video's PSP options, **Triangle** saves its audio/subtitle choices for
+  the series (or the containing folder for direct files). With unchanged saved
+  choices, Triangle removes that preference; changing tracks and pressing
+  Triangle updates it. The web media page also has explicit Save/Forget buttons.
+  Languages and track titles are matched in each episode, not old stream indices.
+  Missing audio falls back to the first track, missing subtitles to Off. Explicit
+  playlist track choices take precedence. DLNA lacks reliable series identity
+  and keeps its existing global defaults.
+- **Next video delay** in PSP settings / `next_episode_seconds=0` in the config:
+  zero keeps immediate continuation; **1–30** enables a countdown after natural
+  video completion. **X** starts immediately, **O or Start** cancels. Manual
+  next/previous, reconnect and music do not wait. It works for online and local
+  videos; new server playback commands take precedence for online playback.
+- The flight Easter egg now mixes stationary turrets with bounded, floor-hovering
+  waypoint drones. A drone uses another selectable ship, with inverted colors.
+  Firing rate, three-hit enemy health, points and barrel-roll protection remain
+  unchanged. There is still only one active enemy and one deferred spawn.
+
+`series-preferences.json` is saved atomically alongside `playlist.json` in the
+existing persistent server state directory. Keep that Docker volume; the HA
+app uses its persistent data directory. No StreamMaster firmware update is
+needed for these conveniences.
+
 ## Build the PSP client
 
 A PSPDEV/PSPSDK toolchain is required. The active video path uses firmware AVC, not OpenH264:

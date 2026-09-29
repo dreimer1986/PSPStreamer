@@ -22,7 +22,9 @@ artwork remain selectable by title. No PSP client update is required.
   when enabled and the current item belongs to it.
 - Lists are paginated in batches of 50 per provider endpoint. Jellyfin Continue
   Watching can show up to 100 entries because it combines two endpoints. A new
-  Refresh rereads the provider. These new shelves are web-only for now.
+  Refresh rereads the provider. From 0.1.63 the PSP exposes compact versions under
+  Plex/Jellyfin → Provider views, using ordinary cancellable library requests.
+  Continue Watching is provider-wide; other shelves ask for a library first.
 
 In a file's detail/control page, **Open previous file** and **Open next file**
 open the adjacent library entry's controls exactly like selecting it in the

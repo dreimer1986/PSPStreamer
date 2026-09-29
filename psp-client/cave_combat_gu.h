@@ -30,6 +30,7 @@ static void cave_draw_combat(void) {
                 tri[j]=model->vertices[i+j];float p[3];
                 for(int k=0;k<3;k++)p[k]=center[k]+CAVE_ENEMY_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
                 tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];
+                if(c->drone)tri[j].color^=0x00ffffff;
                 if(c->flash>0)tri[j].color=0xffaaffff;
             }
             int n=cave_clip_triangle(&cave_frame_clip,tri,clipped);if(used+n>CAPACITY)break;
