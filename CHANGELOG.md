@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Add an isolated VAAPI Main/CABAC test-package generator with a software control,
+  shared production FLV/MP3 timing, header checks and PSP offline manifests. No
+  production encoder changes; Intel encoding and PSP validation pending.
 - Offline SHA-256: use a 16-word rolling schedule with grouped rounds to reduce
   schedule storage and loop overhead. Reference digest/state tests pass; PSP
   verification-speed comparison pending. Transport and TLS remain unchanged.
