@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Prevent network-recovery failures from advancing the playlist: track clean
+  music EOF separately from transport failures, reject premature video ends,
+  and recheck reader errors after queue waits and worker teardown. Recovery
+  clears stale end-of-media state; successful natural completion still advances.
+
 - Flight: enemies destroyed after exactly three shots; enemy fire interval
   500 ms with player damage unchanged at 10. Disable Square visualization
   switching throughout the Easter egg and use the prepared turret model.

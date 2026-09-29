@@ -31,6 +31,10 @@ static IP, gateway and DNS settings. In PSP settings > StreamMaster:
 
 There is no periodic scanning or roaming while a connection is healthy. Within
 one SSID, connection setup scans all channels and prefers the strongest AP.
+The PSP's playback-recovery path uses the same `SM_CONNECT` profile selection
+as manual reconnect: automatic mode searches all five slots, manual mode stays
+on the selected slot. A server-only retry with Wi-Fi still connected does not
+trigger a new scan until recovery explicitly resets/reconnects Wi-Fi.
 This cannot guarantee uninterrupted roaming or override changing radio conditions.
 Profiles persist in NVS when updating the application binary at **0x10000**:
 

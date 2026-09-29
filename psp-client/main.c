@@ -339,6 +339,8 @@ static volatile int audio_blocks_published;
 static SceUID audio_queue_free_sema = -1;
 static SceUID audio_queue_ready_sema = -1;
 static volatile int audio_played_blocks;
+static volatile int audio_clean_eof,audio_transport_error;
+#include "playback_end.h"
 /* This mirrors PMPlayer Advance's output_audio_frame_buffers[].timestamp:
  * each decoded PCM ring slot carries its media timestamp, and the DAC worker
  * publishes that timestamp immediately before sceAudioOutputBlocking(). */
@@ -1628,17 +1630,17 @@ static int audio_thread(SceSize args, void *argp) {
     network_attempted=1;
     snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) { audio_state = -11; goto cleanup; }
+    if (socket_fd < 0) { audio_transport_error=1;audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
-    if (prepare_server(&server) < 0) { audio_state = -17; goto cleanup; }
-    if (playback_connect(socket_fd, &server, &audio_running) < 0) { audio_state = -12; goto cleanup; }
-    if (playback_send(socket_fd, request, strlen(request), &audio_running) < 0) { audio_state = -13; goto cleanup; }
+    if (prepare_server(&server) < 0) { audio_transport_error=1;audio_state = -17; goto cleanup; }
+    if (playback_connect(socket_fd, &server, &audio_running) < 0) { audio_transport_error=1;audio_state = -12; goto cleanup; }
+    if (playback_send(socket_fd, request, strlen(request), &audio_running) < 0) { audio_transport_error=1;audio_state = -13; goto cleanup; }
     last_data=sceKernelGetSystemTimeWide();
     while (header_size < (int)sizeof(header) - 1) {
         if(!audio_running)goto cleanup;
         received=playback_recv(socket_fd,header+header_size,sizeof(header)-1-header_size,250);
         if(received==-2 && sceKernelGetSystemTimeWide()-last_data<180000000ULL)continue;
-        if (received <= 0) { audio_state = -14; goto cleanup; }
+        if (received <= 0) { audio_transport_error=1;audio_state = -14; goto cleanup; }
         last_data=sceKernelGetSystemTimeWide();
         header_size += received; header[header_size] = '\0'; body = strstr(header, "\r\n\r\n");
         if (body) break;
@@ -1704,10 +1706,14 @@ static int audio_thread(SceSize args, void *argp) {
             if (received == -2) {
                 if(!audio_start)last_data=sceKernelGetSystemTimeWide();
                 if(sceKernelGetSystemTimeWide()-last_data<30000000ULL)continue;
-                audio_state=-28;audio_running=0;break;
+                audio_transport_error=1;audio_state=-28;audio_running=0;break;
             }
             last_data=sceKernelGetSystemTimeWide();
-            if (received <= 0) { if(received<0)audio_state=-28; audio_running = 0; break; }
+            if (received <= 0) {
+                if(received==0 && !have)audio_clean_eof=1;
+                else {audio_transport_error=1;audio_state=-28;}
+                audio_running = 0; break;
+            }
             have += received;
         }
         if (!audio_running) break;
@@ -1720,10 +1726,10 @@ static int audio_thread(SceSize args, void *argp) {
             if (received == -2) {
                 if(!audio_start)last_data=sceKernelGetSystemTimeWide();
                 if(sceKernelGetSystemTimeWide()-last_data<30000000ULL)continue;
-                audio_state=-28;audio_running=0;break;
+                audio_transport_error=1;audio_state=-28;audio_running=0;break;
             }
             last_data=sceKernelGetSystemTimeWide();
-            if (received <= 0) { if(received<0)audio_state=-28; audio_running = 0; break; }
+            if (received <= 0) { audio_transport_error=1;audio_state=-28;audio_running = 0;break; }
             have += received;
         }
         if (!audio_running) break;
@@ -1923,6 +1929,7 @@ static void music_visual_trace(const char *stage,int persist) {
 static int play_audio_once(const char *media_id, const char *title) {
     spectrum_analysis_output(tv_ui_active);
     music_network_failed=0;
+    audio_clean_eof=audio_transport_error=0;
     plex_report_begin(media_id);
     md_profile_reset(debug_enabled);
     md_trace_hook=debug_enabled?music_visual_trace:NULL;
@@ -2267,19 +2274,26 @@ static int play_audio_once(const char *media_id, const char *title) {
      * end, just as video uses its rendered-frame clock. */
     if(offline_music && offline_music_eof && !stopped_by_user && audio_state>=15)
         playback_reached_end=1;
-    if (!offline_music && !live && !stopped_by_user && current_duration_seconds > 0.0f && audio_state >= 15 &&
-        remote_result >= 0 &&
-        stream_start_seconds + (float)audio_played_blocks * (float)audio_dac_samples / (float)PSP_AUDIO_SAMPLE_RATE >= current_duration_seconds - 2.0f)
+    int music_position_ms=stream_start_seconds*1000+(int)((unsigned long long)
+        audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
+    if (!offline_music && !live && !stopped_by_user && audio_state >= 15 && remote_result >= 0 &&
+        playback_end_allowed(audio_clean_eof,audio_transport_error,audio_played_blocks,
+            music_position_ms,current_duration_seconds))
         playback_reached_end = 1;
     if(!offline_music && !live && !stopped_by_user && !seek_requested && !video_file_direction) {
-        music_network_failed=audio_state==-12 || audio_state==-13 || audio_state==-14 ||
+        music_network_failed=audio_transport_error || audio_state==-12 || audio_state==-13 || audio_state==-14 ||
             audio_state==-17 || audio_state==-28 ||
-            (audio_state>=15 && !playback_reached_end && current_duration_seconds>0);
+            (audio_state>=15 && !playback_reached_end);
         if(music_network_failed) {
             playback_reached_end=0;
-            playback_position_ms=stream_start_seconds*1000+(int)((unsigned long long)
-                audio_played_blocks*audio_dac_samples*1000/PSP_AUDIO_SAMPLE_RATE);
+            playback_position_ms=music_position_ms;
         }
+    }
+    if(!offline_music && !live) {
+        char outcome[160];
+        snprintf(outcome,sizeof(outcome),"eof=%d transport_error=%d natural_end=%d position_ms=%d duration_ms=%d",
+            audio_clean_eof,audio_transport_error,playback_reached_end,music_position_ms,(int)(current_duration_seconds*1000));
+        recovery_log("music end classification",audio_state,0,outcome);
     }
     music_transition=music_visual_active && !live && remote_result>=0 && audio_state>=0 &&
         (playback_reached_end || video_file_direction || (resume_pending&&seek_requested));
@@ -2658,7 +2672,18 @@ static int play_h264(const char *media_id) {
         }
         if (!current.data) {
             if (timed_eof && (!timed_has_audio || timed_audio_done)) {
-                playback_reached_end = 1; result = frames; break;
+                /* timed_get may have waited while the reader published an
+                 * error and EOF. Recheck here, not just above the queue wait. */
+                if(playback_end_allowed(1,timed_error || audio_state<0,frames,
+                    playback_position_ms,offline_active?0.0f:current_duration_seconds)) {
+                    playback_reached_end = 1;result=frames;
+                } else {
+                    result=timed_error?timed_error:audio_state<0?audio_state:-1320;
+                    video_step=timed_error?timed_error_step:audio_state<0?"MP3":"Premature stream end";
+                    if(!offline_active && !timed_error && audio_state>=0)timed_network_failed=1;
+                    recovery_log("video end rejected",result,0,video_step);
+                }
+                break;
             }
             sceKernelDelayThread(2000); continue;
         }
@@ -2778,6 +2803,12 @@ done:
         sceKernelDeleteThread(remote_control_thread_id); remote_control_thread_id = -1;
     }
     free(current.data); free(next.data);
+    /* All producers have joined: a late failure overrides a tentative end. */
+    if(playback_reached_end && (timed_error || audio_state<0)) {
+        playback_reached_end=0;result=timed_error?timed_error:audio_state;
+        video_step=timed_error?timed_error_step:"MP3";
+        recovery_log("late video end error",result,0,video_step);
+    }
     free(video_staging); video_staging = NULL;
     playback_draw_target = (u32 *)0x44000000;
     if (codec_sema >= 0) { sceKernelDeleteSema(codec_sema); codec_sema = -1; }

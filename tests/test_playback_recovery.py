@@ -7,6 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlaybackRecoveryTests(unittest.TestCase):
+    def test_media_end_requires_clean_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = str(Path(directory) / "end")
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=undefined", "-I", str(ROOT / "psp-client"),
+                            str(ROOT / "tests/playback_end_harness.c"), "-o", binary], check=True)
+            subprocess.run([binary], check=True, timeout=5)
+
     def test_playback_reuses_known_ip_without_entering_dns(self):
         source = (ROOT / "psp-client/main.c").read_text()
         resolver = source[source.index("static int resolve_server_address("):source.index("static int prepare_server(")]

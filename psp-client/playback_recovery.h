@@ -32,6 +32,8 @@ static int playback_recovery_associate(void) {
     return result;
 }
 static int playback_recover_wait(int network) {
+    /* Recovery stays on this media item; stale EOF must never advance it. */
+    playback_reached_end=0;
     if(network)recovery_failures++;
     unsigned int old=~0U;
     int paused=0;
