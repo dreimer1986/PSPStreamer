@@ -21,7 +21,12 @@ read-back verification raised the measured body rate to 483.324 KiB/s, with
 1.544 s blocked write wait. Hashing still used 82.860 s of the 105.530 s verification.
 The files were similar-sized, not byte-identical; see the comparison document.
 
-## Prepared in 0.2.5; hardware comparison next
+## Current follow-up: 0.2.7 hardware comparison next
+
+0.2.6 recovered USB startup but dropped to 340.876 KiB/s; hash CPU time improved
+to 65.241 s. 0.2.7 replaces full-size PSRAM reply queues with pointer queues and
+two internal 8 KiB workspaces. Larger reply/DMA buffers are only created when
+requested. Re-test 8×2 before any larger profile. No speed recovery claimed yet.
 
 - Offline-only SHA-256 batch compression, identical digests checked against Mbed
   TLS; full card read-back retained. Compare hash time separately from USB speed.
@@ -37,10 +42,10 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 
 | Area | Concrete option | Potential / cost / constraint |
 | --- | --- | --- |
-| Attribution | Interpret implemented PSP storage and ESP queue/worker/copy/transfer measurements; add server/radio attribution if indicated | Measurement, not a speedup itself; first firmware 0.2.5 capture pending |
+| Attribution | Compare measured PSP storage and ESP queue/worker/copy/transfer counters against 0.2.7; add server/radio attribution if indicated | 0.2.6 capture available; 0.2.7 comparison pending |
 | Block/depth tuning | Compare implemented 8/16/32 KiB and 1/2/4 profiles | Conditional; more RAM and longer control/cancellation latency. All supported profiles are now selectable; hardware comparison pending |
 | Continuous receive | Credit-based push/ring transfer instead of request/response polling | Potentially meaningful; very high effort; new flow control, fairness and recovery protocol |
-| DMA/queue ownership | ESP pointer queues and reusable DMA buffer pool; scatter/ring delivery where supported | Medium potential; high effort; preserve callback lifetime and detach safety |
+| DMA/queue ownership | Measure implemented pointer queues/internal reply pool; possible future direct-to-DMA pool or scatter/ring delivery | Pointer queues implemented in 0.2.7; removing the remaining DMA copy is separate high-effort work requiring callback lifetime/detach safeguards |
 | PSP zero-copy | Explicitly owned/pinned shared buffers instead of kernel-to-user copy | Conditional; very high risk/effort; DMA/cache coherency and arbitrary caller lifetimes prohibit casually passing user pointers |
 | Checksums | Profile FNV cost; faster implementation or negotiated CRC with equivalent corruption detection | Low–medium potential; medium effort; keep integrity checks, validate both platforms, do not simply omit checks |
 | Scheduling | Core affinity, task priorities, bounded larger receive bursts, event-driven wakeups instead of polling | Conditional; medium–high effort; keep watchdog idle time and audio/control fairness |
@@ -50,7 +55,7 @@ recorded intervals below 200 KiB/s. This is the comparison target, not a limit.
 | HTTP/server path | Inspect server disk/SMB/provider delivery and socket write batching; reuse connections for many small requests | Conditional; low–medium effort; keep-alive mostly helps startup/small files, not a single large body |
 | TLS | Profile TLS record buffering, session reuse and supported cryptographic acceleration | HTTPS only; medium–high effort; preserve verification; no gain for HTTP measurements |
 | PSP storage pipeline | Tune implemented double-buffered async writes, chunk size/alignment; investigate remaining card stalls | Overlap measured: only 1.544 s blocked write wait; further gains conditional; preserve committed offsets and resume correctness |
-| Final file verification | Measure new batched SHA-256 compression, retaining read-ahead | Read-ahead baseline 105.530 s = 21.690 s read wait + 82.860 s hashing; new CPU optimization awaits measurement; keep full read-back integrity |
+| Final file verification | Retain batched SHA-256/read-ahead; further hot-loop work only if worthwhile | Measured 88.234 s total, 65.241 s hashing versus 105.530/82.860 s before; full read-back integrity retained |
 | UI/logging/background work | Profile rendering, diagnostic writes and remote polling during transfers | Usually modest; low–medium effort; do not sacrifice controls or blindly disable diagnostics |
 | Compiler/code generation | Targeted O3/LTO/PGO or hot-loop optimization after profiling | Uncertain, generally incremental; medium effort; O3 echo comparison did not establish a win |
 | PSP CPU/bus policy | Compare already proven clock settings during transfer/hash versus idle | Conditional, with power/thermal/stability costs; no new overclock settings introduced here |

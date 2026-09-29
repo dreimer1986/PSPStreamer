@@ -227,16 +227,27 @@ to terminate replies at 8/16 KiB boundaries too. Checksums cover only header/pay
 
 The new app reserves two extended result buffers per slot (~1.5 MiB across 12
 slots) and the kernel has four fixed send/receive pairs (~144 KiB). USB DMA never
-targets an asynchronously retained user pointer. The ESP uses bounded four-entry
-queues and a 32 KiB host transfer buffer. No buffers are freed/reused before DMA
-completion on cancellation/detach. These larger allocations may cost throughput;
-measure profiles instead of assuming bigger is faster.
+targets an asynchronously retained user pointer. The ESP uses a four-entry command
+queue, two reply slots and an initially 8 KiB host transfer buffer. No DMA buffers
+are freed/reused before completion on cancellation/detach. Larger experimental
+allocations may cost throughput; measure instead of assuming bigger is faster.
 
-Use firmware 0.2.6 or newer: 0.2.5 accidentally allocated large queues/workspaces
-in internal memory and can fail before USB attachment. With 0.2.6 the queue data
-and CPU workspaces explicitly use PSRAM; static queue controls and USB DMA remain
-internal. `xQueueCreateStatic` is supplied separate long-lived storage and control
-objects. Never assume `xQueueCreate` will select external RAM for a large queue.
+Use firmware 0.2.7 or newer. 0.2.5 allocated large queues/workspaces internally
+and failed USB attachment; 0.2.6 moved them to PSRAM but regressed throughput.
+0.2.7 uses two fixed internal 8 KiB reply workspaces (with 64 bytes of padding
+capacity) and pointer-only queues. The single network worker obtains a free slot,
+publishes it, and must not touch it again until returned. The USB owner copies
+only wire bytes into its separate DMA buffer before returning the slot. Detach
+drains ready pointers, never resets the ownership/free queue, and leaves worker-
+owned slots alone; stale worker results release their own slots.
+
+Larger extended requests allocate/grow scratch storage in PSRAM only on demand;
+it is bounded to two slots and retained for reuse until reboot. The DMA transfer
+buffer starts at 8 KiB and grows only with a larger reply, after the preceding
+transfer has completed. A later small request always selects its internal
+workspace, even if extended scratch storage exists. Default startup requires
+no extended reply storage. The command queue remains a bounded internal FIFO;
+network receive rings remain in PSRAM. Never assume `xQueueCreate` selects PSRAM.
 
 `stm_tuning(kib, depth)` before initialization selects the comparison profile;
 do not change tuning concurrently with I/O. Defaults remain 8×2 legacy bulk.

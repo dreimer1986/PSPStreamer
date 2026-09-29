@@ -4,6 +4,22 @@ Changes to the Onju Voice V3 firmware, starting with the first version.
 Related PSP-side changes are explicitly identified. An unreleased entry does
 not mean that the feature is available in the current firmware ZIP.
 
+## 0.2.7 — 2026-09-29
+
+- Restore internal-RAM reply processing for the default 8 KiB/two-request path:
+  two fixed 8 KiB workspaces (plus short-packet padding), pointer-only ready/free
+  queues and an initially 8 KiB USB DMA transfer buffer. No 32 KiB reply copies
+  into/out of a queue, or full reply-buffer clearing on every response.
+- Explicit ownership passes worker -> ready queue -> USB owner -> free queue.
+  Only actual wire bytes are copied to the separately owned DMA buffer. Detach
+  drains queued pointers without resetting the free pool or reclaiming a buffer
+  still owned by the worker. Checksums and generation checks remain enabled.
+- Larger comparison requests lazily allocate/grow bounded PSRAM scratch storage
+  per pool slot and the internal DMA buffer as needed. Scratch storage is reused
+  until reboot; subsequent small requests always select the internal workspace.
+  Large network receive rings remain in PSRAM, as in the fast 0.2.4 baseline.
+- No PSP application update required. Hardware speed/recovery tests pending.
+
 ## 0.2.6 — 2026-09-27
 
 - Fix the 0.2.5 USB-startup memory regression: FreeRTOS dynamic queues allocate

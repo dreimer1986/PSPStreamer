@@ -95,21 +95,43 @@ byte-identical. Earlier USB failures in this log preceded the successful run;
 the user reported an unresponsive Onju requiring power-cycle/Wi-Fi restart.
 Their root cause is not established by this successful-download measurement.
 
-## 0.2.5 comparison build (hardware results pending)
+## 0.2.5/0.2.6 comparison results
 
-**Use firmware 0.2.6 for this comparison.** The first 0.2.5 hardware attempt failed
+The first 0.2.5 hardware attempt failed
 three times at USB attachment, before Wi-Fi/server setup. Its large dynamic RTOS
 queues and static workspaces consumed internal RAM. Version 0.2.6 explicitly moves
 about 208 KiB of CPU-only storage to PSRAM while keeping USB DMA/internal controls
-in suitable RAM. Recovery is not yet hardware-confirmed; this failed run provides
-no throughput measurement.
+in suitable RAM. The next run recovered USB operation, but regressed speed:
+
+- 171,700,517 bytes in 491.898 s = **340.876 KiB/s**, versus 483.324 previously
+  (similar-sized, not identical files; 29.5% lower throughput).
+- Storage wait only 1.163 s; ESP ring full in 93/101 samples, empty in 6.
+- Bulk counters: 20,322 replies / 163,051,653 payload bytes; queue wait 75.907 s,
+  worker 26.311 s, ready wait 180.849 s, DMA-copy 11.855 s, transfer lifetime
+  166.004 s, within-group gaps 33.226 s. These overlap; do not sum them.
+- Hash CPU time improved to 65.241 s (previously 82.860), total verification
+  88.234 s. Body plus verification still worsened to 580.132 s versus 449.678 s.
+- The code copied the entire 32 KiB reply into/out of the PSRAM queue and cleared
+  another 32 KiB every response, even with 8 KiB on the wire. Those three operations
+  alone touch about 1.86 GiB of buffer extents over the recorded bulk replies.
+  This is a concrete regression candidate, not a direct measurement of each copy.
+
+### 0.2.7 correction (hardware comparison pending)
+
+Default reply processing now uses two fixed internal 8 KiB slots and pointer-only
+ready/free queues. Only actual wire bytes are copied to USB DMA; no full-slot
+clearing in the hot path. DMA starts at 8 KiB. Large scratch/DMA buffers are created
+only for explicitly requested larger profiles and reused, not allocated per packet.
+Large network rings remain in PSRAM. Test the same HTTP file at 8×2 first, including
+final verification, then cancellation/reconnect. Do not claim the former throughput
+has returned until that measurement exists. PSP files are unchanged.
 
 - Offline SHA-256 now processes complete blocks in batches and wipes its
   workspace once per update rather than after every 64 bytes. It is adapted from
   Mbed TLS 2.28.10; partial blocks, padding and context lifecycle remain in the
   library. TLS is untouched. Full card read-back/digest verification remains.
   Host comparison covers 98 chunk/boundary combinations and 32-bit length carry;
-  a PSP timing improvement is **not yet measured**.
+  the next PSP run measured hash CPU time improving from 82.860 to 65.241 s.
 - Default USB profile remains **8 KiB × 2**, using legacy framing. CFG-only
   `streammaster_bulk_kib` (8/16/32) and `streammaster_bulk_depth` (1/2/4) select
   experiments after app restart. 32 KiB × 4 is clamped to two; firmware and kernel

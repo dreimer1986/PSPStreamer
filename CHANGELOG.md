@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.2.7: internal 8 KiB reply pool and pointer queues remove repeated
+  full-buffer PSRAM copies/clears. Larger comparison buffers are allocated on
+  demand; default USB DMA starts at 8 KiB. PSP app and hash optimization unchanged.
 - StreamMaster 0.2.6 fixes USB-startup RAM pressure introduced in 0.2.5: bulk
   queue storage/workspaces explicitly use PSRAM; DMA and queue controls stay internal.
 - StreamMaster 0.2.5: negotiated 8/16/32 KiB read profiles with 1/2/4 requests
