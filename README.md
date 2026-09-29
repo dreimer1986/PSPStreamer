@@ -1405,16 +1405,37 @@ takes **10 damage per enemy projectile**. Enemies take **exactly three hits**
 to destroy (one third per hit, no rounded 1% remainder); a kill earns **100 points**. The full
 double-tap barrel roll protects against projectiles, not wall damage.
 
-Every 15–20 simulation seconds, the game attempts to place one stationary turret
-near the floor or above an uneven slope, with room to pass.
+Every 15–20 simulation seconds, the game attempts to place an enemy with room
+to pass. Successful spawns alternate between a moving ship drone (first) and
+a stationary turret. Failed attempts keep the same requested type instead of
+rerolling it. Drones prefer the floor but can spawn higher if the floor is too
+tight; they use a ship other than the player's, with inverted colors.
 An unsuitable site leaves **one pending spawn**, retried at most once per second.
 Missed opportunities never accumulate; a successful spawn restarts the 15–20
 second interval. At most one enemy and 32 projectiles exist
-at once; enemies left behind are removed. The enemy uses the imported turret model,
+at once; enemies left behind are removed. Each enemy
 turns toward the player after a short line-of-sight delay, and fires at most once
 every **500 ms** when aligned. Walls block shots. Music pause freezes combat.
 All selectable ships currently share health, speed and weapons; hull collision
 bounds follow the chosen model. These are choices, not upgrades.
+
+Destroyed enemies use the player's 2.5-second particle explosion at the kill
+position. They still award 100 points exactly once.
+
+A neon-green **Astro Shield** pickup floats on the automatic tunnel path. Fly
+through its face to restore **66 percentage points of shield**, capped at 100.
+The first placement is attempted after 25 simulation seconds; collecting or
+passing it starts a 35-second wait. If the tunnel is too narrow, placement
+retries every three seconds, keeping at most one item. Music pause freezes these
+timers. The imported rest-pose model has 42 triangles and an embedded 128×128
+honeycomb texture; no additional PSP asset file is needed. See
+[Astro Shield attribution](psp-client/assets/shield/CREDITS.md).
+
+In normal Monkey mode, Circle → **Autopilot ship** optionally displays model 2
+with its music-reactive engines. `cave_autopilot_ship=0` is the default; set it
+to `1` to enable the cosmetic ship. Camera motion stays unchanged, and this does
+not activate enemies, pickups, damage, scoring or flight controls. The chosen
+Easter egg ship is preserved independently.
 
 All eight supplied GLBs were imported. The enemy turret uses **613 triangles**
 and a model scale of 0.60 versus 0.45 for the player (one third larger relative

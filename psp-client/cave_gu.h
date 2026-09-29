@@ -4,7 +4,7 @@
 #include "cave_textures.h"
 static CaveScene *cave_scene;
 /* Extra HUD/particle space only while playing; normal Monkey is unchanged. */
-#define CAVE_GU_TAIL (cave_scene->game.phase==CAVE_GAME_OFF?65536:196608)
+#define CAVE_GU_TAIL (cave_scene->game.phase==CAVE_GAME_OFF?(cave_options.autopilot_ship?131072:65536):262144)
 static CaveClip cave_frame_clip;
 #include "cave_ship_data.h"
 typedef struct { const MdVertex *vertices;int count;float half[3]; } CaveModel;
@@ -23,26 +23,35 @@ int md_cave_control(int shoulders,int x,int y,int throttle,int roll,int fire,uns
 }
 static void cave_draw_ship(int width,int height) {
     (void)width;(void)height;
-    if(!cave_scene || !cave_scene->flight)return;
-    float opacity=cave_ship_opacity(cave_scene);
+    if(!cave_scene)return;
+    int autopilot=!cave_scene->flight && cave_scene->game.phase==CAVE_GAME_OFF && cave_options.autopilot_ship;
+    if(!cave_scene->flight && !autopilot)return;
+    float opacity=autopilot?1:cave_ship_opacity(cave_scene);
     if(opacity<=0)return;
     /* Draw the third-person ship in world space, inside the renderer's
-     * reserved game tail (192 KiB including combat/HUD). No ship allocation when off. */
+     * reserved tail. Cosmetic autopilot never changes camera/game state. */
     _Static_assert(sizeof(cave_ship_mesh)+2048<65536,"Ship exceeds GU tail reserve");
     enum {SHIP_CAPACITY=61440/sizeof(MdVertex)};
     MdVertex *ship=sceGuGetMemory(SHIP_CAPACITY*sizeof(MdVertex));
     float center[3],right[3],up[3],forward[3];
-    cave_ship_pose(cave_scene,center,right,up,forward);
+    if(autopilot) {
+        float view[16];cave_view(cave_scene,cave_scene->motion.travel,view);
+        for(int k=0;k<3;k++) {
+            right[k]=view[k*4];up[k]=view[k*4+1];forward[k]=-view[k*4+2];
+            center[k]=-right[k]*view[12]-up[k]*view[13]+forward[k]*view[14]+forward[k]*2.4f-up[k]*.3f;
+        }
+    } else cave_ship_pose(cave_scene,center,right,up,forward);
     int used=0;
     /* Keep headroom for transients: sustained loud bass must not pin the
      * light at maximum and hide every following beat. */
     float glow=.08f+.65f*cave_scene->motion.bass+1.5f*cave_scene->motion.pulse;
-    const CaveModel *model=&cave_models[cave_scene->ship_model];
+    int model_index=autopilot?1:cave_scene->ship_model;
+    const CaveModel *model=&cave_models[model_index];
     for(int i=0;i<model->count;i+=3) {
         MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
         for(int j=0;j<3;j++) {
             tri[j]=model->vertices[i+j];float p[3];
-            if(cave_scene->ship_model==1)tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
+            if(model_index==1)tri[j].color=cave_engine_color(tri[j].x,tri[j].y,tri[j].z,tri[j].color,glow);
             tri[j].color=(tri[j].color&0xffffffU)|((unsigned)(255*opacity)<<24);
             for(int k=0;k<3;k++)p[k]=center[k]+CAVE_SHIP_SCALE*(right[k]*tri[j].x+up[k]*tri[j].y-forward[k]*tri[j].z);
             tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];

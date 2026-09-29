@@ -300,6 +300,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_CAVE_NOISE] = "Wall noise",
     [TXT_CAVE_FLIGHT_SENSITIVITY] = "Flight sensitivity",
     [TXT_CAVE_FLIGHT_INERTIA] = "Flight inertia",
+    [TXT_CAVE_AUTOPILOT] = "Autopilot ship",
     [TXT_PRESET_LIVE] = "Live transitions",
 
     [TXT_PRESET_RANDOM] = "Extra random time (s)",

@@ -1,5 +1,31 @@
 /* Bounded enemy and yellow pulse geometry, using the existing depth buffer. */
 #define CAVE_COMBAT_FORMAT (GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D)
+#include "cave_shield_data.h"
+static void cave_draw_shield(void) {
+    CaveCombat *c=&cave_scene->combat;if(!c->shield_active)return;
+    static int texture_ready;
+    if(!texture_ready){sceKernelDcacheWritebackRange(cave_shield_texture,sizeof(cave_shield_texture));texture_ready=1;}
+    enum {COUNT=sizeof(cave_shield_mesh)/sizeof(cave_shield_mesh[0]),CAPACITY=COUNT/3*CAVE_CLIP_VERTICES};
+    MdVertex *out=sceGuGetMemory(CAPACITY*sizeof(*out));int used=0;
+    unsigned alpha=(unsigned)(180+55*(.5f+.5f*sinf(c->shield_age*3)));
+    for(int i=0;i<COUNT;i+=3) {
+        MdVertex tri[3],clipped[CAVE_CLIP_VERTICES];
+        for(int j=0;j<3;j++) {
+            tri[j]=cave_shield_mesh[i+j];float p[3];
+            cave_world_point(cave_scene,c->shield[0]+tri[j].x,c->shield[1]+tri[j].y,c->shield[2]+tri[j].z,p);
+            tri[j].x=p[0];tri[j].y=p[1];tri[j].z=p[2];tri[j].color=(alpha<<24)|0xffffff;
+        }
+        int n=cave_clip_triangle(&cave_frame_clip,tri,clipped);memcpy(out+used,clipped,n*sizeof(*out));used+=n;
+    }
+    sceGuEnable(GU_TEXTURE_2D);sceGuTexMode(GU_PSM_8888,0,0,0);
+    sceGuTexImage(0,128,128,128,cave_shield_texture);
+    sceGuTexFunc(GU_TFX_MODULATE,GU_TCC_RGBA);sceGuTexFilter(GU_LINEAR,GU_LINEAR);
+    sceGuTexWrap(GU_CLAMP,GU_CLAMP);sceGuTexScale(1,1);sceGuTexOffset(0,0);sceGuTexFlush();
+    sceGuEnable(GU_BLEND);sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_FIX,0,0xffffff);sceGuDepthMask(1);
+    if(used)sceGuDrawArray(GU_TRIANGLES,CAVE_COMBAT_FORMAT,used,NULL,out);
+    sceGuDepthMask(0);sceGuDisable(GU_BLEND);sceGuDisable(GU_TEXTURE_2D);
+    sceGuTexMode(md_pixel_format,0,0,0);sceGuTexWrap(GU_REPEAT,GU_REPEAT);
+}
 static void cave_combat_unit(float p[3]) {
     float n=sqrtf(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]);
     if(n>1e-8f)for(int k=0;k<3;k++)p[k]/=n;
@@ -62,4 +88,5 @@ static void cave_draw_combat(void) {
         }
     }
     sceGuDepthMask(0);sceGuDisable(GU_BLEND);
+    cave_draw_shield();
 }

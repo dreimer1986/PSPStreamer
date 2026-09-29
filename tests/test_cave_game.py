@@ -17,16 +17,20 @@ int main(void) {
     unsigned seeds[]={1,0x45319a7,123456};int total=0;
     for(int seed=0;seed<3;seed++) {
         CaveScene *s=cave_create_seed(seeds[seed]);assert(s);
-        unsigned char bands[12]={0};int spawned=0,attempts=0;
+        unsigned char bands[12]={0};int spawned=0,attempts=0,drones=0,turrets=0,shields=0;
         for(int f=0;f<240;f++) {
             cave_prepare(s,bands,0,1000000ULL+f*50000ULL);
             if(f>20 && f%10==0) {
                 s->combat.health=0;cave_combat_spawn(s);attempts++;
-                if(s->combat.health>0)spawned++;
+                if(s->combat.health>0){spawned++;if(s->combat.drone)drones++;else turrets++;}
+                s->combat.shield_active=0;s->combat.shield_timer=0;s->combat.shield_retry=0;
+                float player[3]={0,0,s->motion.travel+2};cave_shield_step(s,.01f,player);
+                shields+=s->combat.shield_active;
             }
         }
         printf("Generated tunnel seed %u: %d/%d spawn sites usable\\n",seeds[seed],spawned,attempts);
-        assert(spawned>0);total+=spawned;cave_destroy(s);
+        printf("Drones=%d turrets=%d shields=%d\\n",drones,turrets,shields);
+        assert(drones>0 && turrets>0 && shields>0);total+=spawned;cave_destroy(s);
     }
     assert(total>0);
 }''')

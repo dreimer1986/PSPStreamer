@@ -184,10 +184,8 @@ static void cave_game_draw_hud(int left,int top,int width,int height) {
     }
     sceGuDisable(GU_BLEND);sceGuTexMode(md_pixel_format,0,0,0);
 }
-static void cave_game_draw_explosion(void) {
-    if(!cave_scene || cave_scene->game.phase!=CAVE_GAME_EXPLODING)return;
-    float t=(float)cave_scene->game.death_seconds;if(t>=2.5f)return;
-    float center[3],right[3],up[3],forward[3];cave_ship_pose(cave_scene,center,right,up,forward);
+static void cave_draw_explosion_at(const float center[3],const float right[3],const float up[3],const float forward[3],float t) {
+    if(t<0 || t>=2.5f)return;
     MdVertex *v=sceGuGetMemory(48*CAVE_CLIP_VERTICES*sizeof(*v));int used=0;
     unsigned alpha=(unsigned)(255*(1-t/2.5f));
     for(int i=0;i<48;i++) {
@@ -205,4 +203,17 @@ static void cave_game_draw_explosion(void) {
     sceGuEnable(GU_BLEND);sceGuBlendFunc(GU_ADD,GU_SRC_ALPHA,GU_FIX,0,0xffffff);
     if(used)sceGuDrawArray(GU_TRIANGLES,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,used,NULL,v);
     sceGuDisable(GU_BLEND);
+}
+static void cave_game_draw_explosion(void) {
+    if(!cave_scene)return;
+    float center[3],right[3],up[3],forward[3];
+    if(cave_scene->game.phase==CAVE_GAME_EXPLODING) {
+        cave_ship_pose(cave_scene,center,right,up,forward);
+        cave_draw_explosion_at(center,right,up,forward,(float)cave_scene->game.death_seconds);
+    } else if(cave_scene->game.phase==CAVE_GAME_ALIVE && cave_scene->combat.explosion_active) {
+        CaveCombat *c=&cave_scene->combat;
+        cave_ship_pose(cave_scene,center,right,up,forward);
+        cave_world_point(cave_scene,c->explosion[0],c->explosion[1],c->explosion[2],center);
+        cave_draw_explosion_at(center,right,up,forward,c->explosion_age);
+    }
 }

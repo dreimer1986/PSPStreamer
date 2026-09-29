@@ -39,9 +39,9 @@ int main(void) {
     assert(s->combat.pending_spawn==1 && !s->combat.health); /* bounded backlog */
     blocked=0;s->combat.spawn_retry=1;cave_combat_step(s,.1f);assert(!s->combat.health);
     for(int i=0;i<11 && !s->combat.health;i++)cave_combat_step(s,.1f);
-    assert(s->combat.health==CAVE_ENEMY_HITS && s->combat.model==CAVE_ENEMY_MODEL);
+    assert(s->combat.health==CAVE_ENEMY_HITS && s->combat.drone && s->combat.model!=s->ship_model);
     assert(!s->combat.pending_spawn && s->combat.spawn>=15 && s->combat.spawn<=20);
-    assert(s->combat.enemy[1]>0 && s->combat.enemy[1]<.5f);
+    assert(s->combat.enemy[1]>0 && s->combat.enemy[1]<.7f);
     assert(!bolts(s,1));for(int i=0;i<4;i++)cave_combat_step(s,.1f);assert(!bolts(s,1));
     for(int i=0;i<20 && !bolts(s,1);i++)cave_combat_step(s,.1f);
     assert(bolts(s,1));
@@ -52,6 +52,8 @@ int main(void) {
         assert(s->combat.health==2-i && s->game.kills==(i==2?1U:0U));
     }
     assert(!s->combat.health && s->game.kills==1 && s->game.bonus==100);
+    assert(s->combat.explosion_active && s->combat.explosion_age==0);
+    assert(s->combat.explosion[1]==2 && s->combat.explosion[2]==4);
     cave_combat_step(s,.05f);assert(s->game.kills==1);
     reset(s);const float incoming[3]={0,2,2.5f},toward[3]={0,0,-1};
     cave_combat_emit(&s->combat,incoming,toward,1);cave_combat_step(s,.05f);assert(s->game.health==90);
@@ -64,6 +66,8 @@ int main(void) {
         assert(s->combat.health==CAVE_ENEMY_HITS);
         if(s->combat.drone){drones++;assert(s->combat.model!=s->ship_model && s->combat.model<CAVE_SHIPS);}
         else {turrets++;assert(s->combat.model==CAVE_ENEMY_MODEL);}
+        s->combat.health=0;cave_combat_spawn(s);
+        assert(s->combat.health==CAVE_ENEMY_HITS && !s->combat.drone && s->combat.model==CAVE_ENEMY_MODEL);turrets++;
     }
     assert(drones && turrets);
     reset(s);s->combat.drone=1;s->combat.model=1;s->combat.health=3;
@@ -72,5 +76,19 @@ int main(void) {
     s->combat.waypoint[0]=.5f;s->combat.waypoint_wait=1;
     cave_drone_step(s,.1f);assert(s->combat.enemy[0]>0 && s->combat.enemy[0]<.06f);
     blocked=1;float x=s->combat.enemy[0];cave_drone_step(s,.1f);assert(s->combat.enemy[0]==x);
+    reset(s);s->combat.shield_timer=0;cave_combat_step(s,.01f);
+    assert(s->combat.shield_active && s->combat.shield[0]==0 && s->combat.shield[1]==2);
+    /* Swept collection catches passing the plane between frames, only once. */
+    s->game.health=20;s->combat.shield[2]=3;s->motion.travel=2;
+    cave_combat_step(s,.1f);assert(s->game.health==86 && !s->combat.shield_active);
+    cave_combat_step(s,.1f);assert(s->game.health==86);
+    s->combat.shield_active=1;s->combat.shield[2]=4;
+    cave_combat_step(s,.1f);assert(s->game.health==100 && !s->combat.shield_active);
+    reset(s);blocked=1;cave_combat_step(s,.1f);assert(!s->combat.shield_active);
+    reset(s);s->combat.shield_active=1;s->combat.shield[0]=4;s->combat.shield[1]=2;s->combat.shield[2]=3;
+    s->game.health=20;s->motion.travel=2;cave_combat_step(s,.1f);assert(s->game.health==20);
+    s->motion.travel=5;cave_combat_step(s,.1f);assert(!s->combat.shield_active && s->combat.shield_timer==35);
+    reset(s);s->combat.explosion_active=1;s->combat.explosion_age=2.49f;
+    cave_combat_step(s,.02f);assert(!s->combat.explosion_active);
     free(s);puts("Combat: bounded pools, fire, damage, spawn, drone model exclusion and swept patrol OK");
 }

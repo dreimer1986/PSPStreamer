@@ -13,7 +13,7 @@
 #include <math.h>
 
 static float mix(float a,float b,float t){return a+(b-a)*t;}
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65,0};
 static float flight_axis(int value) {
     float x=value-128;
     if(fabsf(x)<=20)return 0;
@@ -34,6 +34,7 @@ void cave_flight_input(CaveScene *s,int toggle,int x,int y,int throttle,int roll
         s->flight_initialized=0;
         memset(&s->combat,0,sizeof(s->combat));s->combat.random=s->paths.random^s->random^0x61b59U;
         s->combat.spawn=15+(s->combat.random%5001)*.001f;
+        s->combat.shield_timer=25;
         if(s->flight)cave_camera(s,s->motion.travel+2,&s->flight_x,&s->flight_y);
     }
     if(!s->flight)return;

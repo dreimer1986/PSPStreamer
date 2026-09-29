@@ -14,6 +14,12 @@ typedef struct {
     float spawn_retry;
     float waypoint[3],waypoint_wait;
     int drone;
+    unsigned spawn_sequence;
+    float shield[3],shield_timer,shield_retry,shield_age;
+    float previous_player[3];
+    int shield_active,previous_player_valid;
+    float explosion[3],explosion_age;
+    int explosion_active;
     unsigned random;
 } CaveCombat;
 #endif

@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Monkey flight: alternate drone/turret spawns with higher fallback positions
+  for drones; retain one pending spawn without rerolling the requested type.
+- Add the Astro Shield pickup with a green honeycomb glow: fly through for
+  +66 shield points, capped at 100. Embed its 42-triangle mesh and small texture.
+- Reuse the player's particle explosion for enemy kills.
+- Add an optional model-2 autopilot ship to normal Monkey visualization, without
+  activating gameplay or changing the camera. Disabled by default.
+
 - Add web Play next, compact Plex/Jellyfin shelves on PSP, persistent per-series
   language/subtitle preferences and an optional cancellable next-video countdown.
 - Add floor-hovering waypoint drones using non-player ships and inverted colors,

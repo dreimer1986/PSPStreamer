@@ -5,8 +5,11 @@
 static int music_preset_seconds=60;
 int md_live_transitions=1;
 #include "visual_options.h"
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65,0};
 int main(void) {
+    assert(!cave_options.autopilot_ship);
+    assert(visual_option_parse("cave_autopilot_ship=1") && cave_options.autopilot_ship==1);
+    assert(visual_option_parse("cave_autopilot_ship=0") && !cave_options.autopilot_ship);
     assert(!visual_option_parse("unknown=1"));
     assert(visual_option_parse("cave_amplitude=999999999999999999999999"));
     assert(cave_options.amplitude==16);
