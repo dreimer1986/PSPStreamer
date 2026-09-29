@@ -899,6 +899,11 @@ The read-only endpoint is `GET /api/media-next/<media-id>?shuffle=0` (`shuffle=1
 
 ### StreamMaster USB / Onju Voice V3
 
+Also available: **UNTESTED** generic ESP32-S3 builds for Quad/Octal PSRAM and
+ESP32-S2 with PSRAM. These require matching memory hardware and USB host power;
+they do not imply support for every ESP32 board. See the
+[generic firmware guide](streammaster/GENERIC.md). Onju V3 remains the tested target.
+
 Firmware **0.3.0** adds five saved Wi-Fi profiles, selectable or automatic by
 signal strength, with separate passwords and IP/DNS settings. Configure them
 under **Settings → StreamMaster USB → Profile**. See the

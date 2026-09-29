@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "bridge.h"
+#include "board.h"
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,8 +8,10 @@
 #include "esp_log.h"
 #include "usb/usb_host.h"
 void app_main(void) {
+#if !SM_GENERIC_BOARD
     /* Onju V3 MAX98357A shutdown. Never repurpose audio/touch GPIOs for USB. */
     gpio_set_direction(GPIO_NUM_21,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_21,0);
+#endif
     sm_led_init();
     sm_network_init();
     sm_sockets_init();

@@ -1,5 +1,9 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
+Separate **UNTESTED** generic ESP32-S3 (Quad/Octal PSRAM) and ESP32-S2 (PSRAM)
+builds are available. They do not drive Onju's LED/amplifier pins. See
+[generic hardware requirements, flashing and builds](GENERIC.md).
+
 For other PSP homebrews, see the [developer integration guide](INTEGRATION.md):
 source dependencies, build setup, socket/TLS semantics, ownership, configuration
 and transport limitations. This is an application-local adapter, not a global

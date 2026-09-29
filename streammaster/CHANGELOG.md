@@ -2,6 +2,9 @@
 
 ## 0.3.0 — Saved Wi-Fi networks
 
+- Add separately packaged **UNTESTED** generic S3 Quad/Octal-PSRAM and S2
+  SPI-PSRAM builds, with isolated configs and no Onju LED/amplifier GPIO writes.
+
 - Store five independent WLAN profiles, including passwords and IP/DNS settings.
 - Add profile selection, automatic network choice and confirmed deletion in the PSP app.
 - Migrate the existing single-network configuration without erasing NVS.

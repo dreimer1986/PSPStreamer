@@ -22,3 +22,4 @@ jellyfin.json
 certificates/
 *.pem
 *.key
+/streammaster/build-generic-*/
