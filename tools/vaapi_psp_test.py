@@ -88,6 +88,10 @@ def create_case(source, output, hardware, device, tv, seconds, start, audio):
             (folder/'headers.txt').write_text(trace)
             job['duration'] = min(seconds, max(0, job['duration']-start))
             queue._save(job)
+            # This folder is copied directly to the PSP, not exported through
+            # the server ZIP route which normally compacts the disk manifest.
+            (folder/'job.json').write_text(json.dumps(job, ensure_ascii=False,
+                                                   separators=(',', ':')), encoding='utf-8')
             (folder/'ready').write_text('1')
         except BaseException:
             job.update(state='error', error='Test failed; see encoder.log')
