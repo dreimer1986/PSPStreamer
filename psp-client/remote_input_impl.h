@@ -82,6 +82,9 @@ static void input_receive(unsigned long long now) {
 }
 static int input_bt_mapping_active;
 static void input_remote_tick(SceCtrlData *pad) {
+    /* Learning consumes raw controller input; neither mapped Bluetooth nor
+     * remote buttons may cancel it. Do not start HTTP polling during capture. */
+    if(input_bt_mapping_active)return;
     /* Local, nonblocking driver snapshot. No HTTP/RPC poll, socket or new
      * thread per button. Works while the media pipeline owns USB bulk I/O. */
     if(stm_enabled() && !input_bt_mapping_active) {

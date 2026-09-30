@@ -118,6 +118,10 @@ void sm_gamepad_snapshot(SmPad *out) {
     portENTER_CRITICAL(&guard);*out=pad;portEXIT_CRITICAL(&guard);
 }
 int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
+    if(r->op==SM_BT_INPUT_GET && !r->length) {
+        portENTER_CRITICAL(&guard);memcpy(out->payload,&pad,sizeof(pad));portEXIT_CRITICAL(&guard);
+        out->length=sizeof(pad);return SM_OK;
+    }
     if(r->op==SM_BT_SETUP_GET && !r->length) {
         SmBtSetup setup={.version=1};
         portENTER_CRITICAL(&guard);

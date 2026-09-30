@@ -286,19 +286,38 @@ static const char *sm_bt_target_name(unsigned target) {
     static const TextId directions[]={TXT_SM_BT_UP,TXT_SM_BT_RIGHT,TXT_SM_BT_DOWN,TXT_SM_BT_LEFT};
     return target<8?names[target]:target<12?tr(directions[target-8]):tr(TXT_SM_BT_ANALOG);
 }
-static int sm_bt_learn(unsigned target) {
+/* EP0 carries only mapped PSP input, NOT raw HID data. Fetch full snapshots
+ * in one bounded menu-only worker. Mailbox ownership prevents partial reads. */
+static SmPad sm_bt_raw;
+static volatile int sm_bt_raw_ready;
+static int sm_bt_raw_worker(SceSize size,void *args) {
+    (void)size;(void)args;int rc=0;
+    while(sm_running) {
+        if(sm_bt_raw_ready){sceKernelDelayThread(10000);continue;}
+        SmPad next={0};unsigned length=0;
+        rc=stm_rpc(SM_BT_INPUT_GET,NULL,0,&next,sizeof(next),&length,&sm_running);
+        if(rc<0)break;
+        if(length!=sizeof(next) || next.magic!=SM_PAD_MAGIC){rc=SM_IO;break;}
+        sm_bt_raw=next;__sync_synchronize();sm_bt_raw_ready=1;
+        sceKernelDelayThread(50000);
+    }
+    sm_result=rc;__sync_synchronize();sm_finished=1;return 0;
+}
+static int sm_bt_learn_capture(unsigned target) {
     unsigned old=~0U;SceInt64 started=sceKernelGetSystemTimeWide(),released=0,next_draw=0;
-    SmBtAxisLearn axes={0};int armed=0;
+    SmBtAxisLearn axes={0};SmPad live={0};int armed=0;
     for(;;) {
         keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
         if(pressed&PSP_CTRL_CIRCLE)return -1;
         if(pressed&PSP_CTRL_SQUARE)return 0; /* Keep previous assignment. */
-        SmPad live={0};sceIoDevctl("stm:",SM_DEV_GAMEPAD,NULL,0,&live,sizeof(live));
+        int fresh=sm_bt_raw_ready;
+        if(fresh){__sync_synchronize();live=sm_bt_raw;__sync_synchronize();sm_bt_raw_ready=0;}
+        if(sm_finished){recovery_log("BT learning input",sm_result,0,"raw snapshot failed");return -1;}
         SceInt64 now=sceKernelGetSystemTimeWide();
-        int connected=live.magic==SM_PAD_MAGIC && live.connected;
+        int connected=fresh && live.magic==SM_PAD_MAGIC && live.connected;
         if(connected && live.session!=sm_bt_setup.session)return -1;
-        if(!connected){armed=0;released=0;memset(&axes,0,sizeof(axes));}
-        else if(target<12) {
+        if(fresh && !connected){armed=0;released=0;memset(&axes,0,sizeof(axes));}
+        else if(connected && target<12) {
             if(!armed) {
                 if(!live.raw_buttons && !live.hat){if(!released)released=now;if(now-released>=150000)armed=1;}
                 else released=0;
@@ -306,7 +325,7 @@ static int sm_bt_learn(unsigned target) {
                 unsigned source=sm_bt_single_source(&live);
                 if(source){sm_bt_assign(&sm_bt_setup.profile,target,source);return 1;}
             }
-        } else {
+        } else if(connected) {
             uint8_t x,y;
             if(sm_bt_learn_axes(&axes,&live,(now-started)/1000,&x,&y)) {
                 sm_bt_setup.profile.axis_x=x;sm_bt_setup.profile.axis_y=y;sm_bt_setup.profile.invert=0;return 1;
@@ -315,13 +334,27 @@ static int sm_bt_learn(unsigned target) {
         if(now>=next_draw) {
             settings_shell(tr(TXT_SM_BT_WIZARD));
             char title[64];snprintf(title,sizeof(title),"%u/13: %s",target+1,sm_bt_target_name(target));settings_line(0,1,title);
-            if(!connected)settings_line(2,0,tr(TXT_SM_BT_NEED_CONNECTED));
+            if(!live.connected)settings_line(2,0,tr(TXT_SM_BT_NEED_CONNECTED));
             else if(target<12){settings_line(2,0,tr(armed?TXT_SM_BT_PRESS:TXT_SM_BT_RELEASE));settings_line(3,1,sm_bt_target_name(target));}
             else {settings_line(2,0,tr(TXT_SM_BT_CIRCLE_STICK));settings_line(3,0,tr(TXT_SM_BT_CENTER_STICK));}
             settings_help(tr(TXT_SM_BT_LEARN_HELP));next_draw=now+200000;
         }
         old=p.Buttons;sceKernelDelayThread(20000);
     }
+}
+static int sm_bt_learn(unsigned target) {
+    if(sm_reap()<0)return -1;
+    sm_running=1;sm_finished=sm_bt_raw_ready=0;
+    sm_thread=sceKernelCreateThread("BT raw input",sm_bt_raw_worker,0x18,16384,PSP_THREAD_ATTR_USER,NULL);
+    if(sm_thread<0)return -1;
+    if(sceKernelStartThread(sm_thread,0,NULL)<0){sceKernelDeleteThread(sm_thread);sm_thread=-1;return -1;}
+    input_bt_mapping_active=1;
+    int result=sm_bt_learn_capture(target);
+    input_bt_mapping_active=0;
+    sm_running=0;
+    for(unsigned i=0;i<25 && sm_reap()<0;i++)sceKernelDelayThread(10000);
+    if(sm_thread>=0){stm_driver_cancel();result=-1;}
+    return result;
 }
 static void sm_bt_wizard(void) {
     for(unsigned i=0;i<13;i++)if(sm_bt_learn(i)<0)return;
@@ -336,12 +369,12 @@ static void streammaster_bt_options(void) {
     }
     static const char *axis_names[]={"X","Y","Z","Rx","Ry","Rz"};
     unsigned selected=0,old=~0U;int dirty=1;
-    input_bt_mapping_active=1;
     if(!sm_bt_setup.profile.configured)sm_bt_wizard();
     for(;;) {
         keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
         if(dirty) {
-            settings_shell(tr(TXT_SM_BT_OPTIONS));
+            char heading[80];snprintf(heading,sizeof(heading),"%s (%u/3)",tr(TXT_SM_BT_OPTIONS),selected/7+1);
+            settings_shell(heading);
             for(unsigned i=selected/7*7;i<17 && i<selected/7*7+7;i++) {
                 char line[80],value[40];const char *name;
                 if(!i){name=tr(TXT_SM_BT_WIZARD);strcpy(value,"[X]");}

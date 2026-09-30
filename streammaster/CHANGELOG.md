@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.9-bt-dio / 0.3.9-bt-qio — Repair controller learning transport
+
+- Fix immediate exit from learning: compact EP0 control events contain mapped
+  buttons and X/Y only, not the raw HID inputs or connection session.
+- Add a full raw-input snapshot command for a bounded, menu-only learning
+  worker (maximum 20 requests/second). Normal playback input is unchanged.
+- All 12 PSP buttons plus analog-stick selection remain individually learnable;
+  show page numbers for the three-page mapping overview. Controller navigation
+  works in the overview; capture uses physical PSP skip/cancel only.
+- Update both PSP app and firmware. Existing saved profiles remain intact.
+
 ## 0.3.8-bt-dio / 0.3.8-bt-qio — PSP-centric controller learning
 
 - Guided setup asks which controller input should act as each PSP button,

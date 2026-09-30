@@ -42,6 +42,7 @@ _Static_assert(sizeof(SmNetDiag)==308,"Network diagnostics layout");
 typedef struct {uint32_t reconnect,button[16];} SmBtOptions;
 #define SM_BT_SETUP_GET 46U
 #define SM_BT_SETUP_SET 47U
+#define SM_BT_INPUT_GET 48U
 /* Source 1..16 = HID button, 17..20 = hat up/right/down/left; zero = off. */
 typedef struct {uint8_t binding[12],axis_x,axis_y,invert,configured;} SmBtProfile;
 typedef struct {uint32_t version;uint8_t address[6],reserved[2];uint32_t session,reconnect;SmBtProfile profile;} SmBtSetup;

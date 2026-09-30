@@ -1,5 +1,20 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.9 raw-input transport repair
+
+User reports working normal controls but immediate exit from all/individual
+learning. Code confirms EP0 sends only mapped buttons and X/Y; the kernel
+snapshot has zero session/raw fields. The learning session check therefore
+returned immediately. Add full snapshot RPC 48 and one capture-only bounded
+worker, retaining the proven EP0 playback path. Show mapping page numbers and
+allow controller navigation outside capture. All 12 PSP targets plus stick
+selection and inversion are present across three pages.
+
+PSP and both firmware variants built first. Four affected tests passed, including
+an actual command-handler assertion that raw buttons, all axes, hat and session
+survive the new command byte-for-byte. Hardware wizard/reconnect remains to test.
+No PSP storage was mounted during this fix, so no new device logs were read.
+
 ## Follow-up: 0.3.8 guided per-controller setup
 
 User confirms improved controller behavior and Monkey steering through the

@@ -39,6 +39,12 @@ static int save(SmBtSetup *setup) {
     return sm_gamepad_command(&request,&reply);
 }
 int main(void) {
+    /* EP0 events lack raw inputs. Verify the complete learning snapshot. */
+    pad=(SmPad){.magic=SM_PAD_MAGIC,.connected=1,.session=42,.raw_buttons=0x8001,
+        .axes={1,2,3,4,5,6},.axes_valid=63,.hat=8};
+    SmFrame raw_request={.op=SM_BT_INPUT_GET},raw_reply={0};
+    assert(sm_gamepad_command(&raw_request,&raw_reply)==SM_OK);
+    assert(raw_reply.length==sizeof(pad) && !memcmp(raw_reply.payload,&pad,sizeof(pad)));
     options=sm_bt_default_options();status.state=SM_BT_CONNECTED;
     for(unsigned i=1;i<=4;i++) {
         peer[0]=i;pad.session=i;load_peer_profile_locked(peer);
