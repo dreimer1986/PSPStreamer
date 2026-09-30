@@ -1,5 +1,16 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: learning works, normal controls absent
+
+Mounted PSP held the pre-Bluetooth 15482-byte StreamMasterUSB.prx (SHA-256
+183ededf8841d37fb7866741c8ad52a1bbdf3541b0e255efcd9215993aa9280b),
+also present in the normal working release. Bluetooth test packages 0.3.1–0.3.8
+contained the 16882-byte EP0-capable driver. The 0.3.9 package omitted it,
+incorrectly relying on the installed version. Raw learning RPC still worked,
+while the old driver could not receive normal controller events. Rebuilt the
+unchanged Bluetooth driver, corrected the mounted copy and release packages.
+Packaging now always includes both app files AND StreamMasterUSB.prx.
+
 ## Follow-up: 0.3.9 raw-input transport repair
 
 User reports working normal controls but immediate exit from all/individual

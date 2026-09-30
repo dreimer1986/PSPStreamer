@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+# Bluetooth control needs the EP0-capable PSP kernel bridge as well as the
+# application. Always ship the three together, including firmware-only updates.
+for file in ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx; do
+    test -s "$file"
+done
+mkdir -p release/PSPStreamer
+cp ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx release/PSPStreamer/
 for mode in dio qio; do
     build_dir=build-bluetooth
     [[ "$mode" != qio ]] || build_dir=build-bluetooth-qio
