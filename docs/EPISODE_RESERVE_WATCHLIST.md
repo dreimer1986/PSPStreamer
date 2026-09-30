@@ -66,7 +66,7 @@ file completion, fresh Plex/Jellyfin flags, and a real FFmpeg/HTTP reserve-fill,
 completion, refill and download-pin cycle. `tests/test_watchlist.py` covers
 exact GUID mapping, unavailable titles, paging, PSP paths and opt-in persistence.
 Existing offline reuse, provider shelf, Plex and comfort endpoint tests also run.
-The targeted set passed 38 checks (one unrelated opt-in browser test skipped).
+The targeted set passed 37 checks (one unrelated opt-in browser test skipped).
 The separate Chromium check passed reserve editing/saving, Watchlist unavailable
 rows and provider switching. A stale Plex-root expectation was updated to include
 the already-existing Playlist folder; no catalogue behavior changed for that.

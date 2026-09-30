@@ -81,7 +81,7 @@ class Comfort:
                 if changed: self.used(r)
                 self.last_id = '' if state=='stopped' else token
                 r['seconds']=0 if r['audio'] or token.startswith('radio.') or (duration and position>=duration-3) else position
-                if duration and position >= duration - 3 and not r['audio']:
+                if duration and position > 0 and position >= duration - 3 and not r['audio']:
                     r['completed'] = True
                     if not token.startswith(('plex.', 'jellyfin.', 'radio.')):
                         completed = self.data.setdefault('completed', [])
