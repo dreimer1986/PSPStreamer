@@ -1,5 +1,23 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.8 guided per-controller setup
+
+User confirms improved controller behavior and Monkey steering through the
+default X/Y analog stick. Retain this path as default. Replace the raw HID-row
+editor with a PSP-target wizard, individual recapture and per-address storage.
+The stick learner requires two exercised axes (range and multiple movements),
+then a stable return to centre; jitter or one trigger is insufficient. More
+than two exercised axes is deliberately ambiguous, requiring a fresh capture.
+
+Build PSP and DIO/QIO before tests. Focused ASan/UBSan checks compile the actual
+HID parser, profile/learning helpers, setup command handler and HID callback:
+button/hat identification, duplicate reassignment, six axes and inversion,
+circle/centre learning, unchanged 32-byte ABI, four separate saved profiles,
+reconnection reload, stale-session/wrong-device rejection, failed persistence,
+and the earlier OPEN/CONNECTING regression. No complete-project test suite.
+NVS is simulated in the command test; physical persistence and stick choice are
+the user's next hardware test. Flash components with flash_args to preserve NVS.
+
 ## Follow-up: 0.3.7 real versus intermediate HID events
 
 New log repeatedly reports state=5/reports=0 (17850, 101288, 161286, 189033,

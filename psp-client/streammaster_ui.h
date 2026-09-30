@@ -3,6 +3,7 @@
  * blocks in USB, and leaving this menu keeps an active USB transport alive. */
 #include "../streammaster/protocol.h"
 #include "../streammaster/gamepad_options.h"
+#include "../streammaster/gamepad_learn.h"
 #include "streammaster_fields.h"
 enum {SM_JOB_ATTACH=100,SM_JOB_BENCH,SM_JOB_SERVER};
 static int sm_thread=-1;
@@ -22,6 +23,7 @@ static SmBtStatus sm_bt_status;
 static SmBtAction sm_bt_action;
 static SmBtUsbDiag sm_bt_usb_diag;
 static SmBtOptions sm_bt_options;
+static SmBtSetup sm_bt_setup;
 static SmHttpOpen sm_server;
 static const char *sm_stage="idle";
 static int sm_step(const char *stage,int rc) {
@@ -144,6 +146,13 @@ static int sm_worker(SceSize size,void *args) {
             if(sm_response.length!=sizeof(sm_scan))rc=SM_IO;
             else {memcpy(&sm_scan,sm_response.payload,sizeof(sm_scan));if(sm_scan.count>24)rc=SM_IO;
                 for(unsigned i=0;i<24;i++)sm_scan.ap[i].ssid[32]=0;}
+        }
+    } else if(sm_job==SM_BT_SETUP_GET || sm_job==SM_BT_SETUP_SET) {
+        rc=sm_rpc(sm_job,sm_job==SM_BT_SETUP_SET?&sm_bt_setup:NULL,sm_job==SM_BT_SETUP_SET?sizeof(sm_bt_setup):0);
+        if(rc>=0 && sm_job==SM_BT_SETUP_GET) {
+            if(sm_response.length!=sizeof(sm_bt_setup))rc=SM_IO;
+            else {memcpy(&sm_bt_setup,sm_response.payload,sizeof(sm_bt_setup));
+                if(sm_bt_setup.version!=1 || sm_bt_setup.reconnect>1 || !sm_bt_profile_valid(&sm_bt_setup.profile))rc=SM_INVALID;}
         }
     } else if(sm_job==SM_BT_OPTIONS_GET || sm_job==SM_BT_OPTIONS_SET) {
         rc=sm_rpc(sm_job,sm_job==SM_BT_OPTIONS_SET?&sm_bt_options:NULL,sm_job==SM_BT_OPTIONS_SET?sizeof(sm_bt_options):0);
@@ -272,42 +281,96 @@ static int sm_bt_refresh_worker(SceSize args,void *argp) {
     for(unsigned i=0;i<8;i++)sm_bt_refresh.device[i].name[47]=0;
     sm_result=rc;__sync_synchronize();sm_finished=1;return 0;
 }
-static void streammaster_bt_options(void) {
-    int rc=sm_run(SM_BT_OPTIONS_GET);
-    if(rc<0)return;
-    static const uint32_t targets[]={0,0x4000,0x2000,0x8000,0x1000,0x100,0x200,1,8,0x10,0x20,0x40,0x80};
-    static const char *names[]={"-","X","O","[]","Triangle","L","R","Select","Start","Up","Right","Down","Left"};
-    unsigned selected=0,old=PSP_CTRL_CROSS,last_raw=~0U;int dirty=1;
-    input_bt_mapping_active=1; /* Use physical PSP controls while remapping. */
+static const char *sm_bt_target_name(unsigned target) {
+    static const char *names[]={"X","O","[]","/\\","L","R","Select","Start"};
+    static const TextId directions[]={TXT_SM_BT_UP,TXT_SM_BT_RIGHT,TXT_SM_BT_DOWN,TXT_SM_BT_LEFT};
+    return target<8?names[target]:target<12?tr(directions[target-8]):tr(TXT_SM_BT_ANALOG);
+}
+static int sm_bt_learn(unsigned target) {
+    unsigned old=~0U;SceInt64 started=sceKernelGetSystemTimeWide(),released=0,next_draw=0;
+    SmBtAxisLearn axes={0};int armed=0;
     for(;;) {
         keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
+        if(pressed&PSP_CTRL_CIRCLE)return -1;
+        if(pressed&PSP_CTRL_SQUARE)return 0; /* Keep previous assignment. */
         SmPad live={0};sceIoDevctl("stm:",SM_DEV_GAMEPAD,NULL,0,&live,sizeof(live));
-        unsigned raw=live.magic==SM_PAD_MAGIC && live.connected?live.raw_buttons:0;
-        if(raw!=last_raw){last_raw=raw;dirty=1;}
+        SceInt64 now=sceKernelGetSystemTimeWide();
+        int connected=live.magic==SM_PAD_MAGIC && live.connected;
+        if(connected && live.session!=sm_bt_setup.session)return -1;
+        if(!connected){armed=0;released=0;memset(&axes,0,sizeof(axes));}
+        else if(target<12) {
+            if(!armed) {
+                if(!live.raw_buttons && !live.hat){if(!released)released=now;if(now-released>=150000)armed=1;}
+                else released=0;
+            } else {
+                unsigned source=sm_bt_single_source(&live);
+                if(source){sm_bt_assign(&sm_bt_setup.profile,target,source);return 1;}
+            }
+        } else {
+            uint8_t x,y;
+            if(sm_bt_learn_axes(&axes,&live,(now-started)/1000,&x,&y)) {
+                sm_bt_setup.profile.axis_x=x;sm_bt_setup.profile.axis_y=y;sm_bt_setup.profile.invert=0;return 1;
+            }
+        }
+        if(now>=next_draw) {
+            settings_shell(tr(TXT_SM_BT_WIZARD));
+            char title[64];snprintf(title,sizeof(title),"%u/13: %s",target+1,sm_bt_target_name(target));settings_line(0,1,title);
+            if(!connected)settings_line(2,0,tr(TXT_SM_BT_NEED_CONNECTED));
+            else if(target<12){settings_line(2,0,tr(armed?TXT_SM_BT_PRESS:TXT_SM_BT_RELEASE));settings_line(3,1,sm_bt_target_name(target));}
+            else {settings_line(2,0,tr(TXT_SM_BT_CIRCLE_STICK));settings_line(3,0,tr(TXT_SM_BT_CENTER_STICK));}
+            settings_help(tr(TXT_SM_BT_LEARN_HELP));next_draw=now+200000;
+        }
+        old=p.Buttons;sceKernelDelayThread(20000);
+    }
+}
+static void sm_bt_wizard(void) {
+    for(unsigned i=0;i<13;i++)if(sm_bt_learn(i)<0)return;
+    sm_bt_setup.profile.configured=1;
+}
+static void streammaster_bt_options(void) {
+    int rc=sm_run(SM_BT_SETUP_GET);
+    if(rc<0) {
+        settings_shell(tr(TXT_SM_BT_OPTIONS));settings_line(1,0,tr(TXT_SM_BT_NEED_CONNECTED));
+        settings_help(tr(TXT_SM_CANCEL));unsigned old=PSP_CTRL_CROSS;
+        for(;;){SceCtrlData p;sceCtrlReadBufferPositive(&p,1);if((p.Buttons&~old)&PSP_CTRL_CIRCLE)return;old=p.Buttons;keep_awake();sceKernelDelayThread(20000);}
+    }
+    static const char *axis_names[]={"X","Y","Z","Rx","Ry","Rz"};
+    unsigned selected=0,old=~0U;int dirty=1;
+    input_bt_mapping_active=1;
+    if(!sm_bt_setup.profile.configured)sm_bt_wizard();
+    for(;;) {
+        keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
         if(dirty) {
             settings_shell(tr(TXT_SM_BT_OPTIONS));
-            for(unsigned i=selected/7*7;i<18 && i<selected/7*7+7;i++) {
-                char line[80];
-                if(!i)snprintf(line,sizeof(line),"%c %s: %s",i==selected?'>':' ',tr(TXT_SM_BT_AUTO),tr(sm_bt_options.reconnect?TXT_SETTINGS_ON:TXT_OFF));
-                else if(i==17)snprintf(line,sizeof(line),"%c %s",i==selected?'>':' ',tr(TXT_SM_BT_DEFAULTS));
-                else {unsigned target=0;while(target+1<sizeof(targets)/sizeof(*targets) && targets[target]!=sm_bt_options.button[i-1])target++;
-                    snprintf(line,sizeof(line),"%c HID %02u %c -> %s",i==selected?'>':' ',i,raw&(1U<<(i-1))?'*':' ',names[target]);}
-                settings_line(i%7,i==selected,line);
+            for(unsigned i=selected/7*7;i<17 && i<selected/7*7+7;i++) {
+                char line[80],value[40];const char *name;
+                if(!i){name=tr(TXT_SM_BT_WIZARD);strcpy(value,"[X]");}
+                else if(i==1){name=tr(TXT_SM_BT_AUTO);snprintf(value,sizeof(value),"%s",tr(sm_bt_setup.reconnect?TXT_SETTINGS_ON:TXT_OFF));}
+                else if(i<14){name=sm_bt_target_name(i-2);unsigned source=sm_bt_setup.profile.binding[i-2];
+                    if(!source)strcpy(value,"-");else if(source<=16)snprintf(value,sizeof(value),"HID%02u",source);
+                    else snprintf(value,sizeof(value),"D-pad %s",sm_bt_target_name(source-9));}
+                else if(i==14){name=tr(TXT_SM_BT_ANALOG);
+                    if(sm_bt_setup.profile.axis_x<6 && sm_bt_setup.profile.axis_y<6)snprintf(value,sizeof(value),"%s / %s",axis_names[sm_bt_setup.profile.axis_x],axis_names[sm_bt_setup.profile.axis_y]);
+                    else strcpy(value,"-");}
+                else {name=tr(i==15?TXT_SM_BT_INVERT_X:TXT_SM_BT_INVERT_Y);snprintf(value,sizeof(value),"%s",tr(sm_bt_setup.profile.invert&(i==15?1:2)?TXT_SETTINGS_ON:TXT_OFF));}
+                snprintf(line,sizeof(line),"%c %s = %s",i==selected?'>':' ',name,value);settings_line(i%7,i==selected,line);
             }
-            char line[80];snprintf(line,sizeof(line),tr(TXT_SM_BT_RAW),raw);settings_line(7,0,line);
-            if(rc<0){snprintf(line,sizeof(line),"%s: %08X",tr(TXT_SM_ERROR),(unsigned)rc);settings_line(8,0,line);}
+            char device[32];snprintf(device,sizeof(device),"%02X:%02X:%02X:%02X:%02X:%02X",
+                sm_bt_setup.address[0],sm_bt_setup.address[1],sm_bt_setup.address[2],sm_bt_setup.address[3],sm_bt_setup.address[4],sm_bt_setup.address[5]);
+            settings_line(7,0,device);
+            if(rc<0){char line[80];snprintf(line,sizeof(line),"%s: %08X",tr(TXT_SM_ERROR),(unsigned)rc);settings_line(8,0,line);}
             settings_help(tr(TXT_SM_BT_MAP_HELP));dirty=0;
         }
         if(pressed&PSP_CTRL_CIRCLE)break;
-        if(pressed&PSP_CTRL_START){rc=sm_run(SM_BT_OPTIONS_SET);dirty=1;if(rc>=0)break;}
-        if(pressed&PSP_CTRL_UP){selected=(selected+17)%18;dirty=1;}
-        if(pressed&PSP_CTRL_DOWN){selected=(selected+1)%18;dirty=1;}
-        if(pressed&(PSP_CTRL_LEFT|PSP_CTRL_RIGHT|PSP_CTRL_CROSS)) {
-            if(!selected)sm_bt_options.reconnect=!sm_bt_options.reconnect;
-            else if(selected==17){SmBtOptions defaults=sm_bt_default_options();memcpy(sm_bt_options.button,defaults.button,sizeof(defaults.button));}
-            else {unsigned index=0,n=sizeof(targets)/sizeof(*targets);
-                while(index+1<n && targets[index]!=sm_bt_options.button[selected-1])index++;
-                index=(index+(pressed&PSP_CTRL_LEFT?n-1:1))%n;sm_bt_options.button[selected-1]=targets[index];}
+        if(pressed&PSP_CTRL_START){sm_bt_setup.profile.configured=1;rc=sm_run(SM_BT_SETUP_SET);dirty=1;if(rc>=0)break;}
+        if(pressed&PSP_CTRL_UP){selected=(selected+16)%17;dirty=1;}
+        if(pressed&PSP_CTRL_DOWN){selected=(selected+1)%17;dirty=1;}
+        if(pressed&PSP_CTRL_CROSS) {
+            if(!selected)sm_bt_wizard();
+            else if(selected==1)sm_bt_setup.reconnect=!sm_bt_setup.reconnect;
+            else if(selected<15)sm_bt_learn(selected-2);
+            else sm_bt_setup.profile.invert^=selected==15?1:2;
+            sceCtrlReadBufferPositive(&p,1); /* Do not leak capture's cancel into this menu. */
             dirty=1;
         }
         old=p.Buttons;sceKernelDelayThread(20000);

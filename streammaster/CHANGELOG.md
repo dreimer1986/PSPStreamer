@@ -1,5 +1,20 @@
 # StreamMaster firmware changelog
 
+## 0.3.8-bt-dio / 0.3.8-bt-qio — PSP-centric controller learning
+
+- Guided setup asks which controller input should act as each PSP button,
+  followed by analog-stick selection using a circle and return to centre.
+- Overview now shows PSP targets (`X = HID02`), with individual recapture,
+  horizontal/vertical stick inversion, skip/cancel and explicit save.
+- Store up to four controller profiles by Bluetooth address in NVS; load on
+  connection and reject stale-session saves after a device change. Auto-reconnect
+  remains a global option. Skipped steps retain previous/default assignments.
+- Parse all six standard HID axes (X/Y/Z/Rx/Ry/Rz) and expose raw input for
+  learning inside the existing 32-byte USB snapshot. Kernel bridge unchanged.
+- No per-button RPC polling, new background task, USB buffer or timeout change.
+- PSP EBOOT plus firmware update required. Builds precede focused tests for
+  mapping, hat/axis capture, device storage and the production HID callback.
+
 ## 0.3.7-bt-dio / 0.3.7-bt-qio — HID connection event regression
 
 - Treat OPEN/OK/CONNECTING as request acknowledgement, not a completed link.

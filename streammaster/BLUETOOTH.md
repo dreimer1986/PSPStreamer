@@ -82,17 +82,36 @@ controller pairing still require hardware verification.
    repeat the same test/transfer. Both variants use CPU **240 MHz**, flash
    **40 MHz**, Octal PSRAM **80 MHz**, and the same optimization settings.
 
-### Button assignment (0.3.6)
+### Guided controller setup (0.3.8)
 
-Open **Bluetooth controller → Buttons / reconnect**. Use the **physical PSP
-buttons** in this screen; controller input is shown but does not navigate it.
-Press a controller button: the corresponding `HID 01` ... `HID 16` row gets a
-`*` marker. Use PSP Up/Down to select a row, Left/Right to assign its PSP target
-(or `-` for unused). The D-pad hat and analog axes retain their existing mapping.
-Start saves; Circle discards edits. The first row toggles automatic reconnect;
-the last restores default button assignments. Settings are stored on the ESP
-in NVS and survive component firmware updates. One mapping is shared by all
-controllers; this is not yet a per-device profile editor.
+Connect the controller, then open **Bluetooth controller → Buttons / reconnect**.
+An unsaved controller starts a wizard: press the desired controller input for
+each PSP function (X, Circle, Square, Triangle, L, R, Select, Start and the four
+D-pad directions). Release between steps. The final step asks for a circle with
+the desired analog stick, followed by letting it return to the centre. Only move
+one stick; if several axes were exercised, cancel that capture and retry it.
+
+Use the physical PSP's **Square to skip** a step (keep its previous assignment)
+or **Circle to cancel** the capture/wizard. Controller input is captured but does
+not navigate the settings screen. The working X/Y stick remains the default
+when skipped. Generic HID X/Y/Z/Rx/Ry/Rz axes are available for selection; moving
+in a circle identifies the pair, not arbitrary vendor-specific axis semantics.
+The overview also offers horizontal/vertical inversion.
+
+After the wizard, the overview lists **PSP targets**, for example `X = HID02`
+and `Analog stick = Rx / Ry`. Select any target with the PSP D-pad and press X
+to capture it again, or choose **Set up all controls** to repeat the wizard.
+Assigning an input moves it from any previous target, avoiding accidental double
+actions. **Start saves; Circle discards all unsaved edits.** The controller's
+Bluetooth address is shown below the list. A disconnected/replaced controller
+cannot receive the stale draft intended for the previous connection.
+
+Profiles are saved by Bluetooth address in ESP NVS (four bounded slots, matching
+the bond limit), loaded on connection and survive component firmware updates.
+One controller's mapping no longer replaces another's. Automatic reconnect is
+a global option in the same menu. PSP EBOOT and firmware 0.3.8 are both required;
+the USB kernel driver and 32-byte input-packet size remain unchanged. Capture
+uses local driver snapshots, not additional per-input USB RPCs or HTTP polls.
 
 0.3.6 restores the existing ESP-IDF bonded HID descriptor loader (previously
 commented out), via a hash-checked build-local source replacement. The installed

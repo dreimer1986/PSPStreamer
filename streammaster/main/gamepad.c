@@ -56,6 +56,19 @@ static uint8_t peer[6];
 static int64_t pair_until;
 static int64_t last_input_log;
 static SmBtOptions options;
+typedef struct {uint8_t address[6],valid,reserved;SmBtProfile profile;} StoredProfile;
+typedef struct {uint32_t version;StoredProfile slot[4];} ProfileStore;
+static ProfileStore profiles={.version=1};
+static SmBtProfile current_profile;
+static void load_peer_profile_locked(const uint8_t address[6]) {
+    current_profile=sm_bt_default_profile();
+    /* Keep the former defaults (including any global button edits) as the
+     * initial draft, but offer the wizard until this device has been saved. */
+    for(unsigned i=0;i<12;i++)for(unsigned j=0;j<16;j++)if(options.button[j]==sm_bt_targets[i]){current_profile.binding[i]=j+1;break;}
+    for(unsigned i=0;i<4;i++)if(profiles.slot[i].valid && !memcmp(profiles.slot[i].address,address,6)) {
+        current_profile=profiles.slot[i].profile;break;
+    }
+}
 static uint8_t bonded[4][6];
 static unsigned bonded_count;
 static atomic_int reconnect_suspended;
@@ -105,6 +118,42 @@ void sm_gamepad_snapshot(SmPad *out) {
     portENTER_CRITICAL(&guard);*out=pad;portEXIT_CRITICAL(&guard);
 }
 int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
+    if(r->op==SM_BT_SETUP_GET && !r->length) {
+        SmBtSetup setup={.version=1};
+        portENTER_CRITICAL(&guard);
+        int connected=status.state==SM_BT_CONNECTED;
+        memcpy(setup.address,peer,6);setup.session=pad.session;setup.reconnect=options.reconnect;setup.profile=current_profile;
+        portEXIT_CRITICAL(&guard);
+        if(!connected)return SM_OFFLINE;
+        memcpy(out->payload,&setup,sizeof(setup));out->length=sizeof(setup);return SM_OK;
+    }
+    if(r->op==SM_BT_SETUP_SET && r->length==sizeof(SmBtSetup)) {
+        SmBtSetup setup;memcpy(&setup,r->payload,sizeof(setup));
+        if(setup.version!=1 || setup.reconnect>1 || !sm_bt_profile_valid(&setup.profile))return SM_INVALID;
+        ProfileStore next;SmBtOptions next_options;
+        portENTER_CRITICAL(&guard);
+        int matches=status.state==SM_BT_CONNECTED && setup.session==pad.session && !memcmp(setup.address,peer,6);
+        next=profiles;next_options=options;portEXIT_CRITICAL(&guard);
+        if(!matches)return SM_OFFLINE;
+        int slot=-1;
+        for(unsigned i=0;i<4;i++)if(next.slot[i].valid && !memcmp(next.slot[i].address,setup.address,6)){slot=i;break;}
+        if(slot<0)for(unsigned i=0;i<4;i++)if(!next.slot[i].valid || !known_peer(next.slot[i].address)){slot=i;break;}
+        if(slot<0)return SM_BUSY; /* Never overwrite another bonded device. */
+        next.slot[slot]=(StoredProfile){.valid=1,.profile=setup.profile};memcpy(next.slot[slot].address,setup.address,6);
+        next_options.reconnect=setup.reconnect;
+        nvs_handle_t n;esp_err_t rc=nvs_open("sm_gamepad",NVS_READWRITE,&n);
+        if(rc!=ESP_OK)return SM_IO;
+        rc=nvs_set_blob(n,"profiles_v1",&next,sizeof(next));
+        if(rc==ESP_OK)rc=nvs_set_blob(n,"options",&next_options,sizeof(next_options));
+        if(rc==ESP_OK)rc=nvs_commit(n);
+        nvs_close(n);if(rc!=ESP_OK)return SM_IO;
+        portENTER_CRITICAL(&guard);
+        profiles=next;options=next_options;
+        matches=status.state==SM_BT_CONNECTED && setup.session==pad.session && !memcmp(setup.address,peer,6);
+        if(matches){current_profile=setup.profile;pad.buttons=0;pad.x=pad.y=128;pad.sequence++;}
+        portEXIT_CRITICAL(&guard);
+        atomic_store(&reconnect_suspended,0);return matches?SM_OK:SM_OFFLINE;
+    }
     if(r->op==SM_BT_OPTIONS_GET && !r->length) {
         portENTER_CRITICAL(&guard);memcpy(out->payload,&options,sizeof(options));portEXIT_CRITICAL(&guard);
         out->length=sizeof(options);return SM_OK;
@@ -196,7 +245,9 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         if(!pairing_allowed(p->open.bd_addr)){esp_bt_hid_host_disconnect(p->open.bd_addr);state(SM_BT_ERROR,SM_INVALID);return;}
         active_handle=p->open.handle;
         memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};last_input_log=0;
-        portENTER_CRITICAL(&guard);memcpy(peer,p->open.bd_addr,6);memcpy(status.selected,peer,6);pair_until=0;portEXIT_CRITICAL(&guard);
+        portENTER_CRITICAL(&guard);memcpy(peer,p->open.bd_addr,6);memcpy(status.selected,peer,6);pair_until=0;
+        load_peer_profile_locked(peer);pad.session++;memset(pad.axes,128,sizeof(pad.axes));pad.axes_valid=pad.hat=0;
+        portEXIT_CRITICAL(&guard);
         state(SM_BT_CONNECTED,0);
         esp_bt_hid_host_set_protocol(p->open.bd_addr,ESP_HIDH_REPORT_MODE);
         ESP_LOGI(TAG,"HID connected; waiting for descriptor/input");
@@ -209,8 +260,10 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
     } else if(e==ESP_HIDH_DATA_IND_EVT && atomic_load(&online) && atomic_load(&accept_input)) {
         if(p->data_ind.handle==active_handle && p->data_ind.status==ESP_HIDH_OK && sm_hid_input(&map,p->data_ind.data,p->data_ind.len,&hidpad)) {
             portENTER_CRITICAL(&guard);
-            pad.buttons=sm_bt_map_buttons(&options,hidpad.raw_buttons,hidpad.buttons);
-            pad.raw_buttons=hidpad.raw_buttons;pad.x=hidpad.x;pad.y=hidpad.y;pad.connected=1;pad.sequence++;status.reports++;
+            pad.buttons=sm_bt_profile_buttons(&current_profile,hidpad.raw_buttons,hidpad.hat);
+            pad.raw_buttons=hidpad.raw_buttons;memcpy(pad.axes,hidpad.axes,sizeof(pad.axes));pad.axes_valid=hidpad.axes_valid;pad.hat=hidpad.hat;
+            pad.x=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,0);
+            pad.y=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,1);pad.connected=1;pad.sequence++;status.reports++;
             portEXIT_CRITICAL(&guard);
             if(!last_input_log){ESP_LOGW(TAG,"First HID report bytes=%u buttons=%04lx axes=%u,%u",p->data_ind.len,(unsigned long)hidpad.buttons,hidpad.x,hidpad.y);last_input_log=esp_timer_get_time();}
         }
@@ -443,6 +496,11 @@ void sm_gamepad_init(void) {
     if(nvs_open("sm_gamepad",NVS_READONLY,&n)==ESP_OK) {
         SmBtOptions saved;size_t size=sizeof(saved);
         if(nvs_get_blob(n,"options",&saved,&size)==ESP_OK && size==sizeof(saved) && sm_bt_options_valid(&saved))options=saved;
+        ProfileStore stored;size=sizeof(stored);
+        if(nvs_get_blob(n,"profiles_v1",&stored,&size)==ESP_OK && size==sizeof(stored) && stored.version==1) {
+            int valid=1;for(unsigned i=0;i<4;i++)if(stored.slot[i].valid>1 || (stored.slot[i].valid && !sm_bt_profile_valid(&stored.slot[i].profile)))valid=0;
+            if(valid)profiles=stored;
+        }
         nvs_close(n);
     }
     sends=xQueueCreate(4,sizeof(Packet));actions=xQueueCreate(4,sizeof(SmBtAction));

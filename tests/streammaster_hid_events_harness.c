@@ -30,7 +30,8 @@ static SmBtStatus status;
 static SmPad pad;
 static SmHidMap map;
 static SmHidPad hidpad;
-static SmBtOptions options;
+static SmBtProfile current_profile;
+static void load_peer_profile_locked(const uint8_t address[6]){(void)address;current_profile=sm_bt_default_profile();}
 static void refresh_bonds(int replace){(void)replace;}
 static void esp_bt_gap_set_scan_mode(int c,int d){(void)c;(void)d;}
 static void state(unsigned s,int err){status.state=s;status.error=err;}
@@ -41,7 +42,7 @@ static void esp_bt_hid_host_set_protocol(const uint8_t *addr,int mode){(void)add
 static int64_t esp_timer_get_time(void){return 10;}
 /* HID_CALLBACK */
 int main(void) {
-    options=sm_bt_default_options();atomic_store(&online,1);
+    current_profile=sm_bt_default_profile();atomic_store(&online,1);
     esp_hidh_cb_param_t p={0};hid(ESP_HIDH_INIT_EVT,&p);
     assert(atomic_load(&ready) && active_handle==-1);
     const uint8_t descriptor[]={5,9,0x19,1,0x29,1,0x15,0,0x25,1,0x75,1,0x95,1,0x81,2};
