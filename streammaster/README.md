@@ -121,7 +121,9 @@ The PSPLINK BSD notice is included in `PSPLINK-license.txt`.
 
 The S3 provides 2.4 GHz Wi-Fi (including WPA2/WPA3 Personal), not 5 GHz Wi-Fi.
 Its USB host is full-speed, 12 Mbit/s raw, not high-speed USB. Actual throughput
-must be measured. Bluetooth on the S3 is BLE only; ordinary phone Bluetooth
+must be measured. An optional **experimental external USB Bluetooth controller**
+build is described in [BLUETOOTH.md](BLUETOOTH.md); it does not use the S3 radio.
+Bluetooth on the S3 itself is BLE only; ordinary phone Bluetooth
 PAN tethering is **not** supported. A phone's Wi-Fi hotspot remains an option.
 
 ## Status LEDs

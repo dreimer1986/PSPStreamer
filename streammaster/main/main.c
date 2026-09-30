@@ -17,6 +17,9 @@ void app_main(void) {
     sm_sockets_init();
     usb_host_config_t config={.skip_phy_setup=false,.intr_flags=ESP_INTR_FLAG_LEVEL1};
     ESP_ERROR_CHECK(usb_host_install(&config));
+#if CONFIG_BT_BLUEDROID_ENABLED
+    sm_gamepad_init();
+#endif
     if(xTaskCreate(sm_usb_daemon,"usb-events",4096,NULL,12,NULL)!=pdPASS ||
        xTaskCreate(sm_usb_task,"streammaster",12288,NULL,8,NULL)!=pdPASS)abort();
 }

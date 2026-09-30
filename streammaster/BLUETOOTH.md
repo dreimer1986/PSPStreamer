@@ -1,0 +1,110 @@
+# Experimental USB Bluetooth controllers — Onju Voice V3
+
+Version **0.3.1-bt-dio / 0.3.1-bt-qio**, hardware validation pending.
+This is not a replacement for the proven Wi-Fi-only 0.3.0 release.
+
+## Hardware and scope
+
+- Use the Onju V3, **one powered USB hub**, the PSP and a USB Bluetooth adapter.
+  Do not add another hub, keyboard, storage device or USB audio device.
+- First test adapter: CSR8510 A10, USB `0a12:0001`. The detected Barrot
+  `33fa:0010` is also allowlisted, but is a secondary, untested alternative.
+- First controller: Snakebyte iDroid:con in its standard Android/HID pairing
+  mode. Its actual report descriptor/button ordering still needs a live test.
+- Xbox One **1697 has no Bluetooth** and cannot pair through either dongle.
+- The S3's internal Bluetooth radio is **not** used. This is Bluetooth Classic
+  HID over an external HCI adapter, not a general USB-controller driver or BLE
+  controller implementation. Pairing uses Just Works or legacy PIN `0000`.
+- This experiment is not built for generic S2/S3 boards yet.
+
+The S3 has eight USB host channels. Normally a hub, PSP and Bluetooth dongle
+would require nine. Only this experimental build polls hub-port status over
+EP0 (one port per 50 ms), replacing the hub's separate interrupt channel.
+That leaves exactly eight channels. The build generates a patched copy of one
+ESP-IDF v5.5.1 USB source file and rejects other source revisions; the installed
+SDK itself is never modified. Hotplug/debounce remains handled by IDF.
+
+## Installation and first test
+
+1. Keep the previous working firmware and PSP files for rollback. Copy **both**
+   `PSPStreamer/EBOOT.PBP` and `PSPStreamer/StreamMasterUSB.prx` from this test
+   package into the existing application directory. Keep the other files and
+   your configuration; this package is an update, not a fresh installation.
+2. Connect the Onju to the PC. Start with the **DIO** folder. From that folder:
+
+   ```sh
+   esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 write_flash @flash_args
+   ```
+
+   Adjust the port; older esptool versions may use equivalent command spelling.
+   These three image writes **preserve NVS/Wi-Fi profiles and Bluetooth bonds**.
+   Do not erase flash. A merged factory image is also supplied, but writing it
+   overwrites the gaps, including NVS: use it only for a deliberate fresh start.
+3. Connect the powered hub to the Onju host port, with PSP and CSR adapter on
+   that hub. Select the StreamMaster network route in PSPStreamer.
+4. Open **Settings → StreamMaster → Bluetooth controller**. Put the controller
+   into pairing mode, select **Find controllers**, wait roughly ten seconds,
+   then press **Square** to refresh. Select the controller with X. Refresh again
+   to see connection status and the received-report counter.
+5. Test the D-pad/stick, X/Circle/Square/Triangle, L/R, Select and Start in menus,
+   then while playing music/video. Physical PSP controls remain available.
+   Disconnect/reconnect the controller and confirm that no direction remains
+   held. Use **Disconnect** before finding/pairing another controller.
+6. **Forget selected device** removes the current/last selected bond; press X
+   twice to confirm. Bonded addresses appear on firmware restart, but connection
+   is selected explicitly (no blind auto-pairing or background discovery).
+7. Only after DIO works, flash the **QIO** folder with its own `flash_args` and
+   repeat the same test/transfer. Both variants use CPU **240 MHz**, flash
+   **40 MHz**, Octal PSRAM **80 MHz**, and the same optimization settings.
+
+The QIO bootloader starts with a **DIO image header**, then enables QIO according
+to its compiled configuration. `--flash_mode dio` in the supplied QIO command
+is intentional; do not override it. QIO is a flash-bus access mode, not CPU or
+Wi-Fi overclocking. Most code remains cached flash code; IDF's selected Wi-Fi
+IRAM optimizations remain enabled. Moving all code into IRAM is neither done
+nor implied. No performance improvement is claimed before measurement.
+
+## Input path and limitations
+
+The generic bounded HID descriptor parser maps the common ten-button gamepad
+layout and X/Y/hat axes. Unsupported layouts produce an error rather than
+guessing offsets. Mapping may need adjustment once an actual iDroid report is
+available. Other HID devices and controller families are not certified.
+
+Inputs use no web polling: Bluedroid callbacks update a fixed-size snapshot;
+USB sends changes at most every 20 ms through the PSP's existing EP0, plus a
+200 ms keepalive. The PSP reads a local driver snapshot without acquiring the
+media RPC lock. Reports expire after 750 ms without USB updates; Bluetooth close
+and USB unplug release buttons. Physical PSP stick input takes priority.
+This bounds overhead but is **not a measured end-to-end latency guarantee**.
+
+Queues, descriptor fields and discovered devices are bounded (eight discovered
+devices, four saved bonds, one active controller). Bluetooth host allocations
+prefer PSRAM; the existing hot media buffers retain their allocation strategy.
+Bluetooth transfer errors do not deliberately reset the media connection. If
+Bluetooth reports an adapter/host error, power-cycle the Onju before retesting;
+automatic host recovery after every adapter fault is not yet guaranteed.
+
+Refreshing the Bluetooth menu writes adapter VID/PID, state and report count to
+the PSP diagnostic log when logging is enabled. ESP UART0 logs at 115200 baud
+add descriptor size/field count and the first decoded report; these require UART
+access, not the native USB port currently occupied by host mode. For a failure,
+provide the PSP logs and state whether it was DIO or QIO. Pairing, external-HCI compatibility, PSP EP0
+delivery and hub hotplug **require the first physical test**.
+
+## Rebuild and licensing
+
+Activate ESP-IDF **v5.5.1**, then run `bash build-bluetooth.sh` followed by
+`bash package-bluetooth.sh`. Separate build directories/configs leave the normal
+firmware untouched. Build PSPStreamer and its `streammaster_usb` driver with
+the project's PSPSDK toolchain. Source corresponds to the Git revision in each
+package's `SOURCE_REVISION.txt`; `SOURCE_STATUS.txt` records uncommitted changes.
+
+The experimental firmware combines this project's **GPL-2.0-or-later** code
+with ESP-IDF/Bluedroid under Apache-2.0 and other included notices. The combined
+experimental firmware is distributed under **GPL-3.0**, using the project's
+"or later" option. This does not change the license of unrelated PSP components
+or third-party files. See `GPL-3.0.txt`, `ESP-IDF-license.txt` and `licenses/`.
+No BTstack or USB Host Shield implementation is bundled. Complete corresponding
+project source/build scripts are in the repository; ESP-IDF v5.5.1 source is at
+<https://github.com/espressif/esp-idf/tree/v5.5.1>.

@@ -179,12 +179,13 @@ int stm_init(int enabled,const char *host,int port,int https) {
 int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capacity,unsigned *length,volatile int *running) {
     unsigned long long entered=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
     if(length)*length=0;
-    if(size>SM_PAYLOAD_SIZE || rpc_lock<0 || (op>=SM_SOCKET_OPEN && broken))return SM_OFFLINE;
+    int socket_op=op>=SM_SOCKET_OPEN && op<=SM_SOCKET_READ_BULK_EXT;
+    if(size>SM_PAYLOAD_SIZE || rpc_lock<0 || (socket_op && broken))return SM_OFFLINE;
     /* Data/control pollers yield promptly to the current owner. Closing must
      * get a longer chance to release its remote slot before declaring failure. */
-    if(lock(rpc_lock,op>=SM_SOCKET_OPEN && op!=SM_SOCKET_CLOSE?30:1000,running)<0)return SM_BUSY;
+    if(lock(rpc_lock,socket_op && op!=SM_SOCKET_CLOSE?30:1000,running)<0)return SM_BUSY;
     finish_ahead();
-    if(module<0 || (op>=SM_SOCKET_OPEN && broken)){sceKernelSignalSema(rpc_lock,1);return SM_OFFLINE;}
+    if(module<0 || (socket_op && broken)){sceKernelSignalSema(rpc_lock,1);return SM_OFFLINE;}
     memset(&request,0,sizeof(request));memset(&response,0,sizeof(response));
     request.op=op;request.sequence=++sequence;request.length=size;
     if(size)memcpy(request.payload,data,size);

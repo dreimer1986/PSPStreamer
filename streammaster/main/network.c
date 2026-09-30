@@ -174,8 +174,16 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
     case SM_CAPABILITIES: {
-        uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES;memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
+        uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES;
+#if CONFIG_BT_BLUEDROID_ENABLED
+        caps|=SM_CAP_GAMEPAD;
+#endif
+        memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
     }
+#if CONFIG_BT_BLUEDROID_ENABLED
+    case SM_BT_STATUS:case SM_BT_ACTION:
+        out->result=sm_gamepad_command(r,out);break;
+#endif
     case SM_USB_METRICS: {
         SmUsbMetrics metrics;sm_usb_metrics_snapshot(&metrics);memcpy(out->payload,&metrics,sizeof(metrics));out->length=sizeof(metrics);break;
     }

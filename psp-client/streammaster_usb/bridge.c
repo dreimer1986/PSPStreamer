@@ -14,6 +14,9 @@ static struct UsbEndpoint endpoints[3]={{0,0,0},{1,0,0},{2,0,0}};
 static struct UsbInterface interface={0xffffffff,0,1};
 static struct UsbData descriptors[2] __attribute__((aligned(64)));
 static struct UsbdDeviceReq send_req,recv_req;
+static SmPad pad_value;
+static volatile int pad_enabled;
+static unsigned long long pad_time;
 static SmFrame send_frame __attribute__((aligned(64))),recv_frame __attribute__((aligned(64)));
 static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
@@ -26,7 +29,17 @@ static volatile unsigned bulk_pending;
 static int bulk_active,bulk_count=2;
 static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
-static int control_request(int a,int b,struct DeviceRequest *request){(void)a;(void)b;(void)request;return 0;}
+static int control_request(int a,int b,struct DeviceRequest *r) {
+    (void)a;(void)b;
+    /* Vendor DEVICE request with no data stage. Reuses EP0: no ninth USB
+     * host channel and no interaction with the media request/reply queues. */
+    if(r && r->bmRequestType==0x40 && (r->bRequest==0x53 || r->bRequest==0x54) && !r->wLength && !(r->wValue&~0xf3f9U)) {
+        int intr=sceKernelCpuSuspendIntr();
+        pad_value=(SmPad){.magic=SM_PAD_MAGIC,.buttons=r->wValue,.connected=r->bRequest==0x53,.x=r->wIndex&255,.y=r->wIndex>>8};
+        pad_time=sceKernelGetSystemTimeWide();sceKernelCpuResumeIntr(intr);
+    }
+    return 0;
+}
 static int control_complete(int a,int b,int c){(void)a;(void)b;(void)c;return 0;}
 static int done(struct UsbdDeviceReq *r,int a,int b) {
     (void)a;(void)b;
@@ -42,11 +55,12 @@ static void cancel_requests(void) {
     if(started){sceUsbbdReqCancelAll(&endpoints[1]);sceUsbbdReqCancelAll(&endpoints[2]);}
     sceKernelSetEventFlag(event_id,4);
 }
-static int attach(int speed,void *a,void *b){(void)a;(void)b;attached=speed;return 0;}
-static int detach(int a,int b,int c){(void)a;(void)b;(void)c;attached=0;cancel_requests();return 0;}
+static int attach(int speed,void *a,void *b){(void)a;(void)b;attached=speed;pad_enabled=1;pad_time=0;return 0;}
+static void pad_cancel(void){pad_enabled=0;pad_time=0;}
+static int detach(int a,int b,int c){(void)a;(void)b;(void)c;attached=0;pad_cancel();cancel_requests();return 0;}
 static int start_driver(int size,void *args) {
     (void)size;(void)args;memset(descriptors,0,sizeof(descriptors));
-    struct DeviceDescriptor device={18,1,0x0200,0,0,0,64,0,0,0x0100,0,0,0,1};
+    struct DeviceDescriptor device={18,1,0x0200,0,0,0,64,0,0,0x0101,0,0,0,1};
     struct ConfigDescriptor config={9,2,32,1,1,0,0xc0,0};
     struct InterfaceDescriptor face={9,4,0,0,2,0xff,SM_USB_SUBCLASS,SM_USB_PROTOCOL,1};
     for(int i=0;i<2;i++) {
@@ -63,7 +77,7 @@ static int start_driver(int size,void *args) {
     driver.devp=descriptors[1].devdesc;driver.confp=&descriptors[1].config;
     return 0;
 }
-static int stop_driver(int size,void *args){(void)size;(void)args;attached=0;cancel_requests();return 0;}
+static int stop_driver(int size,void *args){(void)size;(void)args;attached=0;pad_cancel();cancel_requests();return 0;}
 static struct UsbDriver driver={.name=DRIVER,.endpoints=3,.endp=endpoints,.intp=&interface,
     .str=(struct StringDescriptor *)usb_string,.recvctl=control_request,.func28=control_complete,
     .attach=attach,.detach=detach,.start_func=start_driver,.stop_func=stop_driver};
@@ -80,6 +94,7 @@ static int wait_request(struct UsbdDeviceReq *request,int bit) {
     return SM_OK;
 }
 static int shutdown_usb(void) {
+    pad_cancel();
     cancel_requests();
     if(started)sceUsbDeactivate(SM_USB_PID);
     for(int i=0;i<100 && (send_pending||recv_pending||bulk_pending);i++)sceKernelDelayThread(1000);
@@ -184,6 +199,15 @@ static int bulk_finish(SmBulkResult *out) {
 }
 static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int inlen,void *out,int outlen) {
     (void)a;(void)name;
+    if(cmd==SM_DEV_GAMEPAD) {
+        if(inlen || outlen!=sizeof(SmPad) || !user_buffer(out,outlen))return SM_INVALID;
+        SmPad value={.magic=SM_PAD_MAGIC,.x=128,.y=128};
+        int intr=sceKernelCpuSuspendIntr();
+        if(pad_enabled && pad_time && sceKernelGetSystemTimeWide()-pad_time<750000)value=pad_value;
+        sceKernelCpuResumeIntr(intr);
+        memcpy(out,&value,sizeof(value));
+        return 0;
+    }
     if(cmd==SM_DEV_CANCEL){cancel_requests();return 0;}
     if(cmd==SM_DEV_STATUS)return attached?attached:poisoned?SM_BUSY:0;
     if(cmd==SM_DEV_BULK_CAPS)return 1;

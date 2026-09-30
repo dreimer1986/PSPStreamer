@@ -1,5 +1,18 @@
 # StreamMaster firmware changelog
 
+## 0.3.1-bt-dio / 0.3.1-bt-qio — Experimental USB Bluetooth
+
+- Add host-only Bluedroid with an external CSR8510/Barrot USB HCI adapter;
+  standard Classic HID controller discovery, pairing, disconnect and bond deletion.
+- Add the PSP StreamMaster controller submenu and bounded report-descriptor parsing.
+- Deliver controller snapshots via existing USB EP0, separate from media RPCs;
+  release input on disconnect/stale USB snapshots. Physical PSP controls remain active.
+- Fit hub + PSP + Bluetooth within eight host channels using a version-checked,
+  build-local hub status polling implementation; one hub only, hardware test pending.
+- Provide DIO/QIO comparison builds at identical 40 MHz flash / 240 MHz CPU settings.
+- Preserve the stable 0.3.0 firmware; no controller compatibility or speed gain
+  claimed before hardware tests. See BLUETOOTH.md for wiring and license notices.
+
 ## 0.3.0 — Saved Wi-Fi networks
 
 - Add separately packaged **UNTESTED** generic S3 Quad/Octal-PSRAM and S2

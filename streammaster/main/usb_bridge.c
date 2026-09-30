@@ -24,6 +24,10 @@ static unsigned tx_capacity;
 static usb_host_client_handle_t client;
 static usb_device_handle_t device;
 static usb_transfer_t *rx,*tx;
+static usb_transfer_t *pad_tx;
+static int pad_endpoint,pad_pending,pad_disabled;
+static int64_t pad_sent_at;
+static uint32_t pad_sequence;
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
 static int64_t tx_deadline;
@@ -141,6 +145,7 @@ static void client_event(const usb_host_client_event_msg_t *event,void *arg) {
     if(event->event==USB_HOST_CLIENT_EVENT_DEV_GONE && event->dev_gone.dev_hdl==device)mark_gone();
 }
 static void transfer_done(usb_transfer_t *transfer) {
+    if(transfer==pad_tx){pad_pending=0;if(transfer->status!=USB_TRANSFER_STATUS_COMPLETED)pad_disabled=1;return;}
     if(transfer==rx){rx_pending=0;rx_done=1;}
     else {
         if(tx_bulk) {
@@ -164,9 +169,10 @@ static int open_psp(int address) {
     if(usb_host_get_device_descriptor(device,&desc)!=ESP_OK || desc->idVendor!=0x054c || desc->idProduct!=SM_USB_PID ||
        usb_host_get_active_config_descriptor(device,&config)!=ESP_OK)goto reject;
     const uint8_t *p=(const uint8_t *)config,*end=p+config->wTotalLength;
-    int candidate=-1,found_in=0,found_out=0;
+    int candidate=-1,found_in=0,found_out=0;pad_endpoint=desc->bcdDevice>=0x0101;
     while(p+2<=end && p[0]>=2 && p+p[0]<=end) {
         if(p[1]==USB_B_DESCRIPTOR_TYPE_INTERFACE && p[0]>=9) {
+            if(found_in && found_out)break;
             const usb_intf_desc_t *it=(const usb_intf_desc_t *)p;
             candidate=it->bInterfaceClass==0xff && it->bInterfaceSubClass==SM_USB_SUBCLASS &&
                 it->bInterfaceProtocol==SM_USB_PROTOCOL && !it->bAlternateSetting?it->bInterfaceNumber:-1;
@@ -177,19 +183,27 @@ static int open_psp(int address) {
                 if(ep->bEndpointAddress==0x81)found_in=1;
                 if(ep->bEndpointAddress==0x02)found_out=1;
             }
-            if(found_in && found_out) {
-                iface=candidate;
-                if(usb_host_interface_claim(client,device,iface,0)!=ESP_OK)goto reject;
-                claimed=1;sm_led_usb(1);epoch++;busy=rx_done=tx_done=0;return 1;
-            }
         }
         p+=p[0];
+    }
+    if(found_in && found_out) {
+        iface=candidate;
+        if(usb_host_interface_claim(client,device,iface,0)!=ESP_OK)goto reject;
+        claimed=1;sm_led_usb(1);epoch++;busy=rx_done=tx_done=0;
+        pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;return 1;
     }
 reject:usb_host_device_close(client,device);device=NULL;return 0;
 }
 void sm_usb_daemon(void *unused) {
     (void)unused;
-    for(;;){uint32_t flags;usb_host_lib_handle_events(portMAX_DELAY,&flags);}
+    for(;;){uint32_t flags;
+#if CONFIG_BT_BLUEDROID_ENABLED
+        extern void sm_usb_hub_poll(void);
+        usb_host_lib_handle_events(pdMS_TO_TICKS(50),&flags);sm_usb_hub_poll();
+#else
+        usb_host_lib_handle_events(portMAX_DELAY,&flags);
+#endif
+    }
 }
 void sm_usb_task(void *unused) {
     (void)unused;
@@ -203,12 +217,19 @@ void sm_usb_task(void *unused) {
     ESP_ERROR_CHECK(usb_host_client_register(&cfg,&client));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_FRAME_SIZE,0,&rx));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_BULK_FRAME_SIZE,0,&tx));
+    if(usb_host_transfer_alloc(64,0,&pad_tx)==ESP_OK)pad_tx->callback=transfer_done;
     rx->callback=transfer_done;tx->callback=transfer_done;tx_capacity=SM_BULK_FRAME_SIZE;
     if(xTaskCreate(network_worker,"network",12288,NULL,6,NULL)!=pdPASS){memory_report("worker allocation failed");abort();}
     memory_report("USB ready");
+    int64_t rescan=0;
     for(;;) {
         usb_host_client_handle_events(client,pdMS_TO_TICKS(20));
         if(new_address && !device){int address=new_address;new_address=0;open_psp(address);}
+        if(!device && esp_timer_get_time()>=rescan) {
+            uint8_t addresses[8];int count=0;rescan=esp_timer_get_time()+1000000;
+            if(usb_host_device_addr_list_fill(8,addresses,&count)==ESP_OK)
+                for(int i=0;i<count&&!device;i++)open_psp(addresses[i]);
+        }
         if(gone) {
             sm_sockets_reset();
             sm_led_usb(0);
@@ -216,7 +237,7 @@ void sm_usb_task(void *unused) {
             flush_endpoints();
             /* Static transfer buffers remain alive until both callbacks have
              * completed. Never free or reuse DMA memory on an unplug timeout. */
-            if(rx_pending || tx_pending)continue;
+            if(rx_pending || tx_pending || pad_pending)continue;
             xQueueReset(commands);discard_replies();
             /* Never lose a live handle when release temporarily fails. */
             if(claimed) {
@@ -229,6 +250,19 @@ void sm_usb_task(void *unused) {
             memset(rx->data_buffer,0,SM_FRAME_SIZE);memset(tx->data_buffer,0,tx_capacity);continue;
         }
         if(!claimed){discard_replies();continue;}
+#if CONFIG_BT_BLUEDROID_ENABLED
+        if(pad_endpoint && pad_tx && !pad_pending && !pad_disabled) {
+            SmPad input;sm_gamepad_snapshot(&input);int64_t now=esp_timer_get_time();
+            if(now-pad_sent_at>=20000 && (input.sequence!=pad_sequence || now-pad_sent_at>=200000)) {
+                usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=input.connected?0x53:0x54,
+                    .wValue=input.buttons,.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
+                memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
+                pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
+                if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_sent_at=now;pad_sequence=input.sequence;}
+                else pad_disabled=1; /* Input failure must not tear down a stream. */
+            }
+        }
+#endif
         if(tx_pending && esp_timer_get_time()>tx_deadline){mark_gone();continue;}
         if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){mark_gone();continue;}if(busy)busy--;if(!busy)last_bulk_done_us=0;}
         if(rx_done) {

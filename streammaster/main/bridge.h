@@ -16,3 +16,6 @@ void sm_usb_daemon(void *unused);
 void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out);
 void sm_sockets_bulk_cost(uint32_t *copy,uint32_t *checksum);
 void sm_usb_metrics_snapshot(SmUsbMetrics *out);
+void sm_gamepad_init(void);
+void sm_gamepad_snapshot(SmPad *out);
+int sm_gamepad_command(const SmFrame *request,SmFrame *reply);

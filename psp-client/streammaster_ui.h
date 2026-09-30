@@ -17,6 +17,8 @@ static uint32_t sm_slot,sm_profile_value;
 static SmInfo sm_info;
 static SmNetworkInfo sm_network;
 static SmScan sm_scan;
+static SmBtStatus sm_bt_status;
+static SmBtAction sm_bt_action;
 static SmHttpOpen sm_server;
 static const char *sm_stage="idle";
 static int sm_step(const char *stage,int rc) {
@@ -140,6 +142,21 @@ static int sm_worker(SceSize size,void *args) {
             else {memcpy(&sm_scan,sm_response.payload,sizeof(sm_scan));if(sm_scan.count>24)rc=SM_IO;
                 for(unsigned i=0;i<24;i++)sm_scan.ap[i].ssid[32]=0;}
         }
+    } else if(sm_job==SM_BT_STATUS || sm_job==SM_BT_ACTION) {
+        if(sm_job==SM_BT_ACTION)rc=sm_rpc(SM_BT_ACTION,&sm_bt_action,sizeof(sm_bt_action));
+        if(rc>=0)rc=sm_rpc(SM_BT_STATUS,NULL,0);
+        if(rc>=0) {
+            if(sm_response.length!=sizeof(sm_bt_status))rc=SM_IO;
+            else {memcpy(&sm_bt_status,sm_response.payload,sizeof(sm_bt_status));
+                if(sm_bt_status.count>8 || sm_bt_status.state>SM_BT_ERROR)rc=SM_IO;
+                for(unsigned i=0;i<8;i++)sm_bt_status.device[i].name[47]=0;}
+            if(rc>=0) {
+                char detail[128];snprintf(detail,sizeof(detail),"adapter=%04X:%04X state=%u devices=%u reports=%u error=%08X",
+                    (unsigned)sm_bt_status.vid,(unsigned)sm_bt_status.pid,(unsigned)sm_bt_status.state,
+                    (unsigned)sm_bt_status.count,(unsigned)sm_bt_status.reports,(unsigned)sm_bt_status.error);
+                recovery_log("StreamMaster Bluetooth",sm_bt_status.error,0,detail);
+            }
+        }
     } else rc=sm_rpc(sm_job,NULL,0);
     memset(&sm_server,0,sizeof(sm_server));memset(&sm_response,0,sizeof(sm_response));
     sm_result=sm_cancel?SM_TIMEOUT:rc;
@@ -222,11 +239,43 @@ static void sm_choose_ap(void) {
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
 }
+static void streammaster_bluetooth(void) {
+    unsigned selected=0,old=PSP_CTRL_CROSS;int dirty=1,confirm=0;
+    int rc=sm_run(SM_BT_STATUS);
+    for(;;) {
+        keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
+        unsigned count=rc<0?3:3+sm_bt_status.count;if(selected>=count)selected=0;
+        if(dirty) {
+            settings_shell(tr(TXT_SM_BT));
+            for(unsigned i=selected/7*7;i<count && i<selected/7*7+7;i++) {
+                const char *name=i==0?tr(TXT_SM_BT_SCAN):i==1?tr(TXT_SM_BT_DISCONNECT):i==2?tr(TXT_SM_BT_FORGET):sm_bt_status.device[i-3].name;
+                char line[80];snprintf(line,sizeof(line),"%c %.47s",i==selected?'>':' ',name);settings_line(i%7,i==selected,line);
+            }
+            static const TextId states[]={TXT_SM_BT_NONE,TXT_SM_BT_STARTING,TXT_SM_BT_READY,TXT_SM_BT_SCANNING,TXT_SM_BT_CONNECTING,TXT_SM_BT_CONNECTED,TXT_SM_BT_ERROR};
+            char line[96];snprintf(line,sizeof(line),tr(TXT_SM_BT_STATE),(unsigned)sm_bt_status.reports,(unsigned)(rc<0?rc:sm_bt_status.error));
+            settings_line(7,0,line);settings_line(8,0,confirm?tr(TXT_SM_BT_CONFIRM):tr(states[rc<0||sm_bt_status.state>SM_BT_ERROR?SM_BT_ERROR:sm_bt_status.state]));
+            settings_help(tr(TXT_SM_BT_HELP));dirty=0;
+        }
+        if(pressed&PSP_CTRL_CIRCLE)break;
+        if(pressed&PSP_CTRL_SQUARE){rc=sm_run(SM_BT_STATUS);dirty=1;confirm=0;}
+        if(pressed&PSP_CTRL_CROSS) {
+            if(selected==2&&!confirm){confirm=1;dirty=1;}
+            else {
+                memset(&sm_bt_action,0,sizeof(sm_bt_action));
+                sm_bt_action.action=selected==0?SM_BT_SCAN:selected==1?SM_BT_DISCONNECT:selected==2?SM_BT_FORGET:SM_BT_PAIR;
+                memcpy(sm_bt_action.address,selected>=3?sm_bt_status.device[selected-3].address:sm_bt_status.selected,6);
+                rc=sm_run(SM_BT_ACTION);confirm=0;dirty=1;
+            }
+        }
+        if(pressed&(PSP_CTRL_UP|PSP_CTRL_DOWN)) {selected=(selected+(pressed&PSP_CTRL_UP?count-1:1))%count;confirm=0;dirty=1;}
+        old=p.Buttons;sceKernelDelayThread(20000);
+    }
+}
 static void streammaster_settings(void) {
-    enum {M_ATTACH,M_INFO,M_PROFILE,M_AUTOMATIC,M_SCAN,M_SSID,M_PASSWORD,M_DHCP,M_AUTO_DNS,M_IP,M_MASK,M_GATEWAY,M_DNS,M_DNS2,M_SAVE,M_CONNECT,M_DELETE,M_BENCH,M_SERVER,M_COUNT};
+    enum {M_ATTACH,M_INFO,M_PROFILE,M_AUTOMATIC,M_SCAN,M_SSID,M_PASSWORD,M_DHCP,M_AUTO_DNS,M_IP,M_MASK,M_GATEWAY,M_DNS,M_DNS2,M_SAVE,M_CONNECT,M_DELETE,M_BENCH,M_SERVER,M_BT,M_COUNT};
     static const TextId labels[M_COUNT]={TXT_SM_ATTACH,TXT_SM_INFO,TXT_SM_PROFILE,TXT_SM_AUTOMATIC,TXT_SM_SCAN,TXT_SM_SSID,TXT_SM_PASSWORD,
         TXT_SM_DHCP,TXT_SM_AUTO_DNS,TXT_SM_IP,TXT_SM_MASK,TXT_SM_GATEWAY,TXT_SM_DNS,TXT_SM_DNS2,
-        TXT_SM_SAVE,TXT_SM_CONNECT,TXT_SM_DELETE,TXT_SM_BENCH,TXT_SM_SERVER};
+        TXT_SM_SAVE,TXT_SM_CONNECT,TXT_SM_DELETE,TXT_SM_BENCH,TXT_SM_SERVER,TXT_SM_BT};
     int selected=0,dirty=1,rc=0,ready=0;char detail[80]="";
     unsigned old=PSP_CTRL_CROSS;unsigned long long repeat=0;
     int delete_confirm=0;
@@ -261,6 +310,7 @@ static void streammaster_settings(void) {
             if(selected==M_ATTACH){ready=0;rc=sm_run(SM_JOB_ATTACH);if(rc>=0)ready=1;}
             else if(!ready)rc=SM_OFFLINE;
             else if(sm_reap()<0)rc=SM_BUSY;
+            else if(selected==M_BT)streammaster_bluetooth();
             else if(selected==M_PROFILE) {
                 if(!sm_profiles_supported)rc=SM_INVALID;
                 else {sm_slot=(sm_slot+1)%SM_PROFILE_COUNT;sm_profile_draft();}

@@ -20,6 +20,18 @@ enum {SM_PROFILES_GET=14,SM_PROFILE_SAVE,SM_PROFILE_SELECT,SM_PROFILE_DELETE,SM_
 #define SM_CAP_BULK_EXT 4U
 #define SM_CAP_USB_METRICS 8U
 #define SM_CAP_PROFILES 16U
+#define SM_CAP_GAMEPAD 32U
+#define SM_BT_STATUS 40U
+#define SM_BT_ACTION 41U
+#define SM_DEV_GAMEPAD 0x53540030U
+#define SM_PAD_MAGIC 0x31444150U
+enum {SM_BT_NONE,SM_BT_STARTING,SM_BT_READY,SM_BT_SCANNING,SM_BT_CONNECTING,SM_BT_CONNECTED,SM_BT_ERROR};
+enum {SM_BT_SCAN=1,SM_BT_PAIR,SM_BT_DISCONNECT,SM_BT_FORGET};
+typedef struct {uint32_t magic,buttons,connected,sequence;uint8_t x,y;uint8_t reserved[14];} SmPad;
+typedef struct {uint8_t address[6];int8_t rssi;uint8_t reserved;char name[48];} SmBtDevice;
+typedef struct {uint32_t state,count,reports;int32_t error;uint16_t vid,pid;uint8_t selected[6],reserved[2];SmBtDevice device[8];} SmBtStatus;
+typedef struct {uint32_t action;uint8_t address[6];uint8_t reserved[2];} SmBtAction;
+_Static_assert(sizeof(SmPad)==32,"Gamepad wire layout");
 #define SM_BULK_FRAME_SIZE 8192U
 #define SM_BULK_MAX_FRAME_SIZE 32768U
 #define SM_BULK_MAX_DEPTH 4U

@@ -23,3 +23,5 @@ certificates/
 *.pem
 *.key
 /streammaster/build-generic-*/
+/streammaster/build-bluetooth/
+/streammaster/build-bluetooth-qio/
