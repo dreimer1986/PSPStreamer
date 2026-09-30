@@ -80,10 +80,11 @@ static void input_receive(unsigned long long now) {
     input_next=now+INPUT_POLL_INTERVAL_US;
     memset(input_reply,0,sizeof(input_reply));
 }
+static int input_bt_mapping_active;
 static void input_remote_tick(SceCtrlData *pad) {
     /* Local, nonblocking driver snapshot. No HTTP/RPC poll, socket or new
      * thread per button. Works while the media pipeline owns USB bulk I/O. */
-    if(stm_enabled()) {
+    if(stm_enabled() && !input_bt_mapping_active) {
         SmPad bt;
         if(sceIoDevctl("stm:",SM_DEV_GAMEPAD,NULL,0,&bt,sizeof(bt))>=0 && bt.magic==SM_PAD_MAGIC && bt.connected) {
             pad->Buttons|=bt.buttons;

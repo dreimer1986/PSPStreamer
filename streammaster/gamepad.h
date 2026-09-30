@@ -7,7 +7,7 @@
 #define SM_HID_FIELDS 48
 typedef struct {uint16_t bit,usage,page;uint8_t size,id;int32_t min,max;} SmHidField;
 typedef struct {SmHidField field[SM_HID_FIELDS];unsigned count;int ids;} SmHidMap;
-typedef struct {uint32_t buttons;uint8_t x,y;} SmHidPad;
+typedef struct {uint32_t buttons;uint8_t x,y;uint16_t raw_buttons;} SmHidPad;
 static inline int32_t sm_hid_signed(uint32_t v,unsigned n) {
     return n==1?(int8_t)v:n==2?(int16_t)v:(int32_t)v;
 }
@@ -67,7 +67,8 @@ static inline int sm_hid_input(const SmHidMap *m,const uint8_t *p,unsigned len,S
         if(f->bit+f->size>len*8)return 0;
         uint32_t v=0;for(unsigned b=0;b<f->size;b++)v|=(uint32_t)((p[(f->bit+b)/8]>>((f->bit+b)%8))&1)<<b;
         int64_t value=f->min<0 && f->size<32 && (v&(1U<<(f->size-1)))?(int64_t)v-(1LL<<f->size):f->min<0?(int32_t)v:(int64_t)v;
-        if(f->page==9){uint32_t mask=buttons[f->usage-1];pad.buttons=(pad.buttons&~mask)|(value?mask:0);}
+        if(f->page==9){uint32_t mask=buttons[f->usage-1];pad.buttons=(pad.buttons&~mask)|(value?mask:0);
+            uint16_t raw=1U<<(f->usage-1);pad.raw_buttons=(pad.raw_buttons&~raw)|(value?raw:0);}
         else if(f->usage==0x39){value-=f->min;if((int64_t)f->max-f->min==3)value*=2;
             pad.buttons=(pad.buttons&~0xf0U)|(value>=0&&value<8?hats[value]:0);}
         else {int64_t a=(value-f->min)*255/((int64_t)f->max-f->min);if(a<0)a=0;if(a>255)a=255;

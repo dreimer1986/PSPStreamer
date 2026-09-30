@@ -2,6 +2,7 @@
  * Setup/diagnostics share transport ownership with the app. The UI never
  * blocks in USB, and leaving this menu keeps an active USB transport alive. */
 #include "../streammaster/protocol.h"
+#include "../streammaster/gamepad_options.h"
 #include "streammaster_fields.h"
 enum {SM_JOB_ATTACH=100,SM_JOB_BENCH,SM_JOB_SERVER};
 static int sm_thread=-1;
@@ -20,6 +21,7 @@ static SmScan sm_scan;
 static SmBtStatus sm_bt_status;
 static SmBtAction sm_bt_action;
 static SmBtUsbDiag sm_bt_usb_diag;
+static SmBtOptions sm_bt_options;
 static SmHttpOpen sm_server;
 static const char *sm_stage="idle";
 static int sm_step(const char *stage,int rc) {
@@ -143,6 +145,12 @@ static int sm_worker(SceSize size,void *args) {
             else {memcpy(&sm_scan,sm_response.payload,sizeof(sm_scan));if(sm_scan.count>24)rc=SM_IO;
                 for(unsigned i=0;i<24;i++)sm_scan.ap[i].ssid[32]=0;}
         }
+    } else if(sm_job==SM_BT_OPTIONS_GET || sm_job==SM_BT_OPTIONS_SET) {
+        rc=sm_rpc(sm_job,sm_job==SM_BT_OPTIONS_SET?&sm_bt_options:NULL,sm_job==SM_BT_OPTIONS_SET?sizeof(sm_bt_options):0);
+        if(rc>=0 && sm_job==SM_BT_OPTIONS_GET) {
+            if(sm_response.length!=sizeof(sm_bt_options))rc=SM_IO;
+            else {memcpy(&sm_bt_options,sm_response.payload,sizeof(sm_bt_options));if(!sm_bt_options_valid(&sm_bt_options))rc=SM_INVALID;}
+        }
     } else if(sm_job==SM_BT_STATUS || sm_job==SM_BT_ACTION) {
         if(sm_job==SM_BT_ACTION)rc=sm_rpc(SM_BT_ACTION,&sm_bt_action,sizeof(sm_bt_action));
         if(rc>=0)rc=sm_rpc(SM_BT_STATUS,NULL,0);
@@ -264,11 +272,54 @@ static int sm_bt_refresh_worker(SceSize args,void *argp) {
     for(unsigned i=0;i<8;i++)sm_bt_refresh.device[i].name[47]=0;
     sm_result=rc;__sync_synchronize();sm_finished=1;return 0;
 }
+static void streammaster_bt_options(void) {
+    int rc=sm_run(SM_BT_OPTIONS_GET);
+    if(rc<0)return;
+    static const uint32_t targets[]={0,0x4000,0x2000,0x8000,0x1000,0x100,0x200,1,8,0x10,0x20,0x40,0x80};
+    static const char *names[]={"-","X","O","[]","Triangle","L","R","Select","Start","Up","Right","Down","Left"};
+    unsigned selected=0,old=PSP_CTRL_CROSS,last_raw=~0U;int dirty=1;
+    input_bt_mapping_active=1; /* Use physical PSP controls while remapping. */
+    for(;;) {
+        keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
+        SmPad live={0};sceIoDevctl("stm:",SM_DEV_GAMEPAD,NULL,0,&live,sizeof(live));
+        unsigned raw=live.magic==SM_PAD_MAGIC && live.connected?live.raw_buttons:0;
+        if(raw!=last_raw){last_raw=raw;dirty=1;}
+        if(dirty) {
+            settings_shell(tr(TXT_SM_BT_OPTIONS));
+            for(unsigned i=selected/7*7;i<18 && i<selected/7*7+7;i++) {
+                char line[80];
+                if(!i)snprintf(line,sizeof(line),"%c %s: %s",i==selected?'>':' ',tr(TXT_SM_BT_AUTO),tr(sm_bt_options.reconnect?TXT_SETTINGS_ON:TXT_OFF));
+                else if(i==17)snprintf(line,sizeof(line),"%c %s",i==selected?'>':' ',tr(TXT_SM_BT_DEFAULTS));
+                else {unsigned target=0;while(target+1<sizeof(targets)/sizeof(*targets) && targets[target]!=sm_bt_options.button[i-1])target++;
+                    snprintf(line,sizeof(line),"%c HID %02u %c -> %s",i==selected?'>':' ',i,raw&(1U<<(i-1))?'*':' ',names[target]);}
+                settings_line(i%7,i==selected,line);
+            }
+            char line[80];snprintf(line,sizeof(line),tr(TXT_SM_BT_RAW),raw);settings_line(7,0,line);
+            if(rc<0){snprintf(line,sizeof(line),"%s: %08X",tr(TXT_SM_ERROR),(unsigned)rc);settings_line(8,0,line);}
+            settings_help(tr(TXT_SM_BT_MAP_HELP));dirty=0;
+        }
+        if(pressed&PSP_CTRL_CIRCLE)break;
+        if(pressed&PSP_CTRL_START){rc=sm_run(SM_BT_OPTIONS_SET);dirty=1;if(rc>=0)break;}
+        if(pressed&PSP_CTRL_UP){selected=(selected+17)%18;dirty=1;}
+        if(pressed&PSP_CTRL_DOWN){selected=(selected+1)%18;dirty=1;}
+        if(pressed&(PSP_CTRL_LEFT|PSP_CTRL_RIGHT|PSP_CTRL_CROSS)) {
+            if(!selected)sm_bt_options.reconnect=!sm_bt_options.reconnect;
+            else if(selected==17){SmBtOptions defaults=sm_bt_default_options();memcpy(sm_bt_options.button,defaults.button,sizeof(defaults.button));}
+            else {unsigned index=0,n=sizeof(targets)/sizeof(*targets);
+                while(index+1<n && targets[index]!=sm_bt_options.button[selected-1])index++;
+                index=(index+(pressed&PSP_CTRL_LEFT?n-1:1))%n;sm_bt_options.button[selected-1]=targets[index];}
+            dirty=1;
+        }
+        old=p.Buttons;sceKernelDelayThread(20000);
+    }
+    input_bt_mapping_active=0;
+}
 static void streammaster_bluetooth(void) {
     unsigned selected=0,old=PSP_CTRL_CROSS;int dirty=1,confirm=0;
     int rc=sm_run(SM_BT_STATUS);
     SceInt64 refresh_at=sceKernelGetSystemTimeWide()+2000000;
     int refreshing=0;
+    uint8_t forget_address[6]={0};
     for(;;) {
         keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
         if(refreshing && sm_finished && sm_reap()==0) {
@@ -280,8 +331,8 @@ static void streammaster_bluetooth(void) {
         if(dirty) {
             settings_shell(tr(TXT_SM_BT));
             for(unsigned i=selected/7*7;i<count && i<selected/7*7+7;i++) {
-                const char *name=i==0?tr(TXT_SM_BT_SCAN):i==1?tr(TXT_SM_BT_DISCONNECT):i==2?tr(TXT_SM_BT_FORGET):sm_bt_status.device[i-3].name;
-                char line[80];snprintf(line,sizeof(line),"%c %.47s",i==selected?'>':' ',name);settings_line(i%7,i==selected,line);
+                const char *name=i==0?tr(TXT_SM_BT_SCAN):i==1?tr(TXT_SM_BT_DISCONNECT):i==2?tr(TXT_SM_BT_OPTIONS):sm_bt_status.device[i-3].name;
+                char line[80];snprintf(line,sizeof(line),"%c%c %.47s",i==selected?'>':' ',i>=3 && sm_bt_status.device[i-3].reserved?'*':' ',name);settings_line(i%7,i==selected,line);
             }
             static const TextId states[]={TXT_SM_BT_NONE,TXT_SM_BT_STARTING,TXT_SM_BT_READY,TXT_SM_BT_SCANNING,TXT_SM_BT_CONNECTING,TXT_SM_BT_CONNECTED,TXT_SM_BT_ERROR};
             char line[96];snprintf(line,sizeof(line),tr(TXT_SM_BT_STATE),(unsigned)sm_bt_status.reports,(unsigned)(rc<0?rc:sm_bt_status.error));
@@ -291,12 +342,15 @@ static void streammaster_bluetooth(void) {
         if(pressed&PSP_CTRL_CIRCLE)break;
         if(refreshing){old=p.Buttons;sceKernelDelayThread(20000);continue;}
         if(pressed&PSP_CTRL_SQUARE){rc=sm_run(SM_BT_STATUS);dirty=1;confirm=0;}
+        if((pressed&PSP_CTRL_TRIANGLE) && selected>=3 && selected<3+sm_bt_status.count) {
+            memcpy(forget_address,sm_bt_status.device[selected-3].address,6);confirm=1;dirty=1;
+        }
         if(pressed&PSP_CTRL_CROSS) {
-            if(selected==2&&!confirm){confirm=1;dirty=1;}
+            if(selected==2&&!confirm){streammaster_bt_options();dirty=1;}
             else {
                 memset(&sm_bt_action,0,sizeof(sm_bt_action));
-                sm_bt_action.action=selected==0?SM_BT_SCAN:selected==1?SM_BT_DISCONNECT:selected==2?SM_BT_FORGET:SM_BT_PAIR;
-                memcpy(sm_bt_action.address,selected>=3?sm_bt_status.device[selected-3].address:sm_bt_status.selected,6);
+                sm_bt_action.action=confirm?SM_BT_FORGET:selected==0?SM_BT_SCAN:selected==1?SM_BT_DISCONNECT:SM_BT_PAIR;
+                memcpy(sm_bt_action.address,confirm?forget_address:selected>=3?sm_bt_status.device[selected-3].address:sm_bt_status.selected,6);
                 rc=sm_run(SM_BT_ACTION);confirm=0;dirty=1;
             }
         }

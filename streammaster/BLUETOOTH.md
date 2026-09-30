@@ -64,18 +64,42 @@ controller pairing still require hardware verification.
    that hub. Select the StreamMaster network route in PSPStreamer.
 4. Open **Settings → StreamMaster → Bluetooth controller**. Put the controller
    into pairing mode, select **Find controllers**, wait roughly ten seconds,
-   then press **Square** to refresh. Select the controller with X. Refresh again
-   to see connection status and the received-report counter.
+   and select the controller with X. The list refreshes automatically every two
+   seconds; Square is a manual refresh. `*` marks saved controllers.
 5. Test the D-pad/stick, X/Circle/Square/Triangle, L/R, Select and Start in menus,
    then while playing music/video. Physical PSP controls remain available.
    Disconnect/reconnect the controller and confirm that no direction remains
    held. Use **Disconnect** before finding/pairing another controller.
-6. **Forget selected device** removes the current/last selected bond; press X
-   twice to confirm. Bonded addresses appear on firmware restart, but connection
-   is selected explicitly (no blind auto-pairing or background discovery).
+6. To forget a device, highlight its row, press **Triangle**, then **X** to
+   confirm. This removes that exact device, not a hidden last-selected address.
+   Known controllers automatically reconnect by default, without a new inquiry
+   or deleting keys. Startup waits five seconds; further outgoing attempts are
+   spaced at least 60 seconds apart and rotate through saved addresses. Incoming
+   reconnects are accepted only for known devices or the explicitly selected
+   pairing target. Disconnect/Find/Forget suspends automatic reconnect until a
+   manual connection, saving options, or firmware restart.
 7. Only after DIO works, flash the **QIO** folder with its own `flash_args` and
    repeat the same test/transfer. Both variants use CPU **240 MHz**, flash
    **40 MHz**, Octal PSRAM **80 MHz**, and the same optimization settings.
+
+### Button assignment (0.3.6)
+
+Open **Bluetooth controller → Buttons / reconnect**. Use the **physical PSP
+buttons** in this screen; controller input is shown but does not navigate it.
+Press a controller button: the corresponding `HID 01` ... `HID 16` row gets a
+`*` marker. Use PSP Up/Down to select a row, Left/Right to assign its PSP target
+(or `-` for unused). The D-pad hat and analog axes retain their existing mapping.
+Start saves; Circle discards edits. The first row toggles automatic reconnect;
+the last restores default button assignments. Settings are stored on the ESP
+in NVS and survive component firmware updates. One mapping is shared by all
+controllers; this is not yet a per-device profile editor.
+
+0.3.6 restores the existing ESP-IDF bonded HID descriptor loader (previously
+commented out), via a hash-checked build-local source replacement. The installed
+SDK is unchanged. It also moves 32 KiB of reserve socket staging to PSRAM in
+Bluetooth builds only: the first two channels and USB DMA buffers are unchanged.
+This addresses observed internal free heap as low as 1019 bytes; it needs a new
+hardware run to establish whether server stability and saved reconnects improve.
 
 The QIO bootloader starts with a **DIO image header**, then enables QIO according
 to its compiled configuration. `--flash_mode dio` in the supplied QIO command

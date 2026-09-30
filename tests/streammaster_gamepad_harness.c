@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "streammaster/gamepad.h"
 #include "streammaster/protocol.h"
+#include "streammaster/gamepad_options.h"
 int main(void) {
     _Static_assert(sizeof(SmPad)==32,"pad wire size");
     _Static_assert(sizeof(SmBtStatus)==476,"status wire size");
@@ -14,15 +15,24 @@ int main(void) {
         0x05,1,0x09,0x30,0x09,0x31,0x15,0,0x26,255,0,0x75,8,0x95,2,0x81,2,
         0x09,0x39,0x15,0,0x25,7,0x75,4,0x95,1,0x81,0x42,
         0x75,4,0x95,1,0x81,3,0xc0};
-    SmHidMap m;SmHidPad pad={0,128,128};
+    SmHidMap m;SmHidPad pad={.x=128,.y=128};
     assert(sm_hid_parse(&m,descriptor,sizeof(descriptor))&&m.count==13);
     uint8_t report[]={0x31,3,0,255,1};
     assert(sm_hid_input(&m,report,sizeof(report),&pad));
     assert(pad.buttons==(0x4000|0x100|0x200|1|8|0x30)&&pad.x==0&&pad.y==255);
+    assert(pad.raw_buttons==0x331);
+    SmBtOptions options=sm_bt_default_options();assert(sm_bt_options_valid(&options));
+    assert(sm_bt_map_buttons(&options,pad.raw_buttons,pad.buttons)==pad.buttons);
+    options.button[0]=0x2000;options.button[4]=0x2000;
+    assert(sm_bt_map_buttons(&options,0x11,0x40)==0x2040);
+    options.button[6]=8;assert(sm_bt_map_buttons(&options,0x40,0)==8);
+    options.button[0]=3;assert(!sm_bt_options_valid(&options));
+    options.button[0]=0x10000;assert(!sm_bt_options_valid(&options));
+    options=sm_bt_default_options();options.reconnect=2;assert(!sm_bt_options_valid(&options));
     SmHidPad before=pad;
     assert(!sm_hid_input(&m,report,2,&pad));assert(!memcmp(&pad,&before,sizeof(pad)));
     uint8_t released[]={0,0,128,127,15};
-    assert(sm_hid_input(&m,released,sizeof(released),&pad));assert(!pad.buttons&&pad.x==128&&pad.y==128);
+    assert(sm_hid_input(&m,released,sizeof(released),&pad));assert(!pad.buttons&&!pad.raw_buttons&&pad.x==128&&pad.y==128);
     const uint8_t ids[]={0x05,1,0x85,1,0x09,0x30,0x15,0x81,0x25,127,0x75,8,0x95,1,0x81,2,
                          0x85,2,0x09,0x31,0x81,2};
     assert(sm_hid_parse(&m,ids,sizeof(ids)));

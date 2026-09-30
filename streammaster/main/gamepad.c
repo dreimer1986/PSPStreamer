@@ -2,6 +2,8 @@
  * External USB HCI controller. Never uses the S3's BLE-only radio. */
 #include "bridge.h"
 #include "gamepad.h"
+#include "gamepad_options.h"
+#include "nvs.h"
 #include "esp_bluedroid_hci.h"
 #include "esp_bt_main.h"
 #include "esp_gap_bt_api.h"
@@ -32,6 +34,8 @@ static void record_probe(SmBtUsbProbe *p) {
 static SmPad pad={.magic=SM_PAD_MAGIC,.x=128,.y=128};
 static SmHidMap map;
 static SmHidPad hidpad={.x=128,.y=128};
+/* Callback-task owned: late events from another peer cannot clear input. */
+static int active_handle=-1;
 static usb_host_client_handle_t client;
 static usb_device_handle_t dev;
 static usb_transfer_t *evt,*acl,*tx;
@@ -51,10 +55,36 @@ static Assembly events,acls;
 static uint8_t peer[6];
 static int64_t pair_until;
 static int64_t last_input_log;
+static SmBtOptions options;
+static uint8_t bonded[4][6];
+static unsigned bonded_count;
+static atomic_int reconnect_suspended;
+static int64_t reconnect_at;
+static int known_peer(const uint8_t address[6]) {
+    int known=0;portENTER_CRITICAL(&guard);
+    for(unsigned i=0;i<bonded_count;i++)if(!memcmp(address,bonded[i],6)){known=1;break;}
+    portEXIT_CRITICAL(&guard);return known;
+}
+static void refresh_bonds(int replace_list) {
+    esp_bd_addr_t list[4];int count=4;
+    if(esp_bt_gap_get_bond_device_list(&count,list)!=ESP_OK || count<0 || count>4)return;
+    portENTER_CRITICAL(&guard);
+    bonded_count=count;memcpy(bonded,list,count*6);
+    if(replace_list)status.count=0;
+    for(int j=0;j<count;j++) {
+        unsigned i;for(i=0;i<status.count;i++)if(!memcmp(status.device[i].address,list[j],6))break;
+        if(i>=8)continue;
+        if(i==status.count){SmBtDevice *d=&status.device[status.count++];memset(d,0,sizeof(*d));memcpy(d->address,list[j],6);
+            snprintf(d->name,48,"Saved %02X:%02X:%02X:%02X:%02X:%02X",list[j][0],list[j][1],list[j][2],list[j][3],list[j][4],list[j][5]);}
+        status.device[i].reserved=1;
+    }
+    portEXIT_CRITICAL(&guard);
+}
 static int pairing_allowed(const uint8_t address[6]) {
-    int64_t now=esp_timer_get_time();int allow;
-    portENTER_CRITICAL(&guard);allow=now<pair_until&&!memcmp(peer,address,6);portEXIT_CRITICAL(&guard);
-    return allow;
+    int64_t now=esp_timer_get_time();int allow,automatic;
+    portENTER_CRITICAL(&guard);allow=now<pair_until&&!memcmp(peer,address,6);
+    automatic=options.reconnect&&!atomic_load(&reconnect_suspended);portEXIT_CRITICAL(&guard);
+    return allow || (automatic && known_peer(address));
 }
 /* Stop entering host callbacks before deinit frees their queues. A callback
  * already executing must leave first; USB buffers themselves remain static. */
@@ -66,7 +96,7 @@ static const esp_bluedroid_hci_driver_callbacks_t *callback_enter(void) {
 }
 static void callback_leave(void){atomic_fetch_sub(&callback_users,1);}
 static void neutral(void) {
-    portENTER_CRITICAL(&guard);pad.buttons=0;pad.x=pad.y=128;pad.connected=0;pad.sequence++;portEXIT_CRITICAL(&guard);
+    portENTER_CRITICAL(&guard);pad.buttons=0;pad.raw_buttons=0;pad.x=pad.y=128;pad.connected=0;pad.sequence++;portEXIT_CRITICAL(&guard);
 }
 static void state(unsigned s,int err) {
     portENTER_CRITICAL(&guard);status.state=s;status.error=err;portEXIT_CRITICAL(&guard);
@@ -75,6 +105,19 @@ void sm_gamepad_snapshot(SmPad *out) {
     portENTER_CRITICAL(&guard);*out=pad;portEXIT_CRITICAL(&guard);
 }
 int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
+    if(r->op==SM_BT_OPTIONS_GET && !r->length) {
+        portENTER_CRITICAL(&guard);memcpy(out->payload,&options,sizeof(options));portEXIT_CRITICAL(&guard);
+        out->length=sizeof(options);return SM_OK;
+    }
+    if(r->op==SM_BT_OPTIONS_SET && r->length==sizeof(options)) {
+        SmBtOptions next;memcpy(&next,r->payload,sizeof(next));if(!sm_bt_options_valid(&next))return SM_INVALID;
+        nvs_handle_t n;esp_err_t rc=nvs_open("sm_gamepad",NVS_READWRITE,&n);
+        if(rc!=ESP_OK)return SM_IO;
+        rc=nvs_set_blob(n,"options",&next,sizeof(next));if(rc==ESP_OK)rc=nvs_commit(n);nvs_close(n);
+        if(rc!=ESP_OK)return SM_IO;
+        portENTER_CRITICAL(&guard);options=next;pad.buttons=0;pad.sequence++;portEXIT_CRITICAL(&guard);
+        atomic_store(&reconnect_suspended,0);return SM_OK;
+    }
     if(r->op==SM_BT_USB_DIAG && !r->length) {
         int psp=sm_usb_psp_status();
         portENTER_CRITICAL(&guard);usb_diag.reserved=(uint32_t)psp;portEXIT_CRITICAL(&guard);
@@ -105,6 +148,7 @@ static void gap(esp_bt_gap_cb_event_t e,esp_bt_gap_cb_param_t *p) {
                 if(name&&n)snprintf(d.name,sizeof(d.name),"%.*s",n,(char *)name);
             }
         }
+        d.reserved=known_peer(d.address);
         portENTER_CRITICAL(&guard);
         unsigned i;for(i=0;i<status.count;i++)if(!memcmp(status.device[i].address,d.address,6))break;
         if(i<8){status.device[i]=d;if(i==status.count)status.count++;}
@@ -119,47 +163,54 @@ static void gap(esp_bt_gap_cb_event_t e,esp_bt_gap_cb_param_t *p) {
         esp_bt_gap_pin_reply(p->pin_req.bda,allow,allow?4:0,pin);
     } else if(e==ESP_BT_GAP_CFM_REQ_EVT) {
         esp_bt_gap_ssp_confirm_reply(p->cfm_req.bda,pairing_allowed(p->cfm_req.bda));
-    } else if(e==ESP_BT_GAP_AUTH_CMPL_EVT && p->auth_cmpl.stat!=ESP_BT_STATUS_SUCCESS) {
-        atomic_store(&accept_input,0);state(SM_BT_ERROR,p->auth_cmpl.stat);neutral();
+    } else if(e==ESP_BT_GAP_AUTH_CMPL_EVT) {
+        if(p->auth_cmpl.stat!=ESP_BT_STATUS_SUCCESS){atomic_store(&accept_input,0);state(SM_BT_ERROR,p->auth_cmpl.stat);neutral();}
+        else refresh_bonds(0);
+    } else if(e==ESP_BT_GAP_REMOVE_BOND_DEV_COMPLETE_EVT) {
+        if(p->remove_bond_dev_cmpl.status==ESP_BT_STATUS_SUCCESS)refresh_bonds(1);
+        else state(SM_BT_ERROR,p->remove_bond_dev_cmpl.status);
     }
 }
 static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
     if(e==ESP_HIDH_INIT_EVT) {
+        active_handle=-1;
         if(p->init.status==ESP_HIDH_OK){
-            esp_bd_addr_t bonds[4];int count=4;
-            if(esp_bt_gap_get_bond_device_list(&count,bonds)==ESP_OK) {
-                portENTER_CRITICAL(&guard);status.count=count;
-                for(int i=0;i<count;i++) {
-                    memcpy(status.device[i].address,bonds[i],6);
-                    snprintf(status.device[i].name,48,"Saved %02X:%02X:%02X:%02X:%02X:%02X",bonds[i][0],bonds[i][1],bonds[i][2],bonds[i][3],bonds[i][4],bonds[i][5]);
-                }
-                if(count)memcpy(status.selected,bonds[0],6);
-                portEXIT_CRITICAL(&guard);
-            }
+            refresh_bonds(1);
+            esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE,ESP_BT_NON_DISCOVERABLE);
             atomic_store(&ready,1);state(SM_BT_READY,0);
         }
         else state(SM_BT_ERROR,p->init.status);
     } else if(e==ESP_HIDH_OPEN_EVT) {
+        if(active_handle>=0) {
+            if(p->open.status==ESP_HIDH_OK && p->open.handle!=active_handle)esp_bt_hid_host_disconnect(p->open.bd_addr);
+            return;
+        }
         atomic_store(&accept_input,0);neutral();
         if(p->open.status!=ESP_HIDH_OK){state(SM_BT_ERROR,p->open.status);neutral();return;}
+        if(!pairing_allowed(p->open.bd_addr)){esp_bt_hid_host_disconnect(p->open.bd_addr);state(SM_BT_ERROR,SM_INVALID);return;}
+        active_handle=p->open.handle;
         memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};last_input_log=0;
         portENTER_CRITICAL(&guard);memcpy(peer,p->open.bd_addr,6);memcpy(status.selected,peer,6);pair_until=0;portEXIT_CRITICAL(&guard);
         state(SM_BT_CONNECTED,0);
         esp_bt_hid_host_set_protocol(p->open.bd_addr,ESP_HIDH_REPORT_MODE);
         ESP_LOGI(TAG,"HID connected; waiting for descriptor/input");
     } else if(e==ESP_HIDH_GET_DSCP_EVT) {
+        if(p->dscp.handle!=active_handle)return;
         int ok=p->dscp.status==ESP_HIDH_OK && p->dscp.dsc_list && sm_hid_parse(&map,p->dscp.dsc_list,p->dscp.dl_len);
         ESP_LOGW(TAG,"HID descriptor vendor=%04x product=%04x bytes=%u fields=%u valid=%d",p->dscp.vendor_id,p->dscp.product_id,p->dscp.dl_len,map.count,ok);
         if(!ok){state(SM_BT_ERROR,SM_INVALID);neutral();}
         else atomic_store(&accept_input,1);
     } else if(e==ESP_HIDH_DATA_IND_EVT && atomic_load(&online) && atomic_load(&accept_input)) {
-        if(p->data_ind.status==ESP_HIDH_OK && sm_hid_input(&map,p->data_ind.data,p->data_ind.len,&hidpad)) {
+        if(p->data_ind.handle==active_handle && p->data_ind.status==ESP_HIDH_OK && sm_hid_input(&map,p->data_ind.data,p->data_ind.len,&hidpad)) {
             portENTER_CRITICAL(&guard);
-            pad.buttons=hidpad.buttons;pad.x=hidpad.x;pad.y=hidpad.y;pad.connected=1;pad.sequence++;status.reports++;
+            pad.buttons=sm_bt_map_buttons(&options,hidpad.raw_buttons,hidpad.buttons);
+            pad.raw_buttons=hidpad.raw_buttons;pad.x=hidpad.x;pad.y=hidpad.y;pad.connected=1;pad.sequence++;status.reports++;
             portEXIT_CRITICAL(&guard);
             if(!last_input_log){ESP_LOGW(TAG,"First HID report bytes=%u buttons=%04lx axes=%u,%u",p->data_ind.len,(unsigned long)hidpad.buttons,hidpad.x,hidpad.y);last_input_log=esp_timer_get_time();}
         }
     } else if(e==ESP_HIDH_CLOSE_EVT || e==ESP_HIDH_VC_UNPLUG_EVT) {
+        if((e==ESP_HIDH_CLOSE_EVT?p->close.handle:p->unplug.handle)!=active_handle)return;
+        active_handle=-1;
         atomic_store(&accept_input,0);neutral();memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};state(SM_BT_READY,0);
     }
 }
@@ -191,6 +242,7 @@ static void lifecycle_task(void *unused) {
             rc=esp_bt_hid_host_init();
         }
         if(rc!=ESP_OK){ESP_LOGE(TAG,"Host init: %s",esp_err_to_name(rc));state(SM_BT_ERROR,rc);}
+        unsigned reconnect_index=0;reconnect_at=esp_timer_get_time()+5000000;
         while(atomic_load(&online) && !atomic_load(&failed) && rc==ESP_OK) {
             SmBtAction a;
             uint8_t active_peer[6];int expired=0;int64_t now=esp_timer_get_time();
@@ -199,23 +251,37 @@ static void lifecycle_task(void *unused) {
             if(status.state==SM_BT_CONNECTING&&pair_until&&now>=pair_until){pair_until=0;expired=1;}
             portEXIT_CRITICAL(&guard);
             if(expired){esp_bt_hid_host_disconnect(active_peer);atomic_store(&accept_input,0);neutral();state(SM_BT_ERROR,ESP_ERR_TIMEOUT);}
-            if(xQueueReceive(actions,&a,pdMS_TO_TICKS(100))!=pdTRUE)continue;
+            if(xQueueReceive(actions,&a,pdMS_TO_TICKS(100))!=pdTRUE) {
+                int automatic=0;
+                portENTER_CRITICAL(&guard);
+                if(atomic_load(&ready) && options.reconnect && !atomic_load(&reconnect_suspended) && bonded_count &&
+                   (status.state==SM_BT_READY || status.state==SM_BT_ERROR) && now>=reconnect_at) {
+                    memset(&a,0,sizeof(a));a.action=SM_BT_PAIR;
+                    memcpy(a.address,bonded[reconnect_index++%bonded_count],6);automatic=1;
+                }
+                portEXIT_CRITICAL(&guard);
+                if(!automatic)continue;
+            }
+            reconnect_at=esp_timer_get_time()+60000000;
             esp_err_t result=ESP_OK;
             if(a.action==SM_BT_SCAN) {
                 unsigned current;portENTER_CRITICAL(&guard);current=status.state;portEXIT_CRITICAL(&guard);
                 if(current==SM_BT_CONNECTED||current==SM_BT_CONNECTING){state(current,SM_BUSY);continue;}
-                portENTER_CRITICAL(&guard);status.count=0;portEXIT_CRITICAL(&guard);
+                atomic_store(&reconnect_suspended,1);refresh_bonds(1);
                 state(SM_BT_SCANNING,0);result=esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY,8,8);
             } else if(a.action==SM_BT_PAIR) {
                 unsigned current;portENTER_CRITICAL(&guard);current=status.state;portEXIT_CRITICAL(&guard);
                 if(current==SM_BT_CONNECTED || current==SM_BT_CONNECTING){state(current,SM_BUSY);continue;}
                 esp_bt_gap_cancel_discovery();atomic_store(&accept_input,0);neutral();
+                atomic_store(&reconnect_suspended,0);
                 int64_t deadline=esp_timer_get_time()+30000000;
                 portENTER_CRITICAL(&guard);memcpy(peer,a.address,6);pair_until=deadline;portEXIT_CRITICAL(&guard);
                 state(SM_BT_CONNECTING,0);result=esp_bt_hid_host_connect(a.address);
-            } else if(a.action==SM_BT_DISCONNECT){atomic_store(&accept_input,0);neutral();result=esp_bt_hid_host_disconnect(active_peer);}
+            } else if(a.action==SM_BT_DISCONNECT){atomic_store(&reconnect_suspended,1);atomic_store(&accept_input,0);neutral();result=esp_bt_hid_host_disconnect(active_peer);}
             else {
-                atomic_store(&accept_input,0);neutral();esp_bt_hid_host_disconnect(active_peer);result=esp_bt_gap_remove_bond_device(a.address);
+                atomic_store(&reconnect_suspended,1);
+                if(!memcmp(active_peer,a.address,6)){atomic_store(&accept_input,0);neutral();esp_bt_hid_host_disconnect(active_peer);}
+                result=esp_bt_gap_remove_bond_device(a.address);
             }
             if(result!=ESP_OK)state(SM_BT_ERROR,result);
         }
@@ -362,6 +428,12 @@ static void usb_task(void *unused) {
     }
 }
 void sm_gamepad_init(void) {
+    options=sm_bt_default_options();nvs_handle_t n;
+    if(nvs_open("sm_gamepad",NVS_READONLY,&n)==ESP_OK) {
+        SmBtOptions saved;size_t size=sizeof(saved);
+        if(nvs_get_blob(n,"options",&saved,&size)==ESP_OK && size==sizeof(saved) && sm_bt_options_valid(&saved))options=saved;
+        nvs_close(n);
+    }
     sends=xQueueCreate(4,sizeof(Packet));actions=xQueueCreate(4,sizeof(SmBtAction));
     if(sends&&actions && xTaskCreate(lifecycle_task,"bt-host",6144,NULL,5,&lifecycle)==pdPASS &&
        xTaskCreate(usb_task,"bt-usb",6144,NULL,7,NULL)==pdPASS)return;

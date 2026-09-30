@@ -1,5 +1,23 @@
 # StreamMaster firmware changelog
 
+## 0.3.6-bt-dio / 0.3.6-bt-qio — Memory headroom, saved HID and button mapping
+
+- Logs show live socket workers / connected Wi-Fi but only 1019 bytes of free
+  internal RAM. Move four reserve channels' staging buffers (32 KiB) to PSRAM
+  in Bluetooth builds. Keep the primary two channels and USB DMA buffers intact.
+- Re-enable ESP-IDF's existing bonded HID descriptor restoration through a
+  version-checked build-local replacement; the shared SDK stays untouched.
+  Observed error 7 is HID SDP failure, not an authentication error.
+- Reconnect known controllers automatically, without clearing bonds or repeated
+  inquiry scans; outgoing attempts are spaced by 60 seconds. Explicit disconnect
+  suspends reconnect. The behavior is configurable and saved in NVS.
+- Add persistent HID button 1–16 assignments, including formerly unused buttons;
+  PSP menu shows raw pressed buttons while keeping physical PSP navigation safe.
+- Forget the highlighted device with Triangle then X; saved rows are marked `*`
+  and remain visible during discovery. No implicit bond deletion on errors.
+- PSP EBOOT update required; existing USB bridge remains compatible. Physical
+  reconnection and concurrent server/controller stability still need testing.
+
 ## 0.3.5-bt-dio / 0.3.5-bt-qio — Concurrent controller/network diagnostics
 
 - User confirmed discovery, pairing and PSP control with 0.3.4, followed by

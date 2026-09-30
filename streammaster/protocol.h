@@ -37,6 +37,9 @@ _Static_assert(sizeof(SmNetDiag)==308,"Network diagnostics layout");
 #define SM_BT_STATUS 40U
 #define SM_BT_ACTION 41U
 #define SM_BT_USB_DIAG 42U
+#define SM_BT_OPTIONS_GET 44U
+#define SM_BT_OPTIONS_SET 45U
+typedef struct {uint32_t reconnect,button[16];} SmBtOptions;
 /* Last enumeration probes, not a live device list. Never contains credentials. */
 enum {SM_BT_PROBE_OPEN=1,SM_BT_PROBE_DESCRIPTOR,SM_BT_PROBE_FILTER,
       SM_BT_PROBE_CONFIG,SM_BT_PROBE_INTERFACE,SM_BT_PROBE_CLAIM,SM_BT_PROBE_STARTED,SM_BT_PROBE_WAIT_PSP};
@@ -47,7 +50,7 @@ _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");
 #define SM_PAD_MAGIC 0x31444150U
 enum {SM_BT_NONE,SM_BT_STARTING,SM_BT_READY,SM_BT_SCANNING,SM_BT_CONNECTING,SM_BT_CONNECTED,SM_BT_ERROR};
 enum {SM_BT_SCAN=1,SM_BT_PAIR,SM_BT_DISCONNECT,SM_BT_FORGET};
-typedef struct {uint32_t magic,buttons,connected,sequence;uint8_t x,y;uint8_t reserved[14];} SmPad;
+typedef struct {uint32_t magic,buttons,connected,sequence;uint8_t x,y;uint16_t raw_buttons;uint8_t reserved[12];} SmPad;
 typedef struct {uint8_t address[6];int8_t rssi;uint8_t reserved;char name[48];} SmBtDevice;
 typedef struct {uint32_t state,count,reports;int32_t error;uint16_t vid,pid;uint8_t selected[6],reserved[2];SmBtDevice device[8];} SmBtStatus;
 typedef struct {uint32_t action;uint8_t address[6];uint8_t reserved[2];} SmBtAction;

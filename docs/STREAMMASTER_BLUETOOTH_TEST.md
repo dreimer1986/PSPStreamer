@@ -1,5 +1,35 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.6 internal memory and saved-controller reconnect
+
+New mounted logs: latest session at 158809 ms reports wifi=2, reason=0, RSSI=-46
+and internal_free=1019. Socket owners are alive (heartbeat 0–1 ms), requests
+were written, reads repeatedly return EAGAIN. Previous session also had 1411
+bytes free during playback. This supports internal memory pressure, not a
+blocked socket task; it does not prove every server timeout has this cause.
+Latest controller failure is state=6/error=7 at 69656 ms: ESP_HIDH_ERR_SDP.
+IDF btc_hh.c saves HID descriptors but comments out the startup restoration call.
+
+Build 0.3.6 restores that existing call, guarded by exact source SHA256. Reserve
+channel staging (channels 2–5, RX/TX 4096 each) moves to PSRAM only in Bluetooth
+builds. Six owners, payload sizes, primary channels, task priorities, timeout
+and USB DMA placement remain unchanged. Known-device reconnect, explicit
+row-targeted forgetting and persistent raw-HID button mapping are added.
+
+Hardware checks: flash components (not factory image) to preserve bonds. Power
+cycle controller/Onju and test a saved connection without Forget/Find first.
+Check manual Disconnect does not immediately reconnect. In Buttons/reconnect,
+assign a mismatched button using PSP controls, save and verify after restart.
+Browse several library levels while connected, then play media/Monkey. Compare
+`ESP network` internal_free and `ESP socket` progress with the previous run.
+
+PSP and DIO/QIO builds precede focused host checks. The production HID parser
+test covers raw button numbers, reassignment, duplicate targets, releases and
+invalid settings. The socket harness checks the 16 KiB primary / 32 KiB reserve
+staging split as well as existing transport ownership. The cache generator test
+verifies the exact one-line change, rejects other source revisions and confirms
+the SDK is untouched. These do not emulate controller reconnects or RF traffic.
+
 ## Follow-up: 0.3.5 controller works, server stalls
 
 User confirms discovery, pairing and input. Mounted log reaches two discovered

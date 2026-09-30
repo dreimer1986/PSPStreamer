@@ -155,8 +155,14 @@ void sm_sockets_init(void) {
         c->lock=xSemaphoreCreateMutex();
         c->rx=heap_caps_malloc(RX_SIZE,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
         c->tx=heap_caps_malloc(TX_SIZE,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-        c->block=heap_caps_malloc(4096,MALLOC_CAP_8BIT);
-        c->write_block=heap_caps_malloc(4096,MALLOC_CAP_8BIT);
+        /* Bluetooth needs internal RAM for Wi-Fi RX/DMA as well. Keep the two
+         * primary channels fast; reserve-channel staging is not USB DMA. */
+        unsigned staging_caps=MALLOC_CAP_8BIT;
+#if CONFIG_BT_BLUEDROID_ENABLED
+        if(i>=2)staging_caps|=MALLOC_CAP_SPIRAM;
+#endif
+        c->block=heap_caps_malloc(4096,staging_caps);
+        c->write_block=heap_caps_malloc(4096,staging_caps);
         if(!c->lock || !c->rx || !c->tx || !c->block || !c->write_block || xTaskCreate(socket_worker,"socket",8192,c,5,&c->worker)!=pdPASS)abort();
     }
 }

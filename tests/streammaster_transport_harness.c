@@ -25,6 +25,7 @@ typedef struct {int fd;} esp_tls_t;
 #define ESP_TLS_ERR_SSL_WANT_WRITE -101
 #define MALLOC_CAP_8BIT 1
 #define MALLOC_CAP_SPIRAM 2
+#define CONFIG_BT_BLUEDROID_ENABLED 1
 #define pdTRUE 1
 #define pdPASS 1
 #define portMAX_DELAY 0xffffffffU
@@ -36,7 +37,11 @@ static void xSemaphoreGive(SemaphoreHandle_t s){++*s;}
 static int xTaskCreate(void (*fn)(void *),const char *n,int size,void *p,int prio,TaskHandle_t *out){
     (void)fn;(void)n;(void)size;(void)p;(void)prio;*out=(void *)1;return 1;
 }
-static void *heap_caps_malloc(size_t n,int flags){(void)flags;return malloc(n);}
+static unsigned internal_staging,external_staging;
+static void *heap_caps_malloc(size_t n,int flags){
+    if(n==4096){if(flags&MALLOC_CAP_SPIRAM)external_staging+=n;else internal_staging+=n;}
+    return malloc(n);
+}
 static jmp_buf owner_exit;
 static int owner_notifications,owner_mode,owner_live,owner_reads,owner_writes,owner_delays;
 static unsigned owner_write_size;
@@ -202,6 +207,7 @@ static int open_socket(void){
 }
 int main(void){
     sm_sockets_init();
+    assert(internal_staging==16384 && external_staging==32768);
     for(int cycle=0;cycle<1000;cycle++)for(int mode=1;mode<=4;mode++)exercise_owner(mode);
     assert(!owner_live);
     assert(stm_init(0,"example.test",443,1)==0);
