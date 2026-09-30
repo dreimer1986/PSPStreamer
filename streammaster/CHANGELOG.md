@@ -1,5 +1,14 @@
 # StreamMaster firmware changelog
 
+## 0.3.4-bt-dio / 0.3.4-bt-qio — PSP-first startup
+
+- Defer claiming the Bluetooth HCI interface until the PSP streaming interface
+  is claimed, avoiding competition for the S3's limited USB host channels during
+  the PSP's USB-mode transition. No busy wait or new background poller.
+- Expose the waiting phase and PSP interface-claim result in diagnostics.
+- User logs already confirm CSR8510 host-ready and successful inquiry startup
+  after hotplug. Controller discovery/pairing and cold-start fix remain unverified.
+
 ## 0.3.3-bt-dio / 0.3.3-bt-qio — USB adapter diagnostics
 
 - Hub connection confirmed by user; Bluetooth still not active. Existing logs

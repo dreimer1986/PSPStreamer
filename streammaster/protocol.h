@@ -26,7 +26,7 @@ enum {SM_PROFILES_GET=14,SM_PROFILE_SAVE,SM_PROFILE_SELECT,SM_PROFILE_DELETE,SM_
 #define SM_BT_USB_DIAG 42U
 /* Last enumeration probes, not a live device list. Never contains credentials. */
 enum {SM_BT_PROBE_OPEN=1,SM_BT_PROBE_DESCRIPTOR,SM_BT_PROBE_FILTER,
-      SM_BT_PROBE_CONFIG,SM_BT_PROBE_INTERFACE,SM_BT_PROBE_CLAIM,SM_BT_PROBE_STARTED};
+      SM_BT_PROBE_CONFIG,SM_BT_PROBE_INTERFACE,SM_BT_PROBE_CLAIM,SM_BT_PROBE_STARTED,SM_BT_PROBE_WAIT_PSP};
 typedef struct {uint32_t address;uint16_t vid,pid;uint32_t device_class,interface_class,endpoints,phase;int32_t result;uint32_t attempts;} SmBtUsbProbe;
 typedef struct {uint32_t count,reserved;SmBtUsbProbe probe[8];} SmBtUsbDiag;
 _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");

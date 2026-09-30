@@ -76,6 +76,8 @@ void sm_gamepad_snapshot(SmPad *out) {
 }
 int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
     if(r->op==SM_BT_USB_DIAG && !r->length) {
+        int psp=sm_usb_psp_status();
+        portENTER_CRITICAL(&guard);usb_diag.reserved=(uint32_t)psp;portEXIT_CRITICAL(&guard);
         portENTER_CRITICAL(&guard);memcpy(out->payload,&usb_diag,sizeof(usb_diag));portEXIT_CRITICAL(&guard);
         out->length=sizeof(usb_diag);return SM_OK;
     }
@@ -268,6 +270,11 @@ static int open_adapter(unsigned address) {
     known=(d->idVendor==0x0a12&&d->idProduct==1)||(d->idVendor==0x33fa&&d->idProduct==0x10);
     if(!known){probe.result=ESP_ERR_NOT_SUPPORTED;goto reject;}
     portENTER_CRITICAL(&guard);status.vid=d->idVendor;status.pid=d->idProduct;portEXIT_CRITICAL(&guard);
+    /* A dongle present at power-on must not win the endpoint-allocation race
+     * against the PSP's transition from Sony USB mode to StreamMaster. Release
+     * this client handle and retry via the existing bounded rescan. No sleep,
+     * busy loop, or control-channel lock held while waiting for the PSP. */
+    if(sm_usb_psp_status()!=SM_OK){probe.phase=SM_BT_PROBE_WAIT_PSP;probe.result=SM_BUSY;goto reject;}
     probe.phase=SM_BT_PROBE_CONFIG;
     if((probe.result=usb_host_get_active_config_descriptor(dev,&c))!=ESP_OK)goto reject;
     probe.phase=SM_BT_PROBE_INTERFACE;
@@ -298,7 +305,7 @@ static int open_adapter(unsigned address) {
     xTaskNotifyGive(lifecycle);return 1;
 reject:
     record_probe(&probe);
-    if(known)state(SM_BT_ERROR,probe.result);
+    if(known)state(probe.phase==SM_BT_PROBE_WAIT_PSP?SM_BT_STARTING:SM_BT_ERROR,probe.result);
     usb_host_device_close(client,dev);dev=NULL;iface=-1;return 0;
 }
 static void usb_task(void *unused) {

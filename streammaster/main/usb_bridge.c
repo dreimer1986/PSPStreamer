@@ -30,6 +30,9 @@ static int64_t pad_sent_at;
 static uint32_t pad_sequence;
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
+/* Bluetooth must not claim its three pipes before the PSP has its own. */
+static atomic_int psp_status=SM_OFFLINE;
+int sm_usb_psp_status(void) { return atomic_load(&psp_status); }
 static int64_t tx_deadline;
 static int64_t tx_started_us,last_bulk_done_us;
 static unsigned tx_bulk_bytes;static int tx_bulk;
@@ -78,6 +81,7 @@ static void memory_report(const char *stage) {
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 static void mark_gone(void) {
+    atomic_store(&psp_status,SM_OFFLINE);
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
 }
 static int process_work(Work *work,Work *response) {
@@ -188,7 +192,9 @@ static int open_psp(int address) {
     }
     if(found_in && found_out) {
         iface=candidate;
-        if(usb_host_interface_claim(client,device,iface,0)!=ESP_OK)goto reject;
+        int result=usb_host_interface_claim(client,device,iface,0);
+        atomic_store(&psp_status,result);
+        if(result!=ESP_OK)goto reject;
         claimed=1;sm_led_usb(1);epoch++;busy=rx_done=tx_done=0;
         pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;return 1;
     }

@@ -1,6 +1,6 @@
 # Experimental USB Bluetooth controllers — Onju Voice V3
 
-Version **0.3.3-bt-dio / 0.3.3-bt-qio**, hardware validation pending.
+Version **0.3.4-bt-dio / 0.3.4-bt-qio**, hardware validation pending.
 This is not a replacement for the proven Wi-Fi-only 0.3.0 release.
 
 ## Hardware and scope
@@ -35,6 +35,14 @@ hardware. It requires the updated EBOOT for PSP-side diagnostic logging; the
 kernel bridge is unchanged. This is a diagnostic build, not a claimed pairing
 fix. A supported adapter rejected during descriptor parsing/interface claiming
 now reports its VID/PID and actual error instead of appearing absent.
+
+Version 0.3.4 prioritizes PSP startup: the adapter is recognized but its HCI
+interface is not claimed until the PSP has claimed its streaming interface.
+The existing one-second rescan retries without holding the adapter client handle
+or waiting inside the USB callback. This targets the observed startup-order
+failure with the dongle already attached; hotplug after PSP attachment had
+already reached host-ready and discovery state. Full startup recovery and
+controller pairing still require hardware verification.
 
 ## Installation and first test
 
@@ -104,6 +112,12 @@ class, endpoint addresses, last phase, error and attempt count. These are last
 observations, not a guaranteed live inventory. Phase 1=open, 2=device descriptor,
 3=allowlist filter, 4=configuration, 5=HCI interface, 6=interface/channel claim,
 7=host start. Rejected PSP/hub rows at phase 3 are normal; inspect the dongle row.
+Phase 8 means waiting for the PSP interface, not an unsupported adapter.
+The additional `StreamMaster PSP USB` log records its last interface-claim result
+or offline state. `error=00000000` means no error. Bluetooth state 2 is ready,
+state 3 is scanning: wait at least 12 seconds, then refresh with Square to see
+discovery results. The controller must be in discoverable Classic HID pairing
+mode; merely powering it on is not enough.
 The optional query is only made in the Bluetooth menu, not during playback.
 ESP UART0 logs at 115200 baud
 add descriptor size/field count and the first decoded report; these require UART

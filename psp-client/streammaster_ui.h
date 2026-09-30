@@ -162,6 +162,7 @@ static int sm_worker(SceSize size,void *args) {
          * replace the original action/status result with this extra query. */
         if(!sm_cancel && sm_rpc(SM_BT_USB_DIAG,NULL,0)>=0 && sm_response.length==sizeof(sm_bt_usb_diag)) {
             memcpy(&sm_bt_usb_diag,sm_response.payload,sizeof(sm_bt_usb_diag));
+            recovery_log("StreamMaster PSP USB",(int32_t)sm_bt_usb_diag.reserved,0,"last PSP interface claim / offline");
             if(sm_bt_usb_diag.count<=8)for(unsigned i=0;i<sm_bt_usb_diag.count;i++) {
                 const SmBtUsbProbe *p=&sm_bt_usb_diag.probe[i];char detail[192];
                 snprintf(detail,sizeof(detail),"addr=%u usb=%04X:%04X phase=%u rc=%08X devclass=%06X iface=%08X ep=%06X attempts=%u",

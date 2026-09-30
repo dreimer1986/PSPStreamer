@@ -24,6 +24,8 @@ static _Alignas(4) uint8_t configuration[]={
 static void *dev,*client;
 static int iface,ep_evt,ep_in,ep_out,evt_mps,acl_mps,evt_done,acl_done;
 static int opens_rc,claim_rc,claims,closes;
+static int psp_result=SM_OFFLINE;
+static int sm_usb_psp_status(void){return psp_result;}
 static atomic_int online,failed;
 typedef struct {unsigned unused;} Assembly;
 static Assembly events,acls;
@@ -38,13 +40,17 @@ static void state(unsigned s,int e){status.state=s;status.error=e;}
 /* RECORD */
 /* OPEN */
 int main(void){
+    assert(!open_adapter(2)&&!dev&&claims==0&&closes==1);
+    assert(usb_diag.probe[0].phase==SM_BT_PROBE_WAIT_PSP&&usb_diag.probe[0].result==SM_BUSY);
+    assert(status.state==SM_BT_STARTING&&!online);
+    psp_result=SM_OK;
     claim_rc=ESP_ERR_NOT_SUPPORTED;
-    assert(!open_adapter(2)&&!dev&&claims==1&&closes==1);
+    assert(!open_adapter(2)&&!dev&&claims==1&&closes==2);
     assert(status.vid==0x0a12&&status.state==SM_BT_ERROR&&status.error==claim_rc);
     assert(usb_diag.count==1&&usb_diag.probe[0].phase==SM_BT_PROBE_CLAIM);
     assert(usb_diag.probe[0].interface_class==0xe00101&&usb_diag.probe[0].endpoints==0x028281);
     claim_rc=0;assert(open_adapter(2)&&claims==2&&online);
-    assert(usb_diag.count==1&&usb_diag.probe[0].attempts==2&&usb_diag.probe[0].phase==SM_BT_PROBE_STARTED);
+    assert(usb_diag.count==1&&usb_diag.probe[0].attempts==3&&usb_diag.probe[0].phase==SM_BT_PROBE_STARTED);
     assert(iface==0&&evt_mps==16&&acl_mps==64);dev=NULL;
     descriptor.idVendor=0x054c;assert(!open_adapter(3));
     assert(usb_diag.count==2&&usb_diag.probe[1].phase==SM_BT_PROBE_FILTER&&claims==2);

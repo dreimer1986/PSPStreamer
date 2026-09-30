@@ -1,5 +1,23 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.4 PSP-first startup
+
+Mounted log: five `wait USB attach` timeouts up to 153599 ms, attach success at
+159692 ms after user removed the dongle. Following hotplug, CSR8510 `0a12:0001`
+reaches phase 7, state 2 (host ready) at 183315 ms; inquiry is state 3 at
+186584 and 195575 ms with zero error and zero discoveries so far. The last
+snapshot is about nine seconds into the nominal 10.24-second inquiry, not
+proof of a failed search. At the end an RPC times out; its cause is not yet
+established by the log.
+
+0.3.4 gates HCI interface claiming on the PSP's successful streaming-interface
+claim, reproducing the successful plug order without requiring manual unplug.
+This targets channel contention during initial PSP enumeration; it is not
+claimed as hardware-proven. The existing discovery harness covers deferred
+claim, released client handle, retry after PSP readiness and claim failure.
+Hub polling and HCI discovery commands are unchanged. PSP application receives
+one additional diagnostic line; no kernel-bridge ABI change.
+
 ## Follow-up: 0.3.3 discovery diagnostics
 
 User confirmed the 0.3.2 hub connection. The new mounted PSP log measures
