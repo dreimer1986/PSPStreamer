@@ -1,5 +1,19 @@
 # StreamMaster firmware changelog
 
+## 0.3.7-bt-dio / 0.3.7-bt-qio — HID connection event regression
+
+- Treat OPEN/OK/CONNECTING as request acknowledgement, not a completed link.
+  ESP-IDF supplies handle 0xff here; adopting it made the 0.3.6 handle guard
+  disconnect the subsequent real link. Preserve the pairing deadline until
+  OPEN/OK/CONNECTED with a valid handle.
+- Retain handle ownership during the intermediate DISCONNECTING notification;
+  release it only on final DISCONNECTED. Ignore stale events from other handles.
+- User logs confirm internal memory headroom at roughly 38–42 KiB, but every
+  apparent controller connection had zero input reports. No further changes
+  to socket buffers, HID cache restoration, mappings or auto-reconnect policy.
+- Firmware-only update; PSP files from 0.3.6 remain current. DIO/QIO built before
+  the focused production-callback test covering complete connection sequences.
+
 ## 0.3.6-bt-dio / 0.3.6-bt-qio — Memory headroom, saved HID and button mapping
 
 - Logs show live socket workers / connected Wi-Fi but only 1019 bytes of free

@@ -181,12 +181,18 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         }
         else state(SM_BT_ERROR,p->init.status);
     } else if(e==ESP_HIDH_OPEN_EVT) {
+        /* IDF reports request acceptance as OPEN/OK/CONNECTING with handle
+         * 0xff, then emits a second OPEN for the actual connection. Never
+         * adopt the placeholder or clear the pairing deadline on acceptance. */
+        if(p->open.status==ESP_HIDH_OK && p->open.conn_status==ESP_HIDH_CONN_STATE_CONNECTING)return;
         if(active_handle>=0) {
-            if(p->open.status==ESP_HIDH_OK && p->open.handle!=active_handle)esp_bt_hid_host_disconnect(p->open.bd_addr);
+            if(p->open.status==ESP_HIDH_OK && p->open.conn_status==ESP_HIDH_CONN_STATE_CONNECTED &&
+               p->open.handle!=0xff && p->open.handle!=active_handle)esp_bt_hid_host_disconnect(p->open.bd_addr);
             return;
         }
         atomic_store(&accept_input,0);neutral();
         if(p->open.status!=ESP_HIDH_OK){state(SM_BT_ERROR,p->open.status);neutral();return;}
+        if(p->open.conn_status!=ESP_HIDH_CONN_STATE_CONNECTED || p->open.handle==0xff)return;
         if(!pairing_allowed(p->open.bd_addr)){esp_bt_hid_host_disconnect(p->open.bd_addr);state(SM_BT_ERROR,SM_INVALID);return;}
         active_handle=p->open.handle;
         memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};last_input_log=0;
@@ -210,6 +216,11 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         }
     } else if(e==ESP_HIDH_CLOSE_EVT || e==ESP_HIDH_VC_UNPLUG_EVT) {
         if((e==ESP_HIDH_CLOSE_EVT?p->close.handle:p->unplug.handle)!=active_handle)return;
+        /* Disconnect also has an intermediate acknowledgement. Retain handle
+         * ownership until final CLOSE so a reconnect cannot race the old link. */
+        if((e==ESP_HIDH_CLOSE_EVT?p->close.conn_status:p->unplug.conn_status)!=ESP_HIDH_CONN_STATE_DISCONNECTED) {
+            atomic_store(&accept_input,0);neutral();return;
+        }
         active_handle=-1;
         atomic_store(&accept_input,0);neutral();memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};state(SM_BT_READY,0);
     }

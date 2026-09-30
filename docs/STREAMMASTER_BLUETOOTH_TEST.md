@@ -1,5 +1,27 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.7 real versus intermediate HID events
+
+New log repeatedly reports state=5/reports=0 (17850, 101288, 161286, 189033,
+250748 ms). Internal free heap is now 38175–42311 bytes in the sampled rows,
+so the memory fix is retained. No claim that playback stability is proven yet.
+
+Exact SDK path: btc_hh_connect emits ESP_HIDH_OPEN_EVT with OK, CONNECTING and
+BTA_HH_INVALID_HANDLE (0xff) immediately after queuing BTA_HhOpen. The later
+BTA_HH_OPEN_EVT handler emits CONNECTED with the actual handle. Our callback
+had accepted the first event, cleared pair_until and adopted 255; 0.3.6's
+new active-handle guard then rejected/disconnected the actual handle. Fix the
+state interpretation rather than removing stale-handle protection. Likewise,
+btc_hh_disconnect first emits DISCONNECTING, not final disconnection.
+
+Both firmware variants are built before the focused ASan/UBSan callback test.
+It compiles the production hid() function and exercises acknowledgements,
+valid open, descriptor and input, duplicate acknowledgements, stale close,
+disconnecting/final close, repeated reconnect and a genuine SDP error.
+PSP app/kernel bridge unchanged. Hardware test: component flash with flash_args
+to preserve bonds, reconnect without deleting them first, then test input and
+browsing. Newly discovered device pairing should also deliver input again.
+
 ## Follow-up: 0.3.6 internal memory and saved-controller reconnect
 
 New mounted logs: latest session at 158809 ms reports wifi=2, reason=0, RSSI=-46
