@@ -78,12 +78,14 @@ static void cancel_test_owner(void){channels[0].cancel=1;}
 static void exercise_owner(int mode){
     Channel *c=&channels[0];
     c->state=SM_SOCKET_CONNECTING;c->done=c->cancel=0;c->open.token=1;
+    memset(&c->diag,0,sizeof(c->diag));c->diag.token=1;
     strcpy(c->open.host,"example.test");c->open.port=443;c->open.tls=1;
     c->rx_read=c->rx_write=c->tx_read=0;c->tx_write=16;memset(c->tx,42,16);
     owner_mode=mode;owner_notifications=owner_reads=owner_writes=owner_delays=0;
     if(!setjmp(owner_exit))socket_worker(c);
     assert(c->done && !owner_live);
-    if(mode==1){assert(c->state==SM_SOCKET_EOF && c->tx_read==16 && c->rx_write==5 && owner_writes==3);}
+    if(mode==1){assert(c->state==SM_SOCKET_EOF && c->tx_read==16 && c->rx_write==5 && owner_writes==3);
+        assert(c->diag.rx_bytes==5 && c->diag.tx_bytes==16 && c->diag.again==1 && c->diag.loops==3 && c->diag.last_io==0);}
     else if(mode==2)assert(c->state==SM_SOCKET_FREE);
     else assert(c->state==SM_SOCKET_ERROR);
     c->state=SM_SOCKET_FREE;c->cancel=0;
@@ -241,6 +243,21 @@ int main(void){
     assert(stm_poll(p,2,0)==1 && !p[0].revents && (p[1].revents&SCE_NET_INET_POLLIN));
     char got[8];assert(stm_recv(fds[1],got,8,0)==4 && !memcmp(got,"last",4));
     assert(stm_poll(p+1,1,0)==1 && (p[1].revents&SCE_NET_INET_POLLERR));
+    /* Waiting POLLOUT cannot flood USB, even with repeated nonblocking polls.
+     * Ready sockets are never cached and a second socket remains independent. */
+    unsigned status_before=rpc_count;
+    for(int i=0;i<100;i++)assert(stm_poll(p,1,0)==0);
+    assert(rpc_count==status_before);
+    assert(stm_poll(p,1,1000)==0);
+    assert(rpc_count-status_before>=49 && rpc_count-status_before<=51);
+    c=channel(fds[0]);c->state=SM_SOCKET_READY;held_token=0;clock_us+=20000;
+    assert(stm_poll(p,1,0)==1 && (p[0].revents&SCE_NET_INET_POLLOUT));
+    c->state=SM_SOCKET_ERROR;
+    assert(stm_poll(p,1,0)==1 && (p[0].revents&SCE_NET_INET_POLLERR));
+    SmNetDiag net={0};sm_sockets_diagnostic(&net);
+    assert(net.sampled==63 && net.socket[0].token==c->diag.token && net.socket[0].state==SM_SOCKET_ERROR);
+    *channels[0].lock=0;memset(&net,0,sizeof(net));sm_sockets_diagnostic(&net);
+    assert(net.sampled==62);*channels[0].lock=1; /* Diagnostics never wait on an owner. */
     /* Buffered bytes cannot survive transport cancellation/re-enumeration. */
     clock_us+=100000;
     c=channel(fds[2]);copy_in(c->rx,RX_SIZE,c->rx_write,(const unsigned char *)"abc",3);c->rx_write+=3;

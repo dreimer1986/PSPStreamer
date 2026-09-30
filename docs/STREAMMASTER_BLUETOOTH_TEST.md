@@ -1,5 +1,37 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.5 controller works, server stalls
+
+User confirms discovery, pairing and input. Mounted log reaches two discovered
+devices at 91.550 s and connecting at 96.007 s. Received bytes plateau at 32625
+from approximately 159 s; status RPCs continue at up to roughly 870/s, with no
+reported USB transport errors. Socket pool free space stays 124856, peak live
+sockets two. Later connect attempts fail with -1005. This does not identify
+whether ESP scheduling, RF interference or another network issue causes it.
+
+Limit unready POLLOUT status RPCs per socket to 50/s, across poll(...,0) calls.
+Do not cache readiness, throttle actual payload transfers or extend timeouts.
+Optional capability 64 / command 43 supplies six bounded per-socket snapshots.
+Logs distinguish increasing would-block counts (owner running, no input) from
+stale task heartbeats and report Wi-Fi state/reason/RSSI and internal free heap.
+A connecting task can naturally have an aging heartbeat during its blocking
+connect call. UINT32_MAX rx_age means no received bytes. Free slots retain the
+last connection's counters until reuse; their heartbeat age is not starvation.
+The sampled bitmask identifies acquired locks; unsampled slots are not zeroed
+measurements. Diagnostic collection never waits on a socket owner lock.
+
+Hardware test: update EBOOT and DIO or QIO firmware, keep HTTP and debug logging
+unchanged, pair the controller and browse/play while using it. If traffic stops,
+leave it running for 30 seconds before saving PSP/SYSTEM logs. Compare with the
+controller disconnected, without simultaneously changing AP/protocol/clock.
+
+Verification: PSP app and both firmware variants built before focused tests.
+Production transport/socket harness passes (including 50/s status throttling,
+nonblocking polls, prompt ready/error handling, independent sockets, diagnostic
+counters and nonblocking snapshot locks), as does the protocol/configuration
+harness under ASan/UBSan. No full-project suite. No compiler warnings in these
+builds. Hardware outcome remains pending; firmware was packaged, not flashed.
+
 ## Follow-up: 0.3.4 PSP-first startup
 
 Mounted log: five `wait USB attach` timeouts up to 153599 ms, attach success at

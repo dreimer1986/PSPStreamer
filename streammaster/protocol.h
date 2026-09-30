@@ -21,6 +21,19 @@ enum {SM_PROFILES_GET=14,SM_PROFILE_SAVE,SM_PROFILE_SELECT,SM_PROFILE_DELETE,SM_
 #define SM_CAP_USB_METRICS 8U
 #define SM_CAP_PROFILES 16U
 #define SM_CAP_GAMEPAD 32U
+#define SM_CAP_NET_DIAG 64U
+#define SM_NET_DIAG 43U
+typedef struct {
+    uint32_t token,state,loops,rx_bytes,tx_bytes,again,heartbeat_ms,rx_age_ms;
+    int32_t last_io,last_errno;
+    uint32_t connect_ms,available;
+} SmSocketDiag;
+typedef struct {
+    uint32_t wifi_state,disconnect_reason,internal_free,sampled;
+    int32_t rssi;
+    SmSocketDiag socket[6];
+} SmNetDiag;
+_Static_assert(sizeof(SmNetDiag)==308,"Network diagnostics layout");
 #define SM_BT_STATUS 40U
 #define SM_BT_ACTION 41U
 #define SM_BT_USB_DIAG 42U

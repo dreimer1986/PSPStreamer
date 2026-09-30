@@ -69,9 +69,22 @@ static void socket_snapshot_tick(void) {
     if(now>=socket_snapshot_next) {
         socket_snapshot_next=now+30000000ULL;
         socket_snapshot("socket resources",0);
-        char usb[176];
+        char usb[256];
         if(stm_diagnostic_snapshot(usb,sizeof(usb),0))recovery_log("USB throughput",0,0,usb);
         if(stm_diagnostic_snapshot(usb,sizeof(usb),1))recovery_log("ESP RX samples",0,0,usb);
+        SmNetDiag net;
+        if(stm_network_diagnostic(&net)) {
+            snprintf(usb,sizeof(usb),"wifi=%u reason=%u rssi=%d internal_free=%u sampled=%x",
+                (unsigned)net.wifi_state,(unsigned)net.disconnect_reason,(int)net.rssi,(unsigned)net.internal_free,(unsigned)net.sampled);
+            recovery_log("ESP network",0,0,usb);
+            for(unsigned i=0;i<6;i++)if((net.sampled&(1U<<i)) && net.socket[i].token) {
+                SmSocketDiag *d=&net.socket[i];
+                snprintf(usb,sizeof(usb),"slot=%u token=%u state=%u loops=%u rx=%u tx=%u again=%u beat_ms=%u rx_age=%u conn_ms=%u avail=%u io=%d errno=%d",
+                    i,(unsigned)d->token,(unsigned)d->state,(unsigned)d->loops,(unsigned)d->rx_bytes,(unsigned)d->tx_bytes,
+                    (unsigned)d->again,(unsigned)d->heartbeat_ms,(unsigned)d->rx_age_ms,(unsigned)d->connect_ms,(unsigned)d->available,(int)d->last_io,(int)d->last_errno);
+                recovery_log("ESP socket",0,0,usb);
+            }
+        }
     }
     __sync_lock_release(&socket_snapshot_lock);
 }

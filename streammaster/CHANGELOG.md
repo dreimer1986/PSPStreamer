@@ -1,5 +1,20 @@
 # StreamMaster firmware changelog
 
+## 0.3.5-bt-dio / 0.3.5-bt-qio — Concurrent controller/network diagnostics
+
+- User confirmed discovery, pairing and PSP control with 0.3.4, followed by
+  stalled server traffic. USB RPCs continued, without a growing PSP socket pool.
+- PSP now limits unsuccessful write/connect status probes to one per socket
+  per 20 ms, including nonblocking polls. Ready transfers retain their fast path.
+- Add optional, bounded network snapshots: Wi-Fi state/reason/RSSI, internal
+  free heap, socket task heartbeat, received/sent bytes, would-block counts,
+  connection duration, last I/O result and errno. PSP debug logs collect these
+  every 30 seconds alongside existing diagnostics; no credentials or payloads.
+- Bluetooth menu refreshes its device list asynchronously every two seconds;
+  refresh workers are reused/reaped, not left polling after exiting the menu.
+- No changes to media timeouts, task priorities, Wi-Fi tuning or hub handling.
+  Concurrent operation still requires the physical controller/playback test.
+
 ## 0.3.4-bt-dio / 0.3.4-bt-qio — PSP-first startup
 
 - Defer claiming the Bluetooth HCI interface until the PSP streaming interface

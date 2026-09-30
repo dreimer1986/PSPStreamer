@@ -254,11 +254,28 @@ static void sm_choose_ap(void) {
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
 }
+/* One menu-local async snapshot, no persistent background poller. Separate
+ * storage prevents the renderer seeing a partially received device list. */
+static SmBtStatus sm_bt_refresh;
+static int sm_bt_refresh_worker(SceSize args,void *argp) {
+    (void)args;(void)argp;unsigned length=0;
+    int rc=stm_rpc(SM_BT_STATUS,NULL,0,&sm_bt_refresh,sizeof(sm_bt_refresh),&length,&sm_running);
+    if(rc>=0 && (length!=sizeof(sm_bt_refresh) || sm_bt_refresh.count>8 || sm_bt_refresh.state>SM_BT_ERROR))rc=SM_IO;
+    for(unsigned i=0;i<8;i++)sm_bt_refresh.device[i].name[47]=0;
+    sm_result=rc;__sync_synchronize();sm_finished=1;return 0;
+}
 static void streammaster_bluetooth(void) {
     unsigned selected=0,old=PSP_CTRL_CROSS;int dirty=1,confirm=0;
     int rc=sm_run(SM_BT_STATUS);
+    SceInt64 refresh_at=sceKernelGetSystemTimeWide()+2000000;
+    int refreshing=0;
     for(;;) {
         keep_awake();SceCtrlData p;sceCtrlReadBufferPositive(&p,1);unsigned pressed=p.Buttons&~old;
+        if(refreshing && sm_finished && sm_reap()==0) {
+            __sync_synchronize();rc=sm_result;
+            if(rc>=0)sm_bt_status=sm_bt_refresh;
+            refreshing=0;dirty=1;refresh_at=sceKernelGetSystemTimeWide()+2000000;
+        }
         unsigned count=rc<0?3:3+sm_bt_status.count;if(selected>=count)selected=0;
         if(dirty) {
             settings_shell(tr(TXT_SM_BT));
@@ -272,6 +289,7 @@ static void streammaster_bluetooth(void) {
             settings_help(tr(TXT_SM_BT_HELP));dirty=0;
         }
         if(pressed&PSP_CTRL_CIRCLE)break;
+        if(refreshing){old=p.Buttons;sceKernelDelayThread(20000);continue;}
         if(pressed&PSP_CTRL_SQUARE){rc=sm_run(SM_BT_STATUS);dirty=1;confirm=0;}
         if(pressed&PSP_CTRL_CROSS) {
             if(selected==2&&!confirm){confirm=1;dirty=1;}
@@ -283,6 +301,16 @@ static void streammaster_bluetooth(void) {
             }
         }
         if(pressed&(PSP_CTRL_UP|PSP_CTRL_DOWN)) {selected=(selected+(pressed&PSP_CTRL_UP?count-1:1))%count;confirm=0;dirty=1;}
+        if(pressed)refresh_at=sceKernelGetSystemTimeWide()+2000000;
+        if(!confirm && sceKernelGetSystemTimeWide()>=refresh_at && sm_reap()==0) {
+            sm_running=1;sm_finished=0;
+            sm_thread=sceKernelCreateThread("BT menu refresh",sm_bt_refresh_worker,0x18,16384,PSP_THREAD_ATTR_USER,NULL);
+            if(sm_thread>=0) {
+                if(sceKernelStartThread(sm_thread,0,NULL)>=0)refreshing=1;
+                else {sceKernelDeleteThread(sm_thread);sm_thread=-1;}
+            }
+            refresh_at=sceKernelGetSystemTimeWide()+2000000;
+        }
         old=p.Buttons;sceKernelDelayThread(20000);
     }
 }

@@ -3,6 +3,7 @@
 #include "board.h"
 #include "../profiles.h"
 #include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdatomic.h>
@@ -174,7 +175,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
     case SM_CAPABILITIES: {
-        uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES;
+        uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES|SM_CAP_NET_DIAG;
 #if CONFIG_BT_BLUEDROID_ENABLED
         caps|=SM_CAP_GAMEPAD;
 #endif
@@ -184,6 +185,12 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     case SM_BT_STATUS:case SM_BT_ACTION:case SM_BT_USB_DIAG:
         out->result=sm_gamepad_command(r,out);break;
 #endif
+    case SM_NET_DIAG: {
+        SmNetDiag d={.wifi_state=atomic_load(&state),.disconnect_reason=atomic_load(&reason),
+            .internal_free=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),.rssi=-127};
+        wifi_ap_record_t ap;if(esp_wifi_sta_get_ap_info(&ap)==ESP_OK)d.rssi=ap.rssi;
+        sm_sockets_diagnostic(&d);memcpy(out->payload,&d,sizeof(d));out->length=sizeof(d);break;
+    }
     case SM_USB_METRICS: {
         SmUsbMetrics metrics;sm_usb_metrics_snapshot(&metrics);memcpy(out->payload,&metrics,sizeof(metrics));out->length=sizeof(metrics);break;
     }

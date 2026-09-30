@@ -15,7 +15,7 @@ typedef struct {
     int fd,nonblock,opened,eof,dead,opening,connected;
     unsigned token,epoch,pos,end;
     unsigned read_backoff;
-    SceInt64 read_retry,open_retry,diagnostic_next,empty_since;
+    SceInt64 read_retry,open_retry,diagnostic_next,empty_since,status_retry;
     SmSocketOpen destination;
     SmBulkResult buffers[2];
     unsigned cache_index;
@@ -373,6 +373,11 @@ int stm_usb_metrics(SmUsbMetrics *out) {
     if(!selected || !diagnostic_enabled || !(peer_caps&SM_CAP_USB_METRICS) || broken)return 0;
     return stm_rpc(SM_USB_METRICS,NULL,0,out,sizeof(*out),&length,NULL)==0 && length==sizeof(*out);
 }
+int stm_network_diagnostic(SmNetDiag *out) {
+    unsigned length=0;
+    if(!selected || !diagnostic_enabled || !(peer_caps&SM_CAP_NET_DIAG) || broken)return 0;
+    return stm_rpc(SM_NET_DIAG,NULL,0,out,sizeof(*out),&length,NULL)==0 && length==sizeof(*out);
+}
 /* A read probe also collects the data. Previously POLLIN used a full STATUS
  * exchange followed by a second full READ exchange for the same 4 KiB block. */
 static int socket_refill(LocalSocket *s) {
@@ -432,10 +437,17 @@ int stm_poll(struct SceNetInetPollfd *fds,size_t count,int timeout) {
                         else if(rc<0)p->revents|=SCE_NET_INET_POLLERR;
                     }
                     if(p->events&SCE_NET_INET_POLLOUT) {
-                        SmSocketStatus status={0};rc=socket_status(s,&status);
+                        SmSocketStatus status={0};
+                        /* Per socket, across poll(...,0) calls as well. Never
+                         * cache readiness: a writer can consume the space. */
+                        rc=0;
+                        if(sceKernelGetSystemTimeWide()>=s->status_retry) {
+                            rc=socket_status(s,&status);
+                            s->status_retry=sceKernelGetSystemTimeWide()+20000;
+                        }
                         if(rc<0)p->revents|=SCE_NET_INET_POLLERR;
                         else if(rc>0) {
-                            if(status.state==SM_SOCKET_READY && status.space>=SM_PAYLOAD_SIZE)p->revents|=SCE_NET_INET_POLLOUT;
+                            if(status.state==SM_SOCKET_READY && status.space>=SM_PAYLOAD_SIZE){p->revents|=SCE_NET_INET_POLLOUT;s->status_retry=0;}
                             if(status.state==SM_SOCKET_ERROR || status.state==SM_SOCKET_EOF)p->revents|=SCE_NET_INET_POLLERR;
                         }
                     }

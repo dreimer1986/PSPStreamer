@@ -115,15 +115,20 @@ observations, not a guaranteed live inventory. Phase 1=open, 2=device descriptor
 Phase 8 means waiting for the PSP interface, not an unsupported adapter.
 The additional `StreamMaster PSP USB` log records its last interface-claim result
 or offline state. `error=00000000` means no error. Bluetooth state 2 is ready,
-state 3 is scanning: wait at least 12 seconds, then refresh with Square to see
-discovery results. The controller must be in discoverable Classic HID pairing
+state 3 is scanning: wait at least 12 seconds. Starting with 0.3.5 the menu
+refreshes asynchronously every two seconds; Square also refreshes manually.
+The controller must be in discoverable Classic HID pairing
 mode; merely powering it on is not enough.
 The optional query is only made in the Bluetooth menu, not during playback.
 ESP UART0 logs at 115200 baud
 add descriptor size/field count and the first decoded report; these require UART
 access, not the native USB port currently occupied by host mode. For a failure,
 provide the PSP logs and state whether it was DIO or QIO. Pairing, external-HCI compatibility, PSP EP0
-delivery and hub hotplug **require the first physical test**.
+delivery have been confirmed by the user; concurrent controller/server operation
+and hub hotplug still require verification. Version 0.3.5 additionally records
+`ESP network` and `ESP socket` snapshots every 30 seconds when PSP debug logging
+is enabled. These separate socket-worker inactivity from repeated would-block
+reads and Wi-Fi disconnects. No new media timeout or task-priority tuning is used.
 
 ## Rebuild and licensing
 

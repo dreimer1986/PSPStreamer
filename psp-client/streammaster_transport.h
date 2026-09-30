@@ -10,6 +10,7 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers);
 int stm_download_snapshot(int fd,char *line,unsigned size);
 void stm_tuning(unsigned kib,unsigned depth);
 int stm_usb_metrics(SmUsbMetrics *out);
+int stm_network_diagnostic(SmNetDiag *out);
 void stm_server(const char *host,int port,int https);
 int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capacity,unsigned *length,volatile int *running);
 int stm_driver_start(int force,volatile int *running);
