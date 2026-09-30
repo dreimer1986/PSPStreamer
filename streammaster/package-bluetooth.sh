@@ -8,9 +8,17 @@ for file in ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/
 done
 mkdir -p release/PSPStreamer
 cp ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx release/PSPStreamer/
-for mode in dio qio; do
+mode_selection="${1:-all}"
+case "$mode_selection" in
+    all) modes=(dio qio);;
+    dio|qio|qio80) modes=("$mode_selection");;
+    *) echo "Usage: $0 [all|dio|qio|qio80]" >&2; exit 2;;
+esac
+for mode in "${modes[@]}"; do
     build_dir=build-bluetooth
-    [[ "$mode" != qio ]] || build_dir=build-bluetooth-qio
+    flash_freq=40m
+    [[ "$mode" == dio ]] || build_dir="build-bluetooth-$mode"
+    [[ "$mode" != qio80 ]] || flash_freq=80m
     release_dir="release/StreamMaster-Bluetooth-${mode^^}"
     for file in bootloader/bootloader.bin partition_table/partition-table.bin streammaster_onju_v3.bin flash_args; do
         test -s "$build_dir/$file"
@@ -30,12 +38,14 @@ for mode in dio qio; do
     git rev-parse HEAD > "$release_dir/SOURCE_REVISION.txt"
     git status --short > "$release_dir/SOURCE_STATUS.txt"
     # QIO is enabled by the compiled bootloader; its initial image header is DIO.
-    python -m esptool --chip esp32s3 merge_bin --flash_mode dio --flash_size 16MB --flash_freq 40m \
+    python -m esptool --chip esp32s3 merge_bin --flash_mode dio --flash_size 16MB --flash_freq "$flash_freq" \
         -o "$release_dir/streammaster-onju-v3-factory.bin" \
         0x0 "$build_dir/bootloader/bootloader.bin" 0x8000 "$build_dir/partition_table/partition-table.bin" \
         0x10000 "$build_dir/streammaster_onju_v3.bin"
     (cd "$release_dir" && sha256sum bootloader/bootloader.bin partition_table/partition-table.bin ./*.bin > SHA256SUMS)
 done
 # Published Onju default: tested QIO image. DIO keeps its explicit fallback name.
-mkdir -p release/StreamMaster-Onju-V3
-cp -a release/StreamMaster-Bluetooth-QIO/. release/StreamMaster-Onju-V3/
+if [[ "$mode_selection" == all || "$mode_selection" == qio ]]; then
+    mkdir -p release/StreamMaster-Onju-V3
+    cp -a release/StreamMaster-Bluetooth-QIO/. release/StreamMaster-Onju-V3/
+fi

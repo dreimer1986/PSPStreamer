@@ -1,0 +1,2 @@
+# Flash-only comparison; CPU and Octal PSRAM clocks remain unchanged.
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
