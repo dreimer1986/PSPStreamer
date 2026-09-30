@@ -1,6 +1,6 @@
 # Experimental USB Bluetooth controllers — Onju Voice V3
 
-Version **0.3.1-bt-dio / 0.3.1-bt-qio**, hardware validation pending.
+Version **0.3.2-bt-dio / 0.3.2-bt-qio**, hardware validation pending.
 This is not a replacement for the proven Wi-Fi-only 0.3.0 release.
 
 ## Hardware and scope
@@ -23,6 +23,12 @@ EP0 (one port per 50 ms), replacing the hub's separate interrupt channel.
 That leaves exactly eight channels. The build generates a patched copy of one
 ESP-IDF v5.5.1 USB source file and rejects other source revisions; the installed
 SDK itself is never modified. Hotplug/debounce remains handled by IDF.
+
+Version 0.3.2 fixes the 0.3.1 hub polling regression: raw probes run only after
+all port work has completed. Unchanged status is discarded; actual change bits
+hand control back to the original port state machine. Probes never enqueue
+unconditional port GET_STATUS actions during reset/enumeration. The PSP app and
+StreamMasterUSB.prx from the 0.3.1 test package do not need replacing for this fix.
 
 ## Installation and first test
 

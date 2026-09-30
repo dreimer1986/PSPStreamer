@@ -8,9 +8,9 @@ option(STREAMMASTER_BLUETOOTH "Experimental external USB Bluetooth build" OFF)
 option(STREAMMASTER_QIO "QIO comparison label (requires sdkconfig.qio)" OFF)
 set(PROJECT_VER "0.3.0")
 if(STREAMMASTER_BLUETOOTH)
-    set(PROJECT_VER "0.3.1-bt-dio")
+    set(PROJECT_VER "0.3.2-bt-dio")
     if(STREAMMASTER_QIO)
-        set(PROJECT_VER "0.3.1-bt-qio")
+        set(PROJECT_VER "0.3.2-bt-qio")
     endif()
 endif()
 if(STREAMMASTER_O3)
@@ -24,6 +24,8 @@ if(CONFIG_BT_BLUEDROID_ENABLED)
     endif()
     # Eight host channels: hub EP0 + PSP EP0/IN/OUT + HCI EP0/INT/IN/OUT.
     # Generate one reviewed hub source; never modify the shared SDK checkout.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/hub_poll_build.py")
     execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/hub_poll_build.py"
         "$ENV{IDF_PATH}/components/usb/ext_hub.c" "${CMAKE_BINARY_DIR}/sm_ext_hub.c"
         COMMAND_ERROR_IS_FATAL ANY)

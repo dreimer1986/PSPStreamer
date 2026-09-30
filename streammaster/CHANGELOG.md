@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.2-bt-dio / 0.3.2-bt-qio — Hub polling correction
+
+- Fix the experimental hub poller injecting unconditional GET_STATUS actions
+  into IDF's port state machine, including during reset/enumeration.
+- Poll only after all port work is complete, discard unchanged raw status,
+  and hand actual change bits back to IDF's normal port handling. This avoids
+  duplicate RESET_COMPLETED events and interference with queued reset actions.
+- PSP logs confirmed an attach timeout before network setup. Both firmware
+  variants build; focused generated-code regression checks pass. Physical hub
+  recovery still requires a retest. PSP application/driver remain unchanged.
+
 ## 0.3.1-bt-dio / 0.3.1-bt-qio — Experimental USB Bluetooth
 
 - Add host-only Bluedroid with an external CSR8510/Barrot USB HCI adapter;

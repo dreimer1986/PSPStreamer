@@ -1,5 +1,28 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.2 hub regression fix
+
+User A/B test: 0.3.1 connects directly but fails behind the same hub even with
+no Bluetooth dongle; the previous firmware connects with that hub and dongle.
+The mounted PSP log contains `result=-4 stage=wait USB attach` (109795 and
+113560 ms), so failure precedes WLAN and Bluetooth pairing. Mounted EBOOT and
+StreamMasterUSB.prx match the supplied test files by SHA256.
+
+Code review found unconditional polling GET_STATUS actions entered the port
+state machine without a change event and while existing port work could still
+be pending. IDF's unchanged ENABLED path can emit RESET_COMPLETED again; its
+GET_STATUS action also has priority over a queued RESET. The corrected poller
+arms where IDF would re-enable hub interrupts, sends a raw EP0 probe and only
+notifies the original driver for nonzero change bits. This preserves the
+driver's status_lock and reset sequence; unchanged polls do not touch them.
+
+DIO/QIO builds were produced before the focused generated-C regression test.
+That check covers 100 unchanged polls, changed-status handoff, normal driver
+responses, reset/busy exclusion and removal guards under ASan/UBSan. Hardware
+success remains unconfirmed until the user retests hub-only, then hub+dongle.
+
+## Initial implementation (0.3.1)
+
 The first hardware test uses Onju Voice V3 + one powered hub + PSP + CSR8510
 (`0a12:0001`), with a Snakebyte iDroid:con Classic HID controller. The alternative
 detected Barrot dongle (`33fa:0010`) is allowlisted but secondary. Xbox 1697 is
