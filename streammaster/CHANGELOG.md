@@ -1,5 +1,17 @@
 # StreamMaster firmware changelog
 
+## 0.3.3-bt-dio / 0.3.3-bt-qio — USB adapter diagnostics
+
+- Hub connection confirmed by user; Bluetooth still not active. Existing logs
+  showed no claimed adapter, not a controller pairing failure.
+- Report a recognized adapter's VID/PID and descriptor/interface claim errors
+  even before HCI startup; these failures previously appeared as no adapter.
+- Add an optional bounded USB-probe diagnostic command and PSP log output when
+  opening/refreshing the Bluetooth menu. No new background polling or media changes.
+- CSR8510 descriptors read directly on the PC match the implemented HCI interface
+  and endpoints. Exact Onju rejection stage still needs the new hardware log.
+- Updated EBOOT required for the detailed log; USB kernel bridge unchanged.
+
 ## 0.3.2-bt-dio / 0.3.2-bt-qio — Hub polling correction
 
 - Fix the experimental hub poller injecting unconditional GET_STATUS actions

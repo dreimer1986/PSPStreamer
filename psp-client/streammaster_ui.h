@@ -19,6 +19,7 @@ static SmNetworkInfo sm_network;
 static SmScan sm_scan;
 static SmBtStatus sm_bt_status;
 static SmBtAction sm_bt_action;
+static SmBtUsbDiag sm_bt_usb_diag;
 static SmHttpOpen sm_server;
 static const char *sm_stage="idle";
 static int sm_step(const char *stage,int rc) {
@@ -156,6 +157,19 @@ static int sm_worker(SceSize size,void *args) {
                     (unsigned)sm_bt_status.count,(unsigned)sm_bt_status.reports,(unsigned)sm_bt_status.error);
                 recovery_log("StreamMaster Bluetooth",sm_bt_status.error,0,detail);
             }
+        }
+        /* Optional diagnostic extension: old firmware may reject it. Do not
+         * replace the original action/status result with this extra query. */
+        if(!sm_cancel && sm_rpc(SM_BT_USB_DIAG,NULL,0)>=0 && sm_response.length==sizeof(sm_bt_usb_diag)) {
+            memcpy(&sm_bt_usb_diag,sm_response.payload,sizeof(sm_bt_usb_diag));
+            if(sm_bt_usb_diag.count<=8)for(unsigned i=0;i<sm_bt_usb_diag.count;i++) {
+                const SmBtUsbProbe *p=&sm_bt_usb_diag.probe[i];char detail[192];
+                snprintf(detail,sizeof(detail),"addr=%u usb=%04X:%04X phase=%u rc=%08X devclass=%06X iface=%08X ep=%06X attempts=%u",
+                    (unsigned)p->address,(unsigned)p->vid,(unsigned)p->pid,(unsigned)p->phase,(unsigned)p->result,
+                    (unsigned)p->device_class,(unsigned)p->interface_class,(unsigned)p->endpoints,(unsigned)p->attempts);
+                recovery_log("StreamMaster BT USB",p->result,0,detail);
+            }
+            if(!sm_bt_usb_diag.count)recovery_log("StreamMaster BT USB",0,0,"no enumeration probes recorded");
         }
     } else rc=sm_rpc(sm_job,NULL,0);
     memset(&sm_server,0,sizeof(sm_server));memset(&sm_response,0,sizeof(sm_response));

@@ -1,6 +1,6 @@
 # Experimental USB Bluetooth controllers — Onju Voice V3
 
-Version **0.3.2-bt-dio / 0.3.2-bt-qio**, hardware validation pending.
+Version **0.3.3-bt-dio / 0.3.3-bt-qio**, hardware validation pending.
 This is not a replacement for the proven Wi-Fi-only 0.3.0 release.
 
 ## Hardware and scope
@@ -29,6 +29,12 @@ all port work has completed. Unchanged status is discarded; actual change bits
 hand control back to the original port state machine. Probes never enqueue
 unconditional port GET_STATUS actions during reset/enumeration. The PSP app and
 StreamMasterUSB.prx from the 0.3.1 test package do not need replacing for this fix.
+
+Version 0.3.3 adds USB discovery diagnostics after the hub fix was confirmed on
+hardware. It requires the updated EBOOT for PSP-side diagnostic logging; the
+kernel bridge is unchanged. This is a diagnostic build, not a claimed pairing
+fix. A supported adapter rejected during descriptor parsing/interface claiming
+now reports its VID/PID and actual error instead of appearing absent.
 
 ## Installation and first test
 
@@ -92,7 +98,14 @@ Bluetooth reports an adapter/host error, power-cycle the Onju before retesting;
 automatic host recovery after every adapter fault is not yet guaranteed.
 
 Refreshing the Bluetooth menu writes adapter VID/PID, state and report count to
-the PSP diagnostic log when logging is enabled. ESP UART0 logs at 115200 baud
+the PSP diagnostic log when logging is enabled. Version 0.3.3 additionally logs
+up to eight `StreamMaster BT USB` records: address, VID/PID, device/interface
+class, endpoint addresses, last phase, error and attempt count. These are last
+observations, not a guaranteed live inventory. Phase 1=open, 2=device descriptor,
+3=allowlist filter, 4=configuration, 5=HCI interface, 6=interface/channel claim,
+7=host start. Rejected PSP/hub rows at phase 3 are normal; inspect the dongle row.
+The optional query is only made in the Bluetooth menu, not during playback.
+ESP UART0 logs at 115200 baud
 add descriptor size/field count and the first decoded report; these require UART
 access, not the native USB port currently occupied by host mode. For a failure,
 provide the PSP logs and state whether it was DIO or QIO. Pairing, external-HCI compatibility, PSP EP0

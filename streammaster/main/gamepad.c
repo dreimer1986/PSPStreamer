@@ -18,6 +18,17 @@
 static const char *TAG="gamepad";
 static portMUX_TYPE guard=portMUX_INITIALIZER_UNLOCKED;
 static SmBtStatus status;
+static SmBtUsbDiag usb_diag;
+static void record_probe(SmBtUsbProbe *p) {
+    portENTER_CRITICAL(&guard);
+    unsigned i;
+    for(i=0;i<usb_diag.count;i++)if(usb_diag.probe[i].address==p->address)break;
+    if(i==8)i=7;
+    unsigned attempts=i<usb_diag.count?usb_diag.probe[i].attempts:0;
+    usb_diag.probe[i]=*p;usb_diag.probe[i].attempts=attempts+1;
+    if(i==usb_diag.count)usb_diag.count++;
+    portEXIT_CRITICAL(&guard);
+}
 static SmPad pad={.magic=SM_PAD_MAGIC,.x=128,.y=128};
 static SmHidMap map;
 static SmHidPad hidpad={.x=128,.y=128};
@@ -64,6 +75,10 @@ void sm_gamepad_snapshot(SmPad *out) {
     portENTER_CRITICAL(&guard);*out=pad;portEXIT_CRITICAL(&guard);
 }
 int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
+    if(r->op==SM_BT_USB_DIAG && !r->length) {
+        portENTER_CRITICAL(&guard);memcpy(out->payload,&usb_diag,sizeof(usb_diag));portEXIT_CRITICAL(&guard);
+        out->length=sizeof(usb_diag);return SM_OK;
+    }
     if(r->op==SM_BT_STATUS && !r->length) {
         portENTER_CRITICAL(&guard);memcpy(out->payload,&status,sizeof(status));portEXIT_CRITICAL(&guard);
         out->length=sizeof(status);return SM_OK;
@@ -240,16 +255,28 @@ static void event(const usb_host_client_event_msg_t *e,void *arg) {
     if(e->event==USB_HOST_CLIENT_EVENT_DEV_GONE && e->dev_gone.dev_hdl==dev){gone=1;atomic_store(&online,0);atomic_store(&accept_input,0);neutral();}
 }
 static int open_adapter(unsigned address) {
-    if(usb_host_device_open(client,address,&dev)!=ESP_OK)return 0;
+    SmBtUsbProbe probe={.address=address,.phase=SM_BT_PROBE_OPEN};
+    int known=0;
+    probe.result=usb_host_device_open(client,address,&dev);
+    if(probe.result!=ESP_OK){record_probe(&probe);return 0;}
     const usb_device_desc_t *d;const usb_config_desc_t *c;
-    if(usb_host_get_device_descriptor(dev,&d)!=ESP_OK ||
-       !((d->idVendor==0x0a12&&d->idProduct==1)||(d->idVendor==0x33fa&&d->idProduct==0x10)) ||
-       usb_host_get_active_config_descriptor(dev,&c)!=ESP_OK)goto reject;
+    probe.phase=SM_BT_PROBE_DESCRIPTOR;
+    if((probe.result=usb_host_get_device_descriptor(dev,&d))!=ESP_OK)goto reject;
+    probe.vid=d->idVendor;probe.pid=d->idProduct;
+    probe.device_class=(unsigned)d->bDeviceClass<<16|(unsigned)d->bDeviceSubClass<<8|d->bDeviceProtocol;
+    probe.phase=SM_BT_PROBE_FILTER;
+    known=(d->idVendor==0x0a12&&d->idProduct==1)||(d->idVendor==0x33fa&&d->idProduct==0x10);
+    if(!known){probe.result=ESP_ERR_NOT_SUPPORTED;goto reject;}
+    portENTER_CRITICAL(&guard);status.vid=d->idVendor;status.pid=d->idProduct;portEXIT_CRITICAL(&guard);
+    probe.phase=SM_BT_PROBE_CONFIG;
+    if((probe.result=usb_host_get_active_config_descriptor(dev,&c))!=ESP_OK)goto reject;
+    probe.phase=SM_BT_PROBE_INTERFACE;
     iface=-1;ep_evt=ep_in=ep_out=0;
     const uint8_t *p=(const uint8_t *)c,*end=p+c->wTotalLength;
     while(p+2<=end && p[0]>=2 && p+p[0]<=end) {
         if(p[1]==4&&p[0]>=9) {
             if(ep_evt&&ep_in&&ep_out)break;
+            if(!p[3])probe.interface_class=(unsigned)p[2]<<24|(unsigned)p[5]<<16|(unsigned)p[6]<<8|p[7];
             iface=p[5]==0xe0&&p[6]==1&&p[7]==1&&!p[3]?p[2]:-1;ep_evt=ep_in=ep_out=0;
         } else if(iface>=0&&p[1]==5&&p[0]>=7) {
             unsigned m=p[4]|p[5]<<8;
@@ -260,13 +287,19 @@ static int open_adapter(unsigned address) {
         }
         p+=p[0];
     }
-    if(iface<0||!ep_evt||!ep_in||!ep_out||usb_host_interface_claim(client,dev,iface,0)!=ESP_OK)goto reject;
-    portENTER_CRITICAL(&guard);status.vid=d->idVendor;status.pid=d->idProduct;portEXIT_CRITICAL(&guard);
+    probe.endpoints=ep_evt|(unsigned)ep_in<<8|(unsigned)ep_out<<16;
+    if(iface<0||!ep_evt||!ep_in||!ep_out){probe.result=ESP_ERR_NOT_FOUND;goto reject;}
+    probe.phase=SM_BT_PROBE_CLAIM;
+    if((probe.result=usb_host_interface_claim(client,dev,iface,0))!=ESP_OK)goto reject;
+    probe.phase=SM_BT_PROBE_STARTED;record_probe(&probe);
     ESP_LOGW(TAG,"USB HCI %04x:%04x attached",d->idVendor,d->idProduct);
     events=(Assembly){0};acls=(Assembly){0};evt_done=acl_done=0;
     xQueueReset(sends);xQueueReset(actions);atomic_store(&failed,0);atomic_store(&online,1);state(SM_BT_STARTING,0);
     xTaskNotifyGive(lifecycle);return 1;
-reject:usb_host_device_close(client,dev);dev=NULL;iface=-1;return 0;
+reject:
+    record_probe(&probe);
+    if(known)state(SM_BT_ERROR,probe.result);
+    usb_host_device_close(client,dev);dev=NULL;iface=-1;return 0;
 }
 static void usb_task(void *unused) {
     (void)unused;

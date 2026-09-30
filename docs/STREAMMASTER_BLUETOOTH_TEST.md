@@ -1,5 +1,26 @@
 # USB Bluetooth experiment: build and verification record
 
+## Follow-up: 0.3.3 discovery diagnostics
+
+User confirmed the 0.3.2 hub connection. The new mounted PSP log measures
+447–448 KiB/s on the StreamMaster echo test; Bluetooth snapshots remain
+`adapter=0000:0000 state=0`, and Scan returns SM_OFFLINE (-2). This only proves
+the USB Bluetooth adapter was never claimed, not why. The old discovery code
+discarded failures before setting VID/PID/state.
+
+The user's connected PC dongle is CSR8510 `0a12:0001`, full-speed, class
+e0/01/01; HCI interface 0 alt 0 has event IN81/MPS16, bulk OUT02/MPS64 and
+bulk IN82/MPS64. SCO interface 1 is unused. These match the implementation.
+No controller pairing or host setting was changed on the PC.
+
+0.3.3 exposes eight bounded last-probe records (including rejected hub/PSP
+devices) via optional command 42 and PSP diagnostic log. Known adapters now
+retain identity/error on claim failure. DIO, QIO and PSP application compiled
+before the two focused tests: actual discovery/diagnostic C functions with CSR
+layout and simulated claim errors, plus the existing HID descriptor/report
+harness under ASan/UBSan. No change to hub polling, Wi-Fi tuning, HCI behavior
+or allowlist was made without evidence. Exact hardware failure remains open.
+
 ## Follow-up: 0.3.2 hub regression fix
 
 User A/B test: 0.3.1 connects directly but fails behind the same hub even with

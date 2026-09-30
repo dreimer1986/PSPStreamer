@@ -181,7 +181,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
         memcpy(out->payload,&caps,sizeof(caps));out->length=sizeof(caps);break;
     }
 #if CONFIG_BT_BLUEDROID_ENABLED
-    case SM_BT_STATUS:case SM_BT_ACTION:
+    case SM_BT_STATUS:case SM_BT_ACTION:case SM_BT_USB_DIAG:
         out->result=sm_gamepad_command(r,out);break;
 #endif
     case SM_USB_METRICS: {
