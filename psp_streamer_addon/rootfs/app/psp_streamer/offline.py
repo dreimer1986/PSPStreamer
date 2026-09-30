@@ -106,6 +106,16 @@ class OfflineQueue:
                 raise ValueError('Unknown download job')
             return dict(self.jobs[key])
 
+    def pin(self, key):
+        """A requested download must survive all subsequent reserve refreshes."""
+        with self.lock:
+            job = self.jobs.get(key)
+            if not job:
+                raise ValueError('Unknown download job')
+            if job.pop('cache_owner', None) is not None:
+                self._save(job)
+            return dict(job)
+
     def prepare(self, options):
         if not isinstance(options, dict):
             raise ValueError('Invalid conversion options')
@@ -152,7 +162,7 @@ class OfflineQueue:
         except (OSError, KeyError, TypeError):
             return False
 
-    def add_many(self, options):
+    def add_many(self, options, *, cache_owner=None):
         if not isinstance(options, list) or not 1 <= len(options) <= MAX_JOBS:
             raise ValueError('Choose between 1 and 128 files')
         # Validate the whole request before publishing even the first job.
@@ -169,6 +179,8 @@ class OfflineQueue:
                         available[signature] = job
             selected, new_jobs = [], []
             for job in prepared:
+                if cache_owner is not None:
+                    job['cache_owner'] = cache_owner
                 signature = tuple(job.get(field) for field in fields)
                 if signature not in available:
                     available[signature] = job
@@ -184,6 +196,12 @@ class OfflineQueue:
                     shutil.rmtree(self.root / job['job'], ignore_errors=True)
                 raise
             self.jobs.update((job['job'], job) for job in new_jobs)
+            # A manual request pins a reused cache package permanently. Ownership
+            # is private worker metadata, never accepted from API payloads.
+            if cache_owner is None:
+                for job in selected:
+                    if job.pop('cache_owner', None) is not None:
+                        self._save(job)
             result = [dict(job) for job in selected]
         self.wake.set()
         return result
@@ -211,7 +229,7 @@ class OfflineQueue:
             del self.jobs[key]
 
     def file(self, key, number):
-        job = self.get(key)
+        job = self.pin(key)
         if job['state'] != 'ready' or not 0 <= number < len(job['files']):
             raise ValueError('Download is not ready')
         entry = job['files'][number]
@@ -224,19 +242,55 @@ class OfflineQueue:
         with self.lock:
             if self.stopping.is_set() or job['state'] == 'cancelled':
                 raise ValueError('Cancelled')
+            self._cache_check(job)
             self.process = subprocess.Popen(command, **kwargs)
             return self.process
+
+    def _cache_check(self, job):
+        if job.get('cache_owner') and hasattr(self, 'cache_guard'):
+            try:
+                self.cache_guard(job)
+            except ValueError:
+                if self.process and self.process.poll() is None:
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.process.kill()
+                        self.process.wait()
+                raise
+
+    def clear_cache_files(self, job):
+        """Remove generated reserve payload only; retain the error manifest."""
+        if not job.get('cache_owner'):
+            return
+        folder = self.root / job['job']
+        if folder.is_symlink() or folder.resolve().parent != self.root.resolve():
+            raise ValueError('Unsafe cache directory')
+        for path in folder.iterdir():
+            if path.name not in ('job.json', 'job.json.tmp') and (path.is_file() or path.is_symlink()):
+                path.unlink()
+        job.update(bytes=0, files=[], progress=0)
 
     def _capture(self, command, job, timeout=180):
         process = self._run(command, job, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
-            output, _ = process.communicate(timeout=timeout)
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    output, _ = process.communicate(timeout=min(1, max(.01, deadline-time.monotonic())) if job.get('cache_owner') else timeout)
+                    break
+                except subprocess.TimeoutExpired:
+                    self._cache_check(job)
+                    if time.monotonic() >= deadline:
+                        raise
         except subprocess.TimeoutExpired:
             process.kill()
             process.communicate()
             raise ValueError('Media inspection/subtitle extraction timed out')
         if process.returncode:
             raise ValueError('Media inspection/subtitle extraction failed')
+        self._cache_check(job)
         return output
 
     def _subtitles(self, job, source, probe, folder, external=None):
@@ -345,6 +399,7 @@ class OfflineQueue:
         process = self._run(command, job, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         started = time.monotonic()
         for line in process.stdout:
+            self._cache_check(job)
             if line.startswith('out_time_us='):
                 try:
                     seconds = int(line.split('=', 1)[1]) / 1000000
@@ -396,6 +451,7 @@ class OfflineQueue:
         with self.lock:
             if job['state'] == 'cancelled' or self.stopping.is_set():
                 return
+            self._cache_check(job)
             job.update(state='ready', progress=100, bytes=sum(e['size'] for e in entries), files=entries)
 
     def _worker(self):
@@ -418,6 +474,14 @@ class OfflineQueue:
                 self._convert(job)
             except Exception as exc:
                 with self.lock:
+                    if job.get('cache_owner'):
+                        if self.process and self.process.poll() is None:
+                            self.process.kill()
+                            self.process.wait()
+                        try:
+                            self.clear_cache_files(job)
+                        except (OSError, ValueError):
+                            exc = ValueError('Cannot clean episode reserve; check cache directory permissions')
                     if job['state'] != 'cancelled':
                         job['state'] = 'queued' if self.stopping.is_set() else 'error'
                         job['error'] = str(exc)[:200] if isinstance(exc, ValueError) else 'Conversion failed; inspect server media/storage'

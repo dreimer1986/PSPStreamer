@@ -217,7 +217,8 @@ class PlexTests(unittest.TestCase):
                         self.assertEqual(status, 200)
                         status, listing = request('GET', '/api/library')
                         self.assertEqual(status, 200)
-                        self.assertEqual(listing['folders'], [{'name': 'Plex', 'path': ':plex:'}])
+                        self.assertEqual(listing['folders'], [{'name': 'Playlist', 'path': ':queue:'},
+                                                              {'name': 'Plex', 'path': ':plex:'}])
                         self.assertFalse(listing['videos'])
                 finally:
                     server.shutdown()

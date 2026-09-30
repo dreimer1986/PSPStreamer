@@ -18,11 +18,13 @@ def compact(server,path):
     if len(parts)==1:
         result['folders']=[dict(name=label,path=base+':'+view) for view,label in
             [('continue','Continue watching'),('recent','Recently added'),('unwatched','Unwatched'),('collections','Collections')]]
+        if name == 'plex' and provider.config.get('watchlist'):
+            result['folders'].append(dict(name='Plex Watchlist', path=base+':watchlist'))
         return result
     view=parts[1]
-    if view not in ('continue','recent','unwatched','collections'):raise ValueError('Invalid provider shelf')
+    if view not in ('continue','recent','unwatched','collections','watchlist'):raise ValueError('Invalid provider shelf')
     result['parent']=base
-    if len(parts)==2 and view!='continue':
+    if len(parts)==2 and view not in ('continue','watchlist'):
         result['folders']=[dict(name=r['name'],path=path+':'+r['id']) for r in sections(provider,name)]
         return result
     section=parts[2] if len(parts)>2 else ''
@@ -47,6 +49,9 @@ def sections(provider, name):
 
 def browse(provider, name, view, section='', offset=0):
     provider.require()
+    if view == 'watchlist' and name == 'plex':
+        from .watchlist import browse as watchlist
+        return watchlist(provider, offset)
     if view not in ('continue','recent','unwatched','collections'):raise ValueError('Invalid provider view')
     if not 0<=offset<=100000:raise ValueError('Invalid provider page')
     if name=='plex':

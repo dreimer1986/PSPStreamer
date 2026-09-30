@@ -1,3 +1,15 @@
+# 0.1.66
+
+- Optional automatic server-side reserve of the next N unwatched episodes,
+  with persistent per-series/folder rules, language matching and a storage limit.
+- Clean only explicitly managed reserve packages. Manual conversion requests
+  and requested downloads are pinned; original media and PSP files are untouched.
+- Optional read-only Plex account Watchlist, mapped by exact GUID to the selected
+  server, separate from the episode playlist. Unavailable titles are identified
+  in the web UI; available items also appear in the PSP provider shelf.
+- Same server and web implementation in Docker and Home Assistant. No PSP or
+  StreamMaster firmware update required.
+
 # 0.1.65
 
 - Prepare LCD PGS sprites at display resolution, preserving palette, timing and

@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Add an opt-in server-side next-N unwatched episode reserve, persistent language
+  preferences and a bounded, explicitly owned cache; preserve manual downloads.
+- Add the optional Plex account Watchlist with exact local GUID mapping, keeping
+  it separate from the episode playlist. Server/Add-on version: 0.1.66.
+
 - Monkey flight: alternate drone/turret spawns with higher fallback positions
   for drones; retain one pending spawn without rerolling the requested type.
 - Add the Astro Shield pickup with a green honeycomb glow: fly through for

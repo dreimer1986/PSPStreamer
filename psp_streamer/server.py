@@ -520,6 +520,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.dlna.public())
             if parsed.path.startswith('/api/radio/status/'):
                 return self.send_json(self.server.radio.status(parsed.path.rsplit('/', 1)[-1]))
+            if parsed.path == '/api/offline/reserve':
+                return self.send_json(self.server.episode_cache.snapshot())
             if parsed.path == '/api/offline/preferences':
                 return self.send_json(self.server.offline.preferences())
             if parsed.path == "/api/offline/jobs":
@@ -534,7 +536,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.wfile.write(data)
                 return
             if parsed.path.startswith('/api/offline/job/'):
-                return self.send_json(self.server.offline.get(parsed.path.rsplit('/', 1)[-1]))
+                return self.send_json(self.server.offline.pin(parsed.path.rsplit('/', 1)[-1]))
             if parsed.path.startswith('/api/offline/export/'):
                 return self.offline_export(parsed.path.rsplit('/', 1)[-1])
             if parsed.path.startswith('/api/offline/file/'):
@@ -815,6 +817,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_json(self.server.plex.select(data.get('server'), data.get('url')))
                 if action == 'settings':
                     return self.send_json(self.server.plex.configure(data))
+                if action == 'watchlist':
+                    return self.send_json(self.server.plex.configure_watchlist(data))
                 if action == 'disconnect':
                     return self.send_json(self.server.plex.disconnect())
                 return self.send_error_json(HTTPStatus.NOT_FOUND, 'Not found')
@@ -826,6 +830,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 data = json.loads(self.rfile.read(length).decode('utf-8'))
                 if not isinstance(data, dict):
                     raise ValueError('Invalid request')
+                if parsed.path == '/api/offline/reserve':
+                    metadata = self.metadata(str(data.get('id', ''))) if data.get('action') == 'add' else None
+                    return self.send_json(self.server.episode_cache.configure(data, metadata))
                 if parsed.path == '/api/offline/preferences':
                     return self.send_json(self.server.offline.preferences(data))
                 if parsed.path == '/api/offline/jobs':
@@ -1405,6 +1412,10 @@ class AppServer(ThreadingHTTPServer):
         from .offline import OfflineQueue
         cache_root = os.environ.get('PSP_STREAMER_DOWNLOAD_DIR') or str(state_root / 'downloads')
         self.offline = OfflineQueue(cache_root, library, ffmpeg_command, parse_srt_cues, self.transcode_slots)
+        from .episode_cache import EpisodeCache
+        self.episode_cache = EpisodeCache(self, state_root)
+        if self.episode_cache.data['rules'] or any(j.get('cache_owner') for j in self.offline.jobs.values()):
+            self.episode_cache.start()
         if self.offline.jobs:
             self.offline.start()
 
@@ -1433,6 +1444,8 @@ class AppServer(ThreadingHTTPServer):
                 'audio':audio,'subtitle':subtitle, **options}
 
     def server_close(self):
+        if hasattr(self, 'episode_cache'):
+            self.episode_cache.close()
         if hasattr(self,'dlna'):
             self.dlna.close()
         if hasattr(self, 'offline'):

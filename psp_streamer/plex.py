@@ -35,7 +35,7 @@ class Plex:
         self.roots = roots
         self.lock = threading.RLock()
         self.config = dict(client=str(uuid.uuid4()), enabled=False, files=True,
-                           radio=True, token='', account='', url='', mappings=[])
+                           radio=True, token='', account='', url='', mappings=[], watchlist=False)
         if self.path.exists():
             self.config.update(json.loads(self.path.read_text(encoding='utf-8')))
         self.pin = None
@@ -63,11 +63,11 @@ class Plex:
 
     def public(self):
         with self.lock:
-            return {k: self.config[k] for k in ('enabled', 'files', 'radio', 'url', 'mappings')} | {
+            return {k: self.config[k] for k in ('enabled', 'files', 'radio', 'url', 'mappings', 'watchlist')} | {
                 'linked': bool(self.config['account']), 'selected': bool(self.config['token']),
                 'report_error': self.report_error}
 
-    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None, raw=False):
+    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None, raw=False, timeout=8):
         with self.lock:
             base = 'https://plex.tv' if cloud else (url or self.config['url'])
             credential = token if token is not None else self.config['account' if cloud else 'token']
@@ -81,7 +81,7 @@ class Plex:
         payload = urlencode(data).encode() if data is not None else None
         try:
             with build_opener(NoRedirect()).open(Request(base + path, data=payload,
-                    headers=headers, method=method), timeout=8) as response:
+                    headers=headers, method=method), timeout=timeout) as response:
                 body = response.read(16 * 1024 * 1024 + 1 if raw else 4 * 1024 * 1024 + 1)
                 if len(body) > (16 if raw else 4) * 1024 * 1024:
                     raise ValueError('Plex response exceeds the safe size limit')
@@ -165,6 +165,17 @@ class Plex:
             self.cache.clear()
             self.save()
             return self.public()
+
+    def configure_watchlist(self, data):
+        enabled = data.get('enabled')
+        if type(enabled) is not bool:
+            raise ValueError('Invalid Watchlist setting')
+        with self.lock:
+            if enabled and not self.config['account']:
+                raise ValueError('Link a Plex account first')
+            self.config['watchlist'] = enabled
+            self.save()
+        return self.public()
 
     def disconnect(self):
         with self.lock:

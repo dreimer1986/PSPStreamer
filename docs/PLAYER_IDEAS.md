@@ -91,11 +91,11 @@ separate music product and is not silently treated as the standard Plex client.
 |---|---|---|
 | Progress | Plex playback reports, provider resume/watched status; own lists and provider-wide Continue Watching on web/PSP, including other clients | No outstanding shelf implementation |
 | Browsing | Libraries, seasons, albums, playlists, artwork, descriptions, cross-source search; collections/recent/unwatched shelves on web/PSP | No outstanding compact shelf implementation |
-| Watchlist | Our favorites and new play queue | Optional Plex Watchlist bridge; do not confuse a show-level watchlist with an episode queue |
+| Watchlist | Optional read-only Plex account Watchlist with exact local GUID mapping | Implemented in 0.1.66; separate from the episode queue |
 | Episodes | Automatic next episode, manual transport and seek; optional countdown/cancel | No outstanding countdown implementation |
 | Markers | Chapter controls and skip buttons from supplied Plex intro/credits markers | Keep provider markers authoritative; do not guess from arbitrary chapter names |
 | Tracks/versions | Audio/subtitle selection, text/bitmap handling, alternative versions; per-series/folder preferences | No outstanding series-preference implementation |
-| Offline | Own PSP encoding/downloads and USB bundles | A bounded “keep next N unwatched episodes” job; only delete managed cache copies, never originals |
+| Offline | Own PSP encoding/downloads, USB bundles and optional bounded next-N episode reserve | Implemented in 0.1.66; only managed server cache copies are evicted |
 | Remote | Our web/HACS controller | Not a registered Plex Companion receiver; optional discovery/control bridge is separate work |
 
 Plex's TV navigation documents Continue Watching, recently added rows and
@@ -115,11 +115,10 @@ markers and entitlements. Do not promise either universally.
 [Downloads](https://support.plex.tv/articles/downloads-overview/),
 [credits](https://support.plex.tv/articles/credits-detection/).
 
-**Remaining priority proposal:** optional managed offline-next-episodes.
-Provider-wide web views and compact PSP shelves are implemented.
-Watchlist comes after that; provider playback reports must stay authoritative. A shared provider
-interface should offer the same convenience for Jellyfin where supported.
-These are medium-sized server/UI features, not changes to the stable decoder.
+Managed offline-next-episodes and the read-only Plex Watchlist are implemented
+in 0.1.66. Provider-wide views and compact PSP shelves are also implemented.
+The episode reserve reads authoritative Plex/Jellyfin watched flags; it does not
+alter the stable decoder. See [operation and boundaries](EPISODE_RESERVE_WATCHLIST.md).
 
 I would not chase Plex's ad-supported catalogue, rentals, live-TV/DVR or all
 client-specific casting protocols for this player. Direct Play is also not a

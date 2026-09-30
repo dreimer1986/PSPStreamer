@@ -3,7 +3,7 @@ const providerPanel=document.createElement('section');providerPanel.id='view-pro
 const providerHeading=document.createElement('h2');providerHeading.textContent=t('Provider library');
 const providerSelect=document.createElement('select'),providerShelf=document.createElement('select'),providerSection=document.createElement('select');
 for(const name of ['plex','jellyfin'])option(providerSelect,name,name==='plex'?'Plex':'Jellyfin');
-for(const [key,label] of [['continue','Continue watching'],['recent','Recently added'],['unwatched','Unwatched'],['collections','Collections']])option(providerShelf,key,t(label));
+for(const [key,label] of [['continue','Continue watching'],['recent','Recently added'],['unwatched','Unwatched'],['collections','Collections'],['watchlist','Plex Watchlist']])option(providerShelf,key,t(label));
 providerSelect.setAttribute('aria-label',t('Provider'));providerShelf.setAttribute('aria-label',t('View'));providerSection.setAttribute('aria-label',t('Library'));
 const providerRows=document.createElement('div'),providerPages=document.createElement('div');
 let providerPage=0,providerGeneration=0,providerListing=null;
@@ -17,6 +17,8 @@ document.addEventListener('cover-view-changed',()=>{
 providerPanel.append(providerHeading,providerSelect,providerShelf,providerSection,providerLoad,providerCoverToggle,providerRows,providerPages);$('#view-library').after(providerPanel);
 const providerNav=button(t('Provider library'),()=>{setView('provider');loadProviderSections().catch(fail)});providerNav.dataset.view='provider';$('nav').append(providerNav);
 async function loadProviderSections(){
+ const watch=providerShelf.querySelector('option[value="watchlist"]');watch.hidden=providerSelect.value!=='plex';watch.disabled=watch.hidden;
+ if(watch.hidden&&providerShelf.value==='watchlist')providerShelf.value='continue';
  const generation=++providerGeneration;providerListing=null;providerRows.textContent=t('Loading tracks…');
  try{
   const data=await api('/api/provider-view?view=sections&provider='+providerSelect.value);
@@ -28,9 +30,10 @@ async function loadProviderSections(){
 }
 async function loadProvider(offset=0){
  const generation=++providerGeneration;providerPage=offset;providerListing=null;providerRows.textContent=t('Loading tracks…');providerPages.replaceChildren();
- providerSection.disabled=providerShelf.value==='continue';
- if(providerSelect.value==='plex'&&providerShelf.value!=='continue'&&!providerSection.value){providerRows.textContent=t('Select a provider library');return}
- const query=new URLSearchParams({provider:providerSelect.value,view:providerShelf.value,offset,section:providerShelf.value==='continue'?'':providerSection.value});
+ const globalShelf=['continue','watchlist'].includes(providerShelf.value);
+ providerSection.disabled=globalShelf;
+ if(providerSelect.value==='plex'&&!globalShelf&&!providerSection.value){providerRows.textContent=t('Select a provider library');return}
+ const query=new URLSearchParams({provider:providerSelect.value,view:providerShelf.value,offset,section:globalShelf?'':providerSection.value});
  try{
   const data=await api('/api/provider-view?'+query);if(generation!==providerGeneration)return;
   providerListing=data;renderProvider();
@@ -48,7 +51,9 @@ function renderProvider(){
    });addCover(open,item.artwork);row.append(open,button(t('Add to playlist'),()=>addToPlaylist([item])));providerRows.append(row);
   }
   if(!data.folders.length&&!data.videos.length)providerRows.textContent=t('No entries yet.');
-  if(offset)providerPages.append(button(t('Previous page'),()=>loadProvider(Math.max(0,offset-50))));
+  for(const item of data.unavailable||[]){const row=document.createElement('p');row.textContent=item.name+' — '+t(item.reason);providerRows.append(row);}
+  if(providerShelf.value==='watchlist'){const note=document.createElement('p');note.textContent=t('Films and series from your Plex account, not the episode playlist.');providerRows.prepend(note);}
+  if(offset)providerPages.append(button(t('Previous page'),()=>loadProvider(Math.max(0,offset-(data.page_size||50)))));
   if(data.next!==null)providerPages.append(button(t('Next page'),()=>loadProvider(data.next)));
 }
 providerSelect.onchange=()=>loadProviderSections().catch(fail);

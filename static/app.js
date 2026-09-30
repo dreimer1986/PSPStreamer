@@ -112,6 +112,7 @@ async function choose(v,follow=false){
     $('#queue').textContent=t(audio?'Prepare MP3 download':'Convert for download');
     $('#details').textContent=[d.artist,d.album,d.title,d.year,+d.d>0?timeLabel(+d.d):'',d.summary].filter(Boolean).join(' · ')||t(live?'Live radio':audio?'Music stream':'Ready to play');
     if(d.series_scope&&!audio){
+      if(typeof addReserveControls==='function')addReserveControls(v);
       for(const remove of [false,true])$('#details').append(button(t(remove?'Forget series/folder preferences':'Save tracks for series/folder'),async()=>{
         await post('/api/series-preferences',{id:v.id,audio:+$('#audio').value,subtitle:+$('#subtitle').value,remove});
         message(t(remove?'Preferences removed':'Preferences saved'));
@@ -302,6 +303,7 @@ action('#commitBatch',async()=>{const items=batchSelection();if(!items.length)re
 });
 async function updateDownloads(){const jobs=await api('/api/offline/jobs'),box=$('#jobs');box.replaceChildren();if(!jobs.length)box.textContent=t('No conversion jobs.');
   for(const j of jobs){const row=document.createElement('article');row.className='job';const title=document.createElement('h3');title.textContent=j.name;const desc=document.createElement('p');desc.textContent=`${t(j.state)} · ${j.progress}% · ${(j.bytes/1048576).toFixed(1)} MiB · ${j.kind==='audio'?'MP3':j.profile+' / '+j.video_fps+' fps'} · ${j.audio_quality}`;row.append(title,desc);
+    if(j.cache_owner){const badge=document.createElement('p');badge.textContent=t('Automatic episode reserve');row.append(badge);}
     if(j.error){const error=document.createElement('p');error.className='bad';error.textContent=t(j.error);row.append(error);}
     if(j.state==='ready'){const link=document.createElement('a');link.href='/api/offline/export/'+encodeURIComponent(j.job);link.textContent=t('Download Memory Stick ZIP');row.append(link);}
     if(j.state==='encoding'&&j.eta!=null){const eta=document.createElement('p');eta.textContent=t('Remaining: {n} s',{n:j.eta});row.append(eta);}

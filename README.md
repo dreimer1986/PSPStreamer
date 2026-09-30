@@ -657,9 +657,48 @@ cues are skipped for that playback rather than retried every frame. TV burn-in
 and text subtitles are unchanged; existing offline packages are not rewritten.
 See [LCD bitmap recovery](docs/LCD_BITMAP_RECOVERY.md) for the diagnosis and test.
 
+### Automatic episode reserve and Plex Watchlist (server 0.1.66)
+
+In a video's web detail page, set **Unwatched episodes to keep ready** (1–20)
+and select **Reserve this series/folder**. The selected episode is the starting
+point and is included if unwatched. Audio/subtitle languages and output quality
+are captured from that page. In **Downloads → Episode reserve**, enable the
+feature and choose its server storage limit. Rules refresh every two minutes;
+**Refresh** requests an earlier check. Plex/Jellyfin watched state includes other
+clients; mounted files use PSPStreamer's recorded completed playback.
+
+This keeps converted **server packages** ready, not automatic copies on the
+Memory Stick. Use the existing ZIP export or **Local storage → Server queue**
+on the PSP. The existing PSP client works unchanged. Missing preferred tracks
+pause a rule instead of silently choosing another language. Failed jobs are not
+retried forever: correct the cause, remove the failed job and press Refresh.
+
+Only packages marked as automatic reserve are evicted. Manual conversions,
+source files and Memory Stick files are never cleaned. Requesting a download
+(manifest, file or ZIP), or manually requesting the same conversion, pins its
+server package as a manual job, outside the automatic storage budget. Delete
+these manual server copies explicitly when no longer needed. Reducing the limit
+may leave fewer than N episodes ready; in-progress output can briefly exceed the
+limit until the next converter check. The limit is not a filesystem quota.
+Disabling the reserve/removing a rule cleans its unpinned packages.
+
+Enable **Settings → Plex → Enable Plex Watchlist**, then select **Provider
+library → Plex → Plex Watchlist**. The linked Plex account's films and series
+are matched to the selected server by exact Plex GUID, not title guesses. Missing
+titles are labelled unavailable in the web UI; available entries also appear
+under **Plex → Provider views → Plex Watchlist** on PSP. A series opens its
+seasons; no episodes are silently added to the playlist. This is read-only and
+does not add/remove items from the Plex account's Watchlist.
+
+Rules (`episode-cache.json`), watched-file history (`comfort.json`) and the
+Watchlist switch (`plex.json`) use the persistent server state volume in both
+Docker and Home Assistant. Preserve that volume across updates. Offline playback
+on the PSP does not yet sync watched state back; mark it watched on the provider
+or update the reserve's starting episode. Details: [episode reserve and Watchlist](docs/EPISODE_RESERVE_WATCHLIST.md).
+
 Free Memory Stick space is checked before each file; individual files above
 FAT32's 4 GiB-minus-one-byte limit are rejected. Keep free space on the server:
-converted copies remain until explicitly deleted. Docker stores the queue in
+manual converted copies remain until explicitly deleted. Docker stores the queue in
 its persistent `/data/downloads` volume; Home Assistant uses its app's own
 `/data/downloads`. Native server default: `~/.cache/psp-streamer/downloads`.
 Override with `PSP_STREAMER_DOWNLOAD_DIR` if needed. All offline endpoints use

@@ -1,5 +1,11 @@
 # Provider views and file navigation — 0.1.60
 
+Server 0.1.66 additionally offers the opt-in **Plex Watchlist** shelf, with
+eight cloud entries per page mapped by GUID to the selected server. Unlike
+recent/unwatched/collections it does not ask for a library first. Unavailable
+titles are identified on the web; PSP shows available entries only. This is
+separate from the episode playlist. See [details](EPISODE_RESERVE_WATCHLIST.md).
+
 Open **Provider library** in the web UI and select Plex or Jellyfin. The source
 must already be connected and enabled in server settings. These views are
 requested on demand, not polled during playback. They use the connected user's
