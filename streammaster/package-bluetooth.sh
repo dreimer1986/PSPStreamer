@@ -36,3 +36,6 @@ for mode in dio qio; do
         0x10000 "$build_dir/streammaster_onju_v3.bin"
     (cd "$release_dir" && sha256sum bootloader/bootloader.bin partition_table/partition-table.bin ./*.bin > SHA256SUMS)
 done
+# Published Onju default: tested QIO image. DIO keeps its explicit fallback name.
+mkdir -p release/StreamMaster-Onju-V3
+cp -a release/StreamMaster-Bluetooth-QIO/. release/StreamMaster-Onju-V3/

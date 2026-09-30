@@ -1,5 +1,17 @@
 # USB Bluetooth experiment: build and verification record
 
+## 2026-10-01: QIO accepted as Onju default
+
+User confirms stable controller learning, player navigation and Monkey control
+with both variants. Latest recovery log is QIO; history-00E31CBA2B2A1CCC is DIO.
+Both downloaded the same 170143443-byte media file completely with HTTP 200,
+rc=0, last_errno=0 and no resume. Body times: DIO 302138 ms (549.9 KiB/s),
+QIO 251792 ms (659.9 KiB/s), approximately 20% higher complete-body throughput.
+This includes transfer/storage pauses; the displayed moving average differs.
+QIO HTTP setup took 3092 ms versus DIO 161 ms, not a sustained throughput issue.
+Keep DIO fallback and generic firmware UNTESTED status. Bluetooth build script
+defaults to QIO; pass dio for fallback or all for both variants.
+
 ## Follow-up: learning works, normal controls absent
 
 Mounted PSP held the pre-Bluetooth 15482-byte StreamMasterUSB.prx (SHA-256

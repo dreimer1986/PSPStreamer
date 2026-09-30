@@ -50,7 +50,8 @@ controller pairing still require hardware verification.
    `PSPStreamer/EBOOT.PBP` and `PSPStreamer/StreamMasterUSB.prx` from this test
    package into the existing application directory. Keep the other files and
    your configuration; this package is an update, not a fresh installation.
-2. Connect the Onju to the PC. Start with the **DIO** folder. From that folder:
+2. Connect the Onju to the PC. Use the **QIO** folder (tested default on Onju V3).
+   DIO remains a compatibility fallback. From that folder:
 
    ```sh
    esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 write_flash @flash_args
@@ -78,7 +79,7 @@ controller pairing still require hardware verification.
    reconnects are accepted only for known devices or the explicitly selected
    pairing target. Disconnect/Find/Forget suspends automatic reconnect until a
    manual connection, saving options, or firmware restart.
-7. Only after DIO works, flash the **QIO** folder with its own `flash_args` and
+7. If comparing the DIO fallback, flash that folder with its own `flash_args` and
    repeat the same test/transfer. Both variants use CPU **240 MHz**, flash
    **40 MHz**, Octal PSRAM **80 MHz**, and the same optimization settings.
 
