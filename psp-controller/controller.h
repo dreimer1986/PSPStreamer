@@ -18,6 +18,7 @@ static int (*emulate_buttons)(unsigned char,unsigned,unsigned,unsigned);
 static int (*emulate_analog)(unsigned char,unsigned char,unsigned char,unsigned);
 static SceUID controller_thread=-1,controller_callback=-1;
 static volatile int controller_running,controller_suspended;
+static void controller_log(const char *text,int rc);
 #include "overlay.h"
 static int controller_enabled=1,controller_vsh=1,controller_pops=1,controller_disabled;
 static char excludes[8][96],allows[8][96];
@@ -81,6 +82,9 @@ static int controller_worker(SceSize size,void *args) {
     int power=controller_callback<0?controller_callback:oc_register_power_callback(controller_callback,&automatic,&last);
     if(power<0){controller_log("power callback unavailable (disabled)",power);goto done;}
     int allowed=controller_enabled && controller_context(),last_state=-1;
+    controller_log("Consolizer startup-race fix: context",sceKernelInitKeyConfig());
+    controller_log("configured overlay mode",pad_overlay_enabled);
+    controller_log("configured TV policy",controller_tvout);
     controller_log("overlay initialization",pad_overlay_init());
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;

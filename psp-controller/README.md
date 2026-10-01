@@ -68,10 +68,20 @@ PSPStreamer's Bluetooth menu. Long names are shortened; the plugin uses its smal
 ASCII diagnostic font. Scan RSSI is not shown as a live signal-strength reading.
 
 Mode 2 cooperates with the updated StreamerOC display hook rather than replacing
-it with a competing patch. Without OC it installs its own hook. An older OC
-causes a safe polling fallback, recorded in the log. Kernel/direct presentation
+it with a competing patch. Without OC it installs its own hook. When OC has not
+published its driver yet, registration retries once per second for at most 20 s.
+An unavailable/incompatible hook disables the OSD, not controller input. It does
+not silently substitute polling for mode 2. Kernel/direct presentation
 paths can still require polling; neither mode guarantees flicker-free output in
 every game. The next discussion is a more stable rendering alternative.
+
+Regression investigation: the first 0.2 game test produced black screens/forced
+shutdown with USB connected, even with `tvout=0` and VSH activation removed.
+The log confirms early OC registration returned NODEV; this startup race is
+fixed, but is **not proven to be the cause of the game hang**. The current
+diagnostic configuration uses `overlay=0`, `tvout=0`; firmware and OC clock
+settings stay unchanged. A disabled Consolizer OSD never queries/writes display
+buffers. Re-enable mode 2 only after establishing a stable no-OSD baseline.
 
 ### TV activation (experimental)
 

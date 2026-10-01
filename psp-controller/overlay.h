@@ -14,6 +14,8 @@ static int oc_overlay_vblank(void){return sceDisplayIsVblank()>0;}
 #undef running
 #undef suspended
 static int pad_overlay_enabled=1,pad_overlay_always,pad_overlay_shared;
+static int pad_overlay_pending;
+static unsigned long long pad_overlay_retry,pad_overlay_deadline;
 static int pad_present_render(const void *base,int stride,int format) {
     if(!controller_running || controller_suspended || !oc_hook_lock())return 0;
     int rc=oc_hook_render(base,stride,format);oc_hook_unlock();return rc;
@@ -23,10 +25,18 @@ static int pad_overlay_init(void) {
     if(sceKernelFindModuleByName("StreamerOC")){
         int (*cb)(const void *,int,int)=pad_present_render;
         int rc=sceIoDevctl(OC_DEVICE,OC_CMD_OSD_ATTACH,&cb,sizeof(cb),NULL,0);
-        if(rc==0){pad_overlay_shared=1;return 0;}
-        return rc; /* older OC -> safe polling fallback */
+        if(rc==0){pad_overlay_shared=1;pad_overlay_pending=0;return 0;}
+        /* OC deliberately finishes its clock startup before publishing its
+         * driver. NODEV is therefore normal early in the same launch. Do not
+         * silently fall back to a different renderer in mode 2. */
+        pad_overlay_pending=1;
+        if(!pad_overlay_deadline)pad_overlay_deadline=sceKernelGetSystemTimeWide()+20000000;
+        pad_overlay_retry=sceKernelGetSystemTimeWide()+1000000;
+        return rc;
     }
-    return oc_hook_install();
+    int rc=oc_hook_install();pad_overlay_pending=0;
+    if(rc<0)pad_overlay_enabled=0;
+    return rc;
 }
 static int pad_overlay_stop(void) {
     oc_hook_publish(NULL,0);
@@ -42,10 +52,22 @@ static int pad_overlay_stop(void) {
     return oc_hook_users?-1:0;
 }
 static void pad_overlay_update(int state,int error,int is_suspended) {
+    /* A configured-off OSD must not even query the game's display path. */
+    if(!pad_overlay_enabled)return;
     static int previous=-1,previous_error;
     static SmPadMeta previous_meta;
     static unsigned long long until,next;
     unsigned long long now=sceKernelGetSystemTimeWide();
+    if(pad_overlay_pending){
+        if(is_suspended || now<pad_overlay_retry)return;
+        if(now>=pad_overlay_deadline){
+            pad_overlay_enabled=0;pad_overlay_pending=0;
+            controller_log("OC overlay unavailable: OSD disabled, input retained",-1);return;
+        }
+        int rc=pad_overlay_init();
+        if(rc){return;}
+        controller_log("OC overlay attached after startup",0);
+    }
     SmPadMeta meta={.battery=255};int intr=sceKernelCpuSuspendIntr();
     if(pad_meta_time && now-pad_meta_time<30000000)meta=pad_meta;
     sceKernelCpuResumeIntr(intr);
