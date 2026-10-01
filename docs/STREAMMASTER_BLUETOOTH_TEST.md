@@ -1,5 +1,18 @@
 # USB Bluetooth experiment: build and verification record
 
+## 2026-10-01: QIO80 promoted after measured comparison
+
+Latest recovery log: 170143443-byte HTTP body completed in 237203 ms, 700.5
+KiB/s, rc=0, HTTP 200, no resume. Versus QIO40: +6.15%; versus DIO40: +27.4%.
+ESP receive-ring samples: 45/50 full, 3 empty; writer blocking 6368 ms.
+USB send-completion time 159486717 us includes host/device scheduling and is
+not pure wire time. Post-download verification takes 53779 ms (read wait 21099,
+hash 32647); this is PSP work and separate from transfer throughput. User
+accepts QIO80 as default; long-duration Bluetooth test remains pending.
+Generic QIO80 builds are separate UNTESTED choices: S2 also supports this flash
+mode, but each board must have compatible flash and IO2/IO3 wiring. DIO40 stays
+available for unknown boards. No PSRAM/CPU clock change.
+
 ## 2026-10-01: QIO accepted as Onju default
 
 User confirms stable controller learning, player navigation and Monkey control

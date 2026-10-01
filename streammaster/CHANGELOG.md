@@ -1,12 +1,16 @@
 # StreamMaster firmware changelog
 
-## 0.3.9-bt-qio80 — Optional flash-clock comparison
+## 0.3.9-bt-qio80 — Validated Onju default
 
 - Separate Onju QIO 80 MHz flash build; CPU remains 240 MHz and Octal PSRAM
   remains 80 MHz. No controller, buffering or network behavior changes.
 - Build with `bash build-bluetooth.sh qio80`; package with
-  `bash package-bluetooth.sh qio80`. Stable default remains QIO 40 MHz pending
-  hardware validation. Flash the supplied component `flash_args` to keep NVS.
+  `bash package-bluetooth.sh qio80`. These scripts now default to QIO80 after
+  successful hardware validation (700.5 KiB/s complete download, +6.2% versus
+  QIO40). Flash the supplied component `flash_args` to keep NVS.
+- Generic S3 Quad/Octal PSRAM and S2 gain separate QIO80 UNTESTED packages for
+  compatible flash/wiring; conservative DIO40 packages remain available.
+- Long-duration Bluetooth validation remains open; no CPU/PSRAM overclocking.
 
 ## 0.3.9-bt-dio / 0.3.9-bt-qio — Repair controller learning transport
 

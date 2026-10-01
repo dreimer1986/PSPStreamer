@@ -22,6 +22,23 @@ the module datasheet, not merely its capacity. Other memory wiring/speeds may
 require a custom build. S2 has less CPU/internal-memory headroom than S3;
 six TLS channels and peak transfer performance require hardware testing.
 
+### Optional QIO 80 MHz packages (S3 and S2)
+
+Packages with `-QIO80-UNTESTED` use Quad flash at 80 MHz instead of DIO 40 MHz.
+Use these only when the board's flash supports QIO at 80 MHz and IO2/IO3 are
+correctly connected. Octal **PSRAM** does not imply Octal flash. CPU/PSRAM clocks,
+4 MB partition layout and USB behavior are unchanged. S2 supports QIO 80 MHz
+too, but has less CPU/internal RAM headroom; no Onju throughput is promised.
+Unknown boards retain the conservative DIO40 choice; neither generic variant
+has been hardware-tested. These generic packages do not add USB Bluetooth.
+
+Build: `bash build-generic.sh s3-quad qio80` (also `s3-octal` or `s2`).
+For factory flashing use `--flash_freq 80m`, keeping the intentional DIO boot
+header. When switching clock variants, update the **bootloader as well as the
+application**: bootloader.bin at 0x0 for S3 or 0x1000 for S2, partition-table.bin
+at 0x8000, and the matching app at 0x10000. These split writes preserve NVS.
+Do not use the app-only update instructions below to change flash clock.
+
 There are **no status LED writes, amplifier controls or board-specific VBUS
 GPIO controls** in generic builds. The UART console remains enabled; keep its
 default TX/RX pins free. Native USB uses GPIO19 (D-) and GPIO20 (D+) on S2/S3.

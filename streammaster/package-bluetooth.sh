@@ -8,9 +8,9 @@ for file in ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/
 done
 mkdir -p release/PSPStreamer
 cp ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx release/PSPStreamer/
-mode_selection="${1:-all}"
+mode_selection="${1:-qio80}"
 case "$mode_selection" in
-    all) modes=(dio qio);;
+    all) modes=(dio qio qio80);;
     dio|qio|qio80) modes=("$mode_selection");;
     *) echo "Usage: $0 [all|dio|qio|qio80]" >&2; exit 2;;
 esac
@@ -44,8 +44,8 @@ for mode in "${modes[@]}"; do
         0x10000 "$build_dir/streammaster_onju_v3.bin"
     (cd "$release_dir" && sha256sum bootloader/bootloader.bin partition_table/partition-table.bin ./*.bin > SHA256SUMS)
 done
-# Published Onju default: tested QIO image. DIO keeps its explicit fallback name.
-if [[ "$mode_selection" == all || "$mode_selection" == qio ]]; then
+# Published Onju default: tested QIO 80 MHz image.
+if [[ "$mode_selection" == all || "$mode_selection" == qio80 ]]; then
     mkdir -p release/StreamMaster-Onju-V3
-    cp -a release/StreamMaster-Bluetooth-QIO/. release/StreamMaster-Onju-V3/
+    cp -a release/StreamMaster-Bluetooth-QIO80/. release/StreamMaster-Onju-V3/
 fi

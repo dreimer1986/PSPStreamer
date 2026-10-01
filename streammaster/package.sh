@@ -2,6 +2,7 @@
 # Run after building with ESP-IDF v5.5.1 and activating its environment.
 set -euo pipefail
 cd "$(dirname "$0")"
+if [ "$#" -eq 0 ]; then exec bash package-bluetooth.sh qio80; fi
 build_dir=${1:-build}
 release_name=${2:-StreamMaster-Onju-V3}
 case "$release_name" in *[!a-zA-Z0-9_-]*|'') echo "Invalid release directory name" >&2; exit 1;; esac

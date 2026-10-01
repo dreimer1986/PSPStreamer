@@ -83,7 +83,7 @@ controller pairing still require hardware verification.
    repeat the same test/transfer. Both variants use CPU **240 MHz**, flash
    **40 MHz**, Octal PSRAM **80 MHz**, and the same optimization settings.
 
-### Optional QIO 80 MHz comparison
+### QIO 80 MHz default (validated on Onju V3)
 
 `bash build-bluetooth.sh qio80` and `bash package-bluetooth.sh qio80` produce a
 separate `StreamMaster-Bluetooth-QIO80` package, version `0.3.9-bt-qio80`.
@@ -92,7 +92,10 @@ Only flash clock changes from 40 to 80 MHz; CPU stays 240 MHz and Octal PSRAM
 `flash_args` (including 80m, with the intentional DIO boot header); flash all
 three components, not just the app. Existing NVS profiles/bonds are preserved.
 Compare the same HTTP download, PSP CPU clock, AP and controller workload.
-QIO 40 MHz remains default until this hardware test succeeds.
+The 80 MHz hardware test succeeded: 700.5 KiB/s versus 659.9 KiB/s at 40 MHz
+for the same complete download. QIO80 is now the default build/package choice;
+QIO40 and DIO40 remain explicit fallbacks. Bluetooth long-duration testing is
+still pending. Firmware retains the identifying version `0.3.9-bt-qio80`.
 
 ### Guided controller setup (0.3.9)
 
