@@ -119,15 +119,19 @@ static int sceKernelSignalSema(int id,int n){semaphores[id]+=n;return 0;}
 static int kuKernelLoadModule(const char *path,int flags,void *v){(void)flags;(void)v;return strstr(path,"flash0:")?(int)0x80020139:10;}
 static int sceKernelStartModule(int m,int n,void *a,int *s,void *v){(void)m;(void)n;(void)a;(void)v;*s=0;return 0;}
 static int sceKernelStopModule(int m,int n,void *a,int *s,void *v){return sceKernelStartModule(m,n,a,s,v);}
-static int sceKernelUnloadModule(int m){(void)m;return 0;}
+static int unload_count;
+static int sceKernelUnloadModule(int m){(void)m;unload_count++;return 0;}
 static int legacy_caps,legacy_bridge,legacy_async;
 static int bulk_firmware=1,bulk_bridge=1;
 static int extended_firmware,extended_bridge;
 static SmFrame pending_reply;
 static SmBulkResult pending_bulk;
 static int async_pending,async_begins,async_finishes;
+static int resident_available,resident_claims;
 static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out,int outlen){
     (void)name;(void)inlen;(void)outlen;
+    if(op==SM_DEV_RESIDENT)return resident_available?SM_RESIDENT_MAGIC:0;
+    if(op==SM_DEV_APP_OWNER){resident_claims++;return 0;}
     if(op==SM_DEV_STATUS)return 1;
     if(op==SM_DEV_BULK_CAPS)return bulk_bridge && !legacy_bridge && !legacy_async?1:SM_INVALID;
     if(op==SM_DEV_BULK_EXT_CAPS)return extended_bridge?1:SM_INVALID;
@@ -390,5 +394,9 @@ int main(void){
     extended_bridge=1;extended_firmware=0;assert(!stm_associate(&running,1) && !bulk_extended);
     stm_driver_stop();
     for(int i=0;i<SM_SOCKET_COUNT;i++){free(channels[i].rx);free(channels[i].tx);free(channels[i].block);free(channels[i].write_block);}
+    resident_available=1;
+    int before_unload=unload_count;
+    assert(!load_driver() && resident_driver && module==0 && resident_claims==1);
+    stm_driver_stop();assert(unload_count==before_unload && module==0);
     puts("StreamMaster: legacy/extended profiles, 10000 PSP cycles + 4000 ESP owner runs; isolation, cleanup and fallback OK");
 }

@@ -3,7 +3,12 @@
 #ifndef STREAMER_OC_OVERLAY_PIXELS_H
 #define STREAMER_OC_OVERLAY_PIXELS_H
 #include <stdint.h>
+#ifndef OC_OSD_W
 #define OC_OSD_W 236
+#endif
+#ifndef OC_OSD_X
+#define OC_OSD_X 8
+#endif
 #define OC_OSD_H 30
 typedef struct {
     volatile void *base;
@@ -50,7 +55,7 @@ static void oc_osd_set(volatile void *base,int index,int format,uint32_t value) 
 static void oc_osd_restore(OcOverlay *o) {
     if(!o->valid)return;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
-        int i=y*OC_OSD_W+x,offset=(y+8)*o->stride+x+8;
+        int i=y*OC_OSD_W+x,offset=(y+8)*o->stride+x+OC_OSD_X;
         /* Do not overwrite pixels the application has since redrawn. */
         if(oc_osd_get(o->base,offset,o->format)==o->painted[i])
             oc_osd_set(o->base,offset,o->format,o->before[i]);
@@ -61,9 +66,9 @@ static void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,c
     o->base=base;o->stride=stride;o->format=format;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
         int row=(y-3)/8,col=(x-3)/6;
-        int bit=y>=3 && y<27 && x>=3 && x<231 && row<3 && col<38 &&
+        int bit=y>=3 && y<27 && x>=3 && x<OC_OSD_W-5 && row<3 && col<38 &&
             oc_osd_bit(lines[row][col],(x-3)%6,(y-3)%8);
-        int i=y*OC_OSD_W+x,offset=(y+8)*stride+x+8;
+        int i=y*OC_OSD_W+x,offset=(y+8)*stride+x+OC_OSD_X;
         o->before[i]=oc_osd_get(base,offset,format);
         o->painted[i]=oc_osd_color(format,bit);
         oc_osd_set(base,offset,format,o->painted[i]);

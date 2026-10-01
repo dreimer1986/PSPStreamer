@@ -54,6 +54,9 @@ typedef struct {uint32_t address;uint16_t vid,pid;uint32_t device_class,interfac
 typedef struct {uint32_t count,reserved;SmBtUsbProbe probe[8];} SmBtUsbDiag;
 _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");
 #define SM_DEV_GAMEPAD 0x53540030U
+#define SM_DEV_RESIDENT 0x53540031U
+#define SM_DEV_APP_OWNER 0x53540032U
+#define SM_RESIDENT_MAGIC 0x53504d31
 #define SM_PAD_MAGIC 0x31444150U
 enum {SM_BT_NONE,SM_BT_STARTING,SM_BT_READY,SM_BT_SCANNING,SM_BT_CONNECTING,SM_BT_CONNECTED,SM_BT_ERROR};
 enum {SM_BT_SCAN=1,SM_BT_PAIR,SM_BT_DISCONNECT,SM_BT_FORGET};

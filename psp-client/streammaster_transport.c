@@ -45,6 +45,7 @@ void stm_thread_finished(void) {
     }
 }
 static SceUID rpc_lock=-1,slots_lock=-1,module=-1;
+static int resident_driver;
 static volatile int selected,broken=1,wifi_state;
 static int compact_packets;
 static int bulk_pairs,ahead_bulk;
@@ -233,6 +234,11 @@ int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capa
 }
 static int load_driver(void) {
     if(module>=0)return 0;
+    if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)==SM_RESIDENT_MAGIC) {
+        int rc=sceIoDevctl("stm:",SM_DEV_APP_OWNER,NULL,0,NULL,0);
+        if(rc<0)return rc;
+        resident_driver=1;module=0;return 0;
+    }
     phase="load Sony USB";
     int m=kuKernelLoadModule("flash0:/kd/usb.prx",0,NULL),status=0,rc;
     if(m>=0) {
@@ -299,7 +305,7 @@ void stm_driver_stop(void) {
     ahead_token=0;
     if(module>=0) {
         int rc=sceIoDevctl("stm:",SM_DEV_STOP,NULL,0,NULL,0),status=0;
-        if(rc>=0 && sceKernelStopModule(module,0,NULL,&status,NULL)>=0 && status>=0 && sceKernelUnloadModule(module)>=0)module=-1;
+        if(rc>=0 && !resident_driver && sceKernelStopModule(module,0,NULL,&status,NULL)>=0 && status>=0 && sceKernelUnloadModule(module)>=0)module=-1;
     }
     wifi_state=SM_WIFI_IDLE;sceKernelSignalSema(rpc_lock,1);
 }

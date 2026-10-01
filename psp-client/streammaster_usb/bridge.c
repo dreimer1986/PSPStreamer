@@ -21,6 +21,9 @@ static SmFrame send_frame __attribute__((aligned(64))),recv_frame __attribute__(
 static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
 static int started;
+#ifdef SM_CONTROLLER_PLUGIN
+static volatile int app_owner,pad_emergency_stop;
+#endif
 static int exchange_active,exchange_compact;
 static SmFrame bulk_send[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
 static SmBulkFrame bulk_recv[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
@@ -219,6 +222,16 @@ static int bulk_finish(SmBulkResult *out) {
 }
 static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int inlen,void *out,int outlen) {
     (void)a;(void)name;
+    if(cmd==SM_DEV_RESIDENT) {
+#ifdef SM_CONTROLLER_PLUGIN
+        return SM_RESIDENT_MAGIC;
+#else
+        return 0;
+#endif
+    }
+#ifdef SM_CONTROLLER_PLUGIN
+    if(cmd==SM_DEV_APP_OWNER){app_owner=1;return 0;}
+#endif
     if(cmd==SM_DEV_BULK_DIAG) {
         if(inlen || outlen!=sizeof(bulk_diag) || !user_buffer(out,outlen))return SM_INVALID;
         SceUInt wait=100000;
@@ -230,6 +243,9 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
         SmPad value={.magic=SM_PAD_MAGIC,.x=128,.y=128};
         int intr=sceKernelCpuSuspendIntr();
         if(pad_enabled && pad_time && sceKernelGetSystemTimeWide()-pad_time<750000)value=pad_value;
+#ifdef SM_CONTROLLER_PLUGIN
+        if(pad_emergency_stop)value=(SmPad){.magic=SM_PAD_MAGIC,.x=128,.y=128};
+#endif
         sceKernelCpuResumeIntr(intr);
         memcpy(out,&value,sizeof(value));
         return 0;
@@ -279,6 +295,9 @@ static int io_init(PspIoDrvArg *arg){(void)arg;return 0;}
 static int io_exit(PspIoDrvArg *arg){(void)arg;return 0;}
 static PspIoDrvFuncs io_functions={.IoInit=io_init,.IoExit=io_exit,.IoDevctl=devctl};
 static PspIoDrv io_driver={"stm",0x10,0x800,"StreamMaster",&io_functions};
+#ifdef SM_CONTROLLER_PLUGIN
+#include "../../psp-controller/controller.h"
+#endif
 int module_start(SceSize size,void *args) {
     (void)size;(void)args;
     event_id=sceKernelCreateEventFlag("stm-events",0x200,0,NULL);
@@ -286,7 +305,15 @@ int module_start(SceSize size,void *args) {
     int rc=event_id<0?event_id:lock_id;
     if(event_id<0 || lock_id<0)goto fail;
     rc=sceUsbbdRegister(&driver);if(rc<0)goto fail;
-    rc=sceIoAddDrv(&io_driver);if(rc>=0)return 0;
+    rc=sceIoAddDrv(&io_driver);
+    if(rc>=0) {
+#ifdef SM_CONTROLLER_PLUGIN
+        rc=controller_start();
+        if(rc<0)sceIoDelDrv("stm");else return 0;
+#else
+        return 0;
+#endif
+    }
     sceUsbbdUnregister(&driver);
 fail:
     if(lock_id>=0)sceKernelDeleteSema(lock_id);
@@ -295,6 +322,9 @@ fail:
 }
 int module_stop(SceSize size,void *args) {
     (void)size;(void)args;
+#ifdef SM_CONTROLLER_PLUGIN
+    int stopped=controller_stop();if(stopped<0)return stopped;
+#endif
     SceUInt timeout=100000;
     int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     rc=shutdown_usb();if(rc<0){sceKernelSignalSema(lock_id,1);return rc;}

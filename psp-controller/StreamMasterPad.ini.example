@@ -1,0 +1,11 @@
+# Experimental PSP-wide input. Read once at application start.
+enabled=1
+overlay=1
+overlay_always=0
+# First hardware test is GAME only; POPS is deliberately unsupported.
+vsh=0
+# Optional case-sensitive substrings of sceKernelInitFileName(), up to 8 each.
+# Use ARK's per-title plugin rules when a disc ID rather than a path is needed.
+# allow_path=/ISO/MyTestGame.iso
+# exclude_path=/PSP/GAME/SomeUsbApp/
+# Physical NOTE + VOLUP held for two seconds disables input until next launch.

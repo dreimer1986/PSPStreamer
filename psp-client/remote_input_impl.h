@@ -87,7 +87,7 @@ static void input_remote_tick(SceCtrlData *pad) {
     if(input_bt_mapping_active)return;
     /* Local, nonblocking driver snapshot. No HTTP/RPC poll, socket or new
      * thread per button. Works while the media pipeline owns USB bulk I/O. */
-    if(stm_enabled() && !input_bt_mapping_active) {
+    if(!input_bt_mapping_active) {
         SmPad bt;
         if(sceIoDevctl("stm:",SM_DEV_GAMEPAD,NULL,0,&bt,sizeof(bt))>=0 && bt.magic==SM_PAD_MAGIC && bt.connected) {
             pad->Buttons|=bt.buttons;
