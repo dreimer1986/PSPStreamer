@@ -151,6 +151,32 @@ while the app is present. Selecting `tvout=0` restores manual output control.
 
 ## Recovery and test
 
+### USB storage hand-off (VSH)
+
+Hold the PSP's physical **NOTE + Volume Down for two seconds** in XMB. This
+pauses Consolizer and stops its USB function; the overlay shows `USB RELEASED`.
+Now connect the PC and enter the normal USB Connection screen. The plugin will
+not reclaim USB while paused. Leave USB Connection and safely finish/eject PC
+transfers before reconnecting StreamMaster; use the same chord to resume.
+The pause lasts until toggled back or the next VSH launch. This is an explicit
+hand-off, not automatic detection of which USB host is attached. It is disabled
+while PSPStreamer owns the bridge, to avoid interrupting media transfers.
+
+If the previous plugin build prevents copying this update, temporarily disable
+its VSH entry in ARK and restart VSH/PSP, or use a memory-stick reader. Install
+the updated plugin before re-enabling the VSH entry.
+
+### PS / HOME from the controller
+
+Hold the mapped **Start + Select for one second** in a game to send one 150 ms
+HOME pulse to Sony's kernel input handler. Release both before using the chord
+again. The combined buttons are suppressed from game input while held together;
+a button pressed earlier on its own can still reach the game. Set `home_combo=0`
+in the Consolizer INI to disable this shortcut (default `1`). No firmware or
+wire-format change is required. This shortcut applies to Consolizer-controlled
+titles, not PSPStreamer's own application-controlled input path. A separately
+learnable controller Guide button is not implemented by this shortcut.
+
 Hold physical **NOTE + VOLUP for two seconds** to disable external input for
 the current launch. Physical PSP controls remain available. Stale input expires
 after 750 ms and Sony emulation has a finite sampling lifetime.

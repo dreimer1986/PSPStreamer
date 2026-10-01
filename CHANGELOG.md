@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Add explicit VSH USB release/resume (physical NOTE + Volume Down, 2 s) so
+  Consolizer can yield the port for PC memory-stick access.
+- Add controller Start + Select (1 s) as a bounded, system-only PS/HOME pulse;
+  `home_combo=0` disables the shortcut. No ESP firmware update required.
+
 - Recheck VSH USB activation after startup instead of trusting a stale started
   flag; log state transitions and preserve the previous plugin launch's logs.
 

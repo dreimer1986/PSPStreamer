@@ -104,9 +104,10 @@ static void pad_overlay_update(int state,int error,int is_suspended) {
         unsigned char c=lines[0][i];if(c>='a' && c<='z')lines[0][i]=c-'a'+'A';
         else if(c>=128)lines[0][i]='?';
     }
-    const char *status=state==1?"CONNECTED - GAME":state==2?"CONNECTED - APP":state==3?"SUSPENDED":state==4?"DISABLED":state==5?"USB DISCONNECTED":meta.valid && meta.state==SM_BT_CONNECTING?"BT CONNECTING":"BT DISCONNECTED";
+    const char *status=state==6?"USB RELEASED":state==1?"CONNECTED - GAME":state==2?"CONNECTED - APP":state==3?"SUSPENDED":state==4?"DISABLED":state==5?"USB DISCONNECTED":meta.valid && meta.state==SM_BT_CONNECTING?"BT CONNECTING":"BT DISCONNECTED";
     snprintf(lines[1],40,"%s",status);
     if(error<0)snprintf(lines[2],40,"USB ERROR %08X",(unsigned)error);
+    else if(state==6)snprintf(lines[2],40,"NOTE VOLDOWN 2S - RESUME");
     else if(meta.valid && meta.error)snprintf(lines[2],40,"BT ERROR %08X",(unsigned)meta.error);
     else if((state==1 || state==2) && meta.valid && meta.battery<=100)snprintf(lines[2],40,"BATTERY %u PERCENT",meta.battery);
     else snprintf(lines[2],40,"NOTE VOLUP 2S - DISABLE");

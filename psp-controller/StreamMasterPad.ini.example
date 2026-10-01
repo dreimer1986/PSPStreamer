@@ -2,6 +2,8 @@
 enabled=1
 # 0 disables all loader/runtime diagnostic file writes; 1 enables reports.
 report=1
+# Start+Select held for one second sends PS/HOME in controlled games.
+home_combo=1
 # 0 off, 1 compatible polling, 2 presentation hook (updated StreamerOC needed
 # when both plugins are installed; otherwise uses its own hook).
 overlay=1
@@ -20,3 +22,4 @@ metadata=0
 # allow_path=/ISO/MyTestGame.iso
 # exclude_path=/PSP/GAME/SomeUsbApp/
 # Physical NOTE + VOLUP held for two seconds disables input until next launch.
+# In VSH, NOTE + VOLDOWN held for two seconds toggles USB release for PC storage.

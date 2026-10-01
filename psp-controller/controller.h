@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "../psp-overclock/power_callback_slot.h"
 #include "report_config.h"
+#include "home_button.h"
 
 static int (*emulate_buttons)(unsigned char,unsigned,unsigned,unsigned);
 static int (*emulate_analog)(unsigned char,unsigned char,unsigned char,unsigned);
@@ -23,6 +24,7 @@ static int controller_report=1;
 static void controller_log(const char *text,int rc);
 #include "overlay.h"
 static int controller_enabled=1,controller_vsh=1,controller_pops=1,controller_disabled;
+static int controller_home=1,controller_usb_paused;
 static char excludes[8][96],allows[8][96];
 static unsigned exclude_count,allow_count;
 
@@ -56,6 +58,7 @@ static void controller_config(void) {
         while(*line==' ' || *line=='\t')line++;
         size_t len=strlen(line);while(len && (line[len-1]==' ' || line[len-1]=='\t'))line[--len]=0;
         if(!strncmp(line,"enabled=",8))controller_enabled=!strcmp(line+8,"1");
+        else if(!strncmp(line,"home_combo=",11))controller_home=!strcmp(line+11,"1");
         else if(!strncmp(line,"vsh=",4))controller_vsh=!strcmp(line+4,"1");
         else if(!strncmp(line,"pops=",5))controller_pops=!strcmp(line+5,"1");
         else if(!strncmp(line,"overlay=",8))pad_overlay_enabled=!strcmp(line+8,"2")?2:!strcmp(line+8,"1");
@@ -101,6 +104,9 @@ static int controller_worker(SceSize size,void *args) {
     int in_streamer=1,usb_error=0;
     int vsh=sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_VSH;
     int last_usb=-1,last_driver=-1,last_attach=-1;
+    unsigned long long usb_hold_since=0;
+    int usb_hold_active=0,usb_hold_fired=0;
+    PadHome home={0};
     controller_log("resident service ready",allowed);
     while(controller_running) {
         unsigned long long now=sceKernelGetSystemTimeWide();
@@ -110,18 +116,35 @@ static int controller_worker(SceSize size,void *args) {
         }
         /* NOTE + VOLUP cannot be synthesized by our 12-button wire mask.
          * Thus only physical PSP buttons can trigger the emergency disable. */
-        SceCtrlData physical;
-        if(sceCtrlPeekBufferPositive(&physical,1)>0 &&
+        SceCtrlData physical={0};
+        int physical_valid=sceCtrlPeekBufferPositive(&physical,1)>0;
+        if(physical_valid &&
            (physical.Buttons&(PSP_CTRL_NOTE|PSP_CTRL_VOLUP))==(PSP_CTRL_NOTE|PSP_CTRL_VOLUP)) {
             if(!escape_since)escape_since=now;
             if(now-escape_since>=2000000 && !controller_disabled) {
                 controller_disabled=pad_emergency_stop=1;controller_clear();controller_log("physical emergency disable",0);
             }
         } else escape_since=0;
+        /* Explicit VSH ownership hand-off, never automatic PC/ESP guessing.
+         * This chord cannot be synthesized by the wire button mask. */
+        if(vsh && !app_owner && physical_valid &&
+           (physical.Buttons&(PSP_CTRL_NOTE|PSP_CTRL_VOLDOWN))==(PSP_CTRL_NOTE|PSP_CTRL_VOLDOWN)) {
+            if(!usb_hold_active){usb_hold_active=1;usb_hold_since=now;}
+            if(!usb_hold_fired && now-usb_hold_since>=2000000){
+                usb_hold_fired=1;controller_usb_paused=!controller_usb_paused;
+                controller_clear();
+                controller_log("USB handoff pause",controller_usb_paused);
+                next_start=0;
+            }
+        } else usb_hold_active=usb_hold_fired=0;
+        if(controller_usb_paused && started && !app_owner && now>=next_start){
+            int rc=devctl(NULL,NULL,SM_DEV_STOP,NULL,0,NULL,0);
+            usb_error=rc;controller_log("USB handoff stop",rc);next_start=now+2000000;
+        }
         /* Once the app takes ownership it alone controls start/reset/stop.
          * In other apps this service starts only if no other USB function owns
          * the bus. Never deactivate mass storage/camera/etc to take it over. */
-        if(allowed && !controller_disabled && !controller_suspended && !app_owner &&
+        if(allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && !app_owner &&
            !in_streamer && (!started || vsh) && now>=next_start) {
             int was_started=started,usb_state=sceUsbGetState();
             int driver_state=sceUsbGetDrvState(DRIVER);
@@ -145,15 +168,16 @@ static int controller_worker(SceSize size,void *args) {
         unsigned long long sample_now=sceKernelGetSystemTimeWide();
         if(pad_enabled && pad_time && sample_now>=pad_time && sample_now-pad_time<750000)value=pad_value;
         sceKernelCpuResumeIntr(intr);
-        int active=allowed && !controller_disabled && !controller_suspended && !in_streamer && value.connected;
-        unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed);
-        if(active || screen) {
+        int active=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && !in_streamer && value.connected;
+        unsigned buttons=active?value.buttons&0xf3f9U:0;
+        unsigned home_button=pad_home_button(&home,&buttons,now,active && controller_home);
+        unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed && !controller_usb_paused);
+        if(active || screen || home_button) {
             /* Four sampling ticks expire even if this thread stalls. A single
              * 100 Hz worker refreshes a cached EP0 value; no USB RPC/polling,
              * per-button threads, heap allocation or network calls. */
             intr=sceKernelCpuSuspendIntr();
-            unsigned buttons=active?value.buttons&0xf3f9U:0;
-            emulate_buttons(3,buttons,buttons|screen,4);
+            emulate_buttons(3,buttons,buttons|screen|home_button,4);
             if(active && (abs((int)value.x-128)>16 || abs((int)value.y-128)>16))
                 emulate_analog(3,value.x,value.y,4);
             else emulate_analog(3,128,128,0);
@@ -161,7 +185,7 @@ static int controller_worker(SceSize size,void *args) {
         } else controller_clear();
         int state=controller_suspended?3:in_streamer?2:active?1:0;
         if(state!=last_state){controller_log("state: 0 idle / 1 injected / 2 app-owned / 3 suspended",state);last_state=state;}
-        pad_overlay_update(controller_disabled || !allowed?4:controller_suspended?3:!attached?5:value.connected?(in_streamer?2:1):0,usb_error,controller_suspended);
+        pad_overlay_update(controller_usb_paused?6:controller_disabled || !allowed?4:controller_suspended?3:!attached?5:value.connected?(in_streamer?2:1):0,usb_error,controller_suspended);
         sceKernelDelayThreadCB(10000);
     }
     scePowerUnregisterCallback(power);
