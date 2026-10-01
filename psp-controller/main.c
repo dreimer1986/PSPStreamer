@@ -29,7 +29,13 @@ static int start_worker(SceSize size,void *args) {
         if(n>0){config[n]=0;report_enabled=consolizer_report_setting(config);}
     }
     const char *logs[]={"ms0:/SEPLUGINS/StreamMasterPad/loader.log","ms0:/SEPLUGINS/StreamMasterPad/last.log"};
-    if(report_enabled)for(unsigned i=0;i<2;i++){int f=sceIoOpen(logs[i],PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);if(f>=0)sceIoClose(f);}
+    if(report_enabled)for(unsigned i=0;i<2;i++){
+        char previous[128];snprintf(previous,sizeof(previous),"%s.previous",logs[i]);
+        /* Preserve one preceding launch, notably cold VSH before a game. */
+        int old=sceIoOpen(logs[i],PSP_O_RDONLY,0);
+        if(old>=0){sceIoClose(old);sceIoRemove(previous);sceIoRename(logs[i],previous);}
+        int f=sceIoOpen(logs[i],PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);if(f>=0)sceIoClose(f);
+    }
     int rc=0;
     if(!sceKernelFindModuleByName("sceUSB_Driver")) {
         rc=load_start("flash0:/kd/usb.prx");

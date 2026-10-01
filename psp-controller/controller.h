@@ -99,6 +99,8 @@ static int controller_worker(SceSize size,void *args) {
     controller_log("OSD backup bytes",oc_hook_buffer_count*sizeof(OcOverlay));
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;
+    int vsh=sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_VSH;
+    int last_usb=-1,last_driver=-1,last_attach=-1;
     controller_log("resident service ready",allowed);
     while(controller_running) {
         unsigned long long now=sceKernelGetSystemTimeWide();
@@ -119,10 +121,20 @@ static int controller_worker(SceSize size,void *args) {
         /* Once the app takes ownership it alone controls start/reset/stop.
          * In other apps this service starts only if no other USB function owns
          * the bus. Never deactivate mass storage/camera/etc to take it over. */
-        if(allowed && !controller_disabled && !controller_suspended && !app_owner && !started && now>=next_start) {
+        if(allowed && !controller_disabled && !controller_suspended && !app_owner &&
+           !in_streamer && (!started || vsh) && now>=next_start) {
+            int was_started=started,usb_state=sceUsbGetState();
+            int driver_state=sceUsbGetDrvState(DRIVER);
+            if(usb_state!=last_usb || driver_state!=last_driver || attached!=last_attach) {
+                controller_log("USB state before maintenance",usb_state);
+                controller_log("USB bridge driver state (1 = started)",driver_state);
+                controller_log("USB attach speed (0 = absent)",attached);
+                last_usb=usb_state;last_driver=driver_state;last_attach=attached;
+            }
             int rc=devctl(NULL,NULL,SM_DEV_START,NULL,0,NULL,0);
             usb_error=rc;
-            if(rc==0)controller_log("USB ready; bus owned (0 = borrowed)",sm_bus_owned);
+            if(rc==0 && (!was_started || !(usb_state&PSP_USB_ACTIVATED) || driver_state!=1))
+                controller_log("USB ready; bus owned (0 = borrowed)",sm_bus_owned);
             if(rc<0 && rc!=SM_BUSY)controller_log("USB start",rc);
             next_start=now+2000000;
         }

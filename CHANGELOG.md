@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Recheck VSH USB activation after startup instead of trusting a stale started
+  flag; log state transitions and preserve the previous plugin launch's logs.
+
 - Reuse an already-running idle USB bus in VSH without stopping another
   component's bus on shutdown. Keep active USB functions protected.
 - Add Consolizer `report=0` to disable both loader and runtime diagnostic writes.

@@ -22,6 +22,13 @@ existing bus instead of failing, and stops only a bus it started itself.
 An active USB function is never forcibly disconnected. VSH and POPS remain
 separate hardware tests; the ESP cold-start issue is not declared fixed.
 
+VSH now rechecks local USB state every two seconds even after the first start
+succeeded. If the bridge was stopped or USB deactivated during XMB startup,
+it can restart/rearm on an inactive bus. Live transfers prevent rebuilding;
+an already-active function is not reset. State changes are logged, without
+new network or controller polling traffic. This addresses a missing recovery
+path, not yet a hardware-confirmed diagnosis of the cold-start failure.
+
 Both plugins now store their own two-color overlay pixels as a bit mask rather
 than 32-bit values. Original application pixels remain lossless. StreamerOC
 saves 109,728 bytes of BSS; Consolizer's three enabled backups need 78,756 bytes
@@ -153,8 +160,10 @@ off/on, unplug/replug, app/game exit, both overlays together and suspend/resume.
 Then test PSPStreamer learning, playback and an HTTP download. For TV test one
 policy at a time, with a known-working cable and manual output as fallback.
 
-Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`, replaced at
-each plugin launch. Copy before another game if that launch's log is needed.
+Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`. With reports
+enabled, the preceding launch is retained as `loader.log.previous` and
+`last.log.previous`; older history is rotated out. With `report=0`, neither
+current logs nor history are changed. Copy logs before multiple further launches.
 
 For XMB controller testing, leave the USB storage screen and turn off Sony's
 USB Auto Connect setting if it opens that screen automatically. The plugin

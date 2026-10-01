@@ -284,7 +284,18 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
        outlen!=(int)(bulk_send[0].op==SM_SOCKET_READ_BULK_EXT?sizeof(SmBulkResult):SM_LEGACY_RESULT_SIZE) || !user_buffer(out,outlen)))return SM_INVALID;
     SceUInt timeout=100000;int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     if(cmd==SM_DEV_START) {
-        if(started)rc=0;
+        /* XMB startup can stop/deactivate USB after our initial activation.
+         * A cached 'started' flag alone is not proof that the driver is live.
+         * Never rebuild while requests still own DMA buffers. */
+        if(started && sceUsbGetDrvState(DRIVER)!=1) {
+            if(send_pending || recv_pending || bulk_pending || exchange_active || bulk_active) {
+                sceKernelSignalSema(lock_id,1);return SM_BUSY;
+            }
+            started=0;attached=0;pad_cancel();
+        }
+        if(started) {
+            rc=(sceUsbGetState()&PSP_USB_ACTIVATED)?0:sceUsbActivate(SM_USB_PID);
+        }
         else if(sceUsbGetState()&PSP_USB_ACTIVATED)rc=SM_BUSY;
         else {
             rc=sm_bus_start();
