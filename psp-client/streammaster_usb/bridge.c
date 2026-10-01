@@ -10,7 +10,12 @@
 #include "../../streammaster/protocol.h"
 #include "../../streammaster/pad_metadata.h"
 #include "bus_owner.h"
+#include "../../streammaster/gamepad_wire.h"
+#ifdef SM_CONTROLLER_PLUGIN
+PSP_MODULE_INFO("PSPConsolizerUSB",PSP_MODULE_KERNEL,0,2);
+#else
 PSP_MODULE_INFO("StreamMasterUSB",PSP_MODULE_KERNEL,0,1);
+#endif
 #define DRIVER "StreamMasterUSBDriver"
 static struct UsbEndpoint endpoints[3]={{0,0,0},{1,0,0},{2,0,0}};
 static struct UsbInterface interface={0xffffffff,0,1};
@@ -48,9 +53,9 @@ static int control_request(int a,int b,struct DeviceRequest *r) {
     }
     /* Vendor DEVICE request with no data stage. Reuses EP0: no ninth USB
      * host channel and no interaction with the media request/reply queues. */
-    if(r && r->bmRequestType==0x40 && (r->bRequest==0x53 || r->bRequest==0x54) && !r->wLength && !(r->wValue&~0xf3f9U)) {
+    if(r && r->bmRequestType==0x40 && (r->bRequest==0x53 || r->bRequest==0x54) && !r->wLength && !(r->wValue&~SM_PAD_WIRE_MASK)) {
         int intr=sceKernelCpuSuspendIntr();
-        pad_value=(SmPad){.magic=SM_PAD_MAGIC,.buttons=r->wValue,.connected=r->bRequest==0x53,.x=r->wIndex&255,.y=r->wIndex>>8};
+        pad_value=(SmPad){.magic=SM_PAD_MAGIC,.buttons=sm_pad_unpack_buttons(r->wValue),.connected=r->bRequest==0x53,.x=r->wIndex&255,.y=r->wIndex>>8};
         pad_time=sceKernelGetSystemTimeWide();sceKernelCpuResumeIntr(intr);
     }
     return 0;
@@ -77,9 +82,9 @@ static int start_driver(int size,void *args) {
     (void)size;(void)args;memset(descriptors,0,sizeof(descriptors));
     struct DeviceDescriptor device={18,1,0x0200,0,0,0,64,0,0,0x0101,0,0,0,1};
 #ifdef SM_CONTROLLER_PLUGIN
-    if(pad_metadata_enabled)device.bcdDevice=0x0102;
+    device.bcdDevice=pad_metadata_enabled?0x0103:0x0104;
 #else
-    device.bcdDevice=0x0102;
+    device.bcdDevice=0x0103;
 #endif
     struct ConfigDescriptor config={9,2,32,1,1,0,0xc0,0};
     struct InterfaceDescriptor face={9,4,0,0,2,0xff,SM_USB_SUBCLASS,SM_USB_PROTOCOL,1};

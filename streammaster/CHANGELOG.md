@@ -1,5 +1,14 @@
 # StreamMaster firmware changelog
 
+## 0.3.13 — Per-controller PS / Home assignment
+
+- Setup v2 exposes Home as a separate learnable target; store its source in an
+  existing reserved profile byte, preserving bonds, Wi-Fi and previous mappings.
+- Negotiate Home support with the PSP bridge and encode it in a spare EP0 bit.
+  No extra transfers, threads, buffers or transport-frequency changes.
+- Existing profiles leave Home unassigned. Update PSPStreamer and Consolizer
+  together with the firmware to learn and use the new target.
+
 ## 0.3.12 — Isolate optional metadata from controller input
 
 - Only send metadata to PSP bridges explicitly advertising revision 0x0102.

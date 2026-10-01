@@ -2,6 +2,7 @@
  * One USB owner; slow Wi-Fi/HTTP work never runs in the host event loop. */
 #include "bridge.h"
 #include "hotpath.h"
+#include "../gamepad_wire.h"
 #include <stdlib.h>
 #include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
@@ -33,7 +34,7 @@ static uint32_t pad_sequence;
 static SmPadMeta pad_metadata;
 static unsigned pad_meta_chunk=16;
 static int64_t pad_meta_at,pad_meta_cycle;
-static int pad_meta_disabled,pad_tx_metadata,pad_meta_capable;
+static int pad_meta_disabled,pad_tx_metadata,pad_meta_capable,pad_home_capable;
 #include "../pad_delivery.h"
 #endif
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
@@ -194,7 +195,8 @@ static int open_psp(int address) {
     const uint8_t *p=(const uint8_t *)config,*end=p+config->wTotalLength;
     int candidate=-1,found_in=0,found_out=0;pad_endpoint=desc->bcdDevice>=0x0101;
 #if CONFIG_BT_BLUEDROID_ENABLED
-    pad_meta_capable=desc->bcdDevice>=0x0102;
+    pad_meta_capable=desc->bcdDevice==0x0102 || desc->bcdDevice==0x0103;
+    pad_home_capable=desc->bcdDevice==0x0103 || desc->bcdDevice==0x0104;
 #endif
     while(p+2<=end && p[0]>=2 && p+p[0]<=end) {
         if(p[1]==USB_B_DESCRIPTOR_TYPE_INTERFACE && p[0]>=9) {
@@ -305,7 +307,7 @@ void sm_usb_task(void *unused) {
                 else {pad_meta_disabled=1;pad_meta_chunk=16;}
             } else if(send_kind==SM_PAD_SEND_INPUT) {
                 usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=input.connected?0x53:0x54,
-                    .wValue=input.buttons,.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
+                    .wValue=sm_pad_pack_buttons(input.buttons,pad_home_capable),.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
                 pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
                 pad_tx_metadata=0;

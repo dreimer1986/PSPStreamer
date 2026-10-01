@@ -1,4 +1,49 @@
 static const HelpText help_de[HELP_PAGE_COUNT]={
+    [HELP_PAGE_SM]={
+        .title="Einstellungen: StreamMaster USB",
+        .step1_title="Bibliothek: SELECT öffnet Einstellungen",
+        .step1_text="StreamMaster USB wählen, dann X.",
+        .step2_title="USB verbinden, danach WLAN einrichten",
+        .step2_text="Tests prüfen Bridge und Serverzugriff.",
+        .step3_title="Netzwerktransport wählt den Weg",
+        .step3_text="StreamMaster nutzt WLAN über USB."
+    },
+    [HELP_PAGE_SM_WIFI]={
+        .title="StreamMaster: WLAN-Profile",
+        .step1_title="Vor dem Ändern einen Slot wählen",
+        .step1_text="Suchen, SSID wählen, Passwort eingeben.",
+        .step2_title="DHCP füllt Adress- und DNS-Felder",
+        .step2_text="Manuelle Werte nur bei Bedarf nutzen.",
+        .step3_title="Speichern / Verbinden übernimmt",
+        .step3_text="Automatik wählt ein erreichbares Profil."
+    },
+    [HELP_PAGE_BT]={
+        .title="StreamMaster: Bluetooth",
+        .step1_title="Untermenü Bluetooth-Controller öffnen",
+        .step1_text="Controller in den Kopplungsmodus setzen.",
+        .step2_title="Controller suchen; X verbindet",
+        .step2_text="DREIECK zweimal vergisst die Auswahl.",
+        .step3_title="Tasten / Wiederverbinden: Zuordnung",
+        .step3_text="Bekannte Geräte verbinden automatisch."
+    },
+    [HELP_PAGE_BT_LEARN]={
+        .title="Controller: Tasten und Stick anlernen",
+        .step1_title="PSP-Taste wählen und X drücken",
+        .step1_text="Loslassen, dann neue Taste drücken.",
+        .step2_title="PS / Home braucht Firmware 0.3.13",
+        .step2_text="Analog: Stick kreisen, dann zentrieren.",
+        .step3_title="QUADRAT überspringt; START speichert",
+        .step3_text="Belegung wird je Controller gespeichert."
+    },
+    [HELP_PAGE_CONSOLIZER]={
+        .title="PSP Consolizer: Spiele und USB",
+        .step1_title="Angelernte PS/Home-Taste: Systemmenü",
+        .step1_text="Ersatz: START + SELECT für 1s halten.",
+        .step2_title="XMB: NOTE + Lautstärke- für 2s halten",
+        .step2_text="USB RELEASED: USB-Verbindung öffnen.",
+        .step3_title="USB-Modus vor derselben Kombi beenden",
+        .step3_text="Fortsetzen. INI report=0: Logs aus."
+    },
     [HELP_PAGE_PLAYLIST]={
         .title="Gemeinsame Wiedergabeliste",
         .step1_title="Bibliothek: Wiedergabeliste öffnen",
@@ -136,10 +181,10 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
     },
     [HELP_PAGE_FLIGHT]={
         .title="Höhle: selbst fliegen",
-        .step1_title="L + R: Flugmenü öffnen",
-        .step1_text="LINKS/RECHTS: Schiff. Stick: Flug. X: Feuer.",
+        .step1_title="L + R: Flugmenü; X: Feuer im Flug",
+        .step1_text="Links/rechts: Schiff; Stick fliegt.",
         .step2_title="L / R: rollen   HOCH/RUNTER: Tempo",
-        .step2_text="Doppel-L / R: Rolle schützt vor Schüssen.",
+        .step2_text="Doppel-L/R: Rolle mit Schussschutz.",
         .step3_title="L + R 5 Sekunden halten: verlassen",
         .step3_text="Flug im Vollbild; START stoppt Musik."
     },
@@ -148,7 +193,7 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_title="Starten / Bestenliste / Verlassen",
         .step1_text="HOCH/RUNTER wählt, X: OK, O: Ende.",
         .step2_title="Wandtreffer: -20 Schild, 1s Schutz",
-        .step2_text="Schuss: -10; Abschuss: +100; Sekunde: +1.",
+        .step2_text="Treffer -10; Abschuss +100; Zeit +1/s.",
         .step3_title="Game Over: Explosion und Punkte",
         .step3_text="Nach 5s: Top Ten. X / O geht zurück."
     },

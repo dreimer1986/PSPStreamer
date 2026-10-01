@@ -32,7 +32,7 @@ static void controller_log(const char *text,int rc) {
     if(!controller_report)return;
     unsigned long long now=sceKernelGetSystemTimeWide();
     char line[160];int n=snprintf(line,sizeof(line),"%u.%06u %s: %08X\n",(unsigned)(now/1000000),(unsigned)(now%1000000),text,(unsigned)rc);
-    int f=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+    int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
 }
 #include "tvout.h"
@@ -49,7 +49,7 @@ static int controller_power(int unknown,int flags,void *common) {
     return 0;
 }
 static void controller_config(void) {
-    char buffer[2048];int f=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.ini",PSP_O_RDONLY,0);
+    char buffer[2048];int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini",PSP_O_RDONLY,0);
     if(f<0)return;
     int n=sceIoRead(f,buffer,sizeof(buffer)-1);sceIoClose(f);if(n<=0)return;buffer[n]=0;
     controller_report=consolizer_report_setting(buffer);
@@ -171,6 +171,7 @@ static int controller_worker(SceSize size,void *args) {
         int active=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && !in_streamer && value.connected;
         unsigned buttons=active?value.buttons&0xf3f9U:0;
         unsigned home_button=pad_home_button(&home,&buttons,now,active && controller_home);
+        if(active && (value.buttons&PSP_CTRL_HOME))home_button|=PSP_CTRL_HOME;
         unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed && !controller_usb_paused);
         if(active || screen || home_button) {
             /* Four sampling ticks expire even if this thread stalls. A single
@@ -196,7 +197,7 @@ done:
 }
 static int controller_start(void) {
     controller_running=1;
-    controller_thread=sceKernelCreateThread("StreamMasterPad service",controller_worker,0x30,8192,0,NULL);
+    controller_thread=sceKernelCreateThread("PSPConsolizer service",controller_worker,0x30,8192,0,NULL);
     if(controller_thread<0)return controller_thread;
     int rc=sceKernelStartThread(controller_thread,0,NULL);
     if(rc<0){sceKernelDeleteThread(controller_thread);controller_thread=-1;controller_running=0;}return rc;

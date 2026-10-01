@@ -2,6 +2,15 @@
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
+[PSP Consolizer](psp-controller/README.md) brings StreamMaster Bluetooth input
+to games and XMB, with optional TV activation and compact overlays. Install
+`SEPLUGINS/PSPConsolizer/PSPConsolizer.prx` plus `PSPConsolizerUSB.prx` and
+`PSPConsolizer.ini`; remove old plugin entries instead of enabling two copies.
+Firmware 0.3.13 and the matching PSPStreamer build add a learnable **PS / Home**
+button. Find it under Settings > StreamMaster USB > Bluetooth controller >
+Buttons / reconnect. The English/German in-app help now covers these menus
+and the physical NOTE + Volume Down USB-storage hand-off in XMB.
+
 Music analysis now offers an optional [desktop MilkDrop FFT mode](docs/SPECTRUM_ANALYSIS.md)
 and 12/24/32/48/64 analyzer bars. The original light 12-band mode remains the
 default. Configure it in PSP Settings or press Circle while using the spectrum.

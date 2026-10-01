@@ -11,3 +11,4 @@ include $(PSPSDK)/lib/build.mak
 bridge.o: ../../streammaster/protocol.h
 bridge.o: ../../streammaster/pad_metadata.h
 bridge.o: bus_owner.h
+bridge.o: ../../streammaster/gamepad_wire.h

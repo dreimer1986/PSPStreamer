@@ -69,13 +69,15 @@ typedef struct {uint8_t address[6],valid,reserved;SmBtProfile profile;} StoredPr
 typedef struct {uint32_t version;StoredProfile slot[4];} ProfileStore;
 static ProfileStore profiles={.version=1};
 static SmBtProfile current_profile;
+static unsigned current_home;
 static void load_peer_profile_locked(const uint8_t address[6]) {
-    current_profile=sm_bt_default_profile();
+    current_profile=sm_bt_default_profile();current_home=0;
     /* Keep the former defaults (including any global button edits) as the
      * initial draft, but offer the wizard until this device has been saved. */
     for(unsigned i=0;i<12;i++)for(unsigned j=0;j<16;j++)if(options.button[j]==sm_bt_targets[i]){current_profile.binding[i]=j+1;break;}
     for(unsigned i=0;i<4;i++)if(profiles.slot[i].valid && !memcmp(profiles.slot[i].address,address,6)) {
-        current_profile=profiles.slot[i].profile;break;
+        current_profile=profiles.slot[i].profile;
+        current_home=profiles.slot[i].reserved<=20?profiles.slot[i].reserved:0;break;
     }
 }
 static uint8_t bonded[4][6];
@@ -132,17 +134,19 @@ int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
         out->length=sizeof(pad);return SM_OK;
     }
     if(r->op==SM_BT_SETUP_GET && !r->length) {
-        SmBtSetup setup={.version=1};
+        SmBtSetup setup={.version=2};
         portENTER_CRITICAL(&guard);
         int connected=status.state==SM_BT_CONNECTED;
         memcpy(setup.address,peer,6);setup.session=pad.session;setup.reconnect=options.reconnect;setup.profile=current_profile;
+        setup.reserved[0]=current_home;
         portEXIT_CRITICAL(&guard);
         if(!connected)return SM_OFFLINE;
         memcpy(out->payload,&setup,sizeof(setup));out->length=sizeof(setup);return SM_OK;
     }
     if(r->op==SM_BT_SETUP_SET && r->length==sizeof(SmBtSetup)) {
         SmBtSetup setup;memcpy(&setup,r->payload,sizeof(setup));
-        if(setup.version!=1 || setup.reconnect>1 || !sm_bt_profile_valid(&setup.profile))return SM_INVALID;
+        if((setup.version!=1 && setup.version!=2) || setup.reconnect>1 || !sm_bt_profile_valid(&setup.profile) ||
+           (setup.version==2 && setup.reserved[0]>20))return SM_INVALID;
         ProfileStore next;SmBtOptions next_options;
         portENTER_CRITICAL(&guard);
         int matches=status.state==SM_BT_CONNECTED && setup.session==pad.session && !memcmp(setup.address,peer,6);
@@ -152,7 +156,9 @@ int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
         for(unsigned i=0;i<4;i++)if(next.slot[i].valid && !memcmp(next.slot[i].address,setup.address,6)){slot=i;break;}
         if(slot<0)for(unsigned i=0;i<4;i++)if(!next.slot[i].valid || !known_peer(next.slot[i].address)){slot=i;break;}
         if(slot<0)return SM_BUSY; /* Never overwrite another bonded device. */
-        next.slot[slot]=(StoredProfile){.valid=1,.profile=setup.profile};memcpy(next.slot[slot].address,setup.address,6);
+        unsigned home=setup.version==2?setup.reserved[0]:next.slot[slot].reserved;
+        if(home>20)home=0;
+        next.slot[slot]=(StoredProfile){.valid=1,.reserved=home,.profile=setup.profile};memcpy(next.slot[slot].address,setup.address,6);
         next_options.reconnect=setup.reconnect;
         nvs_handle_t n;esp_err_t rc=nvs_open("sm_gamepad",NVS_READWRITE,&n);
         if(rc!=ESP_OK)return SM_IO;
@@ -163,7 +169,7 @@ int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
         portENTER_CRITICAL(&guard);
         profiles=next;options=next_options;
         matches=status.state==SM_BT_CONNECTED && setup.session==pad.session && !memcmp(setup.address,peer,6);
-        if(matches){current_profile=setup.profile;pad.buttons=0;pad.x=pad.y=128;pad.sequence++;}
+        if(matches){current_profile=setup.profile;current_home=home;pad.buttons=0;pad.x=pad.y=128;pad.sequence++;}
         portEXIT_CRITICAL(&guard);
         atomic_store(&reconnect_suspended,0);return matches?SM_OK:SM_OFFLINE;
     }
@@ -285,6 +291,8 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         if(p->data_ind.handle==active_handle && p->data_ind.status==ESP_HIDH_OK && sm_hid_input(&map,p->data_ind.data,p->data_ind.len,&hidpad)) {
             portENTER_CRITICAL(&guard);
             pad.buttons=sm_bt_profile_buttons(&current_profile,hidpad.raw_buttons,hidpad.hat);
+            unsigned sources=hidpad.raw_buttons|((unsigned)(hidpad.hat&15)<<16);
+            if(current_home && current_home<=20 && (sources&(1U<<(current_home-1))))pad.buttons|=0x10000U;
             pad.raw_buttons=hidpad.raw_buttons;memcpy(pad.axes,hidpad.axes,sizeof(pad.axes));pad.axes_valid=hidpad.axes_valid;pad.hat=hidpad.hat;
             pad.x=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,0);
             pad.y=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,1);pad.connected=1;pad.sequence++;status.reports++;

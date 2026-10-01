@@ -1,4 +1,49 @@
 static const HelpText help_en[HELP_PAGE_COUNT]={
+    [HELP_PAGE_SM]={
+        .title="Settings: StreamMaster USB",
+        .step1_title="Library: SELECT opens settings",
+        .step1_text="Choose StreamMaster USB, then X.",
+        .step2_title="Connect USB, then set up Wi-Fi",
+        .step2_text="Tests check bridge and server access.",
+        .step3_title="Network transport chooses the route",
+        .step3_text="Select StreamMaster to use USB Wi-Fi."
+    },
+    [HELP_PAGE_SM_WIFI]={
+        .title="StreamMaster: Wi-Fi profiles",
+        .step1_title="Choose a slot before editing Wi-Fi",
+        .step1_text="Scan, select SSID and enter password.",
+        .step2_title="DHCP fills address and DNS fields",
+        .step2_text="Use manual values only if required.",
+        .step3_title="Save / connect applies the profile",
+        .step3_text="Automatic picks an available profile."
+    },
+    [HELP_PAGE_BT]={
+        .title="StreamMaster: Bluetooth",
+        .step1_title="Open Bluetooth controller submenu",
+        .step1_text="Put the controller in pairing mode.",
+        .step2_title="Find controllers; X connects",
+        .step2_text="TRIANGLE twice forgets the selection.",
+        .step3_title="Buttons / reconnect opens mapping",
+        .step3_text="Saved devices can reconnect themselves."
+    },
+    [HELP_PAGE_BT_LEARN]={
+        .title="Controller: learn buttons and stick",
+        .step1_title="Choose a PSP button, then X",
+        .step1_text="Release controls; press its new button.",
+        .step2_title="PS / Home needs firmware 0.3.13",
+        .step2_text="Analog: circle the stick, then center.",
+        .step3_title="SQUARE skips; START saves mapping",
+        .step3_text="Saved separately for each controller."
+    },
+    [HELP_PAGE_CONSOLIZER]={
+        .title="PSP Consolizer: games and USB",
+        .step1_title="Mapped PS / Home opens system menu",
+        .step1_text="Fallback: hold START + SELECT for 1s.",
+        .step2_title="XMB: hold NOTE + Volume Down for 2s",
+        .step2_text="USB RELEASED: open USB Connection.",
+        .step3_title="Exit storage before the same chord",
+        .step3_text="Resumes Consolizer; INI report=0: quiet."
+    },
     [HELP_PAGE_PLAYLIST]={
         .title="Shared playlist",
         .step1_title="Open Playlist in the library",

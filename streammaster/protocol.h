@@ -46,6 +46,8 @@ typedef struct {uint32_t reconnect,button[16];} SmBtOptions;
 /* Source 1..16 = HID button, 17..20 = hat up/right/down/left; zero = off. */
 typedef struct {uint8_t binding[12],axis_x,axis_y,invert,configured;} SmBtProfile;
 typedef struct {uint32_t version;uint8_t address[6],reserved[2];uint32_t session,reconnect;SmBtProfile profile;} SmBtSetup;
+/* Setup v2: reserved[0] is HOME source (0 off, 1..20 HID/hat).
+ * StoredProfile's existing reserved byte stores it, preserving NVS layout. */
 _Static_assert(sizeof(SmBtSetup)==36,"Controller setup wire layout");
 /* Last enumeration probes, not a live device list. Never contains credentials. */
 enum {SM_BT_PROBE_OPEN=1,SM_BT_PROBE_DESCRIPTOR,SM_BT_PROBE_FILTER,

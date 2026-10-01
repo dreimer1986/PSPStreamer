@@ -1,4 +1,4 @@
-# PSP Consolizer. Read once at application start. Legacy filenames retained.
+# PSP Consolizer. Read once at application start.
 enabled=1
 # 0 disables all loader/runtime diagnostic file writes; 1 enables reports.
 report=1

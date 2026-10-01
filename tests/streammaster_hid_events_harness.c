@@ -26,11 +26,15 @@ static int guard,active_handle=-1,disconnects,protocols,allow=1;
 static atomic_int ready,online,accept_input;
 static int64_t pair_until,last_input_log;
 static uint8_t peer[6];
+static char peer_name[48];
+static uint8_t peer_battery;
+static void esp_bt_gap_read_remote_name(const uint8_t *address){(void)address;}
 static SmBtStatus status;
 static SmPad pad;
 static SmHidMap map;
 static SmHidPad hidpad;
 static SmBtProfile current_profile;
+static unsigned current_home;
 static void load_peer_profile_locked(const uint8_t address[6]){(void)address;current_profile=sm_bt_default_profile();}
 static void refresh_bonds(int replace){(void)replace;}
 static void esp_bt_gap_set_scan_mode(int c,int d){(void)c;(void)d;}
@@ -60,8 +64,10 @@ int main(void) {
         assert(active_handle==1 && !disconnects);
         p.dscp.handle=1;p.dscp.dsc_list=descriptor;p.dscp.dl_len=sizeof(descriptor);
         hid(ESP_HIDH_GET_DSCP_EVT,&p);assert(atomic_load(&accept_input));
+        current_home=repeat==1?1:0;
+        if(current_home)current_profile.binding[0]=0;
         p.data_ind.handle=1;p.data_ind.data=report;p.data_ind.len=1;hid(ESP_HIDH_DATA_IND_EVT,&p);
-        assert(pad.connected && pad.buttons==0x4000 && status.reports==(unsigned)repeat+1);
+        assert(pad.connected && pad.buttons==(current_home?0x10000U:0x4000U) && status.reports==(unsigned)repeat+1);
         p.close.handle=2;p.close.conn_status=ESP_HIDH_CONN_STATE_DISCONNECTED;hid(ESP_HIDH_CLOSE_EVT,&p);
         assert(active_handle==1 && pad.connected);
         p.close.handle=1;p.close.conn_status=ESP_HIDH_CONN_STATE_DISCONNECTING;hid(ESP_HIDH_CLOSE_EVT,&p);

@@ -1,4 +1,4 @@
-TARGET = StreamMasterPad
+TARGET = PSPConsolizer
 OBJS = main.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1

@@ -49,12 +49,15 @@ int main(void) {
     for(unsigned i=1;i<=4;i++) {
         peer[0]=i;pad.session=i;load_peer_profile_locked(peer);
         SmBtSetup setup=get_setup();assert(!setup.profile.configured);
+        assert(setup.version==2);setup.reserved[0]=i+10;
         setup.profile.binding[0]=i+4;setup.profile.axis_x=3;setup.profile.axis_y=4;setup.profile.configured=1;
         assert(!save(&setup));
     }
     /* Reboot-like reload: profiles still match addresses, not connection order. */
     memset(&profiles,0,sizeof(profiles));profiles=disk_profiles;options=disk_options;
-    for(unsigned i=4;i>=1;i--){peer[0]=i;pad.session++;load_peer_profile_locked(peer);assert(current_profile.configured && current_profile.binding[0]==i+4 && current_profile.axis_x==3);}
+    for(unsigned i=4;i>=1;i--){peer[0]=i;pad.session++;load_peer_profile_locked(peer);assert(current_profile.configured && current_profile.binding[0]==i+4 && current_profile.axis_x==3 && current_home==i+10);}
+    SmBtSetup legacy=get_setup();legacy.version=1;legacy.reserved[0]=0;assert(!save(&legacy) && current_home==11);
+    SmBtSetup bad_home=get_setup();bad_home.reserved[0]=21;assert(save(&bad_home)==SM_INVALID);
     SmBtSetup stale=get_setup();pad.session++;assert(save(&stale)==SM_OFFLINE);
     stale=get_setup();stale.address[0]=2;assert(save(&stale)==SM_OFFLINE);
     stale=get_setup();stale.profile.binding[0]=21;assert(save(&stale)==SM_INVALID);

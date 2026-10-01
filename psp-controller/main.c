@@ -10,7 +10,7 @@ static int report_enabled=1;
 static void report(const char *what,int rc) {
     if(!report_enabled)return;
     char line[120];int n=snprintf(line,sizeof(line),"%s: %08X\n",what,(unsigned)rc);
-    int fd=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/loader.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+    int fd=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/loader.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(fd>=0){sceIoWrite(fd,line,n);sceIoClose(fd);}
 }
 static int load_start(const char *path) {
@@ -23,12 +23,12 @@ static int load_start(const char *path) {
 static int start_worker(SceSize size,void *args) {
     (void)size;(void)args;sceKernelDelayThread(2000000);
     static char config[2048];
-    int config_fd=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.ini",PSP_O_RDONLY,0);
+    int config_fd=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini",PSP_O_RDONLY,0);
     if(config_fd>=0){
         int n=sceIoRead(config_fd,config,sizeof(config)-1);sceIoClose(config_fd);
         if(n>0){config[n]=0;report_enabled=consolizer_report_setting(config);}
     }
-    const char *logs[]={"ms0:/SEPLUGINS/StreamMasterPad/loader.log","ms0:/SEPLUGINS/StreamMasterPad/last.log"};
+    const char *logs[]={"ms0:/SEPLUGINS/PSPConsolizer/loader.log","ms0:/SEPLUGINS/PSPConsolizer/last.log"};
     if(report_enabled)for(unsigned i=0;i<2;i++){
         char previous[128];snprintf(previous,sizeof(previous),"%s.previous",logs[i]);
         /* Preserve one preceding launch, notably cold VSH before a game. */
@@ -42,13 +42,13 @@ static int start_worker(SceSize size,void *args) {
         if((unsigned)rc==0x80020139U)rc=0;
     }
     report("Sony USB",rc);
-    if(rc>=0 && !sceKernelFindModuleByName("StreamMasterUSB"))
-        rc=load_start("ms0:/SEPLUGINS/StreamMasterPad/StreamMasterUSB.prx");
+    if(rc>=0 && !sceKernelFindModuleByName("PSPConsolizerUSB") && !sceKernelFindModuleByName("StreamMasterUSB"))
+        rc=load_start("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizerUSB.prx");
     report("shared bridge",rc);return 0;
 }
 int module_start(SceSize size,void *args) {
     (void)size;(void)args;
-    worker=sceKernelCreateThread("StreamMasterPad loader",start_worker,0x30,4096,0,NULL);
+    worker=sceKernelCreateThread("PSPConsolizer loader",start_worker,0x30,4096,0,NULL);
     if(worker<0)return worker;
     int rc=sceKernelStartThread(worker,0,NULL);
     if(rc<0){sceKernelDeleteThread(worker);worker=-1;}return rc;

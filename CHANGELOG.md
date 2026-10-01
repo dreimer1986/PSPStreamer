@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Rename all Consolizer plugin files, configuration paths and ARK entries to
+  PSPConsolizer; keep the unrelated StreamMaster app transport name unchanged.
+- Add per-controller PS/Home learning with firmware 0.3.13, preserving existing
+  bonds and mapping storage. Update English/German help for StreamMaster,
+  Wi-Fi profiles, Bluetooth learning, Home and VSH USB hand-off.
+
 - Add explicit VSH USB release/resume (physical NOTE + Volume Down, 2 s) so
   Consolizer can yield the port for PC memory-stick access.
 - Add controller Start + Select (1 s) as a bounded, system-only PS/HOME pulse;
@@ -24,7 +30,7 @@
   disabled overlays now allocate no pixel backups, polling uses one backup.
   Add kernel-memory diagnostics for the ongoing game/network regression test.
 
-- Add PSP Consolizer (legacy StreamMasterPad paths retained): PSP-wide controller
+- Add PSP Consolizer: PSP-wide controller
   input, optional VSH/POPS, connection/name/battery diagnostics, cooperative OC
   presentation overlay and optional cable-gated Sony TV activation. New modes
   require hardware testing; the initial Soul Calibur input test passed.

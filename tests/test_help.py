@@ -50,7 +50,7 @@ int main(void) {
             at = source.index(start)
             return source[at:source.index(end, at)]
         drawing = section(main, 'static void gui_rect(', 'static void gui_line(')
-        drawing += section(main, 'static void gui_draw_small_glyph(', '/* Analogue VU ballistics:')
+        drawing += section(main, 'static void gui_small_glyph(', '/* Analogue VU ballistics:')
         drawing += section(tv, 'static int tv_text(', 'static u32 tv_indicator_color(')
         harness = (ROOT / 'tests/help_harness.c').read_text().replace('/* PRODUCTION_DRAWING */', drawing)
         with tempfile.TemporaryDirectory() as temp:

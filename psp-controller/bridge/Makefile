@@ -1,4 +1,4 @@
-TARGET = StreamMasterUSB
+TARGET = PSPConsolizerUSB
 OBJS = bridge.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1
@@ -15,3 +15,4 @@ bridge.o: ../tvout.h ../../psp-overclock/overlay_hook.h ../../psp-overclock/cont
 bridge.o: ../../streammaster/pad_metadata.h
 bridge.o: ../report_config.h ../../psp-client/streammaster_usb/bus_owner.h
 bridge.o: ../home_button.h
+bridge.o: ../../streammaster/gamepad_wire.h

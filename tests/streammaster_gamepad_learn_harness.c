@@ -2,9 +2,20 @@
 #include <stdio.h>
 #include "streammaster/gamepad.h"
 #include "streammaster/gamepad_learn.h"
+#include "streammaster/gamepad_wire.h"
 int main(void) {
     _Static_assert(sizeof(SmPad)==32,"USB driver ABI unchanged");
     SmBtProfile p=sm_bt_default_profile();assert(sm_bt_profile_valid(&p));
+    SmBtSetup setup={.version=2,.profile=sm_bt_default_profile()};
+    sm_bt_setup_assign(&setup,12,2);assert(setup.reserved[0]==2 && !setup.profile.binding[1]);
+    sm_bt_setup_assign(&setup,0,2);assert(!setup.reserved[0] && setup.profile.binding[0]==2);
+    sm_bt_setup_assign(&setup,12,16);assert(setup.reserved[0]==16);
+    assert(sm_pad_unpack_buttons(sm_pad_pack_buttons(0x10009,1))==0x10009);
+    assert(sm_pad_pack_buttons(0x10009,0)==9);
+    for(unsigned mask=0;mask<65536;mask++)if(!(mask&~0xf3f9U)) {
+        assert(sm_pad_unpack_buttons(sm_pad_pack_buttons(mask,1))==mask);
+        assert(sm_pad_unpack_buttons(sm_pad_pack_buttons(mask|SM_PAD_HOME,1))==(mask|SM_PAD_HOME));
+    }
     SmPad live={.connected=1,.raw_buttons=2};assert(sm_bt_single_source(&live)==2);
     live.raw_buttons=3;assert(!sm_bt_single_source(&live));
     live.raw_buttons=0;live.hat=1;assert(sm_bt_single_source(&live)==17);

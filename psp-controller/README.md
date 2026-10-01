@@ -1,10 +1,19 @@
 # PSP Consolizer 0.2 — StreamMaster controller plugin
 
-### Current regression diagnostic build
+### Current build
+
+Plugin directory, PRXs, INI and thread/module names now use PSPConsolizer.
+The new companion StreamMaster firmware is **0.3.13-bt-qio80-iram**. It adds
+per-controller PS/Home learning without changing existing profile storage sizes
+or erasing bonds/Wi-Fi settings. Update the application, both plugin PRXs and
+the firmware together. Application-owned `StreamMasterUSB.prx` keeps its name:
+that is the separate StreamMaster transport, not the Consolizer plugin.
+
+### Memory regression history
 
 The disabled overlay previously still reserved three framebuffer backups in
 kernel BSS (152,688 bytes). The resident bridge's fixed footprint had grown from
-228,756 bytes in 0.1 to 339,192 bytes in 0.2. It is now 187,388 bytes: OSD storage
+228,756 bytes in 0.1 to 339,192 bytes in 0.2. The initial fix used 187,388 bytes: OSD storage
 is allocated only when enabled (one backup for polling, three for presentation).
 Allocation failure disables the OSD rather than controller input. Storage is
 released only after the worker and registered callbacks have stopped.
@@ -19,15 +28,16 @@ The user confirmed games, TV activation and controller reconnection after USB
 and power removal work with the packed overlays enabled. VSH still returned
 `80243001`: the USB bus was already started. The bridge now borrows an idle
 existing bus instead of failing, and stops only a bus it started itself.
-An active USB function is never forcibly disconnected. VSH and POPS remain
-separate hardware tests; the ESP cold-start issue is not declared fixed.
+An active USB function is never forcibly disconnected. The user has since
+confirmed VSH cold boot with Bluetooth, TV activation and game changes. The
+separate sporadic ESP cold-start issue is not declared fixed.
 
 VSH now rechecks local USB state every two seconds even after the first start
 succeeded. If the bridge was stopped or USB deactivated during XMB startup,
 it can restart/rearm on an inactive bus. Live transfers prevent rebuilding;
 an already-active function is not reset. State changes are logged, without
 new network or controller polling traffic. This addresses a missing recovery
-path, not yet a hardware-confirmed diagnosis of the cold-start failure.
+path; the subsequent VSH cold-start hardware test passed.
 
 Both plugins now store their own two-color overlay pixels as a bit mask rather
 than 32-bit values. Original application pixels remain lossless. StreamerOC
@@ -35,28 +45,28 @@ saves 109,728 bytes of BSS; Consolizer's three enabled backups need 78,756 bytes
 instead of 152,688. Including code changes, both modules plus the enabled
 Consolizer backups use about 30 KiB less memory than the successful overlay-off
 test. Allocator overhead and each game's other allocations still matter; this
-is not a guarantee of compatibility. Install BOTH updated plugins. Firmware,
-clock policy and controller emulation are unchanged. Allocation failure still
+is not a guarantee of compatibility. Install BOTH updated plugins. Clock policy
+is unchanged. Allocation failure still
 disables only the Consolizer overlay. The test configuration keeps temporary
 status display (`overlay_always=0`), not a permanently visible overlay.
 
 Use a controller paired with StreamMaster in PSP games, homebrew, and optionally
 VSH or POPS. **0.2 game input, packed overlays, TV activation and USB/controller
-reconnection passed hardware testing. The new VSH bus fix awaits testing.**
+reconnection and VSH cold startup passed hardware testing.**
 No Rumble. Wi-Fi/media transport remains available to PSPStreamer.
 
-The legacy `StreamMasterPad` filenames and directory deliberately remain valid.
-The module/display name is now PSP Consolizer. Do not install it twice under
-different names. Pairing and button/analog learning remain in PSPStreamer.
+Remove the previous plugin directory and replace its ARK entries when upgrading;
+do not load old and new copies together. Preserve your INI as `PSPConsolizer.ini`.
+Pairing and button/analog learning remain in PSPStreamer.
 
 ## Installation
 
-Copy both files into `ms0:/SEPLUGINS/StreamMasterPad/`:
+Copy both files into `ms0:/SEPLUGINS/PSPConsolizer/`:
 
-- `StreamMasterPad.prx` (loader)
-- `StreamMasterUSB.prx` (resident USB bridge/controller service)
+- `PSPConsolizer.prx` (loader)
+- `PSPConsolizerUSB.prx` (resident USB bridge/controller service)
 
-Copy `StreamMasterPad.ini.example` as `StreamMasterPad.ini` and adjust it. Use
+Copy `PSPConsolizer.ini.example` as `PSPConsolizer.ini` and adjust it. Use
 the companion PSPStreamer EBOOT.PBP, PSPStreamer.prx and **app** StreamMasterUSB.prx.
 Do not interchange the app and resident bridge binaries. Install the companion
 StreamerOC.prx too if using both plugins with presentation-hook overlays.
@@ -64,9 +74,9 @@ StreamerOC.prx too if using both plugins with presentation-hook overlays.
 Add the desired contexts to ARK's active `SEPLUGINS/PLUGINS.TXT`:
 
 ```text
-game, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
-vsh, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
-pops, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
+game, ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.prx, on
+vsh, ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.prx, on
+pops, ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.prx, on
 ```
 
 GAME includes homebrew. VSH and POPS are optional, newly enabled test targets,
@@ -168,14 +178,26 @@ the updated plugin before re-enabling the VSH entry.
 
 ### PS / HOME from the controller
 
+In PSPStreamer choose Settings > StreamMaster USB > Bluetooth controller >
+Buttons / reconnect > **PS / Home**, then press X and the desired controller
+button. Save with Start. The existing wizard includes this additional target.
+Firmware 0.3.13 stores it per device in previously reserved bytes; previous
+profiles remain usable, with Home unassigned. Assigning a source to Home
+removes its previous regular mapping, and vice versa. Any HID button exposed
+by the supported controller parser can be used; a vendor-specific Guide
+button not reported as such is not automatically supported.
+
+Consolizer sends Home only to Sony's kernel input path, not as a game button.
+The firmware encodes it in a previously unused EP0 bit only when the updated
+bridge advertises support. This works in Consolizer-controlled titles; the
+plugin still leaves PSPStreamer's application-owned input path alone.
+
 Hold the mapped **Start + Select for one second** in a game to send one 150 ms
 HOME pulse to Sony's kernel input handler. Release both before using the chord
 again. The combined buttons are suppressed from game input while held together;
 a button pressed earlier on its own can still reach the game. Set `home_combo=0`
-in the Consolizer INI to disable this shortcut (default `1`). No firmware or
-wire-format change is required. This shortcut applies to Consolizer-controlled
-titles, not PSPStreamer's own application-controlled input path. A separately
-learnable controller Guide button is not implemented by this shortcut.
+in the Consolizer INI to disable this optional fallback (default `1`). The
+individually learned Home button remains enabled independently.
 
 Hold physical **NOTE + VOLUP for two seconds** to disable external input for
 the current launch. Physical PSP controls remain available. Stale input expires
@@ -186,7 +208,7 @@ off/on, unplug/replug, app/game exit, both overlays together and suspend/resume.
 Then test PSPStreamer learning, playback and an HTTP download. For TV test one
 policy at a time, with a known-working cable and manual output as fallback.
 
-Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`. With reports
+Logs: `ms0:/SEPLUGINS/PSPConsolizer/loader.log` and `last.log`. With reports
 enabled, the preceding launch is retained as `loader.log.previous` and
 `last.log.previous`; older history is rotated out. With `report=0`, neither
 current logs nor history are changed. Copy logs before multiple further launches.

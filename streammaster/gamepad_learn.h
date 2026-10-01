@@ -11,6 +11,15 @@ static inline void sm_bt_assign(SmBtProfile *p,unsigned target,unsigned source) 
     for(unsigned i=0;i<12;i++)if(source && p->binding[i]==source)p->binding[i]=0;
     p->binding[target]=source;
 }
+static inline void sm_bt_setup_assign(SmBtSetup *s,unsigned target,unsigned source) {
+    if(target>12 || source>20 || (target==12 && s->version<2))return;
+    if(source && s->reserved[0]==source)s->reserved[0]=0;
+    if(target<12)sm_bt_assign(&s->profile,target,source);
+    else {
+        for(unsigned i=0;i<12;i++)if(source && s->profile.binding[i]==source)s->profile.binding[i]=0;
+        s->reserved[0]=source;
+    }
+}
 typedef struct {uint8_t low[6],high[6],last[6],changes[6],seen,center;uint32_t sequence;} SmBtAxisLearn;
 static inline int sm_bt_learn_axes(SmBtAxisLearn *a,const SmPad *p,unsigned elapsed_ms,uint8_t *x,uint8_t *y) {
     if(!p->connected){memset(a,0,sizeof(*a));return 0;}
