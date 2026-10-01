@@ -22,6 +22,7 @@ typedef struct {
     unsigned ahead_length;
     int ahead_ready,ahead_result;
     unsigned samples,empty_samples,full_samples,max_available,groups,group_bytes,short_groups;
+    int bulk_finish_rc;
     unsigned long long finish_us;
 } LocalSocket;
 static LocalSocket sockets[LOCAL_SOCKETS];
@@ -109,6 +110,7 @@ static void finish_ahead(void) {
     unsigned long long started=diagnostic_enabled?sceKernelGetSystemTimeWide():0;
     int rc=ahead_bulk?sceIoDevctl("stm:",SM_DEV_BULK_FINISH,NULL,0,packet,bulk_extended?sizeof(*packet):SM_LEGACY_RESULT_SIZE):
         sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
+    owner->bulk_finish_rc=rc;
     if(!ahead_bulk && rc>=0) {
         packet->length=response.length;packet->result=response.result;
         if(packet->length<=sizeof(packet->payload))memcpy(packet->payload,response.payload,packet->length);
@@ -369,8 +371,8 @@ static int socket_status(LocalSocket *s,SmSocketStatus *status) {
 int stm_download_snapshot(int fd,char *line,unsigned size) {
     if(!diagnostic_enabled || !virtual_fd(fd) || lock(rpc_lock,1,NULL)<0)return 0;
     LocalSocket *s=get(fd);int ok=s!=NULL;
-    if(s)snprintf(line,size,"bulk=%d kib=%u depth=%u ext=%d groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u",
-        bulk_pairs,(bulk_payload+32)/1024,bulk_depth,bulk_extended,s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available);
+    if(s)snprintf(line,size,"bulk=%d kib=%u depth=%u ext=%d rc=%08X groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u",
+        bulk_pairs,(bulk_payload+32)/1024,bulk_depth,bulk_extended,(unsigned)s->bulk_finish_rc,s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available);
     sceKernelSignalSema(rpc_lock,1);return ok;
 }
 int stm_usb_metrics(SmUsbMetrics *out) {

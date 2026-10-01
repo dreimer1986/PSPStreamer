@@ -160,7 +160,11 @@ static int bulk_begin(const SmFrame *in) {
         memset(&bulk_recv_req[i],0,sizeof(bulk_recv_req[i]));
         struct UsbdDeviceReq *s=&bulk_send_req[i],*r=&bulk_recv_req[i];
         s->endp=&endpoints[1];s->data=&bulk_send[i];s->size=sm_wire_size(sizeof(SmSocketRequest));s->func=done;
-        r->endp=&endpoints[2];r->data=&bulk_recv[i];r->size=extended?SM_BULK_MAX_FRAME_SIZE:SM_BULK_FRAME_SIZE;r->func=done;
+        /* Bound DMA/cache work to the negotiated payload, including the
+         * extended framing's short-packet terminator and USB packet rounding. */
+        r->endp=&endpoints[2];r->data=&bulk_recv[i];
+        r->size=extended?(sm_bulk_wire_size_op(bulk_send[0].op,request.length)+63U)&~63U:SM_BULK_FRAME_SIZE;
+        r->func=done;
         sceKernelDcacheWritebackRange(&bulk_send[i],s->size);
         sceKernelDcacheWritebackInvalidateRange(&bulk_recv[i],r->size);
         __sync_fetch_and_or(&bulk_pending,128U<<i);

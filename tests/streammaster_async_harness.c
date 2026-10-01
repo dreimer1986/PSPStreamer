@@ -115,7 +115,12 @@ int main(void){
         request.op=SM_SOCKET_READ_BULK_EXT;request.result=depth;sm_seal(&request);
         if(payload*depth>SM_MAX_GROUP_PAYLOAD){assert(bulk_begin(&request)==SM_INVALID);continue;}
         assert(bulk_begin(&request)==0);
-        for(int i=(int)depth-1;i>=0;i--){assert(bulk_recv_req[i].size==SM_BULK_MAX_FRAME_SIZE);complete_bulk(i,payload,0);}
+        for(int i=(int)depth-1;i>=0;i--){
+            unsigned expected=(sm_bulk_wire_size_op(request.op,payload)+63U)&~63U;
+            assert((unsigned)bulk_recv_req[i].size==expected);
+            assert(expected<=SM_BULK_MAX_FRAME_SIZE);
+            complete_bulk(i,payload,0);
+        }
         assert(!bulk_finish(&pair) && pair.length==payload*depth && !bulk_pending);
         for(unsigned i=0;i<pair.length;i++)assert(pair.payload[i]==65+i/payload);
     }

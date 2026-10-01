@@ -19,3 +19,14 @@ Reinstall the normal release app to return to the previous configuration.
 
 Do not promote until measured: more outstanding work may increase control
 latency. This is not an IRAM optimization and promises no throughput increase.
+
+## First hardware run and follow-up
+
+First group failed before any bulk payload arrived (HTTP 200, only 3575 initial
+bytes, depth=4/ext=1, finish waits 21–500 ms). This is not a throughput result.
+Extended receive requests were always 32768 bytes even for 8 KiB frames. Bound
+each receive/cache range to the requested wire size rounded to a USB packet:
+8256 bytes for extended 8 KiB (8193 on wire), 16448 for 16 KiB, 32768 for 32 KiB.
+Legacy 8x2 sizing and all timeouts remain unchanged. Include the actual finish
+return code in download diagnostics. Hardware validation of whether this fixes
+the observed failure remains pending; do not claim a proven root cause yet.
