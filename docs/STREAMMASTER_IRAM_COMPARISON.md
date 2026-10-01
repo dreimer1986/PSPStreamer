@@ -1,5 +1,10 @@
 # QIO80 transport IRAM comparison
 
+**Archived experiment; consolidated 2026-10-01.** The exact tested
+0.3.10-bt-qio80-iram image is now the Onju default. No independent IRAM speedup
+was established. See [the current release layout](RELEASE_LAYOUT.md); the notes
+below describe the earlier comparison, not an outstanding test request.
+
 Optional firmware `0.3.9-bt-qio80-iram`; normal QIO80 remains the default.
 Build/package with `bash build-bluetooth.sh qio80-iram` and
 `bash package-bluetooth.sh qio80-iram` after activating ESP-IDF.

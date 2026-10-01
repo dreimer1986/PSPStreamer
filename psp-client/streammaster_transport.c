@@ -49,16 +49,12 @@ static volatile int selected,broken=1,wifi_state;
 static int compact_packets;
 static int bulk_pairs,ahead_bulk;
 static int bulk_extended;
-static unsigned tuning_kib=8,tuning_depth=2;
+static unsigned tuning_kib=8,tuning_depth=4;
 static unsigned bulk_payload=SM_BULK_PAYLOAD_SIZE,bulk_depth=2;
 void stm_tuning(unsigned kib,unsigned depth) {
-#if defined(STREAMMASTER_TEST_8X4) && STREAMMASTER_TEST_8X4
-    /* Test binary only: do not rewrite the user's stored profile. Both ends
-     * still negotiate extended bulk support and retain the existing fallback. */
-    kib=8;depth=4;
-#endif
     tuning_kib=(kib==16 || kib==32)?kib:8;
-    tuning_depth=(depth==1 || depth==4)?depth:2;
+    /* Zero/absent means the validated default. Preserve explicit overrides. */
+    tuning_depth=(depth==1 || depth==2)?depth:4;
     if(tuning_kib==32 && tuning_depth==4)tuning_depth=2;
 }
 static unsigned peer_caps,peer_caps_length;

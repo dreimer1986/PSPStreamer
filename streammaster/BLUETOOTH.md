@@ -1,7 +1,10 @@
-# Experimental USB Bluetooth controllers — Onju Voice V3
+# USB Bluetooth controllers — Onju Voice V3
 
-Version **0.3.4-bt-dio / 0.3.4-bt-qio**, hardware validation pending.
-This is not a replacement for the proven Wi-Fi-only 0.3.0 release.
+Current standard: **0.3.10-bt-qio80-iram**. Controller learning, player/Monkey
+control and four-deep downloads are hardware-tested; extended Bluetooth soak
+testing remains open. Run `bash build-bluetooth.sh` and
+`bash package-bluetooth.sh` without arguments for this standard. Earlier version
+sections below document the development history, not installation choices.
 
 ## Hardware and scope
 

@@ -2,14 +2,18 @@
 
 ## 0.3.10 — Extended bulk startup hardening
 
+- Hardware follow-up passed: repeated download starts, manual cancellations and
+  one full verified 170143443-byte download in 222268 ms (747.5 KiB/s). Promote
+  this exact QIO80-IRAM combination with the four-deep PSP app as the standard.
+  No independent IRAM speed advantage is established; Bluetooth soak remains open.
+
 - Allocate the extended 8 KiB USB reply terminator space at startup instead of
   growing the DMA buffer during the first full reply; just 64 extra bytes.
 - Return the complete firmware version, including QIO80/IRAM suffixes, in the
   existing information response. No network/profile layout changes.
 - Companion PSP build posts the whole receive window before sending a group
   and logs per-request completion details on failure. Four-deep transfers and
-  the existing timeout remain unchanged. Hardware stability test pending.
-- The IRAM comparison remains optional; it is not promoted by this change.
+  the existing timeout remain unchanged. Startup stability test passed.
 
 ## 0.3.9-bt-qio80-iram — Optional transport code-placement experiment
 

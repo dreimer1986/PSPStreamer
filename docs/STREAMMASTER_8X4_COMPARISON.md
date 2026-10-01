@@ -1,5 +1,10 @@
 # StreamMaster 8 KiB x 4 comparison
 
+**Archived experiment; completed 2026-10-01.** Four-deep startup/cancellation and
+full download tests passed on 0.3.10-bt-qio80-iram (747.5 KiB/s). This profile is
+now the ordinary app default; the historical test Makefile switch below was
+removed. Use [the consolidated release](RELEASE_LAYOUT.md).
+
 Baseline: Onju 0.3.9-bt-qio80, 8 KiB x 2, same 170143443-byte HTTP file,
 PSP download clock 333 MHz. Complete-body throughput 700.5 KiB/s.
 

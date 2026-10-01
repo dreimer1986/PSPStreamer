@@ -970,7 +970,7 @@ restores native PSP Wi-Fi. The existing server URL, port and password apply to
 both transports. USB HTTPS uses Onju's trusted certificate bundle and clock;
 it does not import the PSP's certificate cache or accept untrusted certificates.
 Six independent TCP/TLS channels share the USB link; hardware playback and
-throughput still require testing on the actual adapter.
+throughput depend on the adapter; the Onju V3 combination is hardware-tested.
 Onju's status LEDs indicate firmware operation, Wi-Fi connection/signal strength
 and the claimed PSP USB connection; see the LED legend in the firmware guide.
 See [firmware, flashing and first-test instructions](streammaster/README.md).
@@ -978,11 +978,19 @@ Developers can integrate the adapter into other PSP homebrews using the
 [StreamMaster integration guide](streammaster/INTEGRATION.md).
 Firmware 0.2.5 also supports advanced CFG-only throughput comparison settings:
 `streammaster_bulk_kib=8` (8, 16 or 32 KiB per response) and
-`streammaster_bulk_depth=2` (1, 2 or 4 outstanding requests). Save the CFG and
-restart the app. The defaults retain the proven 8 KiB/two-request route.
+`streammaster_bulk_depth=4` (1, 2 or 4 outstanding requests). Save the CFG and
+restart the app. The validated default is 8 KiB/four requests. Zero or missing
+values select the default; explicit depth=2 retains the older two-request route.
 32 KiB/four is limited to two requests; unsupported values use the defaults.
 Older firmware/drivers retain their negotiated legacy route. Keep the same ready
 file, HTTP route, card, hub and clock when comparing settings. No speedup is assumed.
+
+The current Onju package is `StreamMaster-Onju-V3` (firmware
+`0.3.10-bt-qio80-iram`). Install all three companion PSP files: `EBOOT.PBP`,
+`PSPStreamer.prx` and `StreamMasterUSB.prx`. Four-deep HTTP downloads measured
+747.5 KiB/s versus 700.5 KiB/s for two requests on the tested setup. IRAM alone
+has no demonstrated mean-speed advantage. Firmware version is visible in the
+StreamMaster settings and debug logs. See [release layout](docs/RELEASE_LAYOUT.md).
 Download diagnostics include the actual selected profile and, on 0.2.5, ESP timing
 to separate queuing and processing from USB transfer time.
 The bridge replaces Onju's current firmware and requires a powered USB host

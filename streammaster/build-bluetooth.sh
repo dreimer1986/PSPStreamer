@@ -2,11 +2,11 @@
 # Activate ESP-IDF v5.5.1 first. Separate configs keep the stable build intact.
 set -euo pipefail
 cd "$(dirname "$0")"
-mode_selection="${1:-qio80}"
+mode_selection="${1:-qio80-iram}"
 case "$mode_selection" in
     qio|dio|qio80|qio80-iram) modes=("$mode_selection");;
-    all) modes=(qio80 qio dio);;
-    *) echo "Usage: $0 [qio|dio|qio80|qio80-iram|all] (default: qio80)" >&2; exit 2;;
+    all) modes=(qio80-iram qio80 qio dio);;
+    *) echo "Usage: $0 [qio|dio|qio80|qio80-iram|all] (default: qio80-iram)" >&2; exit 2;;
 esac
 for mode in "${modes[@]}"; do
     build_dir="build-bluetooth"

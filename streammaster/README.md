@@ -1,12 +1,19 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
-**Current Onju standard: 0.3.9-bt-qio80, QIO flash at 80 MHz, CPU 240 MHz,
+**Current Onju standard: 0.3.10-bt-qio80-iram, QIO flash at 80 MHz, CPU 240 MHz,
 Octal PSRAM 80 MHz, with USB Bluetooth controller support.** Build with
 `bash build-bluetooth.sh`, package with `bash package-bluetooth.sh` (or
 `bash package.sh` without arguments). Use the packaged `flash_args` to flash
 bootloader, partitions and app while preserving NVS. See [BLUETOOTH.md](BLUETOOTH.md).
 The older DIO40 build/flash examples below describe the legacy non-Bluetooth
 variant, not the current default. Do not apply their 40m override to QIO80.
+
+The standard PSP app now negotiates 8 KiB/four requests by default. The paired
+startup fixes passed on-device download/restart/cancellation tests. The IRAM
+suffix identifies the tested build, not a proven separate speedup. Download
+747.5 KiB/s; read-back integrity verification is additional. Test/fallback
+packages are archived outside the main release directory; see
+[release layout](../docs/RELEASE_LAYOUT.md).
 
 Separate **UNTESTED** generic ESP32-S3 (Quad/Octal PSRAM) and ESP32-S2 (PSRAM)
 builds are available. They do not drive Onju's LED/amplifier pins. See

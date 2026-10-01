@@ -408,7 +408,7 @@ static int seek_requested;
 static char server_host[64] = PSP_STREAMER_HOST;
 static int server_https;
 static int network_transport;
-static unsigned streammaster_bulk_kib=8,streammaster_bulk_depth=2;
+static unsigned streammaster_bulk_kib=8,streammaster_bulk_depth=4;
 #include "streammaster_transport.h"
 static int server_port = PSP_STREAMER_PORT;
 #include "server_auth.h"

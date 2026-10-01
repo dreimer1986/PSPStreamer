@@ -382,6 +382,10 @@ int main(void){
         }
         assert(!stm_recv(fd,output,sizeof(output),0));assert(!stm_close(fd));
     }
+    stm_tuning(0,0);extended_bridge=extended_firmware=1;
+    assert(!stm_associate(&running,1) && bulk_extended && bulk_depth==4 && bulk_payload==8160);
+    stm_tuning(8,2);assert(!stm_associate(&running,1) && !bulk_extended && bulk_depth==2);
+    stm_tuning(0,0);
     extended_bridge=0;assert(!stm_associate(&running,1) && !bulk_extended && bulk_depth==2 && bulk_payload==8160);
     extended_bridge=1;extended_firmware=0;assert(!stm_associate(&running,1) && !bulk_extended);
     stm_driver_stop();

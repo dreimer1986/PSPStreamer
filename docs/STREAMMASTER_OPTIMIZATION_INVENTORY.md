@@ -1,6 +1,14 @@
 # StreamMaster: complete currently identified optimization inventory
 
-## Current decision: 0.2.9 rollback
+## Current status — 2026-10-01
+
+USB optimization is paused as complete for now. Validated standard:
+0.3.10-bt-qio80-iram and 8 KiB x 4, full HTTP download 747.5 KiB/s with successful
+integrity verification. IRAM's independent mean-speed benefit remains unproven.
+Historical candidates below are not outstanding implementation requests.
+See [release layout](RELEASE_LAYOUT.md); keep future work measurement-driven.
+
+## Historical decision: 0.2.9 rollback
 
 HTTP retest now completed: 0.2.8 optimized **480.40 KiB/s**, 0.2.9 rollback
 **484.19 KiB/s**, excluding both interrupted slow-AP attempts. No meaningful

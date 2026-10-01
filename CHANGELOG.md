@@ -2,6 +2,17 @@
 
 ## Additional unreleased changes
 
+- Consolidate the validated StreamMaster release: Onju firmware
+  0.3.10-bt-qio80-iram with QIO80, CPU 240 MHz and PSRAM 80 MHz; 8 KiB/four
+  outstanding requests are now the PSP default, with legacy negotiation intact.
+- Fix bulk startup hazards through preallocated terminator space and a fully
+  posted receive window. Confirm repeated starts, manual cancellation and a
+  complete verified download at 747.5 KiB/s (two-request baseline: 700.5 KiB/s).
+- Display/log the full firmware version and preserve per-request USB failure
+  details. Keep checksum verification and all existing timeout bounds.
+- Remove the temporary 8x4 build switch; archive superseded test/fallback
+  packages outside the release folder. No additional IRAM speedup is claimed.
+
 - Add an opt-in server-side next-N unwatched episode reserve, persistent language
   preferences and a bounded, explicitly owned cache; preserve manual downloads.
 - Add the optional Plex account Watchlist with exact local GUID mapping, keeping

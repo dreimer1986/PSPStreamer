@@ -52,3 +52,7 @@ shuffle=0
 language=en
 # off: LCD menus, TV video. auto: native TV menus when component cable is present.
 tv_ui=off
+# StreamMaster USB: validated 8 KiB/four-request profile. Zero uses defaults.
+# Older firmware/drivers automatically retain their legacy transfer path.
+streammaster_bulk_kib=8
+streammaster_bulk_depth=4
