@@ -1,0 +1,21 @@
+# StreamMaster 8 KiB x 4 comparison
+
+Baseline: Onju 0.3.9-bt-qio80, 8 KiB x 2, same 170143443-byte HTTP file,
+PSP download clock 333 MHz. Complete-body throughput 700.5 KiB/s.
+
+The comparison app is built with `make STREAMMASTER_TEST_8X4=1`. Clean before
+switching build options. Only stm_tuning() changes: override incoming config
+to 8 KiB and depth 4 without saving either value. Existing capability negotiation,
+integrity checks, recovery and two internal ESP reply workspaces are unchanged.
+No firmware update or PSRAM/CPU clock change. This tests the existing extended
+bulk path, not a new protocol. Larger 16/32 KiB replies are not enabled.
+
+Copy EBOOT.PBP and PSPStreamer.prx from the separate test package; include its
+StreamMasterUSB.prx to avoid stale drivers. Keep the existing config/assets.
+Enable debug and retain download_cpu_mhz=333. Compare the same HTTP file/AP/card
+and controller use. The log must show `kib=8 depth=4 ext=1`; a capability fallback
+is not an 8x4 test. Check controller response and cancellation as well as speed.
+Reinstall the normal release app to return to the previous configuration.
+
+Do not promote until measured: more outstanding work may increase control
+latency. This is not an IRAM optimization and promises no throughput increase.

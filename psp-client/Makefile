@@ -11,6 +11,11 @@ PSP_EBOOT_PIC1 = assets/pic1.png
 
 OPT_LEVEL ?= -O3
 CFLAGS = $(OPT_LEVEL) -G0 -Wall -Wextra
+# Isolated throughput comparison; production defaults/config stay untouched.
+STREAMMASTER_TEST_8X4 ?= 0
+ifeq ($(STREAMMASTER_TEST_8X4),1)
+CFLAGS += -DSTREAMMASTER_TEST_8X4=1
+endif
 LTO ?= 1
 ifeq ($(LTO),1)
 CFLAGS += -flto
@@ -27,7 +32,7 @@ PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 
 # Rebuild objects when the project's default compiler options change.
-# Use make clean before overriding LTO/OPT_LEVEL on the command line.
+# Use make clean before overriding LTO/OPT_LEVEL/STREAMMASTER_TEST_8X4 on the command line.
 $(OBJS): Makefile
 
 main.o: streammaster_redirect.h streammaster_transport.h

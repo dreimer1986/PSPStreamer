@@ -50,6 +50,11 @@ static int bulk_extended;
 static unsigned tuning_kib=8,tuning_depth=2;
 static unsigned bulk_payload=SM_BULK_PAYLOAD_SIZE,bulk_depth=2;
 void stm_tuning(unsigned kib,unsigned depth) {
+#if defined(STREAMMASTER_TEST_8X4) && STREAMMASTER_TEST_8X4
+    /* Test binary only: do not rewrite the user's stored profile. Both ends
+     * still negotiate extended bulk support and retain the existing fallback. */
+    kib=8;depth=4;
+#endif
     tuning_kib=(kib==16 || kib==32)?kib:8;
     tuning_depth=(depth==1 || depth==4)?depth:2;
     if(tuning_kib==32 && tuning_depth==4)tuning_depth=2;
