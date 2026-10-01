@@ -1099,7 +1099,13 @@ The file is `ms0:/SEPLUGINS/StreamerOC/StreamerOC.ini` (an existing `ef0:` file
 is used if the Memory Stick file is absent). A missing INI starts disabled;
 install the plugin/directory first. Invalid INIs are not overwritten. Saving
 validates all values, writes a temporary file and keeps the previous INI as
-`StreamerOC.ini.bak`. Comments are replaced with the standard seven-key layout.
+`StreamerOC.ini.bak`. Comments are replaced with the standard eight-key layout.
+Per-title and exact launch-path overrides live separately in
+`StreamerOC-rules.ini` and `PSPConsolizer-rules.ini`, beside each plugin's main
+INI, so settings saves preserve them. See the
+[OC rules](psp-overclock/README.md#per-game-and-homebrew-rules) and
+[Consolizer rules](psp-controller/README.md#per-title-and-exact-path-settings)
+for supported keys, precedence and examples.
 The editor does not install/enable ARK's plugin entry or test clock stability.
 Overlay offers `0=Off`, `1=polling` (the previous default) and
 `2=framebuffer hook` (experimental, opt-in). Mode 2 follows standard user-mode

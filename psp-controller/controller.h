@@ -15,6 +15,7 @@
 #include "../psp-overclock/power_callback_slot.h"
 #include "report_config.h"
 #include "home_button.h"
+#include "../psp-overclock/title_rules_io.h"
 
 static int (*emulate_buttons)(unsigned char,unsigned,unsigned,unsigned);
 static int (*emulate_analog)(unsigned char,unsigned char,unsigned char,unsigned);
@@ -82,6 +83,19 @@ static int controller_context(void) {
 static int controller_worker(SceSize size,void *args) {
     (void)size;(void)args;
     controller_config();
+    static const TitleRuleKey rule_keys[]={ {"enabled",0,1},{"home_combo",0,1},
+        {"overlay",0,2},{"overlay_always",0,1},{"tvout",0,2},{"metadata",0,1} };
+    int rule_values[]={controller_enabled,controller_home,pad_overlay_enabled,
+        pad_overlay_always,controller_tvout,pad_metadata_enabled};
+    int rule_result=title_rules_load("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer-rules.ini",
+        sceKernelInitFileName(),rule_keys,6,rule_values);
+    controller_log("title/path rule section (negative = invalid)",rule_result);
+    SceGameInfo *game_info=sceKernelGetGameInfo();
+    if(game_info){char title[40];snprintf(title,sizeof(title),"title ID: %.16s",game_info->title_id);controller_log(title,0);}
+    if(rule_result<0)controller_enabled=0;
+    else {controller_enabled=rule_values[0];controller_home=rule_values[1];
+        pad_overlay_enabled=rule_values[2];pad_overlay_always=rule_values[3];
+        controller_tvout=rule_values[4];pad_metadata_enabled=rule_values[5];}
     emulate_buttons=(void *)sctrlHENFindFunction("sceController_Service","sceCtrl_driver",0x5130DAE3);
     emulate_analog=(void *)sctrlHENFindFunction("sceController_Service","sceCtrl_driver",0xDB76878D);
     if(!emulate_buttons || !emulate_analog){controller_log("Sony emulation API unavailable",SM_INVALID);return 0;}

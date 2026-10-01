@@ -18,6 +18,7 @@
 #include "clock_math.h"
 #include "power_callback_slot.h"
 #include "config_parse.h"
+#include "title_rules_io.h"
 #include "report_io.h"
 #include "overlay_pixels.h"
 #include "control_api.h"
@@ -37,6 +38,7 @@ static int power_auto_result=-1, power_register_result=-1;
 static int sony_baseline_result=(int)0x80000000U;
 static int config_io_result, config_bytes, config_keys, config_error_line;
 static const char *config_state="not attempted";
+static int rules_result;
 static char directory[192]="ms0:/SEPLUGINS/StreamerOC/";
 static const char *status="monitor only";
 static unsigned long long session_tick;
@@ -232,14 +234,15 @@ static void snapshot(const char *event) {
         event_copy[event_length++]=c;event_hash=(event_hash^c)*16777619U;
     }
     event_copy[event_length]=0;
+    SceGameInfo *game_info=sceKernelGetGameInfo();
     unsigned long long now=sceKernelGetSystemTimeWide();
     int n=snprintf(text,sizeof(text),
         "\n[event=%s session_us=%u%06u worker=%d elapsed_ms=%u]\napplication=%s\n"
-        "build=oc-inherited-start-3\nrecord_sequence=%u\nevent_address=%08X\nevent_length=%d\nevent_hash=%08X\n"
+        "title_id=%.16s\nbuild=oc-title-rules-1\nrecord_sequence=%u\nevent_address=%08X\nevent_length=%d\nevent_hash=%08X\n"
         "status=%s\nmodel=%d\nenabled=%d\nenforce=%d\nenforce_unlimited=%d\ntarget_mhz=%d\n"
         "app_control=%d\napp_control_active=%d\nconfigured_target_mhz=%d\ncontrol_driver=%d\ncontrol_result=%d\n"
         "config_path=%sStreamerOC.ini\nconfig_state=%s\nconfig_io_result=%08X\n"
-        "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\n"
+        "config_bytes=%d\nconfig_keys=%d\nconfig_error_line=%d\nrules_section_or_error=%d\n"
         "configured_enabled=%d\npower_callback_id=%08X\npower_callback_ready=%d\n"
         "power_callback_slot=%d\npower_auto_result=%08X\npower_register_result=%08X\n"
         "sony_baseline_result=%08X\n"
@@ -252,10 +255,10 @@ static void snapshot(const char *event) {
         "Zero means unknown/unsupported, not zero MHz. Not a speed or stability measurement.\n",
         event_length?event_copy:"EMPTY_EVENT",(unsigned int)(session_tick/1000000ULL),(unsigned int)(session_tick%1000000ULL),worker,
         (unsigned int)((now-session_tick)/1000ULL),application,
-        ++sequence,(unsigned int)(uintptr_t)event,event_length,event_hash,
+        game_info?game_info->title_id:"",++sequence,(unsigned int)(uintptr_t)event,event_length,event_hash,
         status,sceKernelGetModel(),enabled,enforce,enforce_unlimited,target,
         app_control,control_active,configured_target,control_registered,control_result,
-        directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,
+        directory,config_state,(unsigned int)config_io_result,config_bytes,config_keys,config_error_line,rules_result,
         configured_enabled,(unsigned int)power_callback_id,power_slot>=0,power_slot,
         (unsigned int)power_auto_result,(unsigned int)power_register_result,
         (unsigned int)sony_baseline_result,
@@ -297,18 +300,28 @@ static int thread_main(SceSize args,void *argp) {
     const char *filename=sceKernelInitFileName();
     snprintf(application,sizeof(application),"%s",filename?filename:"unknown");
     config();
+    power_callback_id=sceKernelCreateCallback("StreamerOC power",power_callback,NULL);
+    if(power_callback_id>=0)
+        power_slot=oc_register_power_callback(power_callback_id,&power_auto_result,&power_register_result);
+    snapshot("session_start");
+    /* Resolve identity after the existing startup grace period, before writes. */
+    SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
+    while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
+    if(!strcmp(config_state,"loaded")) {
+        static const TitleRuleKey keys[]={ {"enabled",0,1},{"target_mhz",66,471},
+            {"enforce",0,1},{"enforce_unlimited",0,1},{"app_control",0,1} };
+        int values[]={enabled,target,enforce,enforce_unlimited,app_control};char file[256];
+        snprintf(file,sizeof(file),"%sStreamerOC-rules.ini",directory);
+        rules_result=title_rules_load(file,application,keys,5,values);
+        if(rules_result<0){enabled=0;status="invalid title rules: monitor only";}
+        else {enabled=values[0];target=values[1];enforce=values[2];enforce_unlimited=values[3];app_control=values[4];}
+    }
     configured_target=target;
     configured_enabled=enabled;
     int model=sceKernelGetModel();
     if(!oc_supported_model(model)) {enabled=0;status="unsupported model: no register writes";}
     if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME){enabled=0;status="not GAME context: monitor only";}
-    power_callback_id=sceKernelCreateCallback("StreamerOC power",power_callback,NULL);
-    if(power_callback_id>=0)
-        power_slot=oc_register_power_callback(power_callback_id,&power_auto_result,&power_register_result);
     if(power_slot<0){enabled=0;status="power callback unavailable: monitor only";}
-    snapshot("session_start");
-    SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
-    while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
     snapshot("startup_wait_complete");
     SceCtrlData pad;sceCtrlPeekBufferPositive(&pad,1);
     if(pad.Buttons&PSP_CTRL_RTRIGGER){enabled=0;status="R bypass: monitor only";}

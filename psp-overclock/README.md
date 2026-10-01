@@ -7,7 +7,45 @@ Back up the Memory Stick; do not test while downloading/saving important data.
 Never enable this together with expover, OverClockPlugin, the stress tester,
 the picker plugin or ARK's own overclock override. No automatic maximum search.
 
-## Origin and review
+## Per-game and homebrew rules
+
+Copy `StreamerOC-rules.ini.example` to `StreamerOC-rules.ini` next to the main
+INI. Uncomment only the rules you need. The PSP settings screen changes the
+main INI only and therefore preserves these rules. Rules are read at launch.
+
+```ini
+[title:ULUS12345]
+enabled=1
+target_mhz=333
+enforce=1
+enforce_unlimited=1
+app_control=0
+
+[path:ms0:/PSP/GAME/Example/EBOOT.PBP]
+enabled=1
+target_mhz=266
+app_control=0
+```
+
+Replace the example title ID with the game's DISC_ID (not its display name).
+The running firmware's game information supplies the ID; homebrew can use the
+complete `application=` launch path from the OC log. Matching is case-insensitive;
+title IDs accept an optional hyphen. No wildcards or substring matching.
+Title matches override path matches; the first matching section wins ties.
+Each section inherits unspecified values from the **main INI**, not other rules.
+Missing rules files leave existing behavior unchanged. Invalid/oversized files
+disable clock writes for that launch; `rules_section_or_error` reports the
+selected section line, zero for none, or a negative error/line number.
+Maximum file size is 64 KiB and line length is 383 bytes including CR.
+
+`enforce=1` restores the target after a game's clock change. Add
+`enforce_unlimited=1` to keep retrying despite repeated conflicts and
+`app_control=0` to prevent application requests from replacing the target.
+Hardware-error, suspend, unsupported-model and R-button safety protections
+remain active; this is not an unconditional clock lock. Only GAME contexts
+write clocks. Use conservative, already tested clock values.
+
+## Reference implementation
 
 PLL arithmetic, denominator 20, 37 MHz base, ratio index 5, pipeline settle and
 the gradual CPU/bus domain transition are adapted from m-c/d's

@@ -1,0 +1,13 @@
+# Copy to PSPConsolizer-rules.ini next to PSPConsolizer.ini.
+# Commented examples only. Use the actual DISC_ID or complete launch path.
+# Title ID beats path; first match wins ties; omitted keys inherit global INI.
+# [title:ULUS12345]
+# enabled=1
+# tvout=1
+# overlay=2
+# overlay_always=0
+# home_combo=0
+# metadata=1
+
+# [path:ms0:/PSP/GAME/Example/EBOOT.PBP]
+# enabled=0

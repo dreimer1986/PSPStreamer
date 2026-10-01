@@ -9,7 +9,37 @@ or erasing bonds/Wi-Fi settings. Update the application, both plugin PRXs and
 the firmware together. Application-owned `StreamMasterUSB.prx` keeps its name:
 that is the separate StreamMaster transport, not the Consolizer plugin.
 
-### Memory regression history
+### Per-title and exact-path settings
+
+Copy `PSPConsolizer-rules.ini.example` to `PSPConsolizer-rules.ini` in the plugin
+directory. This separate file survives changes to the general configuration.
+
+```ini
+[title:ULUS12345]
+enabled=1
+tvout=1
+overlay=2
+home_combo=0
+
+[path:ms0:/PSP/GAME/Example/EBOOT.PBP]
+enabled=0
+```
+
+Replace the illustrative title ID with the game's DISC_ID, not its displayed
+name. Paths match the full `sceKernelInitFileName()` launch path. Both are
+case-insensitive; IDs may contain a hyphen. Title IDs beat paths; the first
+matching section wins equal-priority ties. Omitted settings inherit the global
+INI. Supported rule keys: `enabled`, `home_combo`, `overlay`, `overlay_always`,
+`tvout`, `metadata`, with the same values as the main INI. No file means no change.
+Rules are evaluated once per launch; invalid files disable controller injection
+and automatic TV switching for that launch and log a negative section/error.
+The file limit is 64 KiB; individual lines may contain up to 383 bytes.
+Existing global VSH/POPS and allow/exclude-path restrictions still apply, even
+when a matching rule enables the controller. PSPStreamer's ownership remains
+untouched. These settings do not prevent the loader/USB module from loading;
+use ARK plugin restrictions if a title must not load the module at all.
+
+### Previous memory fixes
 
 The disabled overlay previously still reserved three framebuffer backups in
 kernel BSS (152,688 bytes). The resident bridge's fixed footprint had grown from

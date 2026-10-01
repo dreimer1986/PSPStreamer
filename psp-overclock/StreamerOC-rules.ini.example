@@ -1,0 +1,18 @@
+# Optional per-title overrides, read once at launch. All examples are disabled.
+# Copy to StreamerOC-rules.ini next to StreamerOC.ini and uncomment as needed.
+# Use your game's actual DISC_ID, not its displayed name.
+# Title IDs take priority over paths; first matching section wins ties.
+# Unspecified keys inherit the GLOBAL INI, not a preceding rule.
+# [title:ULUS12345]
+# enabled=1
+# target_mhz=333
+# enforce=1
+# enforce_unlimited=1
+# app_control=0
+
+# Paths must match the COMPLETE sceKernelInitFileName() path from the log.
+# [path:ms0:/PSP/GAME/Example/EBOOT.PBP]
+# enabled=1
+# target_mhz=266
+# enforce=0
+# app_control=0

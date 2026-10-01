@@ -18,7 +18,7 @@ tvout=0
 # Requires firmware 0.3.12; old 0.3.11 does not honor this capability.
 metadata=0
 # Optional case-sensitive substrings of sceKernelInitFileName(), up to 8 each.
-# Use ARK's per-title plugin rules when a disc ID rather than a path is needed.
+# For exact title ID/path overrides use PSPConsolizer-rules.ini (see example).
 # allow_path=/ISO/MyTestGame.iso
 # exclude_path=/PSP/GAME/SomeUsbApp/
 # Physical NOTE + VOLUP held for two seconds disables input until next launch.
