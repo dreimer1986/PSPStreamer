@@ -15,9 +15,12 @@ HTTP succeeded. That is not evidence of a failed USB connection. The plugin now
 logs free kernel memory and the largest block before OSD initialization, plus
 free memory afterwards. These values are hexadecimal byte counts.
 
-The user confirmed Soul Calibur works again with the on-demand allocation fix
-and the Consolizer overlay disabled. The next test enables `overlay=2`,
-`tvout=1` (connected controller), `metadata=1`, VSH and POPS again.
+The user confirmed games, TV activation and controller reconnection after USB
+and power removal work with the packed overlays enabled. VSH still returned
+`80243001`: the USB bus was already started. The bridge now borrows an idle
+existing bus instead of failing, and stops only a bus it started itself.
+An active USB function is never forcibly disconnected. VSH and POPS remain
+separate hardware tests; the ESP cold-start issue is not declared fixed.
 
 Both plugins now store their own two-color overlay pixels as a bit mask rather
 than 32-bit values. Original application pixels remain lossless. StreamerOC
@@ -31,8 +34,8 @@ disables only the Consolizer overlay. The test configuration keeps temporary
 status display (`overlay_always=0`), not a permanently visible overlay.
 
 Use a controller paired with StreamMaster in PSP games, homebrew, and optionally
-VSH or POPS. **0.1 input/reconnection passed the user's Soul Calibur test. The
-0.2 status, overlay cooperation, TV activation, VSH and POPS need hardware tests.**
+VSH or POPS. **0.2 game input, packed overlays, TV activation and USB/controller
+reconnection passed hardware testing. The new VSH bus fix awaits testing.**
 No Rumble. Wi-Fi/media transport remains available to PSPStreamer.
 
 The legacy `StreamMasterPad` filenames and directory deliberately remain valid.
@@ -87,6 +90,9 @@ metadata=0
 - `enabled`: global input enable.
 - `vsh`, `pops`: permit those contexts; their ARK entries are also required.
 - `overlay=0`: off; `1`: compatible framebuffer polling; `2`: presentation hook.
+- `report=0`: disable loader/runtime diagnostic writes, including log truncation;
+  existing logs are left untouched. Default `1`. StreamerOC independently has
+  the same `report=0` setting in its own INI. Overlay display is independent.
 - `overlay_always=1`: permanently visible; default 0 shows state changes for 5 s.
 - `tvout=0`: off; `1`: request TV when a controller is connected; `2`: on launch.
 - `metadata=0`: original input-only EP0 traffic; `1`: advertise optional name/
@@ -110,17 +116,18 @@ not silently substitute polling for mode 2. Kernel/direct presentation
 paths can still require polling; neither mode guarantees flicker-free output in
 every game. The next discussion is a more stable rendering alternative.
 
-Regression investigation: the first 0.2 game test produced black screens/forced
+Historical regression investigation: the first 0.2 game test produced black screens/forced
 shutdown with USB connected, even with `tvout=0` and VSH activation removed.
 The log confirms early OC registration returned NODEV; this startup race is
-fixed, but is **not proven to be the cause of the game hang**. The current
+fixed, but was **not proven to be the cause of the game hang**. The earlier
 diagnostic configuration uses `overlay=0`, `tvout=0`; firmware and OC clock
 settings originally stayed unchanged. That test still failed. The next isolation
 build uses firmware 0.3.12 and `metadata=0`, restoring input-only EP0 traffic;
 OC settings are untouched. It fixes input starvation by metadata, metadata errors
 disabling input, and stale-time comparisons against a timestamp older than the
 latest packet. None is yet proven to explain the PSP shutdown. A disabled Consolizer OSD never queries/writes display
-buffers. Re-enable mode 2 only after establishing a stable no-OSD baseline.
+buffers. The subsequent kernel-memory fix and packed buffers resolved the
+reported game regression; see the current status above.
 
 ### TV activation (experimental)
 
@@ -148,6 +155,18 @@ policy at a time, with a known-working cable and manual output as fallback.
 
 Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`, replaced at
 each plugin launch. Copy before another game if that launch's log is needed.
+
+For XMB controller testing, leave the USB storage screen and turn off Sony's
+USB Auto Connect setting if it opens that screen automatically. The plugin
+borrows a running, idle bus; it does not eject a mounted memory stick or seize
+another active USB function. A PC storage connection and the StreamMaster
+USB device function cannot be active on the PSP port simultaneously.
+
+More invasive overlays (private output buffers / GE command interception) are
+not enabled. The former needs substantial framebuffer storage and copies;
+the latter adds game-specific GPU synchronization hazards. Neither existing
+mode promises universally flicker-free output. Preserve the stable modes
+until a separate opt-in design can be tested safely.
 Disable the ARK entries to return to the previous app-only controller path.
 
 ## Architecture and build

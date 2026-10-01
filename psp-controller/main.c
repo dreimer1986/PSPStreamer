@@ -3,9 +3,12 @@
 #include <pspkernel.h>
 #include <psploadcore.h>
 #include <stdio.h>
+#include "report_config.h"
 PSP_MODULE_INFO("PSPConsolizer",PSP_MODULE_KERNEL,0,2);
 static SceUID worker=-1;
+static int report_enabled=1;
 static void report(const char *what,int rc) {
+    if(!report_enabled)return;
     char line[120];int n=snprintf(line,sizeof(line),"%s: %08X\n",what,(unsigned)rc);
     int fd=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/loader.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(fd>=0){sceIoWrite(fd,line,n);sceIoClose(fd);}
@@ -19,8 +22,14 @@ static int load_start(const char *path) {
 }
 static int start_worker(SceSize size,void *args) {
     (void)size;(void)args;sceKernelDelayThread(2000000);
+    static char config[2048];
+    int config_fd=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.ini",PSP_O_RDONLY,0);
+    if(config_fd>=0){
+        int n=sceIoRead(config_fd,config,sizeof(config)-1);sceIoClose(config_fd);
+        if(n>0){config[n]=0;report_enabled=consolizer_report_setting(config);}
+    }
     const char *logs[]={"ms0:/SEPLUGINS/StreamMasterPad/loader.log","ms0:/SEPLUGINS/StreamMasterPad/last.log"};
-    for(unsigned i=0;i<2;i++){int f=sceIoOpen(logs[i],PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);if(f>=0)sceIoClose(f);}
+    if(report_enabled)for(unsigned i=0;i<2;i++){int f=sceIoOpen(logs[i],PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);if(f>=0)sceIoClose(f);}
     int rc=0;
     if(!sceKernelFindModuleByName("sceUSB_Driver")) {
         rc=load_start("flash0:/kd/usb.prx");

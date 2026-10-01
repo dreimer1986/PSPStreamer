@@ -8,3 +8,4 @@ LDFLAGS = -nostartfiles
 LIBS = -lpspkernel
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+main.o: report_config.h

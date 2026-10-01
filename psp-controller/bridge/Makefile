@@ -13,3 +13,4 @@ bridge.o: ../../psp-client/streammaster_usb/bridge.c ../controller.h ../../strea
 bridge.o: ../overlay.h ../../psp-overclock/overlay_pixels.h
 bridge.o: ../tvout.h ../../psp-overclock/overlay_hook.h ../../psp-overclock/control_api.h
 bridge.o: ../../streammaster/pad_metadata.h
+bridge.o: ../report_config.h ../../psp-client/streammaster_usb/bus_owner.h

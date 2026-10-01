@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Reuse an already-running idle USB bus in VSH without stopping another
+  component's bus on shutdown. Keep active USB functions protected.
+- Add Consolizer `report=0` to disable both loader and runtime diagnostic writes.
+
 - Pack the two-color overlay history in both StreamerOC and PSP Consolizer
   into one bit per pixel, preserving original framebuffer pixels losslessly.
   Save about 107 KiB in StreamerOC and 72 KiB for Consolizer's three backups.

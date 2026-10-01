@@ -13,11 +13,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../psp-overclock/power_callback_slot.h"
+#include "report_config.h"
 
 static int (*emulate_buttons)(unsigned char,unsigned,unsigned,unsigned);
 static int (*emulate_analog)(unsigned char,unsigned char,unsigned char,unsigned);
 static SceUID controller_thread=-1,controller_callback=-1;
 static volatile int controller_running,controller_suspended;
+static int controller_report=1;
 static void controller_log(const char *text,int rc);
 #include "overlay.h"
 static int controller_enabled=1,controller_vsh=1,controller_pops=1,controller_disabled;
@@ -25,6 +27,7 @@ static char excludes[8][96],allows[8][96];
 static unsigned exclude_count,allow_count;
 
 static void controller_log(const char *text,int rc) {
+    if(!controller_report)return;
     unsigned long long now=sceKernelGetSystemTimeWide();
     char line[160];int n=snprintf(line,sizeof(line),"%u.%06u %s: %08X\n",(unsigned)(now/1000000),(unsigned)(now%1000000),text,(unsigned)rc);
     int f=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
@@ -47,6 +50,7 @@ static void controller_config(void) {
     char buffer[2048];int f=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.ini",PSP_O_RDONLY,0);
     if(f<0)return;
     int n=sceIoRead(f,buffer,sizeof(buffer)-1);sceIoClose(f);if(n<=0)return;buffer[n]=0;
+    controller_report=consolizer_report_setting(buffer);
     char *save=NULL;
     for(char *line=strtok_r(buffer,"\r\n",&save);line;line=strtok_r(NULL,"\r\n",&save)) {
         while(*line==' ' || *line=='\t')line++;
@@ -118,6 +122,7 @@ static int controller_worker(SceSize size,void *args) {
         if(allowed && !controller_disabled && !controller_suspended && !app_owner && !started && now>=next_start) {
             int rc=devctl(NULL,NULL,SM_DEV_START,NULL,0,NULL,0);
             usb_error=rc;
+            if(rc==0)controller_log("USB ready; bus owned (0 = borrowed)",sm_bus_owned);
             if(rc<0 && rc!=SM_BUSY)controller_log("USB start",rc);
             next_start=now+2000000;
         }

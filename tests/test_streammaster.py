@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_consolizer_bus_ownership_and_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'bus-owner'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT),
+                            str(ROOT / 'tests/consolizer_bus_harness.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=5)
+
     def test_consolizer_tv_activation_policy(self):
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / 'tv-policy'

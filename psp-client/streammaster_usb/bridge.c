@@ -9,6 +9,7 @@
 #include <string.h>
 #include "../../streammaster/protocol.h"
 #include "../../streammaster/pad_metadata.h"
+#include "bus_owner.h"
 PSP_MODULE_INFO("StreamMasterUSB",PSP_MODULE_KERNEL,0,1);
 #define DRIVER "StreamMasterUSBDriver"
 static struct UsbEndpoint endpoints[3]={{0,0,0},{1,0,0},{2,0,0}};
@@ -118,7 +119,7 @@ static int shutdown_usb(void) {
     if(started)sceUsbDeactivate(SM_USB_PID);
     for(int i=0;i<100 && (send_pending||recv_pending||bulk_pending);i++)sceKernelDelayThread(1000);
     if(send_pending || recv_pending || bulk_pending){poisoned=1;return SM_BUSY;}
-    if(started){sceUsbStop(DRIVER,0,NULL);sceUsbStop(PSP_USBBUS_DRIVERNAME,0,NULL);started=0;}
+    if(started){sceUsbStop(DRIVER,0,NULL);sm_bus_stop();started=0;}
     memset(&send_frame,0,sizeof(send_frame));memset(&recv_frame,0,sizeof(recv_frame));
     attached=0;poisoned=0;exchange_active=bulk_active=0;return 0;
 }
@@ -286,11 +287,11 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
         if(started)rc=0;
         else if(sceUsbGetState()&PSP_USB_ACTIVATED)rc=SM_BUSY;
         else {
-            rc=sceUsbStart(PSP_USBBUS_DRIVERNAME,0,NULL);
+            rc=sm_bus_start();
             if(rc>=0) {
                 rc=sceUsbStart(DRIVER,0,NULL);
                 if(rc>=0){started=1;cancelled=poisoned=0;rc=sceUsbActivate(SM_USB_PID);if(rc<0)shutdown_usb();}
-                else sceUsbStop(PSP_USBBUS_DRIVERNAME,0,NULL);
+                else sm_bus_stop();
             }
         }
     } else if(cmd==SM_DEV_STOP)rc=shutdown_usb();
