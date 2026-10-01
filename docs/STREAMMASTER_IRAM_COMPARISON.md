@@ -32,3 +32,8 @@ Build inspection: all three symbols reside at 0x40376xxx (IRAM), not 0x420xxxxx
 768 bytes. No out-of-line sm_bulk_checksum symbol remains: its loop is included
 in the bulk-read routine. After building, the focused ring-copy boundary and
 protocol tests passed (33024 ring cases). Hardware benefit remains unmeasured.
+
+Follow-up: the latest complete IRAM run measured 743.5 KiB/s versus 756.2 in
+the preceding non-IRAM run; intermittent higher rates do not establish a mean
+improvement. Four first-group timeouts remain the priority. See
+STREAMMASTER_8X4_COMPARISON.md for the 0.3.10 startup fixes and diagnostics.

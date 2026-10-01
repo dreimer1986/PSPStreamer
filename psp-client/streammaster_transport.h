@@ -8,6 +8,7 @@ int stm_enabled(void);
 void stm_diagnostic_enable(int enabled);
 int stm_diagnostic_snapshot(char *line,unsigned size,int buffers);
 int stm_download_snapshot(int fd,char *line,unsigned size);
+int stm_download_failure(int fd,unsigned row,char *line,unsigned size);
 void stm_tuning(unsigned kib,unsigned depth);
 int stm_usb_metrics(SmUsbMetrics *out);
 int stm_network_diagnostic(SmNetDiag *out);

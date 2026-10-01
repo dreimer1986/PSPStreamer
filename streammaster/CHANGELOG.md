@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.10 — Extended bulk startup hardening
+
+- Allocate the extended 8 KiB USB reply terminator space at startup instead of
+  growing the DMA buffer during the first full reply; just 64 extra bytes.
+- Return the complete firmware version, including QIO80/IRAM suffixes, in the
+  existing information response. No network/profile layout changes.
+- Companion PSP build posts the whole receive window before sending a group
+  and logs per-request completion details on failure. Four-deep transfers and
+  the existing timeout remain unchanged. Hardware stability test pending.
+- The IRAM comparison remains optional; it is not promoted by this change.
+
 ## 0.3.9-bt-qio80-iram — Optional transport code-placement experiment
 
 - Place bulk read/checksum, ring-copy helper and USB completion callback in IRAM.

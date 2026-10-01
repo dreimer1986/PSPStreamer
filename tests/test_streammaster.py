@@ -60,7 +60,7 @@ int main(void) {
         pool=source[source.index('static int reply_prepare('):source.index('static void memory_report(')]
         worker=source[source.index('static void network_worker('):source.index('static void client_event(')]
         self.assertIn('replies=xQueueCreate(2,sizeof(Reply *))',source)
-        self.assertIn('usb_host_transfer_alloc(SM_BULK_FRAME_SIZE,0,&tx)',source)
+        self.assertIn('usb_host_transfer_alloc(SM_BULK_FRAME_SIZE+64,0,&tx)',source)
         self.assertNotIn('memset(answer,',source)
         harness=(ROOT/'tests/streammaster_reply_harness.c').read_text()
         harness=harness.replace('/* TYPES */',types).replace('/* POOL */',pool).replace('/* WORKER */',worker)
@@ -252,6 +252,7 @@ int main(void){
         psp = (ROOT / "psp-client/streammaster_transport.c").read_text()
         esp = "\n".join(line for line in esp.splitlines()
                         if not line.startswith('#include "'))
+        esp = esp.replace('SM_HOT_CODE ', '')
         psp = "\n".join(line for line in psp.splitlines()
                         if not line.startswith(('#include <psp', '#include <kubridge', '#include "')))
         harness = (ROOT / "tests/streammaster_transport_harness.c").read_text()

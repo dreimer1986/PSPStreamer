@@ -30,3 +30,29 @@ each receive/cache range to the requested wire size rounded to a USB packet:
 Legacy 8x2 sizing and all timeouts remain unchanged. Include the actual finish
 return code in download diagnostics. Hardware validation of whether this fixes
 the observed failure remains pending; do not claim a proven root cause yet.
+
+## October 1 stability follow-up
+
+The latest recorded session has four first-group timeouts (500–512 ms), all
+after only 3575 HTTP-header-buffer body bytes, with no storage write. A later
+attempt completes all 170143443 bytes in 223471 ms (743.5 KiB/s). The device's
+flash app descriptor was read directly: `0.3.9-bt-qio80-iram`, Oct 1 20:46:53.
+This confirms the expected comparison firmware, not a measured speed regression
+or proof of a particular USB failure cause. Earlier QIO80 8x4 measured 756.2.
+
+Version 0.3.10 reserves 8256 rather than 8192 DMA bytes before playback starts;
+the first full extended reply no longer needs a replacement allocation while
+the old buffer is still allocated. The PSP prepares all receive requests before
+submitting sends. Timeouts, four-deep window, internal reply buffers, clocks,
+checksum and file integrity verification remain unchanged.
+
+These remove startup hazards, but hardware validation is still required.
+On another failure, `download USB failure` records the awaited slot/direction,
+pending mask and all four completed byte counts/statuses before cancellation.
+`ESP firmware` logs the complete version and profile; the StreamMaster settings
+network-status row displays the version too. Older firmware's already truncated
+version string cannot be reconstructed; install the companion firmware.
+
+Test several cold starts/reconnections and complete HTTP downloads with debug
+enabled, 333 MHz and the same AP. Include cancellation/controller response.
+No fallback silently replays bytes after an ambiguous USB failure.

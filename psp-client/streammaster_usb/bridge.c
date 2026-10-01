@@ -27,6 +27,7 @@ static SmBulkFrame bulk_recv[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
 static struct UsbdDeviceReq bulk_send_req[SM_BULK_MAX_DEPTH],bulk_recv_req[SM_BULK_MAX_DEPTH];
 static volatile unsigned bulk_pending;
 static int bulk_active,bulk_count=2;
+static SmBulkDiag bulk_diag;
 static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
 static int control_request(int a,int b,struct DeviceRequest *r) {
@@ -152,7 +153,7 @@ static int bulk_begin(const SmFrame *in) {
     for(int i=1;i<bulk_count;i++) {
         memcpy(&bulk_send[i],&bulk_send[0],32+sizeof(SmSocketRequest));bulk_send[i].sequence+=i;
     }
-    cancelled=0;bulk_active=1;sceKernelClearEventFlag(event_id,0);
+    cancelled=0;bulk_active=1;memset(&bulk_diag,0,sizeof(bulk_diag));sceKernelClearEventFlag(event_id,0);
     for(int i=0;i<bulk_count;i++) {
         if(cancelled || !attached){poisoned=1;cancel_requests();return SM_TIMEOUT;}
         bulk_send[i].flags=SM_COMPACT;sm_seal(&bulk_send[i]);
@@ -170,7 +171,12 @@ static int bulk_begin(const SmFrame *in) {
         __sync_fetch_and_or(&bulk_pending,128U<<i);
         int rc=sceUsbbdReqRecv(r);
         if(rc<0){__sync_fetch_and_and(&bulk_pending,~(128U<<i));poisoned=1;cancel_requests();return rc;}
-        __sync_fetch_and_or(&bulk_pending,8U<<i);rc=sceUsbbdReqSend(s);
+    }
+    /* A short/empty reply can arrive immediately. Post the whole receive
+     * window before allowing the host to process any request in this group. */
+    for(int i=0;i<bulk_count;i++) {
+        if(cancelled || !attached){poisoned=1;cancel_requests();return SM_TIMEOUT;}
+        __sync_fetch_and_or(&bulk_pending,8U<<i);int rc=sceUsbbdReqSend(&bulk_send_req[i]);
         if(rc<0){__sync_fetch_and_and(&bulk_pending,~(8U<<i));poisoned=1;cancel_requests();return rc;}
     }
     return 0;
@@ -184,8 +190,9 @@ static int bulk_finish(SmBulkResult *out) {
     if(!bulk_active)return SM_INVALID;
     int rc=0;out->length=0;out->result=0;
     for(int i=0;i<bulk_count && rc>=0;i++) {
+        bulk_diag.index=i;bulk_diag.receive=0;
         rc=bulk_wait(&bulk_send_req[i],8U<<i);
-        if(rc>=0)rc=bulk_wait(&bulk_recv_req[i],128U<<i);
+        if(rc>=0){bulk_diag.receive=1;rc=bulk_wait(&bulk_recv_req[i],128U<<i);}
         if(rc<0)break;
         SmBulkFrame *f=&bulk_recv[i];
         sceKernelDcacheInvalidateRange(f,bulk_recv_req[i].size);
@@ -196,13 +203,28 @@ static int bulk_finish(SmBulkResult *out) {
         if(f->length){memcpy(out->payload+out->length,f->payload,f->length);out->length+=f->length;}
         else if(f->result<0)out->result=f->result;
     }
-    if(rc<0){poisoned=1;cancel_requests();}
+    if(rc<0){
+        bulk_diag.result=rc;bulk_diag.pending=bulk_pending;bulk_diag.count=bulk_count;
+        for(int i=0;i<bulk_count;i++) {
+            bulk_diag.item[i].sent=bulk_send_req[i].recvsize;
+            bulk_diag.item[i].received=bulk_recv_req[i].recvsize;
+            bulk_diag.item[i].send_rc=bulk_send_req[i].retcode;
+            bulk_diag.item[i].recv_rc=bulk_recv_req[i].retcode;
+        }
+        poisoned=1;cancel_requests();
+    }
     /* Buffered bytes precede EOF/errors; the next read observes terminal state. */
     if(out->length)out->result=0;
     bulk_active=0;return rc;
 }
 static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int inlen,void *out,int outlen) {
     (void)a;(void)name;
+    if(cmd==SM_DEV_BULK_DIAG) {
+        if(inlen || outlen!=sizeof(bulk_diag) || !user_buffer(out,outlen))return SM_INVALID;
+        SceUInt wait=100000;
+        if(sceKernelWaitSema(lock_id,1,&wait)<0)return SM_BUSY;
+        memcpy(out,&bulk_diag,sizeof(bulk_diag));sceKernelSignalSema(lock_id,1);return 0;
+    }
     if(cmd==SM_DEV_GAMEPAD) {
         if(inlen || outlen!=sizeof(SmPad) || !user_buffer(out,outlen))return SM_INVALID;
         SmPad value={.magic=SM_PAD_MAGIC,.x=128,.y=128};

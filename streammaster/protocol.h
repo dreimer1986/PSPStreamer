@@ -79,6 +79,14 @@ enum {SM_DEV_START=0x53540001,SM_DEV_STOP,SM_DEV_STATUS,SM_DEV_EXCHANGE,SM_DEV_C
 enum {SM_DEV_READ_BEGIN=0x53540010,SM_DEV_READ_FINISH};
 enum {SM_DEV_BULK_CAPS=0x53540020,SM_DEV_BULK_BEGIN,SM_DEV_BULK_FINISH};
 #define SM_DEV_BULK_EXT_CAPS 0x53540023U
+#define SM_DEV_BULK_DIAG 0x53540024U
+/* PSP-local diagnostic snapshot, captured before cancellation overwrites
+ * request status. No ESP protocol change; old drivers reject this devctl. */
+typedef struct {
+    uint32_t pending,count,index,receive;
+    int32_t result;
+    struct {int32_t sent,received,send_rc,recv_rc;} item[4];
+} SmBulkDiag;
 enum {SM_SOCKET_OPEN=20,SM_SOCKET_STATUS,SM_SOCKET_WRITE,SM_SOCKET_READ,SM_SOCKET_CLOSE,SM_SOCKET_RESET};
 #define SM_SOCKET_READ_BULK 26U
 #define SM_SOCKET_READ_BULK_EXT 27U

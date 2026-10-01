@@ -23,6 +23,7 @@ typedef struct {
     int ahead_ready,ahead_result;
     unsigned samples,empty_samples,full_samples,max_available,groups,group_bytes,short_groups;
     int bulk_finish_rc;
+    SmBulkDiag failure;
     unsigned long long finish_us;
 } LocalSocket;
 static LocalSocket sockets[LOCAL_SOCKETS];
@@ -61,6 +62,7 @@ void stm_tuning(unsigned kib,unsigned depth) {
     if(tuning_kib==32 && tuning_depth==4)tuning_depth=2;
 }
 static unsigned peer_caps,peer_caps_length;
+static char peer_firmware[32];
 static int peer_caps_result=SM_OFFLINE,bridge_bulk_result=SM_OFFLINE;
 static unsigned capable_generation;
 static unsigned sequence,generation=1,next_token=1,next_fd=1;
@@ -83,7 +85,8 @@ int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     SceUInt wait=1000;
     if(sceKernelWaitSema(rpc_lock,1,&wait)<0)return 0;
     unsigned long long elapsed=sceKernelGetSystemTimeWide()-diagnostic.start;
-    if(buffers)snprintf(line,size,"bulk=%d caps=%x probe=%d len=%u bridge=%d span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u cumulative",
+    if(buffers==2)snprintf(line,size,"firmware=%s kib=%u depth=%u ext=%d",peer_firmware[0]?peer_firmware:"unknown",(bulk_payload+32)/1024,bulk_depth,bulk_extended);
+    else if(buffers)snprintf(line,size,"bulk=%d caps=%x probe=%d len=%u bridge=%d span_ms=%llu rx_B=%u samples=%u empty=%u full=%u min_B=%u max_B=%u compact=%d ahead=%u cumulative",
         bulk_pairs,peer_caps,peer_caps_result,peer_caps_length,bridge_bulk_result,
         elapsed/1000,diagnostic.bytes,diagnostic.samples,diagnostic.empty,diagnostic.full,diagnostic.min,diagnostic.max,compact_packets,diagnostic.prefetched);
     else snprintf(line,size,"calls=%u reads=%u KiB_s=%u usb_ms=%llu lock_ms=%llu max_us=%u op=%u busy=%u err=%u",
@@ -111,6 +114,8 @@ static void finish_ahead(void) {
     int rc=ahead_bulk?sceIoDevctl("stm:",SM_DEV_BULK_FINISH,NULL,0,packet,bulk_extended?sizeof(*packet):SM_LEGACY_RESULT_SIZE):
         sceIoDevctl("stm:",SM_DEV_READ_FINISH,NULL,0,&response,sizeof(response));
     owner->bulk_finish_rc=rc;
+    if(rc<0 && ahead_bulk && diagnostic_enabled)
+        sceIoDevctl("stm:",SM_DEV_BULK_DIAG,NULL,0,&owner->failure,sizeof(owner->failure));
     if(!ahead_bulk && rc>=0) {
         packet->length=response.length;packet->result=response.result;
         if(packet->length<=sizeof(packet->payload))memcpy(packet->payload,response.payload,packet->length);
@@ -207,6 +212,9 @@ int stm_rpc(unsigned op,const void *data,unsigned size,void *reply,unsigned capa
     unsigned duration=diagnostic_enabled?(unsigned)(sceKernelGetSystemTimeWide()-started):0;
     if(rc<0 && rc!=SM_BUSY){broken=1;wifi_state=SM_WIFI_FAILED;generation++;}
     if(rc>=0) {
+        if(response.result==0 && (op==SM_INFO || op==SM_NETWORK_INFO) && response.length>=sizeof(SmInfo)) {
+            memcpy(peer_firmware,response.payload,sizeof(peer_firmware));peer_firmware[31]=0;
+        }
         if(response.length>capacity || (response.length && !reply))rc=SM_INVALID;
         else {if(reply && response.length)memcpy(reply,response.payload,response.length);if(length)*length=response.length;rc=response.result;}
     }
@@ -255,6 +263,7 @@ int stm_driver_start(int force,volatile int *running) {
         generation++;broken=1;compact_packets=bulk_pairs=bulk_extended=0;
         bulk_payload=SM_BULK_PAYLOAD_SIZE;bulk_depth=2;
         peer_caps=peer_caps_length=0;peer_caps_result=bridge_bulk_result=SM_OFFLINE;
+        peer_firmware[0]=0;
     }
     if(rc>=0){phase="activate USB driver";rc=sceIoDevctl("stm:",SM_DEV_START,NULL,0,NULL,0);}
     if(rc>=0) {
@@ -373,6 +382,17 @@ int stm_download_snapshot(int fd,char *line,unsigned size) {
     LocalSocket *s=get(fd);int ok=s!=NULL;
     if(s)snprintf(line,size,"bulk=%d kib=%u depth=%u ext=%d rc=%08X groups=%u bytes=%u short=%u finish_ms=%llu samples=%u empty=%u full=%u max_B=%u",
         bulk_pairs,(bulk_payload+32)/1024,bulk_depth,bulk_extended,(unsigned)s->bulk_finish_rc,s->groups,s->group_bytes,s->short_groups,s->finish_us/1000,s->samples,s->empty_samples,s->full_samples,s->max_available);
+    sceKernelSignalSema(rpc_lock,1);return ok;
+}
+int stm_download_failure(int fd,unsigned row,char *line,unsigned size) {
+    if(!selected || !diagnostic_enabled || lock(rpc_lock,10,NULL)<0)return 0;
+    LocalSocket *s=get(fd);int ok=s && s->failure.result<0 && row<s->failure.count && row<4;
+    if(ok) {
+        const SmBulkDiag *d=&s->failure;
+        snprintf(line,size,"rc=%08X wait=%u/%s pending=%03X slot=%u sent=%d received=%d send_rc=%d recv_rc=%d",
+            (unsigned)d->result,(unsigned)d->index,d->receive?"RX":"TX",(unsigned)d->pending,row,
+            (int)d->item[row].sent,(int)d->item[row].received,(int)d->item[row].send_rc,(int)d->item[row].recv_rc);
+    }
     sceKernelSignalSema(rpc_lock,1);return ok;
 }
 int stm_usb_metrics(SmUsbMetrics *out) {

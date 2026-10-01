@@ -223,9 +223,11 @@ void sm_usb_task(void *unused) {
         .async={.client_event_callback=client_event,.callback_arg=NULL}};
     ESP_ERROR_CHECK(usb_host_client_register(&cfg,&client));
     ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_FRAME_SIZE,0,&rx));
-    ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_BULK_FRAME_SIZE,0,&tx));
+    /* Extended 8 KiB replies include a short-packet terminator. Reserve its
+     * packet up front: no second DMA allocation on the first full reply. */
+    ESP_ERROR_CHECK(usb_host_transfer_alloc(SM_BULK_FRAME_SIZE+64,0,&tx));
     if(usb_host_transfer_alloc(64,0,&pad_tx)==ESP_OK)pad_tx->callback=transfer_done;
-    rx->callback=transfer_done;tx->callback=transfer_done;tx_capacity=SM_BULK_FRAME_SIZE;
+    rx->callback=transfer_done;tx->callback=transfer_done;tx_capacity=SM_BULK_FRAME_SIZE+64;
     if(xTaskCreate(network_worker,"network",12288,NULL,6,NULL)!=pdPASS){memory_report("worker allocation failed");abort();}
     memory_report("USB ready");
     int64_t rescan=0;

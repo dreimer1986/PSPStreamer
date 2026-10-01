@@ -72,6 +72,7 @@ static void socket_snapshot_tick(void) {
         char usb[256];
         if(stm_diagnostic_snapshot(usb,sizeof(usb),0))recovery_log("USB throughput",0,0,usb);
         if(stm_diagnostic_snapshot(usb,sizeof(usb),1))recovery_log("ESP RX samples",0,0,usb);
+        if(stm_diagnostic_snapshot(usb,sizeof(usb),2))recovery_log("ESP firmware",0,0,usb);
         SmNetDiag net;
         if(stm_network_diagnostic(&net)) {
             snprintf(usb,sizeof(usb),"wifi=%u reason=%u rssi=%d internal_free=%u sampled=%x",

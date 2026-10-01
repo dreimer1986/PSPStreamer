@@ -51,6 +51,7 @@ static int sm_read_info(void) {
     memcpy(&sm_info,sm_response.payload,sizeof(sm_info));
     sm_info.firmware[31]=sm_info.ip[15]=sm_info.gateway[15]=sm_info.dns[15]=sm_info.dns2[15]=0;
     sm_network.info=sm_info;sm_network.mask[15]=sm_network.ssid[32]=0;
+    recovery_log("ESP firmware",0,0,sm_info.firmware);
     return 0;
 }
 static int sm_load(void) {
@@ -483,6 +484,7 @@ static void streammaster_settings(void) {
             settings_shell("StreamMaster / Onju V3");
             for(int i=selected/8*8;i<M_COUNT && i<selected/8*8+8;i++) {
                 char value[40]="[X]",line[88];
+                if(i==M_INFO)snprintf(value,sizeof(value),"%s",sm_info.firmware[0]?sm_info.firmware:"[X]");
                 if(i==M_PROFILE)snprintf(value,sizeof(value),"%u/5 %s",(unsigned)sm_slot+1,sm_draft.ssid[0]?"":tr(TXT_SM_EMPTY));
                 if(i==M_AUTOMATIC)snprintf(value,sizeof(value),"%s",tr(sm_profiles_supported && sm_profiles.automatic?TXT_SETTINGS_ON:TXT_OFF));
                 if(i==M_SSID)snprintf(value,sizeof(value),"%s",sm_draft.ssid);

@@ -278,6 +278,8 @@ done:
         recovery_log("download overhead final",result,code,detail);
         recovery_download_timing();
         if(stm_download_snapshot(fd,detail,sizeof(detail)))recovery_log("download USB socket final",result,code,detail);
+        for(unsigned row=0;row<4;row++)if(stm_download_failure(fd,row,detail,sizeof(detail)))
+            recovery_log("download USB failure",result,code,detail);
     }
     if(fd>=0)connection_close(fd);
     {

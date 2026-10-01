@@ -197,7 +197,9 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     }
     case SM_INFO:
     case SM_NETWORK_INFO: {
-        SmInfo info={0};snprintf(info.firmware,sizeof(info.firmware),SM_BOARD_NAME " %.10s",esp_app_get_description()->version);
+        /* Board name belongs to the UI, not this fixed-size version field.
+         * Keep the full DIO/QIO80/IRAM suffix visible to clients. */
+        SmInfo info={0};snprintf(info.firmware,sizeof(info.firmware),"%s",esp_app_get_description()->version);
         info.wifi_state=atomic_load(&state);info.disconnect_reason=atomic_load(&reason);
         info.free_heap=esp_get_free_heap_size();info.usb_requests=requests;
         esp_netif_ip_info_t ip={0};esp_netif_get_ip_info(netif,&ip);

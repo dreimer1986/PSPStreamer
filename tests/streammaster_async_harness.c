@@ -19,6 +19,7 @@ static SmBulkFrame bulk_recv[SM_BULK_MAX_DEPTH];
 static struct UsbdDeviceReq bulk_send_req[SM_BULK_MAX_DEPTH],bulk_recv_req[SM_BULK_MAX_DEPTH];
 static unsigned bulk_pending;
 static int bulk_active,bulk_count=2;
+static SmBulkDiag bulk_diag;
 typedef unsigned SceUInt;
 typedef unsigned u32;
 #define PSP_EVENT_WAITOR 1
@@ -43,7 +44,11 @@ static void sceKernelDcacheWritebackRange(void *p,unsigned n){(void)p;(void)n;}
 static void sceKernelDcacheWritebackInvalidateRange(void *p,unsigned n){(void)p;(void)n;}
 static void sceKernelDcacheInvalidateRange(void *p,unsigned n){(void)p;(void)n;}
 static int sceUsbbdReqRecv(struct UsbdDeviceReq *r){assert(r==&recv_req || (r>=bulk_recv_req && r<bulk_recv_req+SM_BULK_MAX_DEPTH));return 0;}
-static int sceUsbbdReqSend(struct UsbdDeviceReq *r){assert(r==&send_req || (r>=bulk_send_req && r<bulk_send_req+SM_BULK_MAX_DEPTH));return 0;}
+static int sceUsbbdReqSend(struct UsbdDeviceReq *r){
+    assert(r==&send_req || (r>=bulk_send_req && r<bulk_send_req+SM_BULK_MAX_DEPTH));
+    if(r==&bulk_send_req[0])for(int i=0;i<bulk_count;i++)assert(bulk_pending&(128U<<i));
+    return 0;
+}
 static int wait_request(struct UsbdDeviceReq *r,int bit){
     if(cancelled || !(events&bit))return SM_TIMEOUT;
     events&=~bit;
@@ -104,8 +109,10 @@ int main(void){
     assert(bulk_begin(&request)==0);complete_bulk(0,4,0);complete_bulk(1,4,0);
     bulk_recv[1].payload[0]^=1;
     assert(bulk_finish(&pair)==SM_IO && poisoned);
+    assert(bulk_diag.result==SM_IO && bulk_diag.index==1 && bulk_diag.receive==1 && !bulk_diag.pending);
     poisoned=0;assert(bulk_begin(&request)==0);cancel_requests();
     assert(bulk_finish(&pair)==SM_TIMEOUT && bulk_pending && poisoned);
+    assert(bulk_diag.result==SM_TIMEOUT && bulk_diag.index==0 && !bulk_diag.receive && bulk_diag.pending==bulk_pending);
     assert(bulk_begin(&request)==SM_BUSY);
     complete_bulk(0,0,0);complete_bulk(1,0,0);assert(!bulk_pending);
     poisoned=0;
@@ -123,5 +130,11 @@ int main(void){
         }
         assert(!bulk_finish(&pair) && pair.length==payload*depth && !bulk_pending);
         for(unsigned i=0;i<pair.length;i++)assert(pair.payload[i]==65+i/payload);
+        /* Empty first replies are common while the HTTP body starts. Later
+         * replies in the same group must retain their data and FIFO order. */
+        assert(!bulk_begin(&request));
+        for(unsigned i=0;i<depth;i++)complete_bulk(i,i==depth-1?17:0,i==depth-1?0:SM_BUSY);
+        assert(!bulk_finish(&pair) && pair.length==17 && !pair.result);
+        assert(pair.payload[0]==65+depth-1);
     }
 }
