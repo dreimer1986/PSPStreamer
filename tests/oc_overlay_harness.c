@@ -10,6 +10,8 @@ static int sceDisplayIsVblank(void){return become_blank && tick>=1000?1:blank_re
 static void sceKernelDelayThreadCB(int us){tick+=us;if(cancel_at && tick>=400)suspended=1;}
 #include "overlay_vblank.h"
 int main(void) {
+    _Static_assert(sizeof(overlay.painted)==(OC_OSD_W*OC_OSD_H+7)/8,
+                   "overlay colors must remain bit packed");
     assert(!oc_overlay_vblank() && tick==20000);
     tick=0;become_blank=1;assert(oc_overlay_vblank() && tick==1000);
     tick=0;become_blank=0;blank_result=-1;assert(!oc_overlay_vblank() && !tick);
@@ -36,6 +38,20 @@ int main(void) {
         oc_osd_set(image,8*512+8,mode,mode==3?0x12121212:0x1212);
         for(int i=0;i<size;i++)assert(image[i]==0x12);
         oc_osd_restore(&overlay);
+        /* Reuse the same backup after a dense foreground pattern. Clearing
+         * text must clear stored bits too, in every PSP pixel format. */
+        for(int pass=0;pass<2;pass++) {
+            char changed[3][40];memset(changed,pass?' ':'M',sizeof(changed));
+            oc_osd_draw(&overlay,image,512,mode,changed);
+            for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
+                int row=(y-3)/8,col=(x-3)/6;
+                int bit=y>=3 && y<27 && x>=3 && x<OC_OSD_W-5 && row<3 && col<38 &&
+                    oc_osd_bit(changed[row][col],(x-3)%6,(y-3)%8);
+                assert(oc_osd_get(image,(y+8)*512+x+OC_OSD_X,mode)==oc_osd_color(mode,bit));
+            }
+            oc_osd_restore(&overlay);
+            for(int i=0;i<size;i++)assert(image[i]==0x12);
+        }
         free(image);
     }
     return 0;

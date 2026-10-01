@@ -4,7 +4,7 @@
 
 The disabled overlay previously still reserved three framebuffer backups in
 kernel BSS (152,688 bytes). The resident bridge's fixed footprint had grown from
-228,756 bytes in 0.1 to 339,192 bytes in 0.2. It is now 187,340 bytes: OSD storage
+228,756 bytes in 0.1 to 339,192 bytes in 0.2. It is now 187,388 bytes: OSD storage
 is allocated only when enabled (one backup for polling, three for presentation).
 Allocation failure disables the OSD rather than controller input. Storage is
 released only after the worker and registered callbacks have stopped.
@@ -15,10 +15,20 @@ HTTP succeeded. That is not evidence of a failed USB connection. The plugin now
 logs free kernel memory and the largest block before OSD initialization, plus
 free memory afterwards. These values are hexadecimal byte counts.
 
-This fixes a confirmed unconditional-memory regression, not yet a confirmed
-explanation of the game shutdowns. Keep the current `overlay=0`, `tvout=0` and
-`metadata=0` for the first hardware test. No clock, controller emulation or
-firmware changes accompany this build. Existing INIs are preserved.
+The user confirmed Soul Calibur works again with the on-demand allocation fix
+and the Consolizer overlay disabled. The next test enables `overlay=2`,
+`tvout=1` (connected controller), `metadata=1`, VSH and POPS again.
+
+Both plugins now store their own two-color overlay pixels as a bit mask rather
+than 32-bit values. Original application pixels remain lossless. StreamerOC
+saves 109,728 bytes of BSS; Consolizer's three enabled backups need 78,756 bytes
+instead of 152,688. Including code changes, both modules plus the enabled
+Consolizer backups use about 30 KiB less memory than the successful overlay-off
+test. Allocator overhead and each game's other allocations still matter; this
+is not a guarantee of compatibility. Install BOTH updated plugins. Firmware,
+clock policy and controller emulation are unchanged. Allocation failure still
+disables only the Consolizer overlay. The test configuration keeps temporary
+status display (`overlay_always=0`), not a permanently visible overlay.
 
 Use a controller paired with StreamMaster in PSP games, homebrew, and optionally
 VSH or POPS. **0.1 input/reconnection passed the user's Soul Calibur test. The

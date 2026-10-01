@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Pack the two-color overlay history in both StreamerOC and PSP Consolizer
+  into one bit per pixel, preserving original framebuffer pixels losslessly.
+  Save about 107 KiB in StreamerOC and 72 KiB for Consolizer's three backups.
+  Re-enable optional Consolizer features for hardware testing after the
+  overlay-off Soul Calibur regression test passed.
+
 - Remove unconditional Consolizer overlay backup allocation from kernel BSS;
   disabled overlays now allocate no pixel backups, polling uses one backup.
   Add kernel-memory diagnostics for the ongoing game/network regression test.

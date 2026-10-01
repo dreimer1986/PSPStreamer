@@ -91,6 +91,8 @@ static int controller_worker(SceSize size,void *args) {
     controller_log("metadata capability",pad_metadata_enabled);
     controller_log("overlay initialization",pad_overlay_init());
     controller_log("kernel free bytes after OSD",sceKernelPartitionTotalFreeMemSize(1));
+    controller_log("kernel largest block after OSD",sceKernelPartitionMaxFreeMemSize(1));
+    controller_log("OSD backup bytes",oc_hook_buffer_count*sizeof(OcOverlay));
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;
     controller_log("resident service ready",allowed);

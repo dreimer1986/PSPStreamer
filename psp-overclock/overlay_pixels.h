@@ -13,7 +13,10 @@
 typedef struct {
     volatile void *base;
     int stride, format, valid;
-    uint32_t before[OC_OSD_W*OC_OSD_H], painted[OC_OSD_W*OC_OSD_H];
+    uint32_t before[OC_OSD_W*OC_OSD_H];
+    /* The overlay writes exactly two colors. Preserve the application's
+     * original pixels losslessly, but remember our own pixels as one bit. */
+    uint8_t painted[(OC_OSD_W*OC_OSD_H+7)/8];
 } OcOverlay;
 /* Columns, top bit is the top pixel. Own minimal 5x7 diagnostic alphabet. */
 static const unsigned char oc_glyphs[][5]={
@@ -58,7 +61,8 @@ static void oc_osd_restore(OcOverlay *o) {
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
         int i=y*OC_OSD_W+x,offset=(y+8)*o->stride+x+OC_OSD_X;
         /* Do not overwrite pixels the application has since redrawn. */
-        if(oc_osd_get(o->base,offset,o->format)==o->painted[i])
+        int foreground=(o->painted[i>>3]>>(i&7))&1;
+        if(oc_osd_get(o->base,offset,o->format)==oc_osd_color(o->format,foreground))
             oc_osd_set(o->base,offset,o->format,o->before[i]);
     }
     o->valid=0;
@@ -71,8 +75,10 @@ static void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,c
             oc_osd_bit(lines[row][col],(x-3)%6,(y-3)%8);
         int i=y*OC_OSD_W+x,offset=(y+8)*stride+x+OC_OSD_X;
         o->before[i]=oc_osd_get(base,offset,format);
-        o->painted[i]=oc_osd_color(format,bit);
-        oc_osd_set(base,offset,format,o->painted[i]);
+        unsigned mask=1U<<(i&7);
+        if(bit)o->painted[i>>3]|=mask;
+        else o->painted[i>>3]&=~mask;
+        oc_osd_set(base,offset,format,oc_osd_color(format,bit));
     }
     o->valid=1;
 }
