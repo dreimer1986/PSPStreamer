@@ -4,8 +4,18 @@
 #include "streammaster/gamepad.h"
 #include "streammaster/protocol.h"
 #include "streammaster/pad_metadata.h"
+#include "streammaster/pad_delivery.h"
 #include "streammaster/gamepad_options.h"
 int main(void) {
+    assert(sm_pad_send_kind(30000,0,1,1,0,0,0)==SM_PAD_SEND_INPUT);
+    assert(sm_pad_send_kind(30000,0,0,1,0,0,0)==SM_PAD_SEND_META);
+    assert(sm_pad_send_kind(30000,0,0,0,0,0,0)==SM_PAD_SEND_NONE);
+    assert(sm_pad_send_kind(30000,0,0,1,1,0,0)==SM_PAD_SEND_NONE);
+    assert(sm_pad_send_kind(200000,0,0,1,0,0,0)==SM_PAD_SEND_INPUT);
+    assert(sm_pad_send_kind(30000,0,1,1,1,0,0)==SM_PAD_SEND_INPUT);
+    int input_disabled=0,meta_disabled=0;
+    sm_pad_send_failed(1,&input_disabled,&meta_disabled);assert(!input_disabled && meta_disabled);
+    sm_pad_send_failed(0,&input_disabled,&meta_disabled);assert(input_disabled && meta_disabled);
     _Static_assert(sizeof(SmPad)==32,"pad wire size");
     _Static_assert(sizeof(SmBtStatus)==476,"status wire size");
     _Static_assert(sizeof(SmBtAction)==12,"action wire size");

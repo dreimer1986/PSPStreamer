@@ -57,6 +57,7 @@ static void controller_config(void) {
         else if(!strncmp(line,"overlay=",8))pad_overlay_enabled=!strcmp(line+8,"2")?2:!strcmp(line+8,"1");
         else if(!strncmp(line,"overlay_always=",15))pad_overlay_always=!strcmp(line+15,"1");
         else if(!strncmp(line,"tvout=",6))controller_tvout=!strcmp(line+6,"2")?2:!strcmp(line+6,"1");
+        else if(!strncmp(line,"metadata=",9))pad_metadata_enabled=!strcmp(line+9,"1");
         else if(!strncmp(line,"exclude_path=",13) && line[13] && exclude_count<8)
             snprintf(excludes[exclude_count++],96,"%s",line+13);
         else if(!strncmp(line,"allow_path=",11) && line[11] && allow_count<8)
@@ -85,6 +86,7 @@ static int controller_worker(SceSize size,void *args) {
     controller_log("Consolizer startup-race fix: context",sceKernelInitKeyConfig());
     controller_log("configured overlay mode",pad_overlay_enabled);
     controller_log("configured TV policy",controller_tvout);
+    controller_log("metadata capability",pad_metadata_enabled);
     controller_log("overlay initialization",pad_overlay_init());
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;
@@ -116,7 +118,10 @@ static int controller_worker(SceSize size,void *args) {
         }
         SmPad value={.x=128,.y=128};
         int intr=sceKernelCpuSuspendIntr();
-        if(pad_enabled && pad_time && now-pad_time<750000)value=pad_value;
+        /* Timestamp and snapshot must use the same critical section. An EP0
+         * callback may have arrived after the start-of-loop timestamp. */
+        unsigned long long sample_now=sceKernelGetSystemTimeWide();
+        if(pad_enabled && pad_time && sample_now>=pad_time && sample_now-pad_time<750000)value=pad_value;
         sceKernelCpuResumeIntr(intr);
         int active=allowed && !controller_disabled && !controller_suspended && !in_streamer && value.connected;
         unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed);

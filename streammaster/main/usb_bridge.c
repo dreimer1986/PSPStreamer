@@ -33,6 +33,8 @@ static uint32_t pad_sequence;
 static SmPadMeta pad_metadata;
 static unsigned pad_meta_chunk=16;
 static int64_t pad_meta_at,pad_meta_cycle;
+static int pad_meta_disabled,pad_tx_metadata,pad_meta_capable;
+#include "../pad_delivery.h"
 #endif
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
@@ -155,7 +157,18 @@ static void client_event(const usb_host_client_event_msg_t *event,void *arg) {
     if(event->event==USB_HOST_CLIENT_EVENT_DEV_GONE && event->dev_gone.dev_hdl==device)mark_gone();
 }
 static void SM_HOT_CODE transfer_done(usb_transfer_t *transfer) {
-    if(transfer==pad_tx){pad_pending=0;if(transfer->status!=USB_TRANSFER_STATUS_COMPLETED)pad_disabled=1;return;}
+    if(transfer==pad_tx){
+        pad_pending=0;
+        if(transfer->status!=USB_TRANSFER_STATUS_COMPLETED){
+#if CONFIG_BT_BLUEDROID_ENABLED
+            sm_pad_send_failed(pad_tx_metadata,&pad_disabled,&pad_meta_disabled);
+            if(pad_tx_metadata)pad_meta_chunk=16;
+#else
+            pad_disabled=1;
+#endif
+        }
+        return;
+    }
     if(transfer==rx){rx_pending=0;rx_done=1;}
     else {
         if(tx_bulk) {
@@ -180,6 +193,9 @@ static int open_psp(int address) {
        usb_host_get_active_config_descriptor(device,&config)!=ESP_OK)goto reject;
     const uint8_t *p=(const uint8_t *)config,*end=p+config->wTotalLength;
     int candidate=-1,found_in=0,found_out=0;pad_endpoint=desc->bcdDevice>=0x0101;
+#if CONFIG_BT_BLUEDROID_ENABLED
+    pad_meta_capable=desc->bcdDevice>=0x0102;
+#endif
     while(p+2<=end && p[0]>=2 && p+p[0]<=end) {
         if(p[1]==USB_B_DESCRIPTOR_TYPE_INTERFACE && p[0]>=9) {
             if(found_in && found_out)break;
@@ -205,6 +221,7 @@ static int open_psp(int address) {
         pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;
 #if CONFIG_BT_BLUEDROID_ENABLED
         pad_meta_chunk=16;pad_meta_cycle=0;
+        pad_meta_disabled=pad_tx_metadata=0;
 #endif
         return 1;
     }
@@ -272,24 +289,26 @@ void sm_usb_task(void *unused) {
         if(pad_endpoint && pad_tx && !pad_pending && !pad_disabled) {
             SmPad input;sm_gamepad_snapshot(&input);int64_t now=esp_timer_get_time();
             SmPadMeta meta;sm_gamepad_metadata(&meta);
-            if(pad_meta_chunk==16 && (memcmp(&meta,&pad_metadata,sizeof(meta)) || now>=pad_meta_cycle)){
+            if(pad_meta_capable && !pad_meta_disabled && pad_meta_chunk==16 && (memcmp(&meta,&pad_metadata,sizeof(meta)) || now>=pad_meta_cycle)){
                 pad_metadata=meta;pad_meta_chunk=0;pad_meta_cycle=now+10000000;
             }
-            /* At most one metadata packet per 40 ms, never at the expense
-             * of a >100 ms old input refresh. Same EP0, no bulk queue. */
-            if(pad_meta_chunk<16 && now>=pad_meta_at && now-pad_sent_at<100000){
+            int send_kind=sm_pad_send_kind(now,pad_sent_at,input.sequence!=pad_sequence,pad_meta_capable,pad_meta_disabled,pad_meta_chunk,pad_meta_at);
+            /* Metadata is strictly best-effort: due input always wins. */
+            if(send_kind==SM_PAD_SEND_META){
                 const uint8_t *v=(const uint8_t *)&pad_metadata+pad_meta_chunk*4;
                 usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=0x60+pad_meta_chunk,
                     .wValue=v[0]|((unsigned)v[1]<<8),.wIndex=v[2]|((unsigned)v[3]<<8)};
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
                 pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
+                pad_tx_metadata=1;
                 if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_meta_chunk++;pad_meta_at=now+40000;}
-                else {pad_meta_chunk=16;pad_meta_cycle=now+10000000;}
-            } else if(now-pad_sent_at>=20000 && (input.sequence!=pad_sequence || now-pad_sent_at>=200000)) {
+                else {pad_meta_disabled=1;pad_meta_chunk=16;}
+            } else if(send_kind==SM_PAD_SEND_INPUT) {
                 usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=input.connected?0x53:0x54,
                     .wValue=input.buttons,.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
                 pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
+                pad_tx_metadata=0;
                 if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_sent_at=now;pad_sequence=input.sequence;}
                 else pad_disabled=1; /* Input failure must not tear down a stream. */
             }

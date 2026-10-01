@@ -27,6 +27,7 @@ static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
 static int started;
 #ifdef SM_CONTROLLER_PLUGIN
 static volatile int app_owner,pad_emergency_stop;
+static int pad_metadata_enabled;
 #endif
 static int exchange_active,exchange_compact;
 static SmFrame bulk_send[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
@@ -74,6 +75,11 @@ static int detach(int a,int b,int c){(void)a;(void)b;(void)c;attached=0;pad_canc
 static int start_driver(int size,void *args) {
     (void)size;(void)args;memset(descriptors,0,sizeof(descriptors));
     struct DeviceDescriptor device={18,1,0x0200,0,0,0,64,0,0,0x0101,0,0,0,1};
+#ifdef SM_CONTROLLER_PLUGIN
+    if(pad_metadata_enabled)device.bcdDevice=0x0102;
+#else
+    device.bcdDevice=0x0102;
+#endif
     struct ConfigDescriptor config={9,2,32,1,1,0,0xc0,0};
     struct InterfaceDescriptor face={9,4,0,0,2,0xff,SM_USB_SUBCLASS,SM_USB_PROTOCOL,1};
     for(int i=0;i<2;i++) {

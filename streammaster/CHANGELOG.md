@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.12 — Isolate optional metadata from controller input
+
+- Only send metadata to PSP bridges explicitly advertising revision 0x0102.
+  Consolizer `metadata=0` retains the original 0x0101 input-only traffic.
+- Due input/heartbeat packets take priority over name/battery updates.
+- A failed metadata transfer disables metadata for that attachment, not gamepad
+  input. Existing input-transfer failure handling and media transport are unchanged.
+- Companion PSP build snapshots its input timestamp with a current clock under
+  the same interrupt guard, avoiding false stale-input releases.
+- This is a regression-isolation build, not a hardware-confirmed shutdown fix.
+
 ## 0.3.11 — PSP Consolizer status channel (hardware test)
 
 - Push cached controller name, connection state, errors and optional HID Battery

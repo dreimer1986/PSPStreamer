@@ -34,7 +34,8 @@ not proven compatible. Keep a way to disable plugins through ARK recovery if
 VSH fails. Do not combine with another USB/controller replacement plugin using
 the same USB function or Sony emulation slot 3. Exclude USB-using titles if needed.
 
-For controller name/battery metadata flash StreamMaster **0.3.11-bt-qio80-iram**.
+For controller name/battery metadata flash StreamMaster **0.3.12-bt-qio80-iram**
+and opt in with `metadata=1` (currently off for regression isolation).
 Basic input continues to work with 0.3.10, but names/battery are unavailable.
 Use the separate bootloader/partition/app `flash_args` to preserve NVS pairing
 and Wi-Fi profiles. Writing a merged factory image can erase those settings.
@@ -48,6 +49,7 @@ pops=1
 overlay=1
 overlay_always=0
 tvout=0
+metadata=0
 # allow_path=/ISO/MyGame.iso
 # exclude_path=/PSP/GAME/UsbApp/
 ```
@@ -57,6 +59,9 @@ tvout=0
 - `overlay=0`: off; `1`: compatible framebuffer polling; `2`: presentation hook.
 - `overlay_always=1`: permanently visible; default 0 shows state changes for 5 s.
 - `tvout=0`: off; `1`: request TV when a controller is connected; `2`: on launch.
+- `metadata=0`: original input-only EP0 traffic; `1`: advertise optional name/
+  battery status support. Requires 0.3.12 or later: 0.3.11 sends metadata without
+  this capability check. Basic controller input remains independent.
 - Up to eight case-sensitive `allow_path` and `exclude_path` substrings filter
   the launch path. Use ARK per-title rules for disc-ID based exceptions.
 
@@ -80,7 +85,11 @@ shutdown with USB connected, even with `tvout=0` and VSH activation removed.
 The log confirms early OC registration returned NODEV; this startup race is
 fixed, but is **not proven to be the cause of the game hang**. The current
 diagnostic configuration uses `overlay=0`, `tvout=0`; firmware and OC clock
-settings stay unchanged. A disabled Consolizer OSD never queries/writes display
+settings originally stayed unchanged. That test still failed. The next isolation
+build uses firmware 0.3.12 and `metadata=0`, restoring input-only EP0 traffic;
+OC settings are untouched. It fixes input starvation by metadata, metadata errors
+disabling input, and stale-time comparisons against a timestamp older than the
+latest packet. None is yet proven to explain the PSP shutdown. A disabled Consolizer OSD never queries/writes display
 buffers. Re-enable mode 2 only after establishing a stable no-OSD baseline.
 
 ### TV activation (experimental)

@@ -69,7 +69,8 @@ static void pad_overlay_update(int state,int error,int is_suspended) {
         controller_log("OC overlay attached after startup",0);
     }
     SmPadMeta meta={.battery=255};int intr=sceKernelCpuSuspendIntr();
-    if(pad_meta_time && now-pad_meta_time<30000000)meta=pad_meta;
+    unsigned long long meta_now=sceKernelGetSystemTimeWide();
+    if(pad_meta_time && meta_now>=pad_meta_time && meta_now-pad_meta_time<30000000)meta=pad_meta;
     sceKernelCpuResumeIntr(intr);
     if(state!=previous || error!=previous_error || memcmp(&meta,&previous_meta,sizeof(meta))){
         until=now+5000000;previous=state;previous_error=error;previous_meta=meta;
