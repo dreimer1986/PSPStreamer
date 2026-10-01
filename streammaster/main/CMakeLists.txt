@@ -13,3 +13,6 @@ idf_component_register(SRCS "main.c" "network.c" "usb_bridge.c" "${board_leds}" 
 if(STREAMMASTER_BOARD STREQUAL "generic")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE SM_GENERIC_BOARD=1)
 endif()
+if(STREAMMASTER_HOT_IRAM)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE SM_HOT_IRAM=1)
+endif()

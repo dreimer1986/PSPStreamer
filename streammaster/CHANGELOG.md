@@ -1,5 +1,11 @@
 # StreamMaster firmware changelog
 
+## 0.3.9-bt-qio80-iram — Optional transport code-placement experiment
+
+- Place bulk read/checksum, ring-copy helper and USB completion callback in IRAM.
+- 740 bytes additional IRAM text (768 bytes aligned); no buffer/clock/protocol
+  changes. Default remains the tested QIO80 build pending throughput comparison.
+
 ## 0.3.9-bt-qio80 — Validated Onju default
 
 - Separate Onju QIO 80 MHz flash build; CPU remains 240 MHz and Octal PSRAM

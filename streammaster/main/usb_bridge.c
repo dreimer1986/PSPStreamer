@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * One USB owner; slow Wi-Fi/HTTP work never runs in the host event loop. */
 #include "bridge.h"
+#include "hotpath.h"
 #include <stdlib.h>
 #include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
@@ -148,7 +149,7 @@ static void client_event(const usb_host_client_event_msg_t *event,void *arg) {
     if(event->event==USB_HOST_CLIENT_EVENT_NEW_DEV && (!device || gone))new_address=event->new_dev.address;
     if(event->event==USB_HOST_CLIENT_EVENT_DEV_GONE && event->dev_gone.dev_hdl==device)mark_gone();
 }
-static void transfer_done(usb_transfer_t *transfer) {
+static void SM_HOT_CODE transfer_done(usb_transfer_t *transfer) {
     if(transfer==pad_tx){pad_pending=0;if(transfer->status!=USB_TRANSFER_STATUS_COMPLETED)pad_disabled=1;return;}
     if(transfer==rx){rx_pending=0;rx_done=1;}
     else {

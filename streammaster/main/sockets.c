@@ -2,6 +2,7 @@
  * Independent owners for TCP/TLS. No DNS, connect, read or TLS handshake in
  * the USB command task. Slots are never recycled while their owner is alive. */
 #include "bridge.h"
+#include "hotpath.h"
 #include <errno.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -44,7 +45,7 @@ void sm_sockets_diagnostic(SmNetDiag *out) {
     }
 }
 void sm_sockets_bulk_cost(uint32_t *copy,uint32_t *checksum){*copy=last_ring_copy_us;*checksum=last_checksum_us;}
-static void copy_out(unsigned char *dst,const unsigned char *ring,unsigned cap,unsigned pos,unsigned n) {
+static void SM_HOT_CODE copy_out(unsigned char *dst,const unsigned char *ring,unsigned cap,unsigned pos,unsigned n) {
     unsigned first=cap-pos%cap;if(first>n)first=n;
     memcpy(dst,ring+pos%cap,first);memcpy(dst+first,ring,n-first);
 }
@@ -167,7 +168,7 @@ void sm_sockets_init(void) {
     }
 }
 void sm_sockets_reset(void){atomic_store(&reset_pending,true);}
-void sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out) {
+void SM_HOT_CODE sm_sockets_bulk_read(const SmFrame *r,SmBulkFrame *out) {
     last_ring_copy_us=last_checksum_us=0;
     memset(out,0,32);out->magic=SM_MAGIC;out->version=SM_VERSION;
     out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;out->result=SM_INVALID;

@@ -11,14 +11,14 @@ cp ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammas
 mode_selection="${1:-qio80}"
 case "$mode_selection" in
     all) modes=(dio qio qio80);;
-    dio|qio|qio80) modes=("$mode_selection");;
+    dio|qio|qio80|qio80-iram) modes=("$mode_selection");;
     *) echo "Usage: $0 [all|dio|qio|qio80]" >&2; exit 2;;
 esac
 for mode in "${modes[@]}"; do
     build_dir=build-bluetooth
     flash_freq=40m
     [[ "$mode" == dio ]] || build_dir="build-bluetooth-$mode"
-    [[ "$mode" != qio80 ]] || flash_freq=80m
+    [[ "$mode" != qio80* ]] || flash_freq=80m
     release_dir="release/StreamMaster-Bluetooth-${mode^^}"
     for file in bootloader/bootloader.bin partition_table/partition-table.bin streammaster_onju_v3.bin flash_args; do
         test -s "$build_dir/$file"

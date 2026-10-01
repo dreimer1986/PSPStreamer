@@ -29,6 +29,8 @@ class StreamMasterTests(unittest.TestCase):
 
     def test_ring_copy_boundaries(self):
         source=(ROOT/'streammaster/main/sockets.c').read_text()
+        # Host checks exercise identical logic without ESP linker attributes.
+        source=source.replace('SM_HOT_CODE ', '')
         functions=source[source.index('static void copy_out('):source.index('static int would_block(')]
         harness='''#include <assert.h>
 #include <string.h>

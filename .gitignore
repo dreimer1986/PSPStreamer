@@ -26,4 +26,5 @@ certificates/
 /streammaster/build-bluetooth/
 /streammaster/build-bluetooth-qio/
 /streammaster/build-bluetooth-qio80/
+/streammaster/build-bluetooth-qio80-iram/
 /streammaster/build-generic-*-qio80/
