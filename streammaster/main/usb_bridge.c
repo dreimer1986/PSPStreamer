@@ -29,6 +29,11 @@ static usb_transfer_t *pad_tx;
 static int pad_endpoint,pad_pending,pad_disabled;
 static int64_t pad_sent_at;
 static uint32_t pad_sequence;
+#if CONFIG_BT_BLUEDROID_ENABLED
+static SmPadMeta pad_metadata;
+static unsigned pad_meta_chunk=16;
+static int64_t pad_meta_at,pad_meta_cycle;
+#endif
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
 static atomic_uint epoch;
 /* Bluetooth must not claim its three pipes before the PSP has its own. */
@@ -197,7 +202,11 @@ static int open_psp(int address) {
         atomic_store(&psp_status,result);
         if(result!=ESP_OK)goto reject;
         claimed=1;sm_led_usb(1);epoch++;busy=rx_done=tx_done=0;
-        pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;return 1;
+        pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;
+#if CONFIG_BT_BLUEDROID_ENABLED
+        pad_meta_chunk=16;pad_meta_cycle=0;
+#endif
+        return 1;
     }
 reject:usb_host_device_close(client,device);device=NULL;return 0;
 }
@@ -262,7 +271,21 @@ void sm_usb_task(void *unused) {
 #if CONFIG_BT_BLUEDROID_ENABLED
         if(pad_endpoint && pad_tx && !pad_pending && !pad_disabled) {
             SmPad input;sm_gamepad_snapshot(&input);int64_t now=esp_timer_get_time();
-            if(now-pad_sent_at>=20000 && (input.sequence!=pad_sequence || now-pad_sent_at>=200000)) {
+            SmPadMeta meta;sm_gamepad_metadata(&meta);
+            if(pad_meta_chunk==16 && (memcmp(&meta,&pad_metadata,sizeof(meta)) || now>=pad_meta_cycle)){
+                pad_metadata=meta;pad_meta_chunk=0;pad_meta_cycle=now+10000000;
+            }
+            /* At most one metadata packet per 40 ms, never at the expense
+             * of a >100 ms old input refresh. Same EP0, no bulk queue. */
+            if(pad_meta_chunk<16 && now>=pad_meta_at && now-pad_sent_at<100000){
+                const uint8_t *v=(const uint8_t *)&pad_metadata+pad_meta_chunk*4;
+                usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=0x60+pad_meta_chunk,
+                    .wValue=v[0]|((unsigned)v[1]<<8),.wIndex=v[2]|((unsigned)v[3]<<8)};
+                memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
+                pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
+                if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_meta_chunk++;pad_meta_at=now+40000;}
+                else {pad_meta_chunk=16;pad_meta_cycle=now+10000000;}
+            } else if(now-pad_sent_at>=20000 && (input.sequence!=pad_sequence || now-pad_sent_at>=200000)) {
                 usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=input.connected?0x53:0x54,
                     .wValue=input.buttons,.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;

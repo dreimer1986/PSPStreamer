@@ -1,9 +1,15 @@
-# Experimental PSP-wide input. Read once at application start.
+# PSP Consolizer. Read once at application start. Legacy filenames retained.
 enabled=1
+# 0 off, 1 compatible polling, 2 presentation hook (updated StreamerOC needed
+# when both plugins are installed; otherwise falls back to polling).
 overlay=1
 overlay_always=0
-# First hardware test is GAME only; POPS is deliberately unsupported.
-vsh=0
+# VSH and POPS are opt-in through ARK plugin entries, not tested yet.
+vsh=1
+pops=1
+# TV activation: 0 off, 1 when controller connected, 2 on app start.
+# Requires cable. PSPStreamer retains its own output settings.
+tvout=0
 # Optional case-sensitive substrings of sceKernelInitFileName(), up to 8 each.
 # Use ARK's per-title plugin rules when a disc ID rather than a path is needed.
 # allow_path=/ISO/MyTestGame.iso

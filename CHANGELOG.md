@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Add PSP Consolizer (legacy StreamMasterPad paths retained): PSP-wide controller
+  input, optional VSH/POPS, connection/name/battery diagnostics, cooperative OC
+  presentation overlay and optional cable-gated Sony TV activation. New modes
+  require hardware testing; the initial Soul Calibur input test passed.
+
 - Consolidate the validated StreamMaster release: Onju firmware
   0.3.10-bt-qio80-iram with QIO80, CPU 240 MHz and PSRAM 80 MHz; 8 KiB/four
   outstanding requests are now the PSP default, with legacy negotiation intact.

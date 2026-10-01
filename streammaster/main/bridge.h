@@ -20,4 +20,5 @@ void sm_usb_metrics_snapshot(SmUsbMetrics *out);
 int sm_usb_psp_status(void);
 void sm_gamepad_init(void);
 void sm_gamepad_snapshot(SmPad *out);
+void sm_gamepad_metadata(SmPadMeta *out);
 int sm_gamepad_command(const SmFrame *request,SmFrame *reply);

@@ -1,119 +1,129 @@
-# StreamMasterPad 0.1 — experimental PSP-wide controller input
+# PSP Consolizer 0.2 — StreamMaster controller plugin
 
-First hardware-test build for PSP 6.61 / ARK. **Not yet hardware-validated.**
-No Rumble, video-output changes, CPU clock changes or ESP firmware update.
-Keep the tested Onju `0.3.10-bt-qio80-iram` firmware and its saved controller.
+Use a controller paired with StreamMaster in PSP games, homebrew, and optionally
+VSH or POPS. **0.1 input/reconnection passed the user's Soul Calibur test. The
+0.2 status, overlay cooperation, TV activation, VSH and POPS need hardware tests.**
+No Rumble. Wi-Fi/media transport remains available to PSPStreamer.
 
-## Install and first test
+The legacy `StreamMasterPad` filenames and directory deliberately remain valid.
+The module/display name is now PSP Consolizer. Do not install it twice under
+different names. Pairing and button/analog learning remain in PSPStreamer.
 
-1. Pair/map the controller in PSPStreamer first, as before.
-2. Copy `SEPLUGINS/StreamMasterPad/` onto the Memory Stick. Keep both PRX files
-   together with `StreamMasterPad.ini` in that directory.
-3. Use the companion test PSPStreamer app: copy its EBOOT.PBP, PSPStreamer.prx
-   and StreamMasterUSB.prx into the app directory. Do not copy the plugin's
-   resident bridge into the app directory: the two variants share source, but
-   only the plugin variant starts the global controller service.
-4. Add this line to ARK's active PLUGINS.TXT, without replacing existing lines:
+## Installation
 
-   ```text
-   game, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
-   ```
+Copy both files into `ms0:/SEPLUGINS/StreamMasterPad/`:
 
-   GAME covers PSP games and homebrew, including PSPStreamer. Initially test one
-   game; do not enable VSH/POPS globally. ARK per-title plugin rules can narrow
-   activation further. Do not combine with RemoteJoy or other controller/USB
-   replacement plugins. In-game USB features may conflict; exclude those apps.
-5. Restart the app/game after changing plugin activation. With the powered
-   StreamMaster adapter/hub attached, turn on the saved controller. Allow a few
-   seconds for USB and Bluetooth startup. Test d-pad, face/shoulder buttons,
-   Start/Select and analog movement with no PSPStreamer running.
-6. Disconnect/reconnect the controller. Buttons must release; physical PSP
-   controls must remain usable. Test leaving the game through the physical PS
-   menu. Then test PSPStreamer pairing-menu capture, playback and an HTTP download.
+- `StreamMasterPad.prx` (loader)
+- `StreamMasterUSB.prx` (resident USB bridge/controller service)
 
-**Emergency:** hold the physical PSP NOTE + VOLUP buttons for two seconds.
-External input is disabled until the next application launch, including the
-app's direct snapshot path. This does not forcibly interrupt streaming USB.
-If a title fails, disable the ARK plugin entry and restart; the untouched normal
-PSPStreamer release is the app rollback. The firmware does not need reflashing.
+Copy `StreamMasterPad.ini.example` as `StreamMasterPad.ini` and adjust it. Use
+the companion PSPStreamer EBOOT.PBP, PSPStreamer.prx and **app** StreamMasterUSB.prx.
+Do not interchange the app and resident bridge binaries. Install the companion
+StreamerOC.prx too if using both plugins with presentation-hook overlays.
 
-Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`. They are reset
-on each plugin launch. Collect them before launching another GAME application
-if the earlier game is the failing case. No per-frame log writes.
+Add the desired contexts to ARK's active `SEPLUGINS/PLUGINS.TXT`:
 
-## Settings and limitations
+```text
+game, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
+vsh, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
+pops, ms0:/SEPLUGINS/StreamMasterPad/StreamMasterPad.prx, on
+```
 
-`StreamMasterPad.ini` is read at each game/app launch. No INI editor in PSPStreamer
-yet; pairing, button mapping, analog selection and device reconnect remain in
-PSPStreamer and are persisted by the unchanged ESP firmware.
+GAME includes homebrew. VSH and POPS are optional, newly enabled test targets,
+not proven compatible. Keep a way to disable plugins through ARK recovery if
+VSH fails. Do not combine with another USB/controller replacement plugin using
+the same USB function or Sony emulation slot 3. Exclude USB-using titles if needed.
 
-- `enabled=1`: global injection/automatic bridge start; `0` disables those.
-- `vsh=0`: XMB is disabled for the first test. An explicit VSH plugin entry and
-  `vsh=1` are both needed to opt in later; XMB compatibility is untested.
-- `allow_path=...`: up to eight case-sensitive substrings of the launch path;
-  if present, only matches receive global input. No wildcard syntax.
-- `exclude_path=...`: up to eight launch-path substrings; exclusion takes priority.
-  Disc boot paths need not contain the game ID: use ARK's per-title rules for
-  ID-based selection rather than assuming this path filter is an ID filter.
-- POPS/PS1 is deliberately disabled. Analog output follows the game's sampling
-  mode. Centered external analog input leaves physical analog input alone;
-  off-centre external input takes priority. No second-stick mapping is added.
-- Physical PS, brightness and volume buttons remain physical; the present wire
-  format carries the twelve mapped game buttons and one analog stick.
-- Sony emulation slot 3 is used. Do not use another emulation plugin on that slot.
+For controller name/battery metadata flash StreamMaster **0.3.11-bt-qio80-iram**.
+Basic input continues to work with 0.3.10, but names/battery are unavailable.
+Use the separate bootloader/partition/app `flash_args` to preserve NVS pairing
+and Wi-Fi profiles. Writing a merged factory image can erase those settings.
 
-## Design and evidence
+## INI (read on plugin launch)
 
-The ESP already sends mapped input over vendor EP0 requests. The resident bridge
-uses those cached values; it creates no network requests or per-button workers.
-One 100 Hz service refreshes finite Sony emulation values and handles stale data,
-physical escape and suspend. It does not patch syscalls, game code or framebuffers.
+```ini
+enabled=1
+vsh=1
+pops=1
+overlay=1
+overlay_always=0
+tvout=0
+# allow_path=/ISO/MyGame.iso
+# exclude_path=/PSP/GAME/UsbApp/
+```
 
-The loader loads Sony USB before the resident bridge's USB imports. The bridge
-is compiled directly from the existing transport source. PSPStreamer identifies
-it through a versioned local devctl, claims transport lifecycle ownership and
-does not unload the resident module. While PSPStreamer is present, global
-injection is suppressed; its original direct input/learning path remains owner.
-The resident service does not force another USB function off to take the bus.
+- `enabled`: global input enable.
+- `vsh`, `pops`: permit those contexts; their ARK entries are also required.
+- `overlay=0`: off; `1`: compatible framebuffer polling; `2`: presentation hook.
+- `overlay_always=1`: permanently visible; default 0 shows state changes for 5 s.
+- `tvout=0`: off; `1`: request TV when a controller is connected; `2`: on launch.
+- Up to eight case-sensitive `allow_path` and `exclude_path` substrings filter
+  the launch path. Use ARK per-title rules for disc-ID based exceptions.
 
-API semantics/NIDs were checked against the uOFW reference:
-- https://github.com/uofw/uofw/blob/master/include/ctrl.h
-- https://github.com/uofw/uofw/blob/master/src/kd/ctrl/ctrl.c
-- https://github.com/uofw/uofw/blob/master/src/kd/ctrl/exports.exp
+The overlay is upper-right, StreamerOC remains upper-left. It shows the reported
+device name when available, connection/input owner, USB/BT errors and battery
+percentage **only if the HID report actually exposes Battery Strength**. No
+voltage-based guesses or invented battery values. Unknown battery is `--` in
+PSPStreamer's Bluetooth menu. Long names are shortened; the plugin uses its small
+ASCII diagnostic font. Scan RSSI is not shown as a live signal-strength reading.
 
-Related external-controller reference (reviewed, not copied):
-https://github.com/crozone/PSP-EmulatedControllerTest
+Mode 2 cooperates with the updated StreamerOC display hook rather than replacing
+it with a competing patch. Without OC it installs its own hook. An older OC
+causes a safe polling fallback, recorded in the log. Kernel/direct presentation
+paths can still require polling; neither mode guarantees flicker-free output in
+every game. The next discussion is a more stable rendering alternative.
 
-Sony API resolution is checked at runtime; missing exports or power callback
-availability disable global injection rather than attempting blind patches.
-This does not establish universal game/CFW compatibility. Suspend/resume and
-USB-using games still require hardware validation.
+### TV activation (experimental)
 
-## Status overlay
+After an 8 s startup grace period and cable detection, the plugin requests
+Sony's normal long-display-button action for at most 6 s. Only the kernel button
+mask receives this action, not the game's buttons. It does not change game
+framebuffer size, stride, GE lists or clocks. An already non-LCD display mode is
+left alone. A request is made at most once per launch; no repeated toggling on
+brief BT disconnects, and no automatic return to LCD. Check the logged mode and
+cable on hardware: Sony's impose handling and mode reporting vary with context.
 
-`overlay=1` (default) displays connection changes and USB-start error codes for
-five seconds in the upper-right corner, clear of StreamerOC's upper-left OSD.
-`overlay=0` disables it; `overlay_always=1` keeps it visible. The cached input
-channel supplies connected/disconnected status, not the controller's name, so
-this first version uses the label `STREAMMASTER BT`. Pairing names remain in
-PSPStreamer's Bluetooth menu. No extra USB requests are used for the overlay.
+PSPStreamer keeps its existing output policy; this automatic action is suppressed
+while the app is present. Selecting `tvout=0` restores manual output control.
 
-This is a best-effort framebuffer overlay without a display hook: some games
-may overwrite it or cause flicker. It checks framebuffer layout and suspension
-before drawing and never waits for VBlank. Early loader/API failures remain in
-the logs if the service cannot start. TV placement still requires hardware testing.
+## Recovery and test
 
-## Build
+Hold physical **NOTE + VOLUP for two seconds** to disable external input for
+the current launch. Physical PSP controls remain available. Stale input expires
+after 750 ms and Sony emulation has a finite sampling lifetime.
 
-With PSPSDK on PATH:
+Test a known PSP game first, then XMB and a PS1 title separately. Check controller
+off/on, unplug/replug, app/game exit, both overlays together and suspend/resume.
+Then test PSPStreamer learning, playback and an HTTP download. For TV test one
+policy at a time, with a known-working cable and manual output as fallback.
+
+Logs: `ms0:/SEPLUGINS/StreamMasterPad/loader.log` and `last.log`, replaced at
+each plugin launch. Copy before another game if that launch's log is needed.
+Disable the ARK entries to return to the previous app-only controller path.
+
+## Architecture and build
+
+One USB bridge owns the bus. A 100 Hz worker reads cached EP0 input; no media
+sockets, per-button allocations or RPC polling. PSPStreamer claims the same
+bridge and retains direct input capture; the resident module is not unloaded by
+the app. Optional metadata uses sixteen ordered four-byte, no-data-stage EP0
+requests when changed (10 s refresh otherwise). Input has priority after 100 ms;
+metadata cannot monopolize bulk media queues. Incomplete updates are discarded.
 
 ```sh
 make -C psp-controller
 make -C psp-controller/bridge
+make -C psp-overclock
 make -C psp-client/streammaster_usb
 make -C psp-client
+# After activating ESP-IDF and setting IDF_TOOLS_PATH:
+bash streammaster/build-bluetooth.sh qio80-iram
 ```
 
-The two plugin modules use O2, as other kernel modules do; the app retains O3/LTO.
-The power-callback slot helper is reused from StreamerOC (MIT); the new plugin
-and common USB bridge are GPL-2.0-or-later. See the repository licenses.
+Kernel modules use O2; the app retains O3/LTO. Shared OC helpers are MIT; the
+plugin/common bridge are GPL-2.0-or-later. Sony API semantics were checked against
+[uOFW ctrl](https://github.com/uofw/uofw/blob/master/src/kd/ctrl/ctrl.c),
+[PSPSDK impose](https://pspdev.github.io/pspsdk/pspimpose__driver_8h.html), and
+[ARK NID mappings](https://github.com/PSP-Archive/ARK-4/blob/main/core/systemctrl/src/nid_660_data.c).
+The [controller emulation example](https://github.com/crozone/PSP-EmulatedControllerTest)
+was reviewed, not copied. Runtime API lookup failures disable injection safely.

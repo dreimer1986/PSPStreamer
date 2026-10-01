@@ -16,6 +16,17 @@ static volatile int oc_hook_visible;
 static char oc_hook_lines[3][40];
 static OcOverlay oc_hook_buffers[3];
 static int oc_hook_width,oc_hook_height;
+#ifdef OC_EXTERNAL_OSD
+static int (*oc_external_osd)(const void *,int,int);
+static volatile unsigned oc_external_users;
+static void oc_external_render(const void *base,int stride,int format) {
+    int intr=sceKernelCpuSuspendIntr();
+    int (*callback)(const void *,int,int)=oc_external_osd;
+    if(callback)oc_external_users++;
+    sceKernelCpuResumeIntr(intr);
+    if(callback){callback(base,stride,format);intr=sceKernelCpuSuspendIntr();oc_external_users--;sceKernelCpuResumeIntr(intr);}
+}
+#endif
 static int oc_hook_lock(void) {
     int intr=sceKernelCpuSuspendIntr();
     int acquired=!oc_hook_busy;if(acquired)oc_hook_busy=1;
@@ -35,6 +46,9 @@ static int oc_hook_render(const void *base,int stride,int format) {
         for(int i=0;i<3;i++)oc_hook_buffers[i].valid=0;
         oc_hook_width=width;oc_hook_height=height;
     }
+#ifdef OC_OSD_POSITION
+    OC_OSD_POSITION(width);
+#endif
     volatile void *uncached=(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U);
     OcOverlay *slot=NULL;
     for(int i=0;i<3;i++)if(oc_hook_buffers[i].base==uncached){slot=&oc_hook_buffers[i];break;}
@@ -60,6 +74,12 @@ static void oc_hook_idle_refresh(int immediate) {
         }
     }
     oc_hook_unlock();
+#ifdef OC_EXTERNAL_OSD
+    if(needed) {
+        void *base=NULL;int stride,format;
+        if(sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)>=0)oc_external_render(base,stride,format);
+    }
+#endif
 }
 static void oc_hook_publish(const char lines[3][40],int visible) {
     if(!oc_hook_lock())return;
@@ -78,6 +98,9 @@ static int oc_present_hook(const void *base,int stride,int format,int sync) {
     oc_hook_calls++;
     int result=oc_present_original(base,stride,format,sync);
     int k1=pspSdkSetK1(0);
+#ifdef OC_EXTERNAL_OSD
+    if(result>=0 && running && !suspended)oc_external_render(base,stride,format);
+#endif
     if(result>=0 && running && !suspended && oc_hook_installed && oc_hook_lock()) {
         if(oc_hook_render(base,stride,format)) {
             if(oc_hook_visible){oc_hook_draws++;oc_hook_last_draw=sceKernelGetSystemTimeWide();}

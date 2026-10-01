@@ -433,6 +433,12 @@ static void streammaster_bluetooth(void) {
             }
             static const TextId states[]={TXT_SM_BT_NONE,TXT_SM_BT_STARTING,TXT_SM_BT_READY,TXT_SM_BT_SCANNING,TXT_SM_BT_CONNECTING,TXT_SM_BT_CONNECTED,TXT_SM_BT_ERROR};
             char line[96];snprintf(line,sizeof(line),tr(TXT_SM_BT_STATE),(unsigned)sm_bt_status.reports,(unsigned)(rc<0?rc:sm_bt_status.error));
+            SmPadMeta meta={.battery=255};
+            if(rc>=0 && sm_bt_status.state==SM_BT_CONNECTED &&
+               !sm_bt_status.error && sceIoDevctl("stm:",SM_DEV_PAD_META,NULL,0,&meta,sizeof(meta))==0 && meta.valid){
+                if(meta.battery<=100)snprintf(line,sizeof(line),"BT: %.28s | %u%%",meta.name[0]?meta.name:"--",meta.battery);
+                else snprintf(line,sizeof(line),"BT: %.28s | --",meta.name[0]?meta.name:"--");
+            }
             settings_line(7,0,line);settings_line(8,0,confirm?tr(TXT_SM_BT_CONFIRM):tr(states[rc<0||sm_bt_status.state>SM_BT_ERROR?SM_BT_ERROR:sm_bt_status.state]));
             settings_help(tr(TXT_SM_BT_HELP));dirty=0;
         }

@@ -8,6 +8,7 @@
 #include <pspiofilemgr_kernel.h>
 #include <string.h>
 #include "../../streammaster/protocol.h"
+#include "../../streammaster/pad_metadata.h"
 PSP_MODULE_INFO("StreamMasterUSB",PSP_MODULE_KERNEL,0,1);
 #define DRIVER "StreamMasterUSBDriver"
 static struct UsbEndpoint endpoints[3]={{0,0,0},{1,0,0},{2,0,0}};
@@ -17,6 +18,9 @@ static struct UsbdDeviceReq send_req,recv_req;
 static SmPad pad_value;
 static volatile int pad_enabled;
 static unsigned long long pad_time;
+static SmPadMeta pad_meta;
+static SmPadMetaRx pad_meta_rx;
+static unsigned long long pad_meta_time;
 static SmFrame send_frame __attribute__((aligned(64))),recv_frame __attribute__((aligned(64)));
 static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
@@ -35,6 +39,11 @@ static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
 static int control_request(int a,int b,struct DeviceRequest *r) {
     (void)a;(void)b;
+    if(r && r->bmRequestType==0x40 && !r->wLength && r->bRequest>=0x60 && r->bRequest<=0x6f){
+        unsigned chunk=r->bRequest-0x60;int intr=sceKernelCpuSuspendIntr();
+        if(sm_pad_meta_receive(&pad_meta_rx,chunk,r->wValue,r->wIndex,&pad_meta))pad_meta_time=sceKernelGetSystemTimeWide();
+        sceKernelCpuResumeIntr(intr);return 0;
+    }
     /* Vendor DEVICE request with no data stage. Reuses EP0: no ninth USB
      * host channel and no interaction with the media request/reply queues. */
     if(r && r->bmRequestType==0x40 && (r->bRequest==0x53 || r->bRequest==0x54) && !r->wLength && !(r->wValue&~0xf3f9U)) {
@@ -60,7 +69,7 @@ static void cancel_requests(void) {
     sceKernelSetEventFlag(event_id,4);
 }
 static int attach(int speed,void *a,void *b){(void)a;(void)b;attached=speed;pad_enabled=1;pad_time=0;return 0;}
-static void pad_cancel(void){pad_enabled=0;pad_time=0;}
+static void pad_cancel(void){pad_enabled=0;pad_time=0;pad_meta_time=0;pad_meta_rx.next=0;}
 static int detach(int a,int b,int c){(void)a;(void)b;(void)c;attached=0;pad_cancel();cancel_requests();return 0;}
 static int start_driver(int size,void *args) {
     (void)size;(void)args;memset(descriptors,0,sizeof(descriptors));
@@ -249,6 +258,12 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
         sceKernelCpuResumeIntr(intr);
         memcpy(out,&value,sizeof(value));
         return 0;
+    }
+    if(cmd==SM_DEV_PAD_META){
+        if(inlen || outlen!=sizeof(SmPadMeta) || !user_buffer(out,outlen))return SM_INVALID;
+        SmPadMeta value={.battery=255};int intr=sceKernelCpuSuspendIntr();
+        if(pad_enabled && pad_meta_time && sceKernelGetSystemTimeWide()-pad_meta_time<30000000)value=pad_meta;
+        sceKernelCpuResumeIntr(intr);memcpy(out,&value,sizeof(value));return 0;
     }
     if(cmd==SM_DEV_CANCEL){cancel_requests();return 0;}
     if(cmd==SM_DEV_STATUS)return attached?attached:poisoned?SM_BUSY:0;

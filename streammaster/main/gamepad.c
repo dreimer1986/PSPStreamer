@@ -20,6 +20,15 @@
 static const char *TAG="gamepad";
 static portMUX_TYPE guard=portMUX_INITIALIZER_UNLOCKED;
 static SmBtStatus status;
+static char peer_name[48];
+static uint8_t peer_battery=255;
+void sm_gamepad_metadata(SmPadMeta *out) {
+    memset(out,0,sizeof(*out));
+    portENTER_CRITICAL(&guard);
+    memcpy(out->name,peer_name,sizeof(out->name));out->state=status.state;out->error=status.error;
+    out->battery=status.state==SM_BT_CONNECTED?peer_battery:255;out->valid=1;
+    portEXIT_CRITICAL(&guard);
+}
 static SmBtUsbDiag usb_diag;
 static void record_probe(SmBtUsbProbe *p) {
     portENTER_CRITICAL(&guard);
@@ -188,7 +197,15 @@ int sm_gamepad_command(const SmFrame *r,SmFrame *out) {
     return xQueueSend(actions,&a,0)==pdTRUE?SM_OK:SM_BUSY;
 }
 static void gap(esp_bt_gap_cb_event_t e,esp_bt_gap_cb_param_t *p) {
-    if(e==ESP_BT_GAP_DISC_RES_EVT) {
+    if(e==ESP_BT_GAP_READ_REMOTE_NAME_EVT) {
+        if(p->read_rmt_name.stat==ESP_BT_STATUS_SUCCESS){
+            portENTER_CRITICAL(&guard);
+            if(!memcmp(p->read_rmt_name.bda,peer,6))snprintf(peer_name,sizeof(peer_name),"%.47s",p->read_rmt_name.rmt_name);
+            for(unsigned i=0;i<status.count;i++)if(!memcmp(status.device[i].address,p->read_rmt_name.bda,6))
+                snprintf(status.device[i].name,sizeof(status.device[i].name),"%.47s",p->read_rmt_name.rmt_name);
+            portEXIT_CRITICAL(&guard);
+        }
+    } else if(e==ESP_BT_GAP_DISC_RES_EVT) {
         SmBtDevice d={0};memcpy(d.address,p->disc_res.bda,6);
         snprintf(d.name,sizeof(d.name),"%02X:%02X:%02X:%02X:%02X:%02X",d.address[0],d.address[1],d.address[2],d.address[3],d.address[4],d.address[5]);
         for(int i=0;i<p->disc_res.num_prop;i++) {
@@ -250,9 +267,12 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         active_handle=p->open.handle;
         memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};last_input_log=0;
         portENTER_CRITICAL(&guard);memcpy(peer,p->open.bd_addr,6);memcpy(status.selected,peer,6);pair_until=0;
+        peer_name[0]=0;peer_battery=255;
+        for(unsigned i=0;i<status.count;i++)if(!memcmp(status.device[i].address,peer,6))snprintf(peer_name,sizeof(peer_name),"%s",status.device[i].name);
         load_peer_profile_locked(peer);pad.session++;memset(pad.axes,128,sizeof(pad.axes));pad.axes_valid=pad.hat=0;
         portEXIT_CRITICAL(&guard);
         state(SM_BT_CONNECTED,0);
+        esp_bt_gap_read_remote_name(p->open.bd_addr);
         esp_bt_hid_host_set_protocol(p->open.bd_addr,ESP_HIDH_REPORT_MODE);
         ESP_LOGI(TAG,"HID connected; waiting for descriptor/input");
     } else if(e==ESP_HIDH_GET_DSCP_EVT) {
@@ -268,6 +288,7 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
             pad.raw_buttons=hidpad.raw_buttons;memcpy(pad.axes,hidpad.axes,sizeof(pad.axes));pad.axes_valid=hidpad.axes_valid;pad.hat=hidpad.hat;
             pad.x=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,0);
             pad.y=sm_bt_profile_axis(&current_profile,hidpad.axes,hidpad.axes_valid,1);pad.connected=1;pad.sequence++;status.reports++;
+            peer_battery=hidpad.battery_valid?hidpad.battery:255;
             portEXIT_CRITICAL(&guard);
             if(!last_input_log){ESP_LOGW(TAG,"First HID report bytes=%u buttons=%04lx axes=%u,%u",p->data_ind.len,(unsigned long)hidpad.buttons,hidpad.x,hidpad.y);last_input_log=esp_timer_get_time();}
         }

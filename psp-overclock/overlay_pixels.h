@@ -35,6 +35,7 @@ static int oc_osd_bit(char c,int x,int y) {
     if(c=='.')return x==2 && y==6;
     if(c=='-')return y==3;
     if(c==':')return x==2 && (y==2||y==5);
+    if(c=='?')return (x==2 && (y==3||y==4||y==6)) || (y==0 && x>=1 && x<=3) || (x==4 && (y==1||y==2)) || (x==0 && y==1);
     return 0;
 }
 static uint32_t oc_osd_color(int format,int foreground) {

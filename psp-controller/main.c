@@ -3,7 +3,7 @@
 #include <pspkernel.h>
 #include <psploadcore.h>
 #include <stdio.h>
-PSP_MODULE_INFO("StreamMasterPad",PSP_MODULE_KERNEL,0,1);
+PSP_MODULE_INFO("PSPConsolizer",PSP_MODULE_KERNEL,0,2);
 static SceUID worker=-1;
 static void report(const char *what,int rc) {
     char line[120];int n=snprintf(line,sizeof(line),"%s: %08X\n",what,(unsigned)rc);

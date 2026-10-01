@@ -9,6 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StreamMasterTests(unittest.TestCase):
+    def test_consolizer_tv_activation_policy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary = Path(folder) / 'tv-policy'
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=undefined', '-I', str(ROOT),
+                            str(ROOT / 'tests/consolizer_tv_harness.c'),
+                            '-o', str(binary)], check=True)
+            for scenario in range(6):
+                subprocess.run([str(binary), str(scenario)], check=True, timeout=5)
+
     def test_gamepad_hid_descriptors_and_reports(self):
         with tempfile.TemporaryDirectory() as folder:
             binary = Path(folder) / 'gamepad'

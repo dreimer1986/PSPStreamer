@@ -11,3 +11,5 @@ PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 bridge.o: ../../psp-client/streammaster_usb/bridge.c ../controller.h ../../streammaster/protocol.h ../../psp-overclock/power_callback_slot.h
 bridge.o: ../overlay.h ../../psp-overclock/overlay_pixels.h
+bridge.o: ../tvout.h ../../psp-overclock/overlay_hook.h ../../psp-overclock/control_api.h
+bridge.o: ../../streammaster/pad_metadata.h

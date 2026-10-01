@@ -8,6 +8,9 @@
 #define OC_CMD_TARGET 0x534f0003u
 #define OC_CMD_PREPARE_EXIT 0x534f0004u
 #define OC_CMD_EXIT_STATUS 0x534f0005u
+/* Kernel-only optional second OSD. The owner unregisters before unloading. */
+#define OC_CMD_OSD_ATTACH 0x534f0020u
+#define OC_CMD_OSD_DETACH 0x534f0021u
 /* PREPARE_EXIT stops future requests and asks the worker to restore its
  * owned baseline before loadexec. EXIT_STATUS: 1 pending, 0 done, <0 failed. */
 #define OC_CMD_SET 0x534f1000u

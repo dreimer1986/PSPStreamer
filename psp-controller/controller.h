@@ -7,26 +7,29 @@
 #include <pspctrl.h>
 #include <pspinit.h>
 #include <psploadcore.h>
+#include <pspsysmem_kernel.h>
 #include <psppower.h>
 #include <systemctrl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "../psp-overclock/power_callback_slot.h"
-#include "overlay.h"
 
 static int (*emulate_buttons)(unsigned char,unsigned,unsigned,unsigned);
 static int (*emulate_analog)(unsigned char,unsigned char,unsigned char,unsigned);
 static SceUID controller_thread=-1,controller_callback=-1;
 static volatile int controller_running,controller_suspended;
-static int controller_enabled=1,controller_vsh,controller_disabled;
+#include "overlay.h"
+static int controller_enabled=1,controller_vsh=1,controller_pops=1,controller_disabled;
 static char excludes[8][96],allows[8][96];
 static unsigned exclude_count,allow_count;
 
 static void controller_log(const char *text,int rc) {
-    char line[160];int n=snprintf(line,sizeof(line),"%llu %s: %08X\n",sceKernelGetSystemTimeWide()/1000,text,(unsigned)rc);
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    char line[160];int n=snprintf(line,sizeof(line),"%u.%06u %s: %08X\n",(unsigned)(now/1000000),(unsigned)(now%1000000),text,(unsigned)rc);
     int f=sceIoOpen("ms0:/SEPLUGINS/StreamMasterPad/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
 }
+#include "tvout.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -49,8 +52,10 @@ static void controller_config(void) {
         size_t len=strlen(line);while(len && (line[len-1]==' ' || line[len-1]=='\t'))line[--len]=0;
         if(!strncmp(line,"enabled=",8))controller_enabled=!strcmp(line+8,"1");
         else if(!strncmp(line,"vsh=",4))controller_vsh=!strcmp(line+4,"1");
-        else if(!strncmp(line,"overlay=",8))pad_overlay_enabled=!strcmp(line+8,"1");
+        else if(!strncmp(line,"pops=",5))controller_pops=!strcmp(line+5,"1");
+        else if(!strncmp(line,"overlay=",8))pad_overlay_enabled=!strcmp(line+8,"2")?2:!strcmp(line+8,"1");
         else if(!strncmp(line,"overlay_always=",15))pad_overlay_always=!strcmp(line+15,"1");
+        else if(!strncmp(line,"tvout=",6))controller_tvout=!strcmp(line+6,"2")?2:!strcmp(line+6,"1");
         else if(!strncmp(line,"exclude_path=",13) && line[13] && exclude_count<8)
             snprintf(excludes[exclude_count++],96,"%s",line+13);
         else if(!strncmp(line,"allow_path=",11) && line[11] && allow_count<8)
@@ -59,7 +64,7 @@ static void controller_config(void) {
 }
 static int controller_context(void) {
     int key=sceKernelInitKeyConfig();
-    if(key!=PSP_INIT_KEYCONFIG_GAME && !(controller_vsh && key==PSP_INIT_KEYCONFIG_VSH))return 0;
+    if(key!=PSP_INIT_KEYCONFIG_GAME && !(controller_vsh && key==PSP_INIT_KEYCONFIG_VSH) && !(controller_pops && key==PSP_INIT_KEYCONFIG_POPS))return 0;
     const char *path=sceKernelInitFileName();if(!path)path="";
     for(unsigned i=0;i<exclude_count;i++)if(strstr(path,excludes[i]))return 0;
     if(allow_count){for(unsigned i=0;i<allow_count;i++)if(strstr(path,allows[i]))return 1;return 0;}
@@ -76,6 +81,7 @@ static int controller_worker(SceSize size,void *args) {
     int power=controller_callback<0?controller_callback:oc_register_power_callback(controller_callback,&automatic,&last);
     if(power<0){controller_log("power callback unavailable (disabled)",power);goto done;}
     int allowed=controller_enabled && controller_context(),last_state=-1;
+    controller_log("overlay initialization",pad_overlay_init());
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;
     controller_log("resident service ready",allowed);
@@ -109,13 +115,15 @@ static int controller_worker(SceSize size,void *args) {
         if(pad_enabled && pad_time && now-pad_time<750000)value=pad_value;
         sceKernelCpuResumeIntr(intr);
         int active=allowed && !controller_disabled && !controller_suspended && !in_streamer && value.connected;
-        if(active) {
+        unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed);
+        if(active || screen) {
             /* Four sampling ticks expire even if this thread stalls. A single
              * 100 Hz worker refreshes a cached EP0 value; no USB RPC/polling,
              * per-button threads, heap allocation or network calls. */
             intr=sceKernelCpuSuspendIntr();
-            emulate_buttons(3,value.buttons&0xf3f9U,value.buttons&0xf3f9U,4);
-            if(abs((int)value.x-128)>16 || abs((int)value.y-128)>16)
+            unsigned buttons=active?value.buttons&0xf3f9U:0;
+            emulate_buttons(3,buttons,buttons|screen,4);
+            if(active && (abs((int)value.x-128)>16 || abs((int)value.y-128)>16))
                 emulate_analog(3,value.x,value.y,4);
             else emulate_analog(3,128,128,0);
             sceKernelCpuResumeIntr(intr);
@@ -145,5 +153,5 @@ static int controller_stop(void) {
         if(rc<0)return rc; /* Never unload live code or forcibly kill an owner. */
         sceKernelDeleteThread(controller_thread);controller_thread=-1;
     }
-    return 0;
+    return pad_overlay_stop();
 }

@@ -57,6 +57,7 @@ static unsigned long long overlay_next_draw;
 static OcOverlay overlay;
 #include "clock_diagnostic.h"
 #include "overlay_vblank.h"
+#define OC_EXTERNAL_OSD 1
 #include "overlay_hook.h"
 
 /* The I/O manager dispatches this optional API without mandatory client
@@ -64,6 +65,19 @@ static OcOverlay overlay;
 static int control_devctl(PspIoDrvFileArg *arg,const char *name,unsigned int cmd,
                          void *in,int inlen,void *out,int outlen) {
     (void)arg;(void)name;
+    if(cmd==OC_CMD_OSD_ATTACH || cmd==OC_CMD_OSD_DETACH){
+        /* Do not expose a user-supplied function pointer as a kernel hook. */
+        if(pspSdkGetK1()!=0 || out || outlen)return -1;
+        if(cmd==OC_CMD_OSD_DETACH){
+            int intr=sceKernelCpuSuspendIntr();oc_external_osd=NULL;sceKernelCpuResumeIntr(intr);
+            return oc_external_users?1:0;
+        }
+        if(!running || !in || inlen!=sizeof(oc_external_osd) || (uintptr_t)in<0x88000000U)return -1;
+        int (*callback)(const void *,int,int);memcpy(&callback,in,sizeof(callback));
+        if((uintptr_t)callback<0x88000000U || ((uintptr_t)callback&3))return -1;
+        if(!oc_hook_installed && oc_hook_install()<0)return -1;
+        int intr=sceKernelCpuSuspendIntr();oc_external_osd=callback;sceKernelCpuResumeIntr(intr);return 0;
+    }
     if(in || out || inlen || outlen)return -1;
     if(cmd==OC_CMD_EXIT_STATUS)return exit_requested?(worker_exit_done?exit_result:1):-1;
     if(cmd==OC_CMD_PREPARE_EXIT) {
@@ -428,10 +442,11 @@ int module_stop(SceSize args,void *argp) {
     control_ready=0;
     if(worker>=0){sceKernelWaitThreadEnd(worker,NULL);sceKernelDeleteThread(worker);worker=-1;}
     oc_hook_remove();
+    oc_external_osd=NULL;
     /* Refuse unload rather than free code still executing in a presenter. */
     SceInt64 deadline=sceKernelGetSystemTimeWide()+100000LL;
-    while(oc_hook_users && sceKernelGetSystemTimeWide()<deadline)sceKernelDelayThread(1000);
-    if(oc_hook_users)return -1;
+    while((oc_hook_users || oc_external_users) && sceKernelGetSystemTimeWide()<deadline)sceKernelDelayThread(1000);
+    if(oc_hook_users || oc_external_users)return -1;
     /* Joining first closes the race with late driver registration. New
      * commands already fail because running was cleared before the join. */
     if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}

@@ -56,6 +56,11 @@ _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");
 #define SM_DEV_GAMEPAD 0x53540030U
 #define SM_DEV_RESIDENT 0x53540031U
 #define SM_DEV_APP_OWNER 0x53540032U
+#define SM_DEV_PAD_META 0x53540033U
+/* Optional cached EP0 metadata. Sixteen four-byte chunks, 0x60..0x6f.
+ * 255 means unknown battery, never zero. Old input packets stay unchanged. */
+typedef struct {char name[48];uint32_t state;int32_t error;uint8_t battery,valid,reserved[6];} SmPadMeta;
+_Static_assert(sizeof(SmPadMeta)==64,"Controller metadata layout");
 #define SM_RESIDENT_MAGIC 0x53504d31
 #define SM_PAD_MAGIC 0x31444150U
 enum {SM_BT_NONE,SM_BT_STARTING,SM_BT_READY,SM_BT_SCANNING,SM_BT_CONNECTING,SM_BT_CONNECTED,SM_BT_ERROR};

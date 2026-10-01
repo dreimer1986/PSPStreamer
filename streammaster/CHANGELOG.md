@@ -1,5 +1,17 @@
 # StreamMaster firmware changelog
 
+## 0.3.11 — PSP Consolizer status channel (hardware test)
+
+- Push cached controller name, connection state, errors and optional HID Battery
+  Strength over bounded EP0 metadata packets; keep the mapped-input wire format
+  and four-deep media transfer unchanged.
+- Request the actual remote name on connection, including saved devices, and
+  update the Bluetooth device list when it becomes available.
+- Report battery percentage only for descriptors exposing the standard input
+  usage; unsupported controllers remain unknown, not empty.
+- QIO80/IRAM, 240 MHz CPU and 80 MHz PSRAM remain unchanged. Flash separate images
+  to retain NVS Wi-Fi profiles and pairing; no new throughput claim.
+
 ## 0.3.10 — Extended bulk startup hardening
 
 - Hardware follow-up passed: repeated download starts, manual cancellations and

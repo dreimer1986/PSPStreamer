@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "streammaster/gamepad.h"
 #include "streammaster/protocol.h"
+#include "streammaster/pad_metadata.h"
 #include "streammaster/gamepad_options.h"
 int main(void) {
     _Static_assert(sizeof(SmPad)==32,"pad wire size");
@@ -40,6 +41,24 @@ int main(void) {
     assert(sm_hid_input(&m,x,2,&pad)&&pad.x==0&&pad.y==128);
     assert(sm_hid_input(&m,y,2,&pad)&&pad.x==0&&pad.y==255);
     assert(!sm_hid_input(&m,unknown,2,&pad));
+    /* Generic Device Controls Battery Strength: real report only, not a
+     * controller-name guess. Missing/invalid values are not empty battery. */
+    const uint8_t battery[]={0x05,6,0x09,0x20,0x15,0,0x25,100,0x75,8,0x95,1,0x81,2};
+    pad=(SmHidPad){0};assert(!pad.battery_valid);
+    assert(sm_hid_parse(&m,battery,sizeof(battery)));
+    const uint8_t level[]={73},empty[]={0},full[]={100},invalid[]={255};
+    assert(sm_hid_input(&m,level,1,&pad) && pad.battery_valid && pad.battery==73);
+    assert(sm_hid_input(&m,empty,1,&pad) && pad.battery_valid && pad.battery==0);
+    assert(sm_hid_input(&m,full,1,&pad) && pad.battery_valid && pad.battery==100);
+    assert(sm_hid_input(&m,invalid,1,&pad) && !pad.battery_valid);
+    SmPadMetaRx rx={0};SmPadMeta meta={.name="Controller",.state=SM_BT_CONNECTED,.valid=1,.battery=73},received={0};
+    const uint8_t *wire=(const uint8_t *)&meta;
+    for(unsigned i=0;i<16;i++)assert(sm_pad_meta_receive(&rx,i,wire[i*4]|wire[i*4+1]<<8,wire[i*4+2]|wire[i*4+3]<<8,&received)==(i==15));
+    assert(!memcmp(&meta,&received,sizeof(meta)));
+    memset(&received,0,sizeof(received));
+    for(unsigned i=0;i<16;i++)if(i!=4)assert(!sm_pad_meta_receive(&rx,i,wire[i*4]|wire[i*4+1]<<8,wire[i*4+2]|wire[i*4+3]<<8,&received));
+    assert(!received.valid); /* interrupted update must not publish */
+    assert(!sm_pad_meta_receive(&rx,16,0,0,&received));
     const uint8_t bad1[]={0xb4},bad2[]={0x75,33,0x95,1,0x81,2},bad3[]={0xfe},bad4[]={0x26,0};
     assert(!sm_hid_parse(&m,bad1,sizeof(bad1))&&!m.count);
     assert(!sm_hid_parse(&m,bad2,sizeof(bad2))&&!m.count);

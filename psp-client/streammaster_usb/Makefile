@@ -9,3 +9,4 @@ LIBS = -lpspusb_driver -lpspusbbus_driver -lpspkernel
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 bridge.o: ../../streammaster/protocol.h
+bridge.o: ../../streammaster/pad_metadata.h

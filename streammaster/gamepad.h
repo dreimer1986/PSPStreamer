@@ -7,7 +7,7 @@
 #define SM_HID_FIELDS 48
 typedef struct {uint16_t bit,usage,page;uint8_t size,id;int32_t min,max;} SmHidField;
 typedef struct {SmHidField field[SM_HID_FIELDS];unsigned count;int ids;} SmHidMap;
-typedef struct {uint32_t buttons;uint8_t x,y;uint16_t raw_buttons;uint8_t axes[6],axes_valid,hat;} SmHidPad;
+typedef struct {uint32_t buttons;uint8_t x,y;uint16_t raw_buttons;uint8_t axes[6],axes_valid,hat,battery,battery_valid;} SmHidPad;
 static inline int32_t sm_hid_signed(uint32_t v,unsigned n) {
     return n==1?(int8_t)v:n==2?(int16_t)v:(int32_t)v;
 }
@@ -39,7 +39,7 @@ static inline int sm_hid_parse(SmHidMap *m,const uint8_t *p,unsigned len) {
                 unsigned usage=i<nu?usages[i]:umin && umax>=umin && i<=umax-umin?umin+i:0;
                 unsigned page=usage>65535?usage>>16:g.page;usage&=65535;
                 if((v&3)==2 && g.size && ((page==9 && usage>=1 && usage<=16) ||
-                    (page==1 && ((usage>=0x30 && usage<=0x35) || usage==0x39)))) {
+                    (page==1 && ((usage>=0x30 && usage<=0x35) || usage==0x39)) || (page==6 && usage==0x20))) {
                     if(m->count==SM_HID_FIELDS || g.max<=g.min)goto bad;
                     m->field[m->count++]=(SmHidField){offset[g.id]+i*g.size,usage,page,g.size,g.id,g.min,g.max};
                 }
@@ -69,6 +69,12 @@ static inline int sm_hid_input(const SmHidMap *m,const uint8_t *p,unsigned len,S
         int64_t value=f->min<0 && f->size<32 && (v&(1U<<(f->size-1)))?(int64_t)v-(1LL<<f->size):f->min<0?(int32_t)v:(int64_t)v;
         if(f->page==9){uint32_t mask=buttons[f->usage-1];pad.buttons=(pad.buttons&~mask)|(value?mask:0);
             uint16_t raw=1U<<(f->usage-1);pad.raw_buttons=(pad.raw_buttons&~raw)|(value?raw:0);}
+        else if(f->page==6 && f->usage==0x20){
+            /* Generic Device Controls / Battery Strength. Only actual input
+             * reports are accepted; no vendor-specific byte guessing. */
+            if(value>=f->min && value<=f->max){pad.battery=(value-f->min)*100/((int64_t)f->max-f->min);pad.battery_valid=1;}
+            else pad.battery_valid=0;
+        }
         else if(f->usage==0x39){value-=f->min;if((int64_t)f->max-f->min==3)value*=2;
             uint32_t hat=value>=0&&value<8?hats[value]:0;
             pad.hat=hat>>4;pad.buttons=(pad.buttons&~0xf0U)|hat;}
