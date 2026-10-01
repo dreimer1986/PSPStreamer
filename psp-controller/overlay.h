@@ -10,17 +10,32 @@ static int pad_osd_x;
 #define running controller_running
 #define suspended controller_suspended
 static int oc_overlay_vblank(void){return sceDisplayIsVblank()>0;}
+#define OC_HOOK_DYNAMIC_BUFFERS 1
 #include "../psp-overclock/overlay_hook.h"
 #undef running
 #undef suspended
 static int pad_overlay_enabled=1,pad_overlay_always,pad_overlay_shared;
 static int pad_overlay_pending;
+static SceUID pad_overlay_memory=-1;
 static unsigned long long pad_overlay_retry,pad_overlay_deadline;
 static int pad_present_render(const void *base,int stride,int format) {
     if(!controller_running || controller_suspended || !oc_hook_lock())return 0;
     int rc=oc_hook_render(base,stride,format);oc_hook_unlock();return rc;
 }
 static int pad_overlay_init(void) {
+    /* Do not consume scarce kernel memory for an OSD that is switched off.
+     * Polling needs one backup, presentation mode needs up to three. */
+    if(pad_overlay_enabled && !oc_hook_buffers){
+        int count=pad_overlay_enabled==2?3:1;
+        unsigned bytes=count*sizeof(OcOverlay);
+        pad_overlay_memory=sceKernelAllocPartitionMemory(1,"Consolizer OSD",PSP_SMEM_High,bytes,NULL);
+        if(pad_overlay_memory<0){
+            int rc=pad_overlay_memory;pad_overlay_enabled=0;
+            controller_log("OSD allocation failed: input retained",rc);return rc;
+        }
+        oc_hook_buffers=sceKernelGetBlockHeadAddr(pad_overlay_memory);
+        memset(oc_hook_buffers,0,bytes);oc_hook_buffer_count=count;
+    }
     if(pad_overlay_enabled!=2)return 0;
     if(sceKernelFindModuleByName("StreamerOC")){
         int (*cb)(const void *,int,int)=pad_present_render;
@@ -49,7 +64,12 @@ static int pad_overlay_stop(void) {
     }
     oc_hook_remove();
     while(oc_hook_users && sceKernelGetSystemTimeWide()<deadline)sceKernelDelayThread(1000);
-    return oc_hook_users?-1:0;
+    if(oc_hook_users)return -1;
+    if(pad_overlay_memory>=0){
+        sceKernelFreePartitionMemory(pad_overlay_memory);pad_overlay_memory=-1;
+        oc_hook_buffers=NULL;oc_hook_buffer_count=0;
+    }
+    return 0;
 }
 static void pad_overlay_update(int state,int error,int is_suspended) {
     /* A configured-off OSD must not even query the game's display path. */

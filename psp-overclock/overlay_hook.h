@@ -14,7 +14,15 @@ static volatile unsigned int oc_hook_draws,oc_hook_fallback_draws,oc_hook_reject
 static unsigned long long oc_hook_last_draw;
 static volatile int oc_hook_visible;
 static char oc_hook_lines[3][40];
+#ifndef OC_HOOK_DYNAMIC_BUFFERS
 static OcOverlay oc_hook_buffers[3];
+#define OC_HOOK_BUFFER_COUNT 3
+#else
+/* Optional storage supplied before registering any presentation callback. */
+static OcOverlay *oc_hook_buffers;
+static int oc_hook_buffer_count;
+#define OC_HOOK_BUFFER_COUNT oc_hook_buffer_count
+#endif
 static int oc_hook_width,oc_hook_height;
 #ifdef OC_EXTERNAL_OSD
 static int (*oc_external_osd)(const void *,int,int);
@@ -36,14 +44,15 @@ static void oc_hook_unlock(void) {__sync_synchronize();oc_hook_busy=0;}
 /* Caller holds the shared raster lock. The worker fallback and syscall path
  * must use the same backups, never independently paint over one another. */
 static int oc_hook_render(const void *base,int stride,int format) {
+    if(!OC_HOOK_BUFFER_COUNT)return 0;
     int mode,width,height;
     if(sceDisplayGetMode(&mode,&width,&height)<0 ||
        !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format)) {
-        for(int i=0;i<3;i++)oc_hook_buffers[i].valid=0;
+        for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
         return 0;
     }
     if(width!=oc_hook_width || height!=oc_hook_height) {
-        for(int i=0;i<3;i++)oc_hook_buffers[i].valid=0;
+        for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
         oc_hook_width=width;oc_hook_height=height;
     }
 #ifdef OC_OSD_POSITION
@@ -51,8 +60,8 @@ static int oc_hook_render(const void *base,int stride,int format) {
 #endif
     volatile void *uncached=(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U);
     OcOverlay *slot=NULL;
-    for(int i=0;i<3;i++)if(oc_hook_buffers[i].base==uncached){slot=&oc_hook_buffers[i];break;}
-    if(!slot)for(int i=0;i<3;i++)if(!oc_hook_buffers[i].valid){slot=&oc_hook_buffers[i];break;}
+    for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)if(oc_hook_buffers[i].base==uncached){slot=&oc_hook_buffers[i];break;}
+    if(!slot)for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)if(!oc_hook_buffers[i].valid){slot=&oc_hook_buffers[i];break;}
     if(!slot){slot=&oc_hook_buffers[0];slot->valid=0;}
     if(slot->stride!=stride || slot->format!=format)slot->valid=0;
     oc_osd_restore(slot);
@@ -89,7 +98,7 @@ static void oc_hook_publish(const char lines[3][40],int visible) {
         /* Do not write old VRAM after a mode change/suspend/exit. A hidden
          * overlay is otherwise restored when each buffer is presented again. */
         if(suspended || !running)
-            for(int i=0;i<3;i++)oc_hook_buffers[i].valid=0;
+            for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
     }
     oc_hook_unlock();
 }

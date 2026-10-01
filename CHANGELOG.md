@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Remove unconditional Consolizer overlay backup allocation from kernel BSS;
+  disabled overlays now allocate no pixel backups, polling uses one backup.
+  Add kernel-memory diagnostics for the ongoing game/network regression test.
+
 - Add PSP Consolizer (legacy StreamMasterPad paths retained): PSP-wide controller
   input, optional VSH/POPS, connection/name/battery diagnostics, cooperative OC
   presentation overlay and optional cable-gated Sony TV activation. New modes

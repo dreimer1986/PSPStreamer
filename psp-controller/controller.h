@@ -83,11 +83,14 @@ static int controller_worker(SceSize size,void *args) {
     int power=controller_callback<0?controller_callback:oc_register_power_callback(controller_callback,&automatic,&last);
     if(power<0){controller_log("power callback unavailable (disabled)",power);goto done;}
     int allowed=controller_enabled && controller_context(),last_state=-1;
-    controller_log("Consolizer startup-race fix: context",sceKernelInitKeyConfig());
+    controller_log("Consolizer on-demand OSD: context",sceKernelInitKeyConfig());
+    controller_log("kernel free bytes before OSD",sceKernelPartitionTotalFreeMemSize(1));
+    controller_log("kernel largest block before OSD",sceKernelPartitionMaxFreeMemSize(1));
     controller_log("configured overlay mode",pad_overlay_enabled);
     controller_log("configured TV policy",controller_tvout);
     controller_log("metadata capability",pad_metadata_enabled);
     controller_log("overlay initialization",pad_overlay_init());
+    controller_log("kernel free bytes after OSD",sceKernelPartitionTotalFreeMemSize(1));
     unsigned long long next_start=0,next_context=0,escape_since=0;
     int in_streamer=1,usb_error=0;
     controller_log("resident service ready",allowed);

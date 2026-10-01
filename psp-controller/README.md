@@ -1,5 +1,25 @@
 # PSP Consolizer 0.2 — StreamMaster controller plugin
 
+### Current regression diagnostic build
+
+The disabled overlay previously still reserved three framebuffer backups in
+kernel BSS (152,688 bytes). The resident bridge's fixed footprint had grown from
+228,756 bytes in 0.1 to 339,192 bytes in 0.2. It is now 187,340 bytes: OSD storage
+is allocated only when enabled (one backup for polling, three for presentation).
+Allocation failure disables the OSD rather than controller input. Storage is
+released only after the worker and registered callbacks have stopped.
+
+The latest PSPStreamer log failed at Sony `Network Common` module loading
+(`800208D9`), while StreamMaster settings exchanges, a transfer benchmark and
+HTTP succeeded. That is not evidence of a failed USB connection. The plugin now
+logs free kernel memory and the largest block before OSD initialization, plus
+free memory afterwards. These values are hexadecimal byte counts.
+
+This fixes a confirmed unconditional-memory regression, not yet a confirmed
+explanation of the game shutdowns. Keep the current `overlay=0`, `tvout=0` and
+`metadata=0` for the first hardware test. No clock, controller emulation or
+firmware changes accompany this build. Existing INIs are preserved.
+
 Use a controller paired with StreamMaster in PSP games, homebrew, and optionally
 VSH or POPS. **0.1 input/reconnection passed the user's Soul Calibur test. The
 0.2 status, overlay cooperation, TV activation, VSH and POPS need hardware tests.**
