@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Start+Select emits one bounded system-only HOME pulse per hold. */
 typedef struct { unsigned long long since; int holding,fired; } PadHome;
+/* System input is independent of the application's ordinary-button ownership. */
+static unsigned pad_learned_home(unsigned buttons,int available) {
+    return available ? buttons&PSP_CTRL_HOME : 0;
+}
 static unsigned pad_home_button(PadHome *state,unsigned *buttons,
                                 unsigned long long now,int enabled) {
     const unsigned chord=PSP_CTRL_START|PSP_CTRL_SELECT;

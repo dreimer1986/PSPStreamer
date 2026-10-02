@@ -182,10 +182,14 @@ static int controller_worker(SceSize size,void *args) {
         unsigned long long sample_now=sceKernelGetSystemTimeWide();
         if(pad_enabled && pad_time && sample_now>=pad_time && sample_now-pad_time<750000)value=pad_value;
         sceKernelCpuResumeIntr(intr);
-        int active=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && !in_streamer && value.connected;
+        int available=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && value.connected;
+        int active=available && !in_streamer;
         unsigned buttons=active?value.buttons&0xf3f9U:0;
         unsigned home_button=pad_home_button(&home,&buttons,now,active && controller_home);
-        if(active && (value.buttons&PSP_CTRL_HOME))home_button|=PSP_CTRL_HOME;
+        /* PSPStreamer reads ordinary buttons itself, but cannot deliver HOME
+         * to the system. Keep this kernel-only escape path alive even when its
+         * UI is stuck; no dependence on the application's input loop. */
+        home_button|=pad_learned_home(value.buttons,available);
         unsigned screen=controller_tv_button(now,value.connected,in_streamer,allowed && !controller_usb_paused);
         if(active || screen || home_button) {
             /* Four sampling ticks expire even if this thread stalls. A single

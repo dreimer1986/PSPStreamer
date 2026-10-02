@@ -4,6 +4,9 @@
 #define PSP_CTRL_HOME 0x10000U
 #include "psp-controller/home_button.h"
 int main(void) {
+    assert(pad_learned_home(PSP_CTRL_HOME|9U,1)==PSP_CTRL_HOME);
+    assert(pad_learned_home(9U,1)==0);
+    assert(pad_learned_home(PSP_CTRL_HOME,0)==0);
     PadHome state={0};unsigned buttons=9;
     assert(!pad_home_button(&state,&buttons,0,1) && !buttons);
     buttons=9;assert(!pad_home_button(&state,&buttons,999999,1));

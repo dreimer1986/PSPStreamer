@@ -219,8 +219,13 @@ button not reported as such is not automatically supported.
 
 Consolizer sends Home only to Sony's kernel input path, not as a game button.
 The firmware encodes it in a previously unused EP0 bit only when the updated
-bridge advertises support. This works in Consolizer-controlled titles; the
-plugin still leaves PSPStreamer's application-owned input path alone.
+bridge advertises support. The learned Home button also works inside
+PSPStreamer: ordinary buttons and the analog stick remain application-owned,
+but Home goes independently to the system menu through the resident worker.
+This can provide an escape from a stuck application UI while USB input, the
+worker and the system menu are still responsive; it cannot recover a kernel
+lockup. Disabled/excluded titles, emergency disable, suspend, USB release and
+disconnected/stale controller input still suppress it. No new polling is added.
 
 Hold the mapped **Start + Select for one second** in a game to send one 150 ms
 HOME pulse to Sony's kernel input handler. Release both before using the chord
