@@ -42,6 +42,7 @@ static unsigned char rumble_reply[64] __attribute__((aligned(64)));
 static unsigned char rumble_small,rumble_large;
 static unsigned long long rumble_time;
 static unsigned rumble_replies;
+static unsigned rumble_nonzero_replies;
 static void rumble_publish(unsigned small,unsigned large,unsigned long long now) {
     int intr=sceKernelCpuSuspendIntr();
     rumble_small=!!small;rumble_large=large;rumble_time=now;
@@ -78,7 +79,7 @@ static int control_request(int a,int b,struct DeviceRequest *r) {
         sceKernelDcacheWritebackRange(rumble_reply,sizeof(rumble_reply));
         rumble_pending=1;int rc=sceUsbbdReqSend(&rumble_req);
         if(rc<0)rumble_pending=0;
-        else ++rumble_replies;
+        else {++rumble_replies;if(rumble_reply[3] || rumble_reply[4])++rumble_nonzero_replies;}
         return rc;
     }
 #endif

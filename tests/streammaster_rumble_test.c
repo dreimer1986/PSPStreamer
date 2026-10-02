@@ -12,7 +12,10 @@ int main(void) {
         sm_rumble_frame(frame,small,large);assert(sm_rumble_valid(frame,8));
         assert(frame[3]==small && frame[4]==large);
         sm_rumble_xbox(report,small,large);
-        assert(report[0]==3 && report[1]==3 && !report[2] && !report[3]);
+        assert(report[0]==3 && report[1]==15 && !report[2] && !report[3]);
+        /* Original, reversed and swapped motor-select masks all select the
+         * main motors. No trigger vibration: both trigger values stay zero. */
+        assert((report[1]&3)==3 && (report[1]&12)==12);
         assert(report[4]<=100 && report[5]==small*100);
         assert(report[6]==20 && !report[7] && !report[8]);
         if(!large)assert(report[4]==0);

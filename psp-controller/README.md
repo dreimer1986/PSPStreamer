@@ -4,7 +4,7 @@
 
 **POPS rumble output test (2026-10-02):** real motor commands were captured
 in Need for Speed High Stakes (`SLUS00826`). The updated `PSPConsolizerUSB.prx`
-and StreamMaster **0.3.15-bt-qio80-iram** now forward them to a compatible
+and StreamMaster **0.3.16-bt-qio80-iram** now forward them to a compatible
 Bluetooth XInput controller. Physical vibration still needs hardware validation.
 The first test target is the **8BitDo SF30 Pro, X + START mode**.
 See the POPS section below; PSPStreamer itself needs no update for this test.
@@ -304,7 +304,7 @@ was reviewed, not copied. Runtime API lookup failures disable injection safely.
 ## Experimental POPS DualShock / rumble output
 
 Default: `pops_rumble=0`. To test, update `PSPConsolizerUSB.prx`, flash the
-matching StreamMaster 0.3.15 firmware using its component `flash_args` (keeps
+matching StreamMaster 0.3.16 firmware using its component `flash_args` (keeps
 NVS Wi-Fi/bonds), and add
 these settings to the existing `PSPConsolizer.ini`, preserving other settings:
 
@@ -374,6 +374,13 @@ still be executing it; it references no unloadable kernel code.
    output error/timeout), metadata freshness and the count of EP0 replies.
    Firmware UART logs also report the selected backend and write failures.
 
+   Version 0.3.16 also logs `Rumble progress`: `rx` means a valid motor frame
+   reached the ESP32, `rx_nz` a nonzero frame, `tx_nz` a nonzero Bluetooth write,
+   and `ack_nz` successful host-stack completion of such a write (not proof of
+   physical movement). These flags stay set for that controller connection.
+   `PSP_nonzero` counts nonzero EP0 replies submitted by the PSP. This separates
+   capture, publication, USB reception and Bluetooth delivery in one test.
+
 The implemented report is Xbox Bluetooth output report 3, with the known
 `045e:02e0` / `045e:02fd` identities and an eight-byte report payload verified
 against the actual HID descriptor. A different identity or descriptor remains
@@ -386,8 +393,9 @@ This does not rule out an undocumented vendor command.
 Motor state returns in the existing input exchange over EP0; no extra USB pipe,
 PSP thread or dynamically growing effect queue is added. Only opted-in POPS
 sessions advertise this capability. Exchanges are capped at 50 Hz; unchanged
-active effects refresh at 80 ms. Effects last at most 200 ms per command, with
-no repeats. A 250 ms stale-input/game-poll watchdog requests zero output.
+active effects refresh at 80 ms. Packets request 200 ms effects with no repeats;
+some controller clones ignore timing fields, so this is not a universal hardware
+stop guarantee. A 250 ms stale-input/game-poll watchdog explicitly requests zero output.
 Transfer errors downgrade to input-only; Bluetooth output errors disable only
 motor writes until reconnect. Existing WLAN/media transport is unchanged.
 
@@ -395,6 +403,14 @@ Protocol references: [Linux hid-microsoft.c](https://github.com/torvalds/linux/b
 [SDL Xbox One HID driver](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_xboxone.c),
 [official SF30 Pro manual](https://download.8bitdo.com/Manual/Controller/SN30pro%2BSF30pro/SN30pro%2BSF30pro_Manual.pdf).
 Packet serialization is independently implemented, not copied driver code.
+
+0.3.16 uses SDL's `0x0f` actuator mask instead of `0x03`, retaining zero trigger
+magnitudes. This handles the reversed/swapped motor mask behavior documented
+by [xpadneo](https://github.com/atar-axis/xpadneo/blob/master/hid-xpadneo/src/xpadneo/rumble.c).
+The prior Wipeout 3 log (`SCES02845`) confirmed actual motor commands (peak
+`1/190`), recognized `045e:02e0`, and continuous EP0 replies without an output
+fault; it did not record nonzero values at each output stage. Therefore the
+mask change is a reference-backed candidate fix, not yet a confirmed diagnosis.
 
 Focused host checks (after building the PRX):
 

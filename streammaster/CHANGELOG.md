@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.16 — Rumble actuator-mask compatibility and end-to-end diagnostics
+
+- Use SDL's all-actuator mask (0x0f), keeping trigger magnitudes zero. This
+  avoids selecting only nonexistent trigger motors on reversed-mask clones.
+- Retain sticky evidence for valid/nonzero USB commands, nonzero Bluetooth
+  writes and successful host-stack write completion in existing metadata.
+- Read the freshness clock under the receive-state lock, avoiding a cross-core
+  race that could briefly mistake a just-arrived command for a future timestamp.
+- Hardware 0.3.15 logs confirmed capture, 045e:02e0 recognition and repeated
+  EP0 replies, but no vibration. 0.3.16 physical output remains to be tested.
+
 ## 0.3.15 — POPS Bluetooth rumble output test
 
 - Return actual PS1 small/large motor values in the existing EP0 input exchange

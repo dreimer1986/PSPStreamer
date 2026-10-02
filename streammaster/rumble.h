@@ -6,6 +6,8 @@
 #include <string.h>
 /* EP0 input transaction reply. No native struct layout on the wire. */
 #define SM_RUMBLE_BYTES 8
+enum { SM_RUMBLE_BACKEND=1, SM_RUMBLE_RX_NONZERO=2, SM_RUMBLE_TX_NONZERO=4,
+       SM_RUMBLE_ACK_NONZERO=8, SM_RUMBLE_RX_VALID=16 };
 static inline int sm_rumble_fresh(uint64_t now,uint64_t stamp) {
     return stamp && now>=stamp && now-stamp<250000;
 }
@@ -21,7 +23,9 @@ static inline int sm_rumble_valid(const uint8_t *p,size_t n) {
  * A finite 200 ms effect, refreshed while alive; never an endless loop.
  * PS1 small motor is binary; the large motor has 256 intensity levels. */
 static inline void sm_rumble_xbox(uint8_t out[9],unsigned small,unsigned large) {
-    const uint8_t blank[9]={3,3,0,0,0,0,20,0,0};
+    /* SDL enables all four slots. This also works with reversed/swapped
+     * actuator-mask clones documented by xpadneo. Trigger magnitudes stay 0. */
+    const uint8_t blank[9]={3,15,0,0,0,0,20,0,0};
     memcpy(out,blank,9);out[4]=(large*100u+127u)/255u;out[5]=small?100:0;
 }
 /* Only accept known XInput Bluetooth identities with exactly the expected

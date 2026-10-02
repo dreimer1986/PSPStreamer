@@ -24,7 +24,7 @@ static portMUX_TYPE guard=portMUX_INITIALIZER_UNLOCKED;
 static SmBtStatus status;
 static char peer_name[48];
 static uint8_t peer_battery=255;
-static uint8_t rumble_diag[6]; /* backend, blocked, VID lo/hi, PID lo/hi */
+static uint8_t rumble_diag[6]; /* backend/progress bits, blocked, VID/PID */
 void sm_gamepad_metadata(SmPadMeta *out) {
     memset(out,0,sizeof(*out));
     portENTER_CRITICAL(&guard);
@@ -92,12 +92,17 @@ void sm_gamepad_rumble_receive(const uint8_t *data,size_t bytes,unsigned session
     if(session==pad.session && rumble_handle>=0 && pad.connected) {
         rumble_small=valid?data[3]:0;rumble_large=valid?data[4]:0;
         rumble_received=valid?esp_timer_get_time():0;
+        if(valid)rumble_diag[0]|=SM_RUMBLE_RX_VALID;
+        if(valid && (data[3] || data[4]))rumble_diag[0]|=SM_RUMBLE_RX_NONZERO;
     }
     portEXIT_CRITICAL(&guard);
 }
 static void rumble_tick(int64_t now) {
     uint8_t address[6],report[9];int send=0,timeout=0;
     portENTER_CRITICAL(&guard);
+    /* Sample inside the same lock as the receive timestamp: another core
+     * can publish a newer command between the caller's clock and this lock. */
+    now=esp_timer_get_time();
     if(rumble_handle>=0 && !rumble_blocked && status.state==SM_BT_CONNECTED) {
         if(rumble_busy && now-rumble_sent_at>500000){rumble_busy=0;rumble_blocked=1;rumble_diag[1]=1;timeout=1;}
         if(!rumble_busy && !rumble_blocked) {
@@ -107,6 +112,7 @@ static void rumble_tick(int64_t now) {
                (small!=rumble_sent_small || large!=rumble_sent_large || ((small||large) && now-rumble_sent_at>=80000))) {
                 sm_rumble_xbox(report,small,large);memcpy(address,peer,6);
                 rumble_busy=1;rumble_sent_at=now;rumble_sent_small=small;rumble_sent_large=large;send=1;
+                if(small || large)rumble_diag[0]|=SM_RUMBLE_TX_NONZERO;
             }
         }
     }
@@ -353,7 +359,8 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         ESP_LOGW(TAG,"HID descriptor vendor=%04x product=%04x bytes=%u fields=%u valid=%d",p->dscp.vendor_id,p->dscp.product_id,p->dscp.dl_len,map.count,ok);
         int motor=ok && sm_rumble_xbox_descriptor(p->dscp.vendor_id,p->dscp.product_id,p->dscp.dsc_list,p->dscp.dl_len);
         portENTER_CRITICAL(&guard);rumble_handle=motor?active_handle:-1;
-        rumble_diag[0]=motor;rumble_diag[2]=p->dscp.vendor_id;rumble_diag[3]=p->dscp.vendor_id>>8;
+        rumble_diag[0]=(rumble_diag[0]&~SM_RUMBLE_BACKEND)|(motor?SM_RUMBLE_BACKEND:0);
+        rumble_diag[2]=p->dscp.vendor_id;rumble_diag[3]=p->dscp.vendor_id>>8;
         rumble_diag[4]=p->dscp.product_id;rumble_diag[5]=p->dscp.product_id>>8;
         portEXIT_CRITICAL(&guard);
         ESP_LOGW(TAG,"HID rumble backend: %s",motor?"Xbox Bluetooth / SF30 Pro XInput":"unsupported identity/report; input only");
@@ -365,6 +372,7 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         if((p->send_data.handle==rumble_handle || p->send_data.handle==0xff) && rumble_busy) {
             rumble_busy=0;
             if(p->send_data.status!=ESP_HIDH_OK){rumble_blocked=1;rumble_diag[1]=1;error=1;}
+            else if(rumble_sent_small || rumble_sent_large)rumble_diag[0]|=SM_RUMBLE_ACK_NONZERO;
         }
         portEXIT_CRITICAL(&guard);
         if(error)ESP_LOGW(TAG,"Rumble write status=%u reason=%u; input unchanged",p->send_data.status,p->send_data.reason);

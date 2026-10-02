@@ -105,15 +105,20 @@ static void pops_rumble_update(unsigned long long now, int allowed) {
     }
     if (!controller_report) return;
     {
-        SmPadMeta meta;unsigned replies;
+        SmPadMeta meta;unsigned replies,nonzero;
         int intr=sceKernelCpuSuspendIntr();meta=pad_meta;replies=rumble_replies;
         unsigned long long stamp=pad_meta_time;
+        nonzero=rumble_nonzero_replies;
         sceKernelCpuResumeIntr(intr);
         char line[128];
         snprintf(line,sizeof(line),"Rumble transport backend=%u blocked=%u VID=%04X PID=%04X meta_fresh=%u replies",
-            meta.reserved[0],meta.reserved[1],meta.reserved[2]|(meta.reserved[3]<<8),
+            meta.reserved[0]&SM_RUMBLE_BACKEND,meta.reserved[1],meta.reserved[2]|(meta.reserved[3]<<8),
             meta.reserved[4]|(meta.reserved[5]<<8),(unsigned)(stamp && now>=stamp && now-stamp<15000000));
         controller_log(line,replies);
+        snprintf(line,sizeof(line),"Rumble progress rx=%u rx_nz=%u tx_nz=%u ack_nz=%u PSP_nonzero",
+            !!(meta.reserved[0]&SM_RUMBLE_RX_VALID),!!(meta.reserved[0]&SM_RUMBLE_RX_NONZERO),
+            !!(meta.reserved[0]&SM_RUMBLE_TX_NONZERO),!!(meta.reserved[0]&SM_RUMBLE_ACK_NONZERO));
+        controller_log(line,nonzero);
     }
     for (unsigned port=0;port<2;port++) {
         PopsPort p;
