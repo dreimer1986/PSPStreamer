@@ -4,7 +4,7 @@
 #include <string.h>
 typedef struct { unsigned long long since; int timing,handled; } FsAutoZoom;
 /* Read one bounded INI line. Unknown/malformed entries preserve defaults. */
-static void fs_auto_option(char *line,int *enabled,unsigned *seconds,int *keep)
+static void fs_auto_option_ex(char *line,int *enabled,unsigned *seconds,int *keep,int *speedboost)
 {
     char *p=line;while(*p==' '||*p=='\t')p++;
     char *key=p;while(*p&&*p!='='&&*p!=' '&&*p!='\t')p++;
@@ -19,7 +19,10 @@ static void fs_auto_option(char *line,int *enabled,unsigned *seconds,int *keep)
     if(!strcmp(key,"auto_zoom")&&value<=1)*enabled=value;
     if(!strcmp(key,"auto_zoom_delay_seconds")&&value>=1)*seconds=value;
     if(!strcmp(key,"keep_fullscreen")&&value<=1)*keep=value;
+    if(speedboost&&!strcmp(key,"experimental_speedboost")&&value<=1)*speedboost=value;
 }
+static inline void fs_auto_option(char *line,int *enabled,unsigned *seconds,int *keep)
+{fs_auto_option_ex(line,enabled,seconds,keep,NULL);}
 /* User intent survives automatic restoration, but not an explicit toggle off. */
 static int fs_zoom_wanted(int automatic,int keep,int armed)
 {return automatic||(keep&&armed);}

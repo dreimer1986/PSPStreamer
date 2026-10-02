@@ -23,6 +23,11 @@ int main(void)
     assert(fs_snapshot_layout_valid(5,5)); /* Normal swaps keep layout. */
     assert(!fs_snapshot_layout_valid(5,6)); /* Mode/format/stride changed. */
     assert(!fs_snapshot_layout_valid(5,7)); /* Changed and changed back. */
+    assert(fs_capture_pending(12,11));
+    assert(!fs_capture_pending(12,12));
+    assert(!fs_capture_pending(12,13)); /* Newer accepted copy also releases. */
+    assert(fs_capture_pending(0,0xffffffffU));
+    assert(!fs_capture_pending(0xffffffffU,0));
     assert(!fs_game_tv_layout(0,480,272)); /* Never force LCD back to TV. */
     assert(!fs_game_tv_layout(0x1d2,720,480)); /* Already scaled, not a source. */
     assert(!fs_game_tv_layout(0x1d1,480,272)); /* No guessed interlace mode. */

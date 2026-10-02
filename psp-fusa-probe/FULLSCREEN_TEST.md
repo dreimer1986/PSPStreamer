@@ -1,4 +1,36 @@
-# FuSa-style fullscreen experiment 0.19 — continuous snapshot output
+# FuSa-style fullscreen experiment 0.20 — VFPU and coordinated capture
+
+0.19 restored menu output but hardware feedback confirmed tearing in both
+Metal Slug XX and Soul Calibur. Soul Calibur's scalar 16-bit copy averaged
+15.4 ms, with large scheduling outliers. Reboot cleanup is now seen in logs.
+
+0.20 uses an explicitly VFPU-enabled worker, vector 16-bit copy and RGB565
+conversion, read-only cached VRAM with fresh invalidation, and the existing
+uncached RAM-system source path. Capture follows vblank, at priority 24 only
+for the copy, returning to priority 56 for scaling/other work. A submission
+change during capture rejects the copy; changes during later scaling do not.
+No extra full-frame allocation and no pause inside the display driver.
+
+`experimental_speedboost=1` additionally coordinates the four standard user
+VBlank wait syscalls with snapshot completion. It waits at most 100 ms, then
+executes the original Sony wait, preserving its result and CB dispatch. It is
+only active in fullscreen and outside system-layer display; hooks are removed
+on restore/reboot. Calls/timeouts are logged. This can reduce game speed to the
+capture cadence; it is NOT a promise of higher FPS. Kernel/direct wait calls
+and the multi-VBlank APIs are not intercepted. The worker uses real VBlank.
+
+Important correction: the available FuSa `spb.c` has its real speedboost
+patches/timers commented out. This implementation adapts wait/capture
+coordination, not a known-working transplant of its released Speedbooster.
+No synthetic interrupts, fake Vcount, controller hooks or firmware offsets.
+The repository default is 0; the user's test PSP is explicitly set to 1.
+
+Test after reboot: Metal Slug menu/game, Soul Calibur motion, HOME and exit to
+VSH. Report tearing, black output, game/audio speed and provide test.log.
+Hardware timing, VFPU pixels and concurrent firmware behavior remain untested
+by host tests; those cover scalar reference conversion, policy and config.
+
+## 0.19 — continuous snapshot output
 
 0.18 hardware feedback: Metal Slug XX no longer hangs at its first transition,
 and gameplay works. Its 60 Hz RGB32 menu remains black: the log shows zero

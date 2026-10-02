@@ -3,6 +3,13 @@
 int main(void)
 {
     int enabled=0,keep=0;unsigned seconds=5;
+    int boost=0;
+    char boost_on[]="experimental_speedboost=1",boost_bad[]="experimental_speedboost=2";
+    char boost_off[]="experimental_speedboost=0",boost_junk[]="experimental_speedboost=1junk";
+    fs_auto_option_ex(boost_on,&enabled,&seconds,&keep,&boost);assert(boost==1);
+    fs_auto_option_ex(boost_bad,&enabled,&seconds,&keep,&boost);assert(boost==1);
+    fs_auto_option_ex(boost_off,&enabled,&seconds,&keep,&boost);assert(boost==0);
+    fs_auto_option_ex(boost_junk,&enabled,&seconds,&keep,&boost);assert(boost==0);
     char a[]=" auto_zoom = 1 ; on",b[]="auto_zoom_delay_seconds=12\r";
     char c[]="auto_zoom=2",d[]="auto_zoom_delay_seconds=0",e[]="auto_zoom_delay_seconds=9999999999999";
     char f[]="auto_zoom=0garbage",g[]=";auto_zoom=0",h[]="auto_zoom_delay_seconds=60";

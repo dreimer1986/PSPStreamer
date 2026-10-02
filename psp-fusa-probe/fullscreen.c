@@ -83,9 +83,73 @@ static unsigned copied_frames,copy_rejected,ge_busy,copy_max_us;
 static unsigned long long copy_total_us;
 static unsigned long long request_at,last_snapshot_at;
 static unsigned last_snapshot_sequence,timeout_snapshots;
+void fs_copy16_vfpu(uint16_t *,const void *,int);
+void fs_copy32_vfpu(uint16_t *,const void *,int);
+static void copy_source(unsigned base,int stride,int format)
+{
+    unsigned physical=base&0x1fffffffU;
+    const void *source=(void *)fs_source_alias(base);
+    if(physical<0x08000000U) {
+        /* VRAM read-only cached alias: discard stale CPU cache, never write
+         * old pixels back over GE output. Main-RAM system buffers retain the
+         * existing uncached path; do not discard their producer's dirty data. */
+        source=(void *)physical;
+        sceKernelDcacheInvalidateRange(source,(271U*stride+480U)*(format==3?4U:2U));
+    }
+    if(format==3)fs_copy32_vfpu(snapshot,source,stride);
+    else fs_copy16_vfpu(snapshot,source,stride);
+}
 static int auto_zoom;
 static int keep_fullscreen;
 static unsigned auto_delay=5;
+static int experimental_speedboost,wait_hooks;
+static volatile unsigned consumed_frame,wait_users;
+static unsigned wait_calls,wait_timeouts;
+static int (*original_wait[4])(void);
+/* Coordination belongs at game wait points, NEVER inside the display setter.
+ * This is an ARK adaptation, not the commented legacy fake-interrupt code. */
+static int coordinated_wait(unsigned index)
+{
+    int intr=sceKernelCpuSuspendIntr();wait_users++;unsigned target=frames;
+    sceKernelCpuResumeIntr(intr);
+    if(active&&!restoring&&!saved_overlay&&running&&sceKernelGetThreadId()!=worker&&target) {
+        wait_calls++;
+        unsigned long long deadline=sceKernelGetSystemTimeWide()+100000ULL;
+        while(active&&!restoring&&!cancelled&&!suspended&&!saved_overlay&&running&&
+              fs_capture_pending(target,consumed_frame)) {
+            if((unsigned long long)sceKernelGetSystemTimeWide()>=deadline){wait_timeouts++;break;}
+            /* Preserve callback dispatch for the CB entry points. */
+            if(index&1)sceKernelDelayThreadCB(1000);else sceKernelDelayThread(1000);
+        }
+    }
+    int rc=original_wait[index]();
+    intr=sceKernelCpuSuspendIntr();wait_users--;sceKernelCpuResumeIntr(intr);
+    return rc;
+}
+static int coordinated_wait_plain(void){return coordinated_wait(0);}
+static int coordinated_wait_cb(void){return coordinated_wait(1);}
+static int coordinated_wait_start(void){return coordinated_wait(2);}
+static int coordinated_wait_start_cb(void){return coordinated_wait(3);}
+static void *wait_replacement[4]={coordinated_wait_plain,coordinated_wait_cb,coordinated_wait_start,coordinated_wait_start_cb};
+static int install_wait_hooks(void)
+{
+    const unsigned nids[4]={0x36CDFADE,0x8EB9EC49,0x984C27E7,0x46F186C3};
+    if(!experimental_speedboost)return 0;
+    for(unsigned i=0;i<4;i++) {
+        original_wait[i]=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",nids[i]);
+        if(!original_wait[i])return -1;
+    }
+    int intr=sceKernelCpuSuspendIntr();
+    for(unsigned i=0;i<4;i++)sctrlHENPatchSyscall((void *)original_wait[i],wait_replacement[i]);
+    wait_hooks=1;sceKernelCpuResumeIntr(intr);return 0;
+}
+static void remove_wait_hooks(void)
+{
+    if(!wait_hooks)return;
+    int intr=sceKernelCpuSuspendIntr();
+    for(unsigned i=0;i<4;i++)sctrlHENPatchSyscall(wait_replacement[i],(void *)original_wait[i]);
+    wait_hooks=0;sceKernelCpuResumeIntr(intr);
+}
 static int capture_game(void *base,int stride,int format,int sync)
 {
     int intr=sceKernelCpuSuspendIntr();game_writers++;sceKernelCpuResumeIntr(intr);
@@ -197,13 +261,13 @@ static int take_overlay_snapshot(unsigned *format)
     int intr=sceKernelCpuSuspendIntr();
     void *base=saved_overlay;int stride=saved_stride,fmt=saved_format;
     unsigned layout=source_layout;
+    unsigned sequence=overlay_sequence;
     if(!base){sceKernelCpuResumeIntr(intr);return -1;}
     sceKernelCpuResumeIntr(intr);
     if(!system_source_valid((uintptr_t)base,stride,fmt))return 0;
     request_at=sceKernelGetSystemTimeWide();
-    void *source=(void *)fs_source_alias((uintptr_t)base);
-    if(fmt==3)fs_copy32(snapshot,source,stride);else fs_copy16(snapshot,source,stride);
-    int valid=fs_snapshot_layout_valid(layout,source_layout)&&!cancelled&&!suspended&&running;
+    copy_source((unsigned)base,stride,fmt);
+    int valid=fs_snapshot_layout_valid(layout,source_layout)&&sequence==overlay_sequence&&!cancelled&&!suspended&&running;
     if(!valid){overlay_rejected++;return 0;}
     *format=fs_output_format(fmt);overlay_copies++;return 1;
 }
@@ -217,13 +281,12 @@ static void read_auto_config(void)
     buffer[n]=0;
     char *line=buffer;
     while(*line){char *end=strchr(line,'\n');if(end)*end=0;
-        fs_auto_option(line,&auto_zoom,&auto_delay,&keep_fullscreen);if(!end)break;line=end+1;}
+        fs_auto_option_ex(line,&auto_zoom,&auto_delay,&keep_fullscreen,&experimental_speedboost);if(!end)break;line=end+1;}
 }
 /* Event-driven, nonblocking source observation as in FuSa. Never wait inside
  * Sony's internal setter: its caller may already own display synchronization.
- * Ordinary swaps are not layout changes: RGB32 copying can exceed a 60 Hz
- * interval. Rejecting every swap starves output forever. As in FuSa, live
- * copying may tear, but the later scaler only reads the private RAM copy. */
+ * VFPU/cache-assisted copying is taken just after vblank at reference worker
+ * priority. Reject a swap during this short copy, not during later scaling. */
 static int take_snapshot(unsigned *format)
 {
     int system=take_overlay_snapshot(format);
@@ -241,17 +304,17 @@ static int take_snapshot(unsigned *format)
      * proof that our displayed source is being written. */
     if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE)ge_busy++;
     unsigned long long begin=sceKernelGetSystemTimeWide();request_at=begin;
-    if(*format==3)fs_copy32(snapshot,(void *)fs_source_alias(src),stride);
-    else fs_copy16(snapshot,(void *)fs_source_alias(src),stride);
+    copy_source(src,stride,*format);
     *format=fs_output_format(*format);
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
     intr=sceKernelCpuSuspendIntr();
-    int valid=fs_snapshot_layout_valid(layout,source_layout)&&!saved_overlay&&!cancelled&&!suspended&&running;
+    int valid=fs_snapshot_layout_valid(layout,source_layout)&&sequence==frames&&!game_writers&&!saved_overlay&&!cancelled&&!suspended&&running;
     sceKernelCpuResumeIntr(intr);
     if(!valid){copy_rejected++;return 0;}
     if(sequence==last_snapshot_sequence)timeout_snapshots++;
     last_snapshot_sequence=sequence;last_snapshot_at=now;
+    consumed_frame=sequence;
     copied_frames++;return 1;
 }
 static void record(const char *event,int result)
@@ -311,6 +374,7 @@ static int restore(void)
     /* Stop virtualizing primary/mode writes before handoff. Layer 2 is already
      * registered with Sony and must not be replayed from an older snapshot. */
     restoring=1;
+    remove_wait_hooks();
     int external=stop_reason==STOP_MODE;
     int rc=external?0:dve_mode(0,old_mode,old_w,old_h,1,15,0);
     int overlay_rc=0,frame_rc=0;
@@ -352,12 +416,14 @@ static int restore(void)
     unsigned copies=copied_frames+copy_rejected;
     record("snapshot copy average us",copies?(int)(copy_total_us/copies):0);
     record("snapshot copy maximum us",copy_max_us);
+    record("coordinated game VBlank calls",wait_calls);
+    record("coordinated game VBlank timeouts",wait_timeouts);
     return rc;
 }
 static int start_scale(void)
 {
     void *src=NULL;int stride=0,fmt=-1;
-    if(suspended||expanded||internal_users||internal_hooked||mode_hooked||mode_users)return -1;
+    if(suspended||expanded||internal_users||internal_hooked||mode_hooked||mode_users||wait_users)return -1;
     if(cable_type()!=2){record("component cable required",-1);return -1;}
     if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||!fs_game_tv_layout(old_mode,old_w,old_h)){
         record("start in Sony game 480p TV mode",-1);record("start mode",old_mode);
@@ -375,6 +441,7 @@ static int start_scale(void)
     overlay_copies=overlay_rejected=0;overlay_sequence++;
     mode_remaps=0;timeout_snapshots=0;last_snapshot_at=0;last_snapshot_sequence=~0U;
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
+    consumed_frame=0;wait_calls=wait_timeouts=0;
     restoring=0;
     stop_reason=STOP_NONE;stop_detail=0;stop_addr=stop_stride=stop_format=stop_sync=0;
     scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
@@ -397,6 +464,7 @@ static int start_scale(void)
     if(rc>=0)rc=set_internal(0,(void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
     displayed_base=FS_OUTPUT_BASE;displayed_format=fs_output_format(fmt);
     record("first fullscreen frame",rc);
+    if(rc>=0){rc=install_wait_hooks();record("experimental coordinated VBlank enabled",rc<0?rc:wait_hooks);}
     if(rc<0){restore();return rc;}
     return 0;
 }
@@ -423,7 +491,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.19 nonstarving live snapshots",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.20 VFPU synchronized snapshots",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -545,7 +613,11 @@ static int work(SceSize size,void *args)
                 observed_mode=mode;observed_w=w;observed_h=h;observed_vram=vram;
                 request_stop(STOP_MODE,mode_rc);continue;}
             unsigned dest=FS_OUTPUT_BASE+back*FS_OUTPUT_BYTES;
-            if(!take_snapshot(&format)){
+            sceDisplayWaitVblankStart();
+            sceKernelChangeThreadPriority(0,24);
+            int captured=take_snapshot(&format);
+            sceKernelChangeThreadPriority(0,0x38);
+            if(!captured){
                 SceUInt timeout=2000;
                 int wait_rc=sceKernelWaitEventFlagCB(offered_event,1,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,NULL,&timeout);
                 if(wait_rc<0&&wait_rc!=FS_WAIT_TIMEOUT)request_stop(STOP_WAIT,wait_rc);
@@ -589,7 +661,7 @@ static int work(SceSize size,void *args)
 int module_start(SceSize size,void *args)
 {
     (void)size;(void)args;
-    running=1;worker=sceKernelCreateThread("fullscreen test",work,0x38,8192,0,NULL);
+    running=1;worker=sceKernelCreateThread("fullscreen test",work,0x38,8192,PSP_THREAD_ATTR_VFPU,NULL);
     if(worker<0)return worker;
     int rc=sceKernelStartThread(worker,0,NULL);
     if(rc<0){running=0;sceKernelDeleteThread(worker);worker=-1;}
@@ -600,7 +672,8 @@ int module_stop(SceSize size,void *args)
     (void)size;(void)args;running=0;
     if(offered_event>=0)sceKernelSetEventFlag(offered_event,1);
     if(worker>=0){SceUInt wait=2000000;if(sceKernelWaitThreadEnd(worker,&wait)<0)return -1;}
-    if(active||expanded||internal_hooked||internal_users||mode_hooked||mode_users)return -1; /* Never unload live hooks. */
+    remove_wait_hooks();
+    if(active||expanded||internal_hooked||internal_users||mode_hooked||mode_users||wait_users)return -1; /* Never unload live hooks. */
     if(offered_event>=0){sceKernelDeleteEventFlag(offered_event);offered_event=-1;}
     if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;

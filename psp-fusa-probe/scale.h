@@ -34,7 +34,7 @@ static int fs_source_valid(uintptr_t address,int stride,int format)
 static unsigned fs_output_format(unsigned format){return format==3?0:format;}
 static uint32_t fs_rgb565(uint32_t p)
 {return ((p>>3)&31U)|((p>>5)&0x7e0U)|((p>>8)&0xf800U);}
-static void fs_copy32(uint16_t *out,const uint32_t *in,int stride)
+static inline void fs_copy32(uint16_t *out,const uint32_t *in,int stride)
 {
     for(unsigned y=0;y<272;y++) {
         const volatile uint32_t *src=in+y*stride;
@@ -52,7 +52,7 @@ static void fs_copy32(uint16_t *out,const uint32_t *in,int stride)
  * may_alias permits the packed view of the original uint16_t pixels. */
 /* Worker-owned packed RAM copy. Volatile source reads bypass compiler reuse;
  * the caller additionally uses the uncached VRAM alias and validates capture. */
-static void fs_copy16(uint16_t *out,const uint16_t *in,int stride)
+static inline void fs_copy16(uint16_t *out,const uint16_t *in,int stride)
 {
     for(unsigned y=0;y<272;y++) {
         const volatile FsWord *src=(const volatile FsWord *)(in+y*stride);

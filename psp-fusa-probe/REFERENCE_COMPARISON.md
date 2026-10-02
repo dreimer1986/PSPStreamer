@@ -1,4 +1,22 @@
-# FuSa reference audit — updated for 0.19 (2026-10-03)
+# FuSa reference audit — updated for 0.20 (2026-10-03)
+
+## 0.20 follow-up and correction
+
+The 0.19 live-copy tradeoff visibly tears in Metal Slug and Soul Calibur.
+The progressive copier now uses VFPU loads/stores and RGB565 packing with
+explicit worker VFPU ownership, cached/invalidation-based VRAM reads, and
+priority 24 during vblank-aligned capture only. The old interlace layout is
+not copied. Strict submission checks apply during this accelerated copy, not
+during scaling. Actual PSP copy times must verify that this fits frame pacing.
+
+The audit previously described the legacy Speedboost machinery too broadly:
+in the available `spb.c` the hook/timer installation is COMMENTED OUT. Active
+enable/disable code merely dumps memory and toggles a flag. This is not a
+working source implementation of the released Speedbooster. 0.20's opt-in
+`experimental_speedboost` is an independent, bounded wait/capture coordination
+for the four user VBlank syscalls, not binary/source parity with that feature.
+Original Sony waits/counts/interrupts remain real; coordination may slow games.
+See FULLSCREEN_TEST.md for scope, limits and test settings.
 
 ## 0.19 corrections to the 0.18 audit
 
