@@ -33,6 +33,8 @@ static void controller_log(const char *text,int rc) {
     if(!controller_report)return;
     unsigned long long now=sceKernelGetSystemTimeWide();
     char line[160];int n=snprintf(line,sizeof(line),"%u.%06u %s: %08X\n",(unsigned)(now/1000000),(unsigned)(now%1000000),text,(unsigned)rc);
+    if(n<0)return;
+    if(n>=(int)sizeof(line))n=sizeof(line)-1;
     int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
 }
@@ -122,8 +124,17 @@ static int controller_worker(SceSize size,void *args) {
     int usb_hold_active=0,usb_hold_fired=0;
     PadHome home={0};
     controller_log("resident service ready",allowed);
+    const char *launch_path=sceKernelInitFileName();
+    if(launch_path)controller_log(launch_path,0);
+    unsigned long long diagnostic_last=0,diagnostic_next=0,diagnostic_gap=0;
+    unsigned diagnostic_loops=0;int injection_rc=0;
     while(controller_running) {
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if(controller_report){
+            if(diagnostic_last && now>=diagnostic_last && now-diagnostic_last>diagnostic_gap)
+                diagnostic_gap=now-diagnostic_last;
+            diagnostic_last=now;diagnostic_loops++;
+        }
         if(now>=next_context) {
             in_streamer=sceKernelFindModuleByName("PSPStreamer")!=NULL;
             next_context=now+100000;
@@ -180,6 +191,7 @@ static int controller_worker(SceSize size,void *args) {
         /* Timestamp and snapshot must use the same critical section. An EP0
          * callback may have arrived after the start-of-loop timestamp. */
         unsigned long long sample_now=sceKernelGetSystemTimeWide();
+        unsigned long long input_stamp=pad_time;
         if(pad_enabled && pad_time && sample_now>=pad_time && sample_now-pad_time<750000)value=pad_value;
         sceKernelCpuResumeIntr(intr);
         int available=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && value.connected;
@@ -196,7 +208,7 @@ static int controller_worker(SceSize size,void *args) {
              * 100 Hz worker refreshes a cached EP0 value; no USB RPC/polling,
              * per-button threads, heap allocation or network calls. */
             intr=sceKernelCpuSuspendIntr();
-            emulate_buttons(3,buttons,buttons|screen|home_button,4);
+            injection_rc=emulate_buttons(3,buttons,buttons|screen|home_button,4);
             if(active && (abs((int)value.x-128)>16 || abs((int)value.y-128)>16))
                 emulate_analog(3,value.x,value.y,4);
             else emulate_analog(3,128,128,0);
@@ -204,6 +216,15 @@ static int controller_worker(SceSize size,void *args) {
         } else controller_clear();
         int state=controller_suspended?3:in_streamer?2:active?1:0;
         if(state!=last_state){controller_log("state: 0 idle / 1 injected / 2 app-owned / 3 suspended",state);last_state=state;}
+        if(controller_report && now>=diagnostic_next){
+            unsigned long long age=input_stamp&&sample_now>=input_stamp?sample_now-input_stamp:0xffffffffULL;
+            char diagnostic[112];
+            snprintf(diagnostic,sizeof(diagnostic),"pad diag loops=%u gap_us=%u age_us=%u seq=%u keys=%08X state=%d",
+                diagnostic_loops,(unsigned)(diagnostic_gap>0xffffffffULL?0xffffffffULL:diagnostic_gap),
+                (unsigned)(age>0xffffffffULL?0xffffffffULL:age),(unsigned)value.sequence,(unsigned)value.buttons,state);
+            controller_log(diagnostic,injection_rc);
+            diagnostic_loops=0;diagnostic_gap=0;diagnostic_next=now+5000000ULL;
+        }
         pad_overlay_update(controller_usb_paused?6:controller_disabled || !allowed?4:controller_suspended?3:!attached?5:value.connected?(in_streamer?2:1):0,usb_error,controller_suspended);
         sceKernelDelayThreadCB(10000);
     }

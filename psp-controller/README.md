@@ -137,6 +137,12 @@ metadata=0
 - `enabled`: global input enable.
 - `vsh`, `pops`: permit those contexts; their ARK entries are also required.
 - `overlay=0`: off; `1`: compatible framebuffer polling; `2`: presentation hook.
+- `report=1`: also record a compact input diagnostic every five seconds:
+  worker loop count, longest loop gap and input age (microseconds), packet
+  sequence, received buttons, injection state and Sony button-emulation result.
+  This distinguishes missing packets from a starved worker or API rejection.
+  No additional USB requests, task or heap buffer is used. Timing includes
+  scheduling and log I/O; it is not pure CPU execution time.
 - `report=0`: disable loader/runtime diagnostic writes, including log truncation;
   existing logs are left untouched. Default `1`. StreamerOC independently has
   the same `report=0` setting in its own INI. Overlay display is independent.
