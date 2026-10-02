@@ -20,11 +20,9 @@ int main(void)
     assert(fs_layer_route(1,1,2)==FS_FORWARD);
     assert(fs_layer_route(0,0,0)==FS_FORWARD);
     assert(fs_layer_route(0,0,2)==FS_FORWARD);
-    assert(fs_observation_valid(5,5,0,0,1));
-    assert(!fs_observation_valid(5,6,0,0,1));
-    assert(!fs_observation_valid(5,5,1,0,1));
-    assert(!fs_observation_valid(5,5,0,1,1));
-    assert(!fs_observation_valid(5,5,0,0,0));
+    assert(fs_snapshot_layout_valid(5,5)); /* Normal swaps keep layout. */
+    assert(!fs_snapshot_layout_valid(5,6)); /* Mode/format/stride changed. */
+    assert(!fs_snapshot_layout_valid(5,7)); /* Changed and changed back. */
     assert(!fs_game_tv_layout(0,480,272)); /* Never force LCD back to TV. */
     assert(!fs_game_tv_layout(0x1d2,720,480)); /* Already scaled, not a source. */
     assert(!fs_game_tv_layout(0x1d1,480,272)); /* No guessed interlace mode. */

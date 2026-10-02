@@ -1,4 +1,21 @@
-# FuSa reference audit — 0.18 (2026-10-02)
+# FuSa reference audit — updated for 0.19 (2026-10-03)
+
+## 0.19 corrections to the 0.18 audit
+
+Hardware exposed a remaining non-reference constraint: rejecting every normal
+game submission during an RGB32 copy starved all menu output (copy ~21.9 ms,
+submissions ~16.7 ms). 0.19 instead tracks layout changes, accepting ordinary
+swaps and unrelated GE activity. The snapshot can include live-copy tearing,
+as with the original; it is not an atomic capture guarantee. The RAM snapshot
+still prevents changes during subsequent scaling. Apply the same policy to
+system sources. The historical rows below describing strict sequence/GE
+rejection are superseded by this correction.
+
+The reference exports `module_reboot_phase` in addition to `module_stop`.
+Our missing reboot cleanup was another difference: 0.19 explicitly exports
+`module_reboot_before`, using the normal worker teardown earlier while thread
+and display services remain available. Its hardware effect on exit-to-VSH
+still needs confirmation. No new game-specific patches are introduced.
 
 Scope: the display path behind the observed HOME, scene-change and video
 regressions, including relevant timing/teardown behavior. This is not a claim

@@ -61,6 +61,7 @@ static void request_stop(int reason,int detail)
     if(offered_event>=0)sceKernelSetEventFlag(offered_event,1);
 }
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
+static volatile unsigned source_layout;
 static void *saved_overlay;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded,retiring;
 static volatile unsigned overlay_sequence;
@@ -94,6 +95,8 @@ static int capture_game(void *base,int stride,int format,int sync)
     intr=sceKernelCpuSuspendIntr();
     if(rc>=0) {
         if(system_source_valid((uintptr_t)base,stride,format)||fs_blank_source((uintptr_t)base,stride,format,sync)) {
+            if(frame_stride!=(unsigned)stride||frame_format!=(unsigned)format||
+               (!frame_addr)!=fs_blank_source((uintptr_t)base,stride,format,sync))source_layout++;
             frame_addr=fs_blank_source((uintptr_t)base,stride,format,sync)?0:(unsigned)base;
             frame_stride=stride;frame_format=format;frames++;
         } else {
@@ -115,8 +118,10 @@ static int capture_internal(int layer,void *base,int stride,int format,int sync)
      * are output operations, not a newly submitted Sony menu source. */
     int intercept=fs_layer_route(active&&!restoring,sceKernelGetThreadId()==worker,layer)==FS_SYSTEM;
     if(intercept&&((sync==0||sync==1)&&system_source_valid((uintptr_t)base,stride,format))) {
+        if(!saved_overlay||saved_stride!=stride||saved_format!=format)source_layout++;
         saved_overlay=base;saved_stride=stride;saved_format=format;overlay_sequence++;
     } else if(intercept&&fs_blank_source((uintptr_t)base,stride,format,sync)) {
+        if(saved_overlay)source_layout++;
         saved_overlay=NULL;saved_stride=stride;saved_format=format;overlay_sequence++;
     } else if(intercept){
         if(!cancelled){stop_addr=(unsigned)base;stop_stride=stride;stop_format=format;stop_sync=sync;stop_layer=0;}
@@ -150,6 +155,7 @@ static int capture_mode(int mode,int width,int height)
 {
     int intr=sceKernelCpuSuspendIntr();mode_users++;
     int own=sceKernelGetThreadId()==worker;
+    if(active&&!own)source_layout++;
     int lcd_requested=(unsigned long long)sceKernelGetSystemTimeWide()<screen_until;
     int redirect=fs_redirect_mode(active&&!restoring&&!suspended&&!cancelled,own,lcd_requested,mode,width,height);
     if(redirect){mode=0x1d2;width=720;height=480;mode_remaps++;}
@@ -190,14 +196,14 @@ static int take_overlay_snapshot(unsigned *format)
 {
     int intr=sceKernelCpuSuspendIntr();
     void *base=saved_overlay;int stride=saved_stride,fmt=saved_format;
-    unsigned sequence=overlay_sequence;
+    unsigned layout=source_layout;
     if(!base){sceKernelCpuResumeIntr(intr);return -1;}
     sceKernelCpuResumeIntr(intr);
-    if(!system_source_valid((uintptr_t)base,stride,fmt)||sceGeDrawSync(1)!=PSP_GE_LIST_DONE)return 0;
+    if(!system_source_valid((uintptr_t)base,stride,fmt))return 0;
     request_at=sceKernelGetSystemTimeWide();
     void *source=(void *)fs_source_alias((uintptr_t)base);
     if(fmt==3)fs_copy32(snapshot,source,stride);else fs_copy16(snapshot,source,stride);
-    int valid=sceGeDrawSync(1)==PSP_GE_LIST_DONE&&sequence==overlay_sequence&&!cancelled&&!suspended;
+    int valid=fs_snapshot_layout_valid(layout,source_layout)&&!cancelled&&!suspended&&running;
     if(!valid){overlay_rejected++;return 0;}
     *format=fs_output_format(fmt);overlay_copies++;return 1;
 }
@@ -215,7 +221,9 @@ static void read_auto_config(void)
 }
 /* Event-driven, nonblocking source observation as in FuSa. Never wait inside
  * Sony's internal setter: its caller may already own display synchronization.
- * Snapshot first, reject changed sources, then scale only our RAM copy. */
+ * Ordinary swaps are not layout changes: RGB32 copying can exceed a 60 Hz
+ * interval. Rejecting every swap starves output forever. As in FuSa, live
+ * copying may tear, but the later scaler only reads the private RAM copy. */
 static int take_snapshot(unsigned *format)
 {
     int system=take_overlay_snapshot(format);
@@ -223,21 +231,23 @@ static int take_snapshot(unsigned *format)
     unsigned src,stride,sequence;
     int intr=sceKernelCpuSuspendIntr();
     src=frame_addr;stride=frame_stride;*format=frame_format;sequence=frames;
+    unsigned layout=source_layout;
     unsigned writers=game_writers;
     sceKernelCpuResumeIntr(intr);
     unsigned long long now=sceKernelGetSystemTimeWide();
     if(writers||!src||!system_source_valid(src,stride,*format))return 0;
     if(sequence==last_snapshot_sequence&&now-last_snapshot_at<100000)return 0;
-    if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
+    /* GE activity may target a different backbuffer. It is diagnostic, not
+     * proof that our displayed source is being written. */
+    if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE)ge_busy++;
     unsigned long long begin=sceKernelGetSystemTimeWide();request_at=begin;
     if(*format==3)fs_copy32(snapshot,(void *)fs_source_alias(src),stride);
     else fs_copy16(snapshot,(void *)fs_source_alias(src),stride);
     *format=fs_output_format(*format);
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
-    int idle=sceGeDrawSync(1)==PSP_GE_LIST_DONE;
     intr=sceKernelCpuSuspendIntr();
-    int valid=fs_observation_valid(sequence,frames,writers,game_writers,idle)&&!saved_overlay&&!cancelled&&!suspended&&running;
+    int valid=fs_snapshot_layout_valid(layout,source_layout)&&!saved_overlay&&!cancelled&&!suspended&&running;
     sceKernelCpuResumeIntr(intr);
     if(!valid){copy_rejected++;return 0;}
     if(sequence==last_snapshot_sequence)timeout_snapshots++;
@@ -413,7 +423,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.18 separated source and output",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.19 nonstarving live snapshots",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -594,4 +604,12 @@ int module_stop(SceSize size,void *args)
     if(offered_event>=0){sceKernelDeleteEventFlag(offered_event);offered_event=-1;}
     if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;
+}
+/* Exit-to-VSH is a reboot, not necessarily an ordinary module unload.
+ * Restore while worker/driver services are still available, before the late
+ * reboot phase. Never leave our upper-VRAM primary buffer without a producer. */
+int module_reboot_before(SceSize size,void *args)
+{
+    record("reboot before: release fullscreen output",0);
+    return module_stop(size,args);
 }

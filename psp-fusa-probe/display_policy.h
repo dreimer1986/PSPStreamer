@@ -15,8 +15,10 @@ static int fs_game_tv_layout(int mode,int width,int height)
 {return (mode==0x2d2||mode==0x1d2)&&width==480&&height==272;}
 static int fs_redirect_mode(int active,int own,int lcd_requested,int mode,int width,int height)
 {return active&&!own&&!lcd_requested&&(mode==0||mode==0x1d2||mode==0x2d2)&&width==480&&height==272;}
-static int fs_observation_valid(unsigned before,unsigned after,unsigned writers_before,unsigned writers_after,int idle)
-{return before==after&&!writers_before&&!writers_after&&idle;}
+/* This generation changes for layout/source-class transitions, NOT each
+ * frame submission or unrelated GE activity. A slower copy must still show. */
+static int fs_snapshot_layout_valid(unsigned before,unsigned after)
+{return before==after;}
 enum { FS_FORWARD,FS_SYSTEM,FS_GAME };
 static int fs_layer_route(int active,int own,int layer)
 {return !active||own?FS_FORWARD:layer==0?FS_SYSTEM:layer==2?FS_GAME:FS_FORWARD;}

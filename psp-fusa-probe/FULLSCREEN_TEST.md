@@ -1,4 +1,28 @@
-# FuSa-style fullscreen experiment 0.18 — separated game source and output
+# FuSa-style fullscreen experiment 0.19 — continuous snapshot output
+
+0.18 hardware feedback: Metal Slug XX no longer hangs at its first transition,
+and gameplay works. Its 60 Hz RGB32 menu remains black: the log shows zero
+accepted game snapshots, 1385 rejected copies, and about 21.9 ms per copy.
+Requiring an unchanged submission counter during the copy cannot succeed at
+16.7 ms frame intervals. HOME snapshots did succeed independently.
+
+0.19 rejects changes to mode, stride, format, blank state or source layer,
+but not ordinary double-buffer swaps. Global GE activity is no longer a veto:
+the engine may be drawing a different buffer. This follows FuSa's live-copy
+semantics, retaining our private copy for scaling. It may permit tearing during
+buffer reuse; no thread suspension, game wait or additional frame allocation
+is introduced. System snapshots follow the same layout-generation policy.
+
+An explicit exported `module_reboot_before` now requests worker shutdown and
+display restoration before exit-to-VSH. Previously only `module_stop` existed;
+the reference also handles reboot. The observed black VSH return is not yet
+proven to have this cause. A dedicated log entry confirms whether cleanup ran.
+
+Test: restart PSP, Metal Slug menu -> gameplay -> HOME -> VSH, without Screen
+workarounds. Then Star Ocean transitions if that passes. INI is unchanged.
+Build first; only display-policy, pixel-copy and auto-activation host tests.
+
+## 0.18 — separated game source and output
 
 See [the full reference audit](REFERENCE_COMPARISON.md) for corrected and
 deliberately retained differences from the original FuSa source.

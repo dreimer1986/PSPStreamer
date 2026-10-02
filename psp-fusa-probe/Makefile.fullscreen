@@ -2,6 +2,7 @@ TARGET = FuSaFullscreenTest
 OBJS = fullscreen.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1
+PRX_EXPORTS = fullscreen_exports.exp
 USE_KERNEL_LIBS = 1
 CFLAGS = -O2 -G0 -Wall -Wextra
 LDFLAGS = -nostartfiles
