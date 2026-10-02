@@ -29,9 +29,25 @@ int main(void)
     assert(fs_snapshot_read(&ring)==a&&ring.format[a]==1);
     assert(fs_source_valid(0x04044000,512,1));
     assert(fs_source_valid(0x44000000,1024,2));
-    assert(!fs_source_valid(0x041fff00,512,1));
-    assert(!fs_source_valid(0x04200000,512,1));
-    assert(!fs_source_valid(0x04000000,512,3));
+    assert(fs_source_valid(0x04154000,512,3)); /* Gran Turismo HOME buffer. */
+    assert(!fs_source_valid(FS_OUTPUT_BASE,512,1));
+    assert(!fs_source_valid(0x04200000,512,3)); /* Overlaps output. */
+    assert(fs_source_valid(0x04000000,512,3));
+    assert(FS_OUTPUT_BASE+2*FS_OUTPUT_BYTES<=0x04400000U);
+    assert(fs_blank_source(0x04000000,0,3,1)); /* Soul Calibur HOME. */
+    assert(fs_blank_source(0,512,3,1));
+    assert(!fs_blank_source(0x04000000,512,3,1));
+    assert(!fs_blank_source(0,0,4,1));
+    assert(fs_output_format(3)==0&&fs_output_format(1)==1);
+    uint32_t *rgba=calloc(512*272,sizeof(*rgba));
+    uint16_t *rgb=malloc((480*272+2)*sizeof(*rgb));
+    assert(rgba&&rgb);rgb[0]=rgb[480*272+1]=0xdead;
+    rgba[0]=0xff0000ff;rgba[1]=0xff00ff00;rgba[2]=0xffff0000;
+    rgba[271*512+479]=0xffffffff;
+    fs_copy32(rgb+1,rgba,512);
+    assert(rgb[1]==0x001f&&rgb[2]==0x07e0&&rgb[3]==0xf800);
+    assert(rgb[480*272]==0xffff&&rgb[0]==0xdead&&rgb[480*272+1]==0xdead);
+    free(rgba);free(rgb);
     assert(!fs_source_valid(0x04000000,768,1));
     assert(!fs_source_valid(0x04000001,512,1));
     for(int stride=512;stride<=1024;stride*=2) {

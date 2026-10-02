@@ -1,4 +1,35 @@
-# FuSa-style fullscreen experiment 0.14 — persistent fullscreen
+# FuSa-style fullscreen experiment 0.15 — system display handoff
+
+The 0.14 hardware logs identified two separate failures: Metal Slug XX had only
+192 KiB of contiguous user RAM for a 255 KiB snapshot; Soul Calibur submitted a
+zero-stride layer during HOME, and Gran Turismo submitted RGB8888 at 0x04154000.
+That 512-stride, 272-row RGB32 buffer ends at 0x041dc000, below the scaler outputs;
+the proven rejection was its pixel format, not a demonstrated buffer overlap.
+
+- Allocate the snapshot through managed partition 11 when available, with the
+  original user-partition fallback. No fixed extra-RAM addresses, repartitioning,
+  enlarged static kernel buffers or changes to clocks.
+- Accept RGB8888 within the existing lower-2MiB bounds and convert to RGB565 in
+  the snapshot. RGB16 copying/scaling and upper-2MiB output placement are unchanged.
+- Accept transient blank-layer submissions instead of returning a display error.
+- Respect externally changed display geometry during restoration; do not replay
+  the old game TV mode over a system transition. Retain expanded VRAM while a
+  scanout could still reference it, then retire it once both layers allow this.
+- Write the stop-cause diagnostics after handing display ownership back, rather
+  than delaying the transition with slow memory-stick writes.
+
+Companion Consolizer change: cold VSH TV activation waits for completed boot,
+the shell/PAF modules and a stable valid LCD layout. The existing single-request
+policy remains. FuSa is installed for GAME only on the test stick: the reported
+VSH cold-boot failure is a separate Sony TV-button transition, not FuSa scaling.
+The current logs do not establish its precise cause; this readiness change needs
+a real cold-boot test. No rumble/USB transport or ESP firmware changes.
+
+Hardware tests pending: cold boot to TV, Metal Slug XX fullscreen, Soul Calibur
+and Gran Turismo HOME menu (resume and exit). No claim of hardware confirmation
+or uninterrupted fullscreen HOME composition yet. Existing INIs are preserved.
+
+## 0.14 persistent fullscreen
 
 Add `keep_fullscreen=1` to `FuSaFullscreenTest.ini` (included in the new example).
 Missing/zero retains the old behaviour. With this option, HOME/SCREEN no longer
@@ -12,7 +43,7 @@ NOTE+R explicitly disables zoom and cancels pending recovery.
 This is persistent intent, not a promise of uninterrupted fullscreen under any
 hardware condition: suspend, invalid buffers, failed API calls and lost VRAM
 ownership still require recovery. It does not force TV when the cable is absent
-or LCD mode is selected, nor does it add 32-bit capture. A system HOME menu that
+or LCD mode is selected. At that version there was no 32-bit capture. A system HOME menu that
 uses a different rendering path may still require recovery after closing.
 New logs identify the rejected initial source address, stride, pixel format and
 display mode. HOME visibility, persistence and recovery need hardware testing.

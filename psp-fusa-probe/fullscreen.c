@@ -41,6 +41,8 @@ enum { STOP_NONE,STOP_WAIT,STOP_SOURCE,STOP_SUSPEND,STOP_RESUME,
        STOP_RESTORE,STOP_VRAM_RESTORE,STOP_NO_FRAMES,STOP_MODE,STOP_PRESENT };
 static volatile int stop_reason,stop_detail;
 static unsigned stop_addr,stop_stride,stop_format,stop_sync;
+static int observed_mode,observed_w,observed_h;
+static unsigned observed_vram;
 /* First cause wins; hooks/callbacks only latch data, never perform file I/O. */
 static void request_stop(int reason,int detail)
 {
@@ -52,7 +54,7 @@ static void request_stop(int reason,int detail)
 }
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static void *saved_overlay;
-static int saved_stride,saved_format,old_mode,old_w,old_h,expanded;
+static int saved_stride,saved_format,old_mode,old_w,old_h,expanded,retiring;
 static unsigned scaled_frames,changed_during_scale,scale_max_us;
 static unsigned long long scale_total_us;
 static SceUID snapshot_block=-1;
@@ -96,7 +98,9 @@ static int take_snapshot(unsigned *format)
     sceKernelCpuResumeIntr(intr);
     if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
     unsigned long long begin=sceKernelGetSystemTimeWide();
-    fs_copy16(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
+    if(*format==3)fs_copy32(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
+    else fs_copy16(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
+    *format=fs_output_format(*format);
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
     int idle=sceGeDrawSync(1)==PSP_GE_LIST_DONE;
@@ -130,7 +134,17 @@ static int change_edram(int bytes)
         if(dispatch<0)return dispatch;
         int intr=sceKernelCpuSuspendIntr();
         int state=sceGeDrawSync(1);
-        int rc=state==PSP_GE_LIST_DONE?edram_size(bytes):-1;
+        int lower=1;
+        if(bytes==0x200000)for(int layer=0;layer<2;layer++) {
+            void *addr=NULL;int stride=0,format=0,sync=0;
+            if(get_internal(layer,&addr,&stride,&format,&sync)<0){lower=0;break;}
+            unsigned p=(unsigned)addr&0x1fffffffU;
+            /* Conservatively include 480 rows: never retire live scanout. */
+            if(addr&&stride&&(stride<0||format<0||format>3||
+                (p>=0x04000000U&&p<0x04400000U&&
+                 p+(unsigned)stride*480U*(format==3?4U:2U)>0x04200000U))){lower=0;break;}
+        }
+        int rc=state==PSP_GE_LIST_DONE&&lower?edram_size(bytes):-1;
         sceKernelCpuResumeIntr(intr);
         sceKernelResumeDispatchThread(dispatch);
         if(state==PSP_GE_LIST_DONE){record("VRAM transition result",rc);return rc;}
@@ -184,6 +198,10 @@ static int capture(const void *base,int stride,int format,int sync)
                 sceKernelCpuResumeIntr(intr);
             }
             result=0;
+        } else if(fs_blank_source((uintptr_t)base,stride,format,sync)) {
+            /* Impose blanks a layer during HOME transitions. This is not an
+             * invalid frame and must not fail the system's display call. */
+            result=0;
         } else {
             intr=sceKernelCpuSuspendIntr();
             if(!cancelled){stop_addr=(unsigned)base;stop_stride=stride;stop_format=format;stop_sync=sync;}
@@ -205,22 +223,36 @@ static int restore(void)
     if(finished_event>=0)sceKernelSetEventFlag(finished_event,1);
     if(!expanded&&!hooked)return 0;
     if(suspended)return -1; /* No hardware changes until resume. */
+    if(retiring)return -1; /* Sony owns the display already; never replay it. */
     /* Keep capture enabled while restoring mode/layers so game submissions
      * cannot race mixed width/stride transitions. Release capture waiter first. */
-    int rc=dve_mode(0,old_mode,old_w,old_h,1,15,0);
-    int overlay_rc=set_internal(0,saved_overlay,saved_stride,saved_format,1);
-    int frame_rc=present((void *)frame_addr,frame_stride,frame_format,1);
+    int external=stop_reason==STOP_MODE;
+    int rc=external?0:dve_mode(0,old_mode,old_w,old_h,1,15,0);
+    int overlay_rc=0,frame_rc=0;
+    /* On an external mode change preserve Sony's new layer state, except
+     * layers still pointing at our buffers. Do not replay stale TV geometry. */
+    for(int layer=0;layer<2;layer++) {
+        void *addr=NULL;int stride=0,format=0,sync=0;
+        int query=get_internal(layer,&addr,&stride,&format,&sync);
+        unsigned p=(unsigned)addr&0x1fffffffU;
+        if(!external || (query>=0&&p>=FS_OUTPUT_BASE&&p<FS_OUTPUT_BASE+2*FS_OUTPUT_BYTES)) {
+            if(!layer)overlay_rc=set_internal(0,saved_overlay,saved_stride,saved_format,1);
+            else frame_rc=present((void *)frame_addr,frame_stride,frame_format,1);
+        } else if(query<0)frame_rc=query;
+    }
     sceKernelDelayThread(50000);
     /* Do not shrink VRAM if a failed restoration might still scan its upper half. */
     if(rc<0||overlay_rc<0||frame_rc<0){request_stop(STOP_RESTORE,rc<0?rc:overlay_rc<0?overlay_rc:frame_rc);record("restore failed; retain expanded VRAM",stop_detail);return -1;}
-    if(expanded){rc=change_edram(0x200000);if(rc<0){request_stop(STOP_VRAM_RESTORE,rc);return rc;}expanded=0;}
+    /* Release capture first, but leave physical VRAM mapped if either Sony
+     * layer still references its upper half during a display transition. */
+    if(expanded){rc=change_edram(0x200000);if(rc>=0)expanded=0;else retiring=1;}
     int intr=sceKernelCpuSuspendIntr();active=0;
     if(hooked){sctrlHENPatchSyscall((void *)capture,(void *)present);hooked=0;}
     sceKernelCpuResumeIntr(intr);
     intr=sceKernelCpuSuspendIntr();
-    sctrlHENPatchSyscall((void *)game_edram_size,(void *)get_edram_size);
+    if(!expanded)sctrlHENPatchSyscall((void *)game_edram_size,(void *)get_edram_size);
     sceKernelCpuResumeIntr(intr);
-    record("restored original TV mode",rc);
+    record(retiring?"display handed back; VRAM retirement pending":"display handed back",rc);
     record("scaled frames",scaled_frames);
     record("source submissions during scale",changed_during_scale);
     record("scale average us",scaled_frames?(int)(scale_total_us/scaled_frames):0);
@@ -246,8 +278,9 @@ static int start_scale(void)
         record("start in Sony game 480p TV mode",-1);record("start mode",old_mode);
         record("start width",old_w);record("start height",old_h);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
-    if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!fs_source_valid((uintptr_t)src,stride,fmt)){
-        record("requires 16-bit lower-VRAM game frame",-1);record("start source address",(int)src);
+    if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!fs_source_valid((uintptr_t)src,stride,fmt)||
+       (((unsigned)src&0x1fffffffU)+(271U*stride+480U)*(fmt==3?4U:2U)>0x04200000U)){
+        record("requires nonoverlapping 16/32-bit VRAM frame",-1);record("start source address",(int)src);
         record("start source stride",stride);record("start source format",fmt);return -1;}
     int saved_sync=0;
     if(get_internal(0,&saved_overlay,&saved_stride,&saved_format,&saved_sync)<0){record("cannot save primary layer",-1);return -1;}
@@ -266,12 +299,12 @@ static int start_scale(void)
     int intr=sceKernelCpuSuspendIntr();active=1;
     sctrlHENPatchSyscall((void *)get_edram_size,(void *)game_edram_size);
     sctrlHENPatchSyscall((void *)present,(void *)capture);hooked=1;sceKernelCpuResumeIntr(intr);
-    memset((void *)0x44200000,0,2*768*480*2);
+    memset((void *)(FS_OUTPUT_BASE|0x40000000U),0,2*FS_OUTPUT_BYTES);
     /* Never scale live game VRAM, including the first frame. The cleared
      * output stays black until the worker accepts a RAM snapshot. */
     rc=dve_mode(0,0x1d2,720,480,1,15,0);record("720x480 output",rc);
-    if(rc>=0)rc=set_internal(0,(void *)0x04200000,768,fmt,1);
-    if(rc>=0)rc=present((void *)0x04200000,768,fmt,1);
+    if(rc>=0)rc=set_internal(0,(void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
+    if(rc>=0)rc=present((void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
     record("first fullscreen frame",rc);
     if(rc<0){restore();return rc;}
     return 0;
@@ -297,7 +330,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.14 persistent fullscreen",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.15 system display handoff",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -313,8 +346,11 @@ static int work(SceSize size,void *args)
     if(callback>=0)power_slot=oc_register_power_callback(callback,&automatic,&last);
     if(power_slot<0){record("no power callback; refuse test",power_slot);
         if(callback>=0){sceKernelDeleteCallback(callback);callback=-1;}return 0;}
-    /* User partition, not scarce kernel RAM. Refuse cleanly if unavailable. */
-    snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
+    /* Managed extra shell partition on Slim, when available. No repartition,
+     * fixed RAM addresses or theft from the scarce kernel partition. */
+    snapshot_block=sceKernelAllocPartitionMemory(11,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
+    record("snapshot extra partition allocation",snapshot_block);
+    if(snapshot_block<0)snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
     if(snapshot_block>=0)snapshot=sceKernelGetBlockHeadAddr(snapshot_block);
     if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);
         record("user RAM free bytes",sceKernelPartitionTotalFreeMemSize(2));
@@ -328,19 +364,34 @@ static int work(SceSize size,void *args)
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if(retiring&&!suspended&&now>=retry_at) {
+            retry_at=now+1000000;
+            if(change_edram(0x200000)>=0) {
+                expanded=retiring=0;
+                int intr=sceKernelCpuSuspendIntr();
+                sctrlHENPatchSyscall((void *)game_edram_size,(void *)get_edram_size);
+                sceKernelCpuResumeIntr(intr);
+                record("deferred VRAM retirement complete",0);
+            }
+        }
         if(active && !keep_fullscreen && !frames && now>started_at+2000000ULL)request_stop(STOP_NO_FRAMES,0);
         if(active&&!suspended&&now>=retry_at&&(cancelled||fs_button_exit(keep_fullscreen,pad.Buttons,PSP_CTRL_HOME|PSP_CTRL_SCREEN))) {
             static const char * const reasons[]={"stop: unspecified","stop: producer wait error",
                 "stop: unsupported source submission","stop: suspend","stop: resume",
                 "stop: restore failed","stop: VRAM restore failed","stop: no game submissions",
                 "stop: output mode/VRAM changed","stop: presentation failed"};
-            if(cancelled) {
-                int reason=stop_reason;
-                record(reason>=0&&reason<(int)(sizeof(reasons)/sizeof(reasons[0]))?reasons[reason]:reasons[0],stop_detail);
-                if(reason==STOP_SOURCE){record("rejected source address",stop_addr);record("rejected source stride",stop_stride);
-                    record("rejected source format",stop_format);record("rejected source sync",stop_sync);}
+            int was_cancelled=cancelled,reason=stop_reason,detail=stop_detail;
+            unsigned rejected_addr=stop_addr,rejected_stride=stop_stride,rejected_format=stop_format,rejected_sync=stop_sync;
+            /* Memory-stick logging can take seconds. Hand display ownership
+             * back before writing diagnostic lines about the transition. */
+            restore();retry_at=sceKernelGetSystemTimeWide()+1000000;
+            if(was_cancelled) {
+                record(reason>=0&&reason<(int)(sizeof(reasons)/sizeof(reasons[0]))?reasons[reason]:reasons[0],detail);
+                if(reason==STOP_SOURCE){record("rejected source address",rejected_addr);record("rejected source stride",rejected_stride);
+                    record("rejected source format",rejected_format);record("rejected source sync",rejected_sync);}
+                if(reason==STOP_MODE){record("observed mode",observed_mode);record("observed width",observed_w);
+                    record("observed height",observed_h);record("observed VRAM bytes",observed_vram);}
             } else record("stop: HOME/SCREEN button",pad.Buttons);
-            restore();retry_at=now+1000000;
             if(keep_fullscreen&&zoom_armed){automatic_zoom=(FsAutoZoom){0};auto_poll=retry_at;}
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
@@ -373,9 +424,9 @@ static int work(SceSize size,void *args)
             int mode_rc=sceDisplayGetMode(&mode,&w,&h);
             unsigned vram=sceGeEdramGetSize();
             if(mode_rc<0||mode!=0x1d2||w!=720||h!=480||vram!=0x400000){
-                request_stop(STOP_MODE,mode_rc);record("observed mode",mode);record("observed width",w);
-                record("observed height",h);record("observed VRAM bytes",vram);continue;}
-            unsigned dest=0x04200000+back*(768*480*2);
+                observed_mode=mode;observed_w=w;observed_h=h;observed_vram=vram;
+                request_stop(STOP_MODE,mode_rc);continue;}
+            unsigned dest=FS_OUTPUT_BASE+back*FS_OUTPUT_BYTES;
             if(!take_snapshot(&format)){
                 SceUInt timeout=2000;
                 int wait_rc=sceKernelWaitEventFlagCB(offered_event,1,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,NULL,&timeout);

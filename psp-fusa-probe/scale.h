@@ -2,14 +2,28 @@
 #ifndef FUSA_TEST_SCALE_H
 #define FUSA_TEST_SCALE_H
 #include <stdint.h>
-/* First hardware test deliberately accepts only lower-2MiB VRAM, 16-bit
- * 480x272 frames, matching the captured game. Never infer spare game VRAM. */
+/* Keep the proven lower-2MiB source / upper-2MiB output layout.
+ * Impose's observed 0x04154000 RGB32 buffer also fits below this boundary. */
+#define FS_OUTPUT_BASE 0x04200000U
+#define FS_OUTPUT_BYTES (768U*480U*2U)
+static int fs_blank_source(uintptr_t address,int stride,int format,int sync)
+{
+    return (!address || !stride) && format>=0 && format<=3 && (sync==0||sync==1);
+}
 static int fs_source_valid(uintptr_t address,int stride,int format)
 {
     unsigned p=(unsigned)address&0x1fffffffU;
     return address && !(address&15) && (stride==512||stride==1024) &&
-        format>=0 && format<=2 && p>=0x04000000U &&
-        p+((271U*stride+480U)*2U)<=0x04200000U;
+        format>=0 && format<=3 && p>=0x04000000U &&
+        p+((271U*stride+480U)*(format==3?4U:2U))<=FS_OUTPUT_BASE;
+}
+static unsigned fs_output_format(unsigned format){return format==3?0:format;}
+static void fs_copy32(uint16_t *out,const uint32_t *in,int stride)
+{
+    for(unsigned y=0;y<272;y++)for(unsigned x=0;x<480;x++) {
+        uint32_t p=((const volatile uint32_t *)in)[y*stride+x];
+        out[y*480+x]=(uint16_t)(((p>>3)&31U)|((p>>5)&0x7e0U)|((p>>8)&0xf800U));
+    }
 }
 /* Aligned little-endian VRAM words, preserving all 16-bit formats exactly.
  * Four source pixels a,b,c,d become a,a,b,c,c,d in three 32-bit stores.

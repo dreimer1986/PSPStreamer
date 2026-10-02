@@ -5,7 +5,8 @@
 **POPS rumble output test (2026-10-02):** real motor commands were captured
 in Need for Speed High Stakes (`SLUS00826`). The updated `PSPConsolizerUSB.prx`
 and StreamMaster **0.3.17-bt-qio80-iram** now forward them to a compatible
-Bluetooth XInput controller. Physical vibration still needs hardware validation.
+Bluetooth XInput controller. The user confirmed correct physical rumble with the
+SF30 Pro in XInput mode in Need for Speed High Stakes and Wipeout 3 (2026-10-02).
 The first test target is the **8BitDo SF30 Pro, X + START mode**.
 See the POPS section below; PSPStreamer itself needs no update for this test.
 
@@ -198,6 +199,13 @@ framebuffer size, stride, GE lists or clocks. An already non-LCD display mode is
 left alone. A request is made at most once per launch; no repeated toggling on
 brief BT disconnects, and no automatic return to LCD. Check the logged mode and
 cable on hardware: Sony's impose handling and mode reporting vary with context.
+
+For a cold VSH start, the request additionally waits for boot status 0x20000,
+the shell and PAF modules, a valid LCD framebuffer and two seconds of stable
+layout. Normal double-buffer address changes do not restart that timer. Missing
+cable/readiness does not consume the single activation attempt. This addresses
+the startup race separately from FuSa game scaling and needs hardware validation;
+the latest VSH log did not capture the reported cold-boot failure itself.
 
 PSPStreamer keeps its existing output policy; this automatic action is suppressed
 while the app is present. Selecting `tvout=0` restores manual output control.
