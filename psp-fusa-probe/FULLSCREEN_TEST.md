@@ -1,4 +1,26 @@
-# FuSa-style fullscreen experiment 0.17 — RAM HOME buffer and live mode repair
+# FuSa-style fullscreen experiment 0.18 — separated game source and output
+
+See [the full reference audit](REFERENCE_COMPARISON.md) for corrected and
+deliberately retained differences from the original FuSa source.
+
+0.18 preserves Sony's real game buffer on layer 2 and renders scaled output only
+on layer 0. Public and direct kernel game submissions share the internal hook.
+System-layer calls now reach Sony with the substituted output rather than being
+silently acknowledged. Mode requests are intercepted before execution, replacing
+the failed post-hoc DVE repair loop. Deliberate Screen-key changes and our own
+start/restore calls bypass this remapping.
+
+Producer waits are removed: an internal display caller may own driver locks.
+The worker snapshots notified sources without blocking the caller, rejects
+changes/busy GE, and can refresh unchanged sources after 100 ms. It retains the
+private RAM snapshot, progressive double buffers, 30 Hz pacing and current CPU
+clock. A changed source is dropped, not scaled from live memory.
+
+PS-menu handling from 0.17 remains; its successful user test is recorded. This
+build still needs hardware confirmation for Metal Slug's first scene transition,
+HOME/resume/exit, and then Star Ocean intro transitions/video smoothness.
+
+## 0.17 RAM HOME buffer and live mode repair
 
 0.16 logs identify HOME layer 0 at `0xABBBC000`, stride 512, RGB5551. It is
 main RAM, not VRAM. System sources now accept complete buffers inside queried

@@ -5,11 +5,26 @@ int main(void)
     assert(fs_display_layer(0)==0&&fs_display_layer(1)==2);
     assert(fs_game_tv_layout(0x2d2,480,272));
     assert(fs_game_tv_layout(0x1d2,480,272)); /* Metal Slug scene transition. */
-    assert(fs_repair_tv_layout(0x1d2,480,272,0x400000,2)); /* First transition. */
-    assert(fs_repair_tv_layout(0x2d2,480,272,0x400000,2));
-    assert(!fs_repair_tv_layout(0,480,272,0x400000,2));
-    assert(!fs_repair_tv_layout(0x1d2,480,272,0x200000,2));
-    assert(!fs_repair_tv_layout(0x1d2,480,272,0x400000,0));
+    assert(fs_redirect_mode(1,0,0,0,480,272)); /* Game asks for LCD-shaped geometry. */
+    assert(fs_redirect_mode(1,0,0,0x1d2,480,272));
+    assert(fs_redirect_mode(1,0,0,0x2d2,480,272));
+    assert(!fs_redirect_mode(1,0,1,0,480,272)); /* Deliberate Screen key. */
+    assert(!fs_redirect_mode(1,1,0,0,480,272)); /* Plugin restore/DVE calls. */
+    assert(!fs_redirect_mode(0,0,0,0,480,272));
+    assert(!fs_redirect_mode(1,0,0,0x1d1,480,272));
+    assert(!fs_redirect_mode(1,0,0,0x1d2,720,480));
+    assert(fs_layer_route(1,0,0)==FS_SYSTEM);
+    assert(fs_layer_route(1,0,2)==FS_GAME);
+    assert(fs_layer_route(1,0,1)==FS_FORWARD);
+    assert(fs_layer_route(1,1,0)==FS_FORWARD);
+    assert(fs_layer_route(1,1,2)==FS_FORWARD);
+    assert(fs_layer_route(0,0,0)==FS_FORWARD);
+    assert(fs_layer_route(0,0,2)==FS_FORWARD);
+    assert(fs_observation_valid(5,5,0,0,1));
+    assert(!fs_observation_valid(5,6,0,0,1));
+    assert(!fs_observation_valid(5,5,1,0,1));
+    assert(!fs_observation_valid(5,5,0,1,1));
+    assert(!fs_observation_valid(5,5,0,0,0));
     assert(!fs_game_tv_layout(0,480,272)); /* Never force LCD back to TV. */
     assert(!fs_game_tv_layout(0x1d2,720,480)); /* Already scaled, not a source. */
     assert(!fs_game_tv_layout(0x1d1,480,272)); /* No guessed interlace mode. */

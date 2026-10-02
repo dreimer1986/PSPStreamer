@@ -14,13 +14,6 @@ int main(void)
     assert(fs_source_alias(0xabbbc000)==0xabbbc000);
     assert(fs_source_alias(0x8bbbc000)==0xabbbc000);
     assert(fs_source_alias(0x04000000)==0x44000000);
-    assert(fs_handoff_valid(1,1,7,7,1));
-    assert(!fs_handoff_valid(1,1,7,8,1));
-    assert(!fs_handoff_valid(1,1,7,7,0));
-    assert(!fs_handoff_valid(1,1,~0U,0,1));
-    assert(!fs_handoff_valid(1,0,7,7,1)); /* Timeout/cancellation. */
-    assert(!fs_handoff_valid(1,2,7,7,1)); /* Different producer ticket. */
-    assert(!fs_handoff_valid(0,0,7,7,1)); /* No owner. */
     assert(fs_next_frame(1000,21000)==34334);
     assert(fs_next_frame(1000,34334)==34334);
     assert(fs_next_frame(1000,41000)==41000);

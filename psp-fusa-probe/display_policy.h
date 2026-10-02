@@ -13,8 +13,13 @@ static int fs_relocatable(uint32_t insn)
 }
 static int fs_game_tv_layout(int mode,int width,int height)
 {return (mode==0x2d2||mode==0x1d2)&&width==480&&height==272;}
-static int fs_repair_tv_layout(int mode,int width,int height,unsigned vram,int cable)
-{return fs_game_tv_layout(mode,width,height)&&vram==0x400000U&&cable==2;}
+static int fs_redirect_mode(int active,int own,int lcd_requested,int mode,int width,int height)
+{return active&&!own&&!lcd_requested&&(mode==0||mode==0x1d2||mode==0x2d2)&&width==480&&height==272;}
+static int fs_observation_valid(unsigned before,unsigned after,unsigned writers_before,unsigned writers_after,int idle)
+{return before==after&&!writers_before&&!writers_after&&idle;}
+enum { FS_FORWARD,FS_SYSTEM,FS_GAME };
+static int fs_layer_route(int active,int own,int layer)
+{return !active||own?FS_FORWARD:layer==0?FS_SYSTEM:layer==2?FS_GAME:FS_FORWARD;}
 /* Sony's public game buffer is internal selector 2, not selector 1. */
 static int fs_display_layer(unsigned index){return index?2:0;}
 #endif

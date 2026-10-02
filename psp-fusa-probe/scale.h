@@ -65,11 +65,7 @@ static void fs_copy16(uint16_t *out,const uint16_t *in,int stride)
         }
     }
 }
-static int fs_handoff_valid(unsigned ticket,unsigned held,unsigned before,unsigned after,int idle)
-{
-    return ticket&&ticket==held&&before==after&&idle;
-}
-/* Request-to-request period includes handoff wait; no catch-up bursts. */
+/* Copy-to-copy pacing; no catch-up bursts. */
 static unsigned long long fs_next_frame(unsigned long long begin,unsigned long long end)
 {
     return end<begin+33334ULL?begin+33334ULL:end; /* <=30 Hz preview ceiling */
