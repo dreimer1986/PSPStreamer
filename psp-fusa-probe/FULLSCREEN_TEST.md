@@ -1,4 +1,11 @@
-# FuSa-style fullscreen experiment 0.12 — optional automatic TV zoom
+# FuSa-style fullscreen experiment 0.13 — plugin coexistence
+
+Consolizer, PSPStreamer and StreamerOC (including their overlays) are no longer
+blocked. There is no model, firmware-version or GAME-only allowlist. Actual
+driver exports, source format, memory bounds and VRAM ownership are still
+validated. Removing an allowlist does not implement 32-bit capture or kernel
+presentation interception. The capture scheduler remains 30 Hz; there is no
+session duration limit. Existing INI settings are unchanged.
 
 Place `FuSaFullscreenTest.ini` beside the PRX:
 
@@ -28,10 +35,9 @@ The per-capture 50 ms deadline remains: it releases the producer and drops only
 that capture, not the session. There is no duration limit on fullscreen output.
 
 StreamerOC no longer causes startup refusal, allowing user-controlled clock
-comparisons. Set its `overlay=0` for these tests to avoid another framebuffer
-writer. No clock, OC INI or ARK plugin entry is changed automatically. The joint
-OC/fullscreen configuration still needs hardware testing. Other competing
-Consolizer/PSPStreamer modules remain refused. The 30 Hz ceiling is unchanged.
+comparisons. Since 0.13, overlays and Consolizer are allowed as well. No clock,
+OC INI or ARK plugin entry is changed automatically. The joint configuration
+still needs hardware testing. The 30 Hz scheduler is unchanged.
 For complete statistics, toggle fullscreen off before exiting/mounting the PSP.
 
 0.10 completed 60 s cleanly: 1,664 frames (~27.73 Hz), 8.343 ms mean copy,
@@ -185,9 +191,9 @@ and not yet part of Consolizer. It enlarges the completed 480x272 game image to
 720x480 component output. It does not increase a game's internal resolution.
 Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 
-## Deliberately narrow first test
+## Supported rendering path
 
-- PSP-3000 (`model=2`), reported firmware 6.60 or 6.61, GAME only.
+- Originally tested on PSP-3000, firmware 6.60/6.61. No hard allowlist now.
 - Component cable, Sony game TV mode `0x2D2`, 480x272.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
@@ -201,11 +207,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 ## Install and test
 
 1. Copy the `SEPLUGINS/FuSaFullscreenTest` folder, including `dvemgr.prx`.
-2. Temporarily disable **GAME** entries for PSP Consolizer, old FuSa,
-   FuSaProbe, save-state plugins and any other display hook. No need to change
-   their INIs; keep a copy of your ARK plugin list to restore afterwards.
-   This test refuses startup if Consolizer/PSPStreamer modules are detected.
-   StreamerOC is optional for clock comparisons; use `overlay=0` in its INI.
+2. Consolizer and StreamerOC, including overlays, may remain enabled.
+   Coexistence is permitted, not a guarantee of compatibility with every hook.
 3. Add/enable this ARK entry (supplied example is off):
 
    `game, ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.prx, on`

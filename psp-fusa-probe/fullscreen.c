@@ -273,12 +273,8 @@ static int start_scale(void)
 }
 static int setup(void)
 {
-    /* Avoid chaining unknown display hooks or competing TV/VRAM owners in this
-     * first isolated test. No settings in those plugins are modified. */
-    /* StreamerOC is allowed for clock comparisons; keep its overlay disabled
-     * so it does not write into game/output framebuffers during capture. */
-    if(sceKernelFindModuleByName("PSPConsolizerUSB")||
-       sceKernelFindModuleByName("PSPConsolizer")||sceKernelFindModuleByName("PSPStreamer"))return -2;
+    /* Resolve capabilities, not a plugin/model/firmware allowlist. Overlays
+     * and Consolizer may coexist; source and VRAM ownership are checked live. */
     present=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",0x289D82FE);
     set_internal=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay_driver",0x63E22A26);
     get_internal=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay_driver",0x5B5AEFAD);
@@ -296,11 +292,11 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.12 optional automatic TV zoom",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.13 coexistence enabled",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
-    int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
+    int rc=setup();record("setup",rc);if(rc<0)return 0;
     callback=sceKernelCreateCallback("fullscreen power",power_event,NULL);
     int automatic,last;
     if(callback>=0)power_slot=oc_register_power_callback(callback,&automatic,&last);
@@ -394,9 +390,6 @@ static int work(SceSize size,void *args)
 int module_start(SceSize size,void *args)
 {
     (void)size;(void)args;
-    unsigned fw=sceKernelDevkitVersion();
-    if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME||sceKernelGetModel()!=2||
-       (fw!=0x06060010&&fw!=0x06060110))return 0;
     running=1;worker=sceKernelCreateThread("fullscreen test",work,0x38,8192,0,NULL);
     if(worker<0)return worker;
     int rc=sceKernelStartThread(worker,0,NULL);
