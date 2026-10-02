@@ -1,4 +1,23 @@
-# FuSa-style fullscreen experiment 0.10 — 30 Hz ceiling
+# FuSa-style fullscreen experiment 0.11 — unlimited duration
+
+0.11 removes the automatic one-minute stop. NOTE+R toggles off/on after clean
+restoration; HOME/SCREEN and actual safety failures still request restoration.
+The per-capture 50 ms deadline remains: it releases the producer and drops only
+that capture, not the session. There is no duration limit on fullscreen output.
+
+StreamerOC no longer causes startup refusal, allowing user-controlled clock
+comparisons. Set its `overlay=0` for these tests to avoid another framebuffer
+writer. No clock, OC INI or ARK plugin entry is changed automatically. The joint
+OC/fullscreen configuration still needs hardware testing. Other competing
+Consolizer/PSPStreamer modules remain refused. The 30 Hz ceiling is unchanged.
+For complete statistics, toggle fullscreen off before exiting/mounting the PSP.
+
+0.10 completed 60 s cleanly: 1,664 frames (~27.73 Hz), 8.343 ms mean copy,
+8.935 ms mean scale, three handled producer timeouts and zero wait errors.
+User reported good gameplay. Game submissions were ~38.2/s, so output FPS alone
+is not proof of unaffected game speed; long-term/other-game/OC tests remain.
+
+## Previous test history
 
 0.10 raises only the request-to-request ceiling from 20 to 30 Hz (33,334 us).
 The 0.9 event handoff/copy/scaler stays unchanged, as do the 50 ms producer
@@ -12,8 +31,6 @@ producer timeouts and two rejected copies were tolerated with zero wait errors
 and clean timed restoration. Maximum scale elapsed time was 388.018 ms; this
 includes scheduler delays and does not establish their cause. User reported
 visibly smoother output. This is not a claim that all stutters are eliminated.
-
-## Previous test history
 
 0.9 bundles these changes for one hardware comparison against 0.8:
 
@@ -154,7 +171,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - Component cable, Sony game TV mode `0x2D2`, 480x272.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
-- Manual activation; automatically attempts restoration after 60 seconds.
+- Manual activation and deactivation; no session time limit.
 - At most 30 preview images per second, with capture/scaling included in the
   period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
@@ -164,10 +181,11 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 ## Install and test
 
 1. Copy the `SEPLUGINS/FuSaFullscreenTest` folder, including `dvemgr.prx`.
-2. Temporarily disable **GAME** entries for StreamerOC, PSP Consolizer, old FuSa,
+2. Temporarily disable **GAME** entries for PSP Consolizer, old FuSa,
    FuSaProbe, save-state plugins and any other display hook. No need to change
    their INIs; keep a copy of your ARK plugin list to restore afterwards.
-   This test refuses startup if OC/Consolizer/PSPStreamer modules are detected.
+   This test refuses startup if Consolizer/PSPStreamer modules are detected.
+   StreamerOC is optional for clock comparisons; use `overlay=0` in its INI.
 3. Add/enable this ARK entry (supplied example is off):
 
    `game, ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.prx, on`
@@ -176,8 +194,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    gameplay after intro movies, and hold Sony's screen button to enable normal
    component TV output. Do not save progress during the experiment.
 5. Press physical **NOTE (music-note button) + R** together, then release. This
-   enables the scaler. After 60 seconds it attempts to return to normal TV output.
-   Press the same chord again to return earlier. HOME or SCREEN also requests
+   enables the scaler without a time limit.
+   Press the same chord again to return. HOME or SCREEN also requests
    restoration; their normal system function is not swallowed.
    After successful restoration, release and press NOTE+R again to retry.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
@@ -185,8 +203,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 7. Disable the test and restore your previous GAME plugin entries afterwards.
 
 If activation fails, return the log rather than repeatedly forcing activation.
-If the screen goes black, release the buttons and allow the 60-second rollback.
-If the system itself hangs, the timeout cannot guarantee recovery; restart and
+If the screen goes black, release the buttons, then press NOTE+R to restore.
+There is no timed rollback. If the system itself hangs, restart and
 disable the test. The first hardware run is experimental, not guaranteed safe
 for unsaved gameplay. No other plugin configuration is edited by this package.
 

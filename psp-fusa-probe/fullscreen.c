@@ -260,7 +260,9 @@ static int setup(void)
 {
     /* Avoid chaining unknown display hooks or competing TV/VRAM owners in this
      * first isolated test. No settings in those plugins are modified. */
-    if(sceKernelFindModuleByName("StreamerOC")||sceKernelFindModuleByName("PSPConsolizerUSB")||
+    /* StreamerOC is allowed for clock comparisons; keep its overlay disabled
+     * so it does not write into game/output framebuffers during capture. */
+    if(sceKernelFindModuleByName("PSPConsolizerUSB")||
        sceKernelFindModuleByName("PSPConsolizer")||sceKernelFindModuleByName("PSPStreamer"))return -2;
     present=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",0x289D82FE);
     set_internal=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay_driver",0x63E22A26);
@@ -279,7 +281,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.10 30Hz/event handoff",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.11 unlimited duration/OC allowed",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -295,13 +297,13 @@ static int work(SceSize size,void *args)
     offered_event=sceKernelCreateEventFlag("fullscreen offered",0,0,NULL);
     finished_event=sceKernelCreateEventFlag("fullscreen finished",0,0,NULL);
     if(offered_event<0||finished_event<0){record("capture event allocation failed",offered_event<0?offered_event:finished_event);running=0;}
-    unsigned long long until=0,next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
+    unsigned long long next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(active && !frames && now>started_at+2000000ULL)request_stop(STOP_NO_FRAMES,0);
-        if(active&&!suspended&&now>=retry_at&&(cancelled||now>=until||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
+        if(active&&!suspended&&now>=retry_at&&(cancelled||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
             static const char * const reasons[]={"stop: unspecified","stop: producer wait error",
                 "stop: unsupported source submission","stop: suspend","stop: resume",
                 "stop: restore failed","stop: VRAM restore failed","stop: no game submissions",
@@ -311,13 +313,12 @@ static int work(SceSize size,void *args)
                 record(reason>=0&&reason<(int)(sizeof(reasons)/sizeof(reasons[0]))?reasons[reason]:reasons[0],stop_detail);
                 if(reason==STOP_SOURCE){record("rejected source address",stop_addr);record("rejected source stride",stop_stride);
                     record("rejected source format",stop_format);record("rejected source sync",stop_sync);}
-            } else if(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN))record("stop: HOME/SCREEN button",pad.Buttons);
-            else record("stop: 60 second limit",0);
+            } else record("stop: HOME/SCREEN button",pad.Buttons);
             restore();retry_at=now+1000000;
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
             if(active){record("stop: NOTE+R toggle",0);restore();}
-            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();until=started_at+60000000ULL;next=0;retry_at=0;back=1;}
+            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
         if(active&&!cancelled&&!suspended&&now>=next) {
