@@ -36,6 +36,8 @@ static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static void *saved_overlay;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded;
 static int attempted;
+static unsigned scaled_frames,changed_during_scale,scale_max_us;
+static unsigned long long scale_total_us;
 static void record(const char *event,int result)
 {
     unsigned long long now=sceKernelGetSystemTimeWide();
@@ -105,7 +107,11 @@ static int restore(void)
     intr=sceKernelCpuSuspendIntr();
     sctrlHENPatchSyscall((void *)game_edram_size,(void *)get_edram_size);
     sceKernelCpuResumeIntr(intr);
-    record("restored original TV mode",rc);return rc;
+    record("restored original TV mode",rc);
+    record("scaled frames",scaled_frames);
+    record("source submissions during scale",changed_during_scale);
+    record("scale average us",scaled_frames?(int)(scale_total_us/scaled_frames):0);
+    record("scale maximum us",scale_max_us);return rc;
 }
 static int start_scale(void)
 {
@@ -159,7 +165,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.3 worker-only/GE-idle",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.4 packed scaler",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -179,17 +185,21 @@ static int work(SceSize size,void *args)
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
             if(active)restore();
-            else if(start_scale()==0){started_at=now;until=now+30000000ULL;next=0;retry_at=0;back=1;}
+            else if(start_scale()==0){started_at=now;until=now+60000000ULL;next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
         if(active&&!cancelled&&!suspended&&now>=next) {
-            unsigned src,stride,format;int intr=sceKernelCpuSuspendIntr();
-            src=frame_addr;stride=frame_stride;format=frame_format;sceKernelCpuResumeIntr(intr);
+            unsigned src,stride,format,sequence;int intr=sceKernelCpuSuspendIntr();
+            src=frame_addr;stride=frame_stride;format=frame_format;sequence=frames;sceKernelCpuResumeIntr(intr);
             int mode,w,h;
             if(sceDisplayGetMode(&mode,&w,&h)<0||mode!=0x1d2||w!=720||h!=480||
                sceGeEdramGetSize()!=0x400000){cancelled=1;continue;}
             unsigned dest=0x04200000+back*(768*480*2);
+            unsigned long long begin=sceKernelGetSystemTimeWide();
             fs_scale16((void *)(dest|0x40000000U),(void *)((src&0x1fffffffU)|0x40000000U),stride);
+            unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
+            scaled_frames++;scale_total_us+=elapsed;if(elapsed>scale_max_us)scale_max_us=elapsed;
+            if(frames!=sequence)changed_during_scale++;
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc>=0)rc=present((void *)dest,768,format,1);
             if(rc<0){record("presentation failed",rc);cancelled=1;}

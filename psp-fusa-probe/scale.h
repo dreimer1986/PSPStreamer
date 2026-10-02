@@ -11,17 +11,29 @@ static int fs_source_valid(uintptr_t address,int stride,int format)
         format>=0 && format<=2 && p>=0x04000000U &&
         p+((271U*stride+480U)*2U)<=0x04200000U;
 }
-/* Nearest neighbour keeps the original 16-bit format (including 5551).
- * No GE commands, no game GPU state to save/restore. */
+/* Aligned little-endian VRAM words, preserving all 16-bit formats exactly.
+ * The local row costs 1440 bytes on the worker stack, not a frame allocation.
+ * Four source pixels a,b,c,d become a,a,b,c,c,d in three 32-bit stores.
+ * may_alias permits the packed view of the original uint16_t pixels. */
+typedef uint32_t FsWord __attribute__((may_alias));
 static void fs_scale16(uint16_t *out,const uint16_t *in,int stride)
 {
+    uint32_t row[360];
+    unsigned previous=~0U;
     for(unsigned y=0;y<480;y++) {
-        const uint16_t *src=in+(y*272U/480U)*stride;
-        uint16_t *dst=out+y*768;
-        for(unsigned x=0;x<240;x++) {
-            uint16_t a=src[x*2],b=src[x*2+1];
-            dst[x*3]=a;dst[x*3+1]=a;dst[x*3+2]=b;
+        unsigned source_y=y*272U/480U;
+        if(source_y!=previous) {
+            const FsWord *src=(const FsWord *)(in+source_y*stride);
+            for(unsigned x=0;x<120;x++) {
+                uint32_t ab=src[x*2],cd=src[x*2+1];
+                row[x*3]=(ab&0xffffU)|((ab&0xffffU)<<16);
+                row[x*3+1]=(ab>>16)|(cd<<16);
+                row[x*3+2]=cd;
+            }
+            previous=source_y;
         }
+        volatile FsWord *dst=(volatile FsWord *)(out+y*768);
+        for(unsigned x=0;x<360;x++)dst[x]=row[x];
     }
 }
 #endif

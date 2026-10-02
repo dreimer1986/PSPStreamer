@@ -1,4 +1,13 @@
-# FuSa-style fullscreen experiment 0.3 — regression investigation
+# FuSa-style fullscreen experiment 0.4 — packed scaler
+
+0.4 retains the 0.3 transition/capture path confirmed stable by the user, but
+packs four input pixels into three 32-bit output writes instead of six 16-bit
+writes. Repeated destination rows share a 1440-byte local worker row, so each
+source row is fetched once. Exact nearest-neighbour pixel equivalence and
+destination padding/bounds are host-tested. No snapshot copy in the game thread.
+Scale duration and overlapping source submissions are logged after restoration;
+these counters indicate possible tearing, not proof of its exact cause.
+The automatic rollback is now **60 seconds after activation**, at user request.
 
 Version 0.2 is withdrawn after reported hard shutdowns in Soul Calibur and
 Street Fighter Alpha 3. Its log measured ~24 ms copying in the game's calling
@@ -25,7 +34,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - Component cable, Sony game TV mode `0x2D2`, 480x272.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
-- Manual activation; automatically attempts restoration after 30 seconds.
+- Manual activation; automatically attempts restoration after 60 seconds.
 - At most 12 preview images per second plus scaling time, as in 0.1. This is a
   stability comparison, not a speed improvement. Live-source tearing remains a
   known limitation; do not assume missing frames explain all visual artefacts.
@@ -47,7 +56,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    gameplay after intro movies, and hold Sony's screen button to enable normal
    component TV output. Do not save progress during the experiment.
 5. Press physical **NOTE (music-note button) + R** together, then release. This
-   enables the scaler once per launch. After 30 seconds it attempts to return to normal TV output.
+   enables the scaler once per launch. After 60 seconds it attempts to return to normal TV output.
    Press the same chord again to return earlier. HOME or SCREEN also requests
    restoration; their normal system function is not swallowed.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
@@ -55,7 +64,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 7. Disable the test and restore your previous GAME plugin entries afterwards.
 
 If nothing changes, return the log rather than repeatedly forcing activation.
-If the screen goes black, release the buttons and allow the 30-second rollback.
+If the screen goes black, release the buttons and allow the 60-second rollback.
 If the system itself hangs, the timeout cannot guarantee recovery; restart and
 disable the test. The first hardware run is experimental, not guaranteed safe
 for unsaved gameplay. No other plugin configuration is edited by this package.
