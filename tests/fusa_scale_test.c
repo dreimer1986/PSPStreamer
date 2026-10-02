@@ -4,10 +4,13 @@
 #include "../psp-fusa-probe/snapshot.h"
 int main(void)
 {
-    assert(fs_copy_unchanged(7,7,1));
-    assert(!fs_copy_unchanged(7,8,1));
-    assert(!fs_copy_unchanged(7,7,0));
-    assert(!fs_copy_unchanged(~0U,0,1));
+    assert(fs_handoff_valid(1,1,7,7,1));
+    assert(!fs_handoff_valid(1,1,7,8,1));
+    assert(!fs_handoff_valid(1,1,7,7,0));
+    assert(!fs_handoff_valid(1,1,~0U,0,1));
+    assert(!fs_handoff_valid(1,0,7,7,1)); /* Timeout/cancellation. */
+    assert(!fs_handoff_valid(1,2,7,7,1)); /* Different producer ticket. */
+    assert(!fs_handoff_valid(0,0,7,7,1)); /* No owner. */
     assert(fs_next_frame(1000,41000)==84333);
     assert(fs_next_frame(1000,100000)==100000);
     FsSnapshots ring={0};

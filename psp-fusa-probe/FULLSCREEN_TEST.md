@@ -1,4 +1,30 @@
-# FuSa-style fullscreen experiment 0.5 — validated worker RAM capture
+# FuSa-style fullscreen experiment 0.6 — bounded producer handoff
+
+0.6 requests a capture at the next valid game presentation. That selected
+calling thread yields until the worker finishes copying the submitted buffer
+to RAM; it is released **before scaling**. Other calls are not deliberately
+held, and observed concurrent submissions still invalidate the capture. There
+is no pixel copy in the hook and no global scheduler/interrupt lock during it.
+The caller checks a 50 ms deadline every 500 us (not a hard real-time guarantee
+if it is starved by another thread); timeout or a forbidden wait context cancels
+the test. Interrupt-context/interrupt-disabled calls are not selected to wait.
+Stop, restoration and suspend release the handshake. Tickets distinguish late
+returns from a later handoff. The worker waits for GE idle before copying and
+checks GE/ownership/sequence afterward. Direct writers and independent render
+threads remain a compatibility limitation, not magically fenced by this hook.
+
+This may slow the selected game frames. It is a bounded producer/consumer test,
+not FuSa's SpeedBooster or a claim of universal tear-free capture. The published
+FuSa hook signals a screen event through a polled semaphore but does not wait
+for this worker acknowledgement. Firmware-offset/VBlank patches remain unused.
+
+0.5 returned automatically after ~13 s: only 15 accepted versus 539 rejected
+copies, 16.388 ms mean copy, 13.896 ms mean RAM-source scale. Five seconds without
+an accepted frame caused the rollback. This demonstrated optimistic-copy
+starvation, despite faster RAM-source scaling. 0.6 logs handoff count, wait
+timeouts/errors and maximum producer hold time in addition to copy timings.
+
+## Previous test history
 
 0.5 copies into a single 261,120-byte **user-partition RAM** buffer in the
 worker, never in the game's presentation hook. It accepts a copy only when GE
@@ -59,7 +85,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - At most 12 preview images per second, with capture/scaling included in the
   period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
-  VBlank replacement, game-thread suspension or SpeedBooster.
+  VBlank replacement, global thread suspension or SpeedBooster. Selected
+  presentation calls now yield for the bounded worker handoff described above.
 
 ## Install and test
 

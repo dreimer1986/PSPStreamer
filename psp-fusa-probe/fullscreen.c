@@ -11,6 +11,7 @@
 #include <psppower.h>
 #include <pspsysmem_kernel.h>
 #include <psploadcore.h>
+#include <pspintrman_kernel.h>
 #include <systemctrl.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,22 +43,32 @@ static SceUID snapshot_block=-1;
 static uint16_t *snapshot;
 static unsigned copied_frames,copy_rejected,ge_busy,copy_max_us;
 static unsigned long long copy_total_us;
-/* Optimistic capture, never in the game's syscall. No waiting with interrupts
- * or scheduling disabled. This detects observed swaps/GE activity, not every
- * possible direct VRAM writer; it is intentionally not a universal fence. */
+static volatile unsigned capture_requested,capture_held,capture_ticket;
+static unsigned held_src,held_stride,held_format,held_sequence;
+static unsigned handoffs,hold_timeouts,hold_errors,hold_max_us;
+/* Selected presentation calls yield while the worker copies the submitted
+ * front buffer. Only that producer is held, never the whole scheduler/GE.
+ * Multi-producer/direct rendering is not assumed safe: observed changes still
+ * reject a snapshot. The hook has a bounded wait and performs no pixel work. */
 static int take_snapshot(unsigned *format)
 {
-    unsigned src,stride,sequence;
+    unsigned src,stride,sequence,ticket;
     int intr=sceKernelCpuSuspendIntr();
-    src=frame_addr;stride=frame_stride;*format=frame_format;sequence=frames;
+    ticket=capture_held;
+    if(!ticket){capture_requested=1;sceKernelCpuResumeIntr(intr);return 0;}
+    src=held_src;stride=held_stride;*format=held_format;sequence=held_sequence;
     sceKernelCpuResumeIntr(intr);
-    if(!sequence||sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
+    if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
     unsigned long long begin=sceKernelGetSystemTimeWide();
     fs_copy16(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
     int idle=sceGeDrawSync(1)==PSP_GE_LIST_DONE;
-    if(!fs_copy_unchanged(sequence,frames,idle)||cancelled||suspended){copy_rejected++;return 0;}
+    intr=sceKernelCpuSuspendIntr();
+    int valid=fs_handoff_valid(ticket,capture_held,sequence,frames,idle)&&!cancelled&&!suspended&&running;
+    capture_held=0;capture_requested=0;
+    sceKernelCpuResumeIntr(intr);
+    if(!valid){copy_rejected++;return 0;}
     copied_frames++;return 1;
 }
 static void record(const char *event,int result)
@@ -93,12 +104,40 @@ static int change_edram(int bytes)
 }
 static int capture(const void *base,int stride,int format,int sync)
 {
-    int intr=sceKernelCpuSuspendIntr();users++;int scaling=active;sceKernelCpuResumeIntr(intr);
+    int can_wait=!sceKernelIsIntrContext();
+    int intr=sceKernelCpuSuspendIntr();
+    /* Saved interrupt state zero means already disabled (uOFW intr.S). */
+    can_wait=can_wait&&intr!=0;
+    users++;int scaling=active;sceKernelCpuResumeIntr(intr);
     int result;
     if(scaling) {
         if((sync==0||sync==1)&&fs_source_valid((uintptr_t)base,stride,format)) {
             intr=sceKernelCpuSuspendIntr();frame_addr=(unsigned)base;frame_stride=stride;frame_format=format;frames++;
-            sceKernelCpuResumeIntr(intr);result=0;
+            unsigned ticket=0;
+            if(can_wait&&running&&!cancelled&&!suspended&&capture_requested&&!capture_held) {
+                if(++capture_ticket==0)capture_ticket=1;
+                ticket=capture_ticket;capture_held=ticket;capture_requested=0;
+                held_src=(unsigned)base;held_stride=stride;held_format=format;held_sequence=frames;handoffs++;
+            }
+            sceKernelCpuResumeIntr(intr);
+            if(ticket) {
+                unsigned long long begin=sceKernelGetSystemTimeWide();
+                while(capture_held==ticket&&running&&!cancelled&&!suspended) {
+                    if(sceKernelGetSystemTimeWide()-begin>=50000ULL) {
+                        intr=sceKernelCpuSuspendIntr();
+                        if(capture_held==ticket){hold_timeouts++;cancelled=1;capture_held=0;capture_requested=0;}
+                        sceKernelCpuResumeIntr(intr);break;
+                    }
+                    /* A forbidden wait context fails rather than spinning. */
+                    if(sceKernelDelayThread(500)<0){hold_errors++;cancelled=1;break;}
+                }
+                intr=sceKernelCpuSuspendIntr();
+                if(capture_held==ticket){capture_held=0;capture_requested=0;}
+                unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
+                if(elapsed>hold_max_us)hold_max_us=elapsed;
+                sceKernelCpuResumeIntr(intr);
+            }
+            result=0;
         } else {cancelled=1;result=-1;}
     } else result=present(base,stride,format,sync);
     intr=sceKernelCpuSuspendIntr();users--;sceKernelCpuResumeIntr(intr);return result;
@@ -112,10 +151,11 @@ static int power_event(int unknown,int flags,void *arg)
 }
 static int restore(void)
 {
+    int release_intr=sceKernelCpuSuspendIntr();capture_requested=0;capture_held=0;sceKernelCpuResumeIntr(release_intr);
     if(!expanded&&!hooked)return 0;
     if(suspended)return -1; /* No hardware changes until resume. */
     /* Keep capture enabled while restoring mode/layers so game submissions
-     * cannot race mixed width/stride transitions. No blocking in the hook. */
+     * cannot race mixed width/stride transitions. Release capture waiter first. */
     int rc=dve_mode(0,old_mode,old_w,old_h,1,15,0);
     int overlay_rc=set_internal(0,saved_overlay,saved_stride,saved_format,1);
     int frame_rc=present((void *)frame_addr,frame_stride,frame_format,1);
@@ -139,7 +179,11 @@ static int restore(void)
     record("snapshot GE busy polls",ge_busy);
     unsigned copies=copied_frames+copy_rejected;
     record("snapshot copy average us",copies?(int)(copy_total_us/copies):0);
-    record("snapshot copy maximum us",copy_max_us);return rc;
+    record("snapshot copy maximum us",copy_max_us);
+    record("producer handoffs",handoffs);
+    record("producer hold timeouts",hold_timeouts);
+    record("producer wait errors",hold_errors);
+    record("producer hold maximum us",hold_max_us);return rc;
 }
 static int start_scale(void)
 {
@@ -194,7 +238,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.5 validated RAM snapshot",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.6 bounded producer handoff",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;

@@ -26,9 +26,9 @@ static void fs_copy16(uint16_t *out,const uint16_t *in,int stride)
         for(unsigned x=0;x<240;x++)dst[x]=src[x];
     }
 }
-static int fs_copy_unchanged(unsigned before,unsigned after,int idle)
+static int fs_handoff_valid(unsigned ticket,unsigned held,unsigned before,unsigned after,int idle)
 {
-    return before==after&&idle;
+    return ticket&&ticket==held&&before==after&&idle;
 }
 /* Fixed start-to-start period; never burst to catch up after a slow frame. */
 static unsigned long long fs_next_frame(unsigned long long begin,unsigned long long end)
