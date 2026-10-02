@@ -1,0 +1,1 @@
+game, ms0:/SEPLUGINS/FuSaProbe/FuSaProbe.prx, off
