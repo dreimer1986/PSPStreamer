@@ -2,6 +2,11 @@
 
 ### Current build
 
+**POPS capture test (2026-10-02):** the updated `PSPConsolizerUSB.prx` adds
+opt-in DualShock serial negotiation and motor-value capture. This is **not yet
+physical rumble**. No StreamMaster firmware or PSPStreamer update is required
+for this specific test. See the POPS section below before enabling it.
+
 Plugin directory, PRXs, INI and thread/module names now use PSPConsolizer.
 The new companion StreamMaster firmware is **0.3.13-bt-qio80-iram**. It adds
 per-controller PS/Home learning without changing existing profile storage sizes
@@ -30,7 +35,7 @@ name. Paths match the full `sceKernelInitFileName()` launch path. Both are
 case-insensitive; IDs may contain a hyphen. Title IDs beat paths; the first
 matching section wins equal-priority ties. Omitted settings inherit the global
 INI. Supported rule keys: `enabled`, `home_combo`, `overlay`, `overlay_always`,
-`tvout`, `metadata`, with the same values as the main INI. No file means no change.
+`tvout`, `metadata`, `pops_rumble`, with the same values as the main INI. No file means no change.
 Rules are evaluated once per launch; invalid files disable controller injection
 and automatic TV switching for that launch and log a negative section/error.
 The file limit is 64 KiB; individual lines may contain up to 383 bytes.
@@ -293,3 +298,78 @@ plugin/common bridge are GPL-2.0-or-later. Sony API semantics were checked again
 [ARK NID mappings](https://github.com/PSP-Archive/ARK-4/blob/main/core/systemctrl/src/nid_660_data.c).
 The [controller emulation example](https://github.com/crozone/PSP-EmulatedControllerTest)
 was reviewed, not copied. Runtime API lookup failures disable injection safely.
+
+## Experimental POPS DualShock / rumble capture
+
+Default: `pops_rumble=0`. To test, replace only `PSPConsolizerUSB.prx` and add
+these settings to the existing `PSPConsolizer.ini`, preserving other settings:
+
+```ini
+pops=1
+pops_rumble=1
+report=1
+```
+
+The Consolizer must also be enabled for POPS in ARK. The option can alternatively
+be enabled per PS1 title/path in `PSPConsolizer-rules.ini`. It does nothing in
+PSP games, VSH or PSPStreamer. Return to `pops_rumble=0` and restart the PS1 title
+to restore the original path.
+
+The first supported layout is the supplied **6.60 03g** serial dispatcher.
+6.61 is not presumed identical: it must pass the same instruction and relocated
+target checks. Unknown layouts are logged and left unmodified. No Sony PRX is
+packaged or replaced; do not install the Go PRX on another PSP model.
+
+Our independently implemented user-mode routine covers commands `42` through
+`4D` following the inspected Go handlers, retaining Sony's ordinary button
+mapping and current digital/analog selection. In particular, Go's `44` resets
+motor values rather than forcing a new analog mode. This is a first compatibility
+test, not a claim of complete DualShock hardware emulation. The second analog
+stick is not added by this change. Reset/save-state compatibility is not yet
+hardware-verified.
+
+Installation waits until at least ten seconds of PSP uptime and a loaded POPS
+module. If the title negotiated its controller before installation, use the PS
+menu's game reset once after waiting. Then enable vibration in the game's options
+and reproduce a known rumble event. Physical PSP controls suffice to test capture
+while an external controller is unavailable. Verify ordinary controls and memory
+card loading too. Copy `last.log` **and** `last.log.previous` before launching
+additional apps: returning to VSH can rotate the PS1 run into the previous log.
+
+Look for `POPS DualShock capture installed; NO motor output`, followed by
+`POPS p0` lines. `seen` is a bitmask for commands 42..4D; `map` contains enabled
+positions / large-motor selection; `motor` gives the current small/large bytes;
+`peak` retains short pulses; the hexadecimal value at line end counts changes.
+`unsupported signature; unchanged` means no patch was applied and the module
+layout needs analysis. Zero motor values alone do not establish that the game
+lacks rumble. Include the title/region and scene with the logs.
+
+The copied payload has no relocations, imports, GP setup, I/O, USB operations or
+allocation. A single atomic call-site replacement routes only the normal pad
+handler through it; memory cards and other serial targets keep their original
+function pointer. The original pad function remains intact. Roughly **1.7 KiB
+of user RAM** holds code, entry stub and bounded state. The worker logs snapshots
+every two seconds; `report=0` disables these writes. No extra thread is created.
+On plugin stop the call site is restored if still owned. The small user block
+is retained until the POPS process exits because a suspended user thread could
+still be executing it; it references no unloadable kernel code.
+
+Physical motor output is deliberately absent until the controller's actual
+output protocol is established. Neither a Bluetooth connection nor the SHANWAN
+adapter's input descriptor proves vibration support. There is no need to flash
+the ESP32 for this capture test.
+
+Focused host checks (after building the PRX):
+
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  tests/pops_serial_test.c -o /tmp/pops-serial-test
+/tmp/pops-serial-test
+cc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  tests/pops_signature_test.c -o /tmp/pops-signature-test
+/tmp/pops-signature-test /path/to/your/660/pops_03g.prx
+```
+
+The second test uses your own decrypted binary; no proprietary fixture is
+included. Build-time checks reject payload relocations/imports and separate
+data sections. See [binary findings](../docs/POPS_RUMBLE_BINARY_FINDINGS.md).

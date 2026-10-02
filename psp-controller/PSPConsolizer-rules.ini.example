@@ -8,6 +8,7 @@
 # overlay_always=0
 # home_combo=0
 # metadata=1
+# pops_rumble=0
 
 # [path:ms0:/PSP/GAME/Example/EBOOT.PBP]
 # enabled=0

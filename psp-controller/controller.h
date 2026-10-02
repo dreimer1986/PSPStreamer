@@ -2,7 +2,7 @@
  * Resident controller service, compiled into the SAME USB bridge, not a
  * second USB owner. Sony emulation API semantics/NIDs checked against uOFW:
  * https://github.com/uofw/uofw/blob/master/src/kd/ctrl/ctrl.c
- * No copied function bodies, code patches, syscall hooks or firmware changes.
+ * Optional POPS serial interception is separate from Sony input injection.
  */
 #include <pspctrl.h>
 #include <pspinit.h>
@@ -39,6 +39,7 @@ static void controller_log(const char *text,int rc) {
     if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
 }
 #include "tvout.h"
+#include "pops_rumble.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -64,6 +65,7 @@ static void controller_config(void) {
         else if(!strncmp(line,"home_combo=",11))controller_home=!strcmp(line+11,"1");
         else if(!strncmp(line,"vsh=",4))controller_vsh=!strcmp(line+4,"1");
         else if(!strncmp(line,"pops=",5))controller_pops=!strcmp(line+5,"1");
+        else if(!strncmp(line,"pops_rumble=",12))pops_rumble_enabled=!strcmp(line+12,"1");
         else if(!strncmp(line,"overlay=",8))pad_overlay_enabled=!strcmp(line+8,"2")?2:!strcmp(line+8,"1");
         else if(!strncmp(line,"overlay_always=",15))pad_overlay_always=!strcmp(line+15,"1");
         else if(!strncmp(line,"tvout=",6))controller_tvout=!strcmp(line+6,"2")?2:!strcmp(line+6,"1");
@@ -86,18 +88,18 @@ static int controller_worker(SceSize size,void *args) {
     (void)size;(void)args;
     controller_config();
     static const TitleRuleKey rule_keys[]={ {"enabled",0,1},{"home_combo",0,1},
-        {"overlay",0,2},{"overlay_always",0,1},{"tvout",0,2},{"metadata",0,1} };
+        {"overlay",0,2},{"overlay_always",0,1},{"tvout",0,2},{"metadata",0,1},{"pops_rumble",0,1} };
     int rule_values[]={controller_enabled,controller_home,pad_overlay_enabled,
-        pad_overlay_always,controller_tvout,pad_metadata_enabled};
+        pad_overlay_always,controller_tvout,pad_metadata_enabled,pops_rumble_enabled};
     int rule_result=title_rules_load("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer-rules.ini",
-        sceKernelInitFileName(),rule_keys,6,rule_values);
+        sceKernelInitFileName(),rule_keys,7,rule_values);
     controller_log("title/path rule section (negative = invalid)",rule_result);
     SceGameInfo *game_info=sceKernelGetGameInfo();
     if(game_info){char title[40];snprintf(title,sizeof(title),"title ID: %.16s",game_info->title_id);controller_log(title,0);}
     if(rule_result<0)controller_enabled=0;
     else {controller_enabled=rule_values[0];controller_home=rule_values[1];
         pad_overlay_enabled=rule_values[2];pad_overlay_always=rule_values[3];
-        controller_tvout=rule_values[4];pad_metadata_enabled=rule_values[5];}
+        controller_tvout=rule_values[4];pad_metadata_enabled=rule_values[5];pops_rumble_enabled=rule_values[6];}
     emulate_buttons=(void *)sctrlHENFindFunction("sceController_Service","sceCtrl_driver",0x5130DAE3);
     emulate_analog=(void *)sctrlHENFindFunction("sceController_Service","sceCtrl_driver",0xDB76878D);
     if(!emulate_buttons || !emulate_analog){controller_log("Sony emulation API unavailable",SM_INVALID);return 0;}
@@ -112,6 +114,7 @@ static int controller_worker(SceSize size,void *args) {
     controller_log("configured overlay mode",pad_overlay_enabled);
     controller_log("configured TV policy",controller_tvout);
     controller_log("metadata capability",pad_metadata_enabled);
+    controller_log("POPS serial capture v1 option (no motor output)",pops_rumble_enabled);
     controller_log("overlay initialization",pad_overlay_init());
     controller_log("kernel free bytes after OSD",sceKernelPartitionTotalFreeMemSize(1));
     controller_log("kernel largest block after OSD",sceKernelPartitionMaxFreeMemSize(1));
@@ -130,6 +133,7 @@ static int controller_worker(SceSize size,void *args) {
     unsigned diagnostic_loops=0;int injection_rc=0;
     while(controller_running) {
         unsigned long long now=sceKernelGetSystemTimeWide();
+        pops_rumble_update(now,allowed && !controller_disabled && !controller_suspended);
         if(controller_report){
             if(diagnostic_last && now>=diagnostic_last && now-diagnostic_last>diagnostic_gap)
                 diagnostic_gap=now-diagnostic_last;
@@ -230,6 +234,7 @@ static int controller_worker(SceSize size,void *args) {
     }
     scePowerUnregisterCallback(power);
 done:
+    pops_rumble_stop();
     controller_clear();
     if(controller_callback>=0){sceKernelDeleteCallback(controller_callback);controller_callback=-1;}
     return 0;
