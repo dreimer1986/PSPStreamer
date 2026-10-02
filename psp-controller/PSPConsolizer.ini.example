@@ -11,9 +11,9 @@ overlay_always=0
 # VSH and POPS are opt-in through ARK plugin entries, not tested yet.
 vsh=1
 pops=1
-# Experimental POPS DualShock serial negotiation and motor-value capture.
-# 0 keeps stock POPS. 1 requires a supported code signature. No physical
-# vibration yet: controller output protocols still need hardware validation.
+# Experimental POPS DualShock negotiation + motor output (supported signature).
+# 0 keeps stock POPS. 1 needs firmware 0.3.15 for physical rumble output.
+# First target: SF30 Pro in XInput mode. Hardware output validation pending.
 pops_rumble=0
 # TV activation: 0 off, 1 when controller connected, 2 on app start.
 # Requires cable. PSPStreamer retains its own output settings.

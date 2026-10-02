@@ -11,6 +11,7 @@
 #include "../../streammaster/pad_metadata.h"
 #include "bus_owner.h"
 #include "../../streammaster/gamepad_wire.h"
+#include "../../streammaster/rumble.h"
 #ifdef SM_CONTROLLER_PLUGIN
 PSP_MODULE_INFO("PSPConsolizerUSB",PSP_MODULE_KERNEL,0,2);
 #else
@@ -31,9 +32,24 @@ static SmFrame send_frame __attribute__((aligned(64))),recv_frame __attribute__(
 static SceUID event_id=-1,lock_id=-1;
 static volatile int attached,send_pending,recv_pending,poisoned,cancelled;
 static int started;
+static volatile int rumble_pending;
 #ifdef SM_CONTROLLER_PLUGIN
 static volatile int app_owner,pad_emergency_stop;
 static int pad_metadata_enabled;
+static int pad_rumble_enabled;
+static struct UsbdDeviceReq rumble_req;
+static unsigned char rumble_reply[64] __attribute__((aligned(64)));
+static unsigned char rumble_small,rumble_large;
+static unsigned long long rumble_time;
+static unsigned rumble_replies;
+static void rumble_publish(unsigned small,unsigned large,unsigned long long now) {
+    int intr=sceKernelCpuSuspendIntr();
+    rumble_small=!!small;rumble_large=large;rumble_time=now;
+    sceKernelCpuResumeIntr(intr);
+}
+static int rumble_done(struct UsbdDeviceReq *r,int a,int b) {
+    (void)r;(void)a;(void)b;rumble_pending=0;return 0;
+}
 #endif
 static int exchange_active,exchange_compact;
 static SmFrame bulk_send[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
@@ -46,6 +62,26 @@ static struct UsbDriver driver;
 static unsigned char usb_string[]={26,3,'S',0,'t',0,'r',0,'e',0,'a',0,'m',0,'M',0,'a',0,'s',0,'t',0,'e',0,'r',0};
 static int control_request(int a,int b,struct DeviceRequest *r) {
     (void)a;(void)b;
+#ifdef SM_CONTROLLER_PLUGIN
+    if(r && r->bmRequestType==0xc0 && (r->bRequest==0x55 || r->bRequest==0x56) &&
+       r->wLength==SM_RUMBLE_BYTES && !(r->wValue&~SM_PAD_WIRE_MASK)) {
+        if(rumble_pending)return -1;
+        int intr=sceKernelCpuSuspendIntr();
+        unsigned long long now=sceKernelGetSystemTimeWide();
+        pad_value=(SmPad){.magic=SM_PAD_MAGIC,.buttons=sm_pad_unpack_buttons(r->wValue),.connected=r->bRequest==0x55,.x=r->wIndex&255,.y=r->wIndex>>8};
+        pad_time=now;
+        int fresh=pad_rumble_enabled && pad_enabled && pad_value.connected && !app_owner && !pad_emergency_stop && sm_rumble_fresh(now,rumble_time);
+        sm_rumble_frame(rumble_reply,fresh?rumble_small:0,fresh?rumble_large:0);
+        sceKernelCpuResumeIntr(intr);
+        memset(&rumble_req,0,sizeof(rumble_req));
+        rumble_req.endp=&endpoints[0];rumble_req.data=rumble_reply;rumble_req.size=SM_RUMBLE_BYTES;rumble_req.func=rumble_done;
+        sceKernelDcacheWritebackRange(rumble_reply,sizeof(rumble_reply));
+        rumble_pending=1;int rc=sceUsbbdReqSend(&rumble_req);
+        if(rc<0)rumble_pending=0;
+        else ++rumble_replies;
+        return rc;
+    }
+#endif
     if(r && r->bmRequestType==0x40 && !r->wLength && r->bRequest>=0x60 && r->bRequest<=0x6f){
         unsigned chunk=r->bRequest-0x60;int intr=sceKernelCpuSuspendIntr();
         if(sm_pad_meta_receive(&pad_meta_rx,chunk,r->wValue,r->wIndex,&pad_meta))pad_meta_time=sceKernelGetSystemTimeWide();
@@ -72,17 +108,21 @@ static int done(struct UsbdDeviceReq *r,int a,int b) {
 }
 static void cancel_requests(void) {
     cancelled=1;
-    if(started){sceUsbbdReqCancelAll(&endpoints[1]);sceUsbbdReqCancelAll(&endpoints[2]);}
+    if(started){if(rumble_pending)sceUsbbdReqCancelAll(&endpoints[0]);sceUsbbdReqCancelAll(&endpoints[1]);sceUsbbdReqCancelAll(&endpoints[2]);}
     sceKernelSetEventFlag(event_id,4);
 }
 static int attach(int speed,void *a,void *b){(void)a;(void)b;attached=speed;pad_enabled=1;pad_time=0;return 0;}
-static void pad_cancel(void){pad_enabled=0;pad_time=0;pad_meta_time=0;pad_meta_rx.next=0;}
+static void pad_cancel(void){pad_enabled=0;pad_time=0;pad_meta_time=0;pad_meta_rx.next=0;
+#ifdef SM_CONTROLLER_PLUGIN
+    rumble_publish(0,0,0);
+#endif
+}
 static int detach(int a,int b,int c){(void)a;(void)b;(void)c;attached=0;pad_cancel();cancel_requests();return 0;}
 static int start_driver(int size,void *args) {
     (void)size;(void)args;memset(descriptors,0,sizeof(descriptors));
     struct DeviceDescriptor device={18,1,0x0200,0,0,0,64,0,0,0x0101,0,0,0,1};
 #ifdef SM_CONTROLLER_PLUGIN
-    device.bcdDevice=pad_metadata_enabled?0x0103:0x0104;
+    device.bcdDevice=pad_rumble_enabled?(pad_metadata_enabled?0x0105:0x0106):(pad_metadata_enabled?0x0103:0x0104);
 #else
     device.bcdDevice=0x0103;
 #endif
@@ -122,8 +162,8 @@ static int shutdown_usb(void) {
     pad_cancel();
     cancel_requests();
     if(started)sceUsbDeactivate(SM_USB_PID);
-    for(int i=0;i<100 && (send_pending||recv_pending||bulk_pending);i++)sceKernelDelayThread(1000);
-    if(send_pending || recv_pending || bulk_pending){poisoned=1;return SM_BUSY;}
+    for(int i=0;i<100 && (send_pending||recv_pending||bulk_pending||rumble_pending);i++)sceKernelDelayThread(1000);
+    if(send_pending || recv_pending || bulk_pending || rumble_pending){poisoned=1;return SM_BUSY;}
     if(started){sceUsbStop(DRIVER,0,NULL);sm_bus_stop();started=0;}
     memset(&send_frame,0,sizeof(send_frame));memset(&recv_frame,0,sizeof(recv_frame));
     attached=0;poisoned=0;exchange_active=bulk_active=0;return 0;

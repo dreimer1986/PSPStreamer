@@ -122,8 +122,16 @@ negative signature cases. The serial-state test passed under ASan/UBSan for
 all twelve commands, motor mapping/reset/peaks, independent ports, bypass and
 invalid positions. The PRX was built before running these focused tests.
 
-This still needs hardware validation. Runtime 6.61 matching, game negotiation,
-soft resets and save states are not established by those host checks. No
-controller motor-output protocol or firmware command is invented; physical
-rumble remains a separate pending step. Enable with `pops_rumble=1`, `report=1`
-as described in `psp-controller/README.md`.
+### Hardware capture and output follow-up
+
+The user's Need for Speed High Stakes run (`SLUS00826` from the log) successfully
+matched the runtime signature and negotiated the pad. The recorded map was
+`03/02`, with real motor values including `0/96`, `1/246` and peaks `1/255`.
+The log recorded 455 motor changes. This confirms capture for that tested
+runtime/game, not every POPS version or save-state/reset scenario.
+
+StreamMaster 0.3.15 and the matching Consolizer now transport port-zero motor
+state to a guarded Xbox Bluetooth output backend (SF30 Pro XInput test target).
+Unknown devices, including the input-only SHANWAN `2563:0526` descriptor, receive
+no guessed motor reports. Physical rumble still requires the next hardware
+test. See `psp-controller/README.md` for setup, watchdogs and protocol sources.

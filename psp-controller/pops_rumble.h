@@ -81,7 +81,7 @@ static void pops_rumble_install(SceModule *mod) {
     pops_rumble_context=ctx; pops_rumble_call=call; pops_rumble_jump=jump;
     pops_rumble_module=mod->modid;
     sceKernelCpuResumeIntr(intr);
-    controller_log("POPS DualShock capture installed; NO motor output", bytes);
+    controller_log("POPS DualShock capture installed; EP0 motor output", bytes);
 }
 
 static void pops_rumble_update(unsigned long long now, int allowed) {
@@ -96,12 +96,24 @@ static void pops_rumble_update(unsigned long long now, int allowed) {
         if (mod) pops_rumble_install(mod);
         return;
     }
-    if (!pops_rumble_context || !controller_report) return;
+    if (!pops_rumble_context) return;
     SceModule *current=sceKernelFindModuleByName("pops");
     if (!current || current->modid!=pops_rumble_module ||
         current->text_addr+0x9eac!=(uintptr_t)pops_rumble_call) {
         pops_rumble_context=NULL; pops_rumble_call=NULL;
         controller_log("POPS capture module gone; no stale access",0); return;
+    }
+    if (!controller_report) return;
+    {
+        SmPadMeta meta;unsigned replies;
+        int intr=sceKernelCpuSuspendIntr();meta=pad_meta;replies=rumble_replies;
+        unsigned long long stamp=pad_meta_time;
+        sceKernelCpuResumeIntr(intr);
+        char line[128];
+        snprintf(line,sizeof(line),"Rumble transport backend=%u blocked=%u VID=%04X PID=%04X meta_fresh=%u replies",
+            meta.reserved[0],meta.reserved[1],meta.reserved[2]|(meta.reserved[3]<<8),
+            meta.reserved[4]|(meta.reserved[5]<<8),(unsigned)(stamp && now>=stamp && now-stamp<15000000));
+        controller_log(line,replies);
     }
     for (unsigned port=0;port<2;port++) {
         PopsPort p;
@@ -115,7 +127,25 @@ static void pops_rumble_update(unsigned long long now, int allowed) {
         controller_log(line,p.changes);
     }
 }
+/* Latest-state mailbox only. Never submit USB or Bluetooth from the serial
+ * interceptor. Stop if the game stops polling its pad, even with a nonzero
+ * final motor byte. The existing worker calls this every input iteration. */
+static void pops_rumble_publish(unsigned long long now,int active) {
+    static uint32_t polls;
+    static unsigned long long polled_at;
+    unsigned small=0,large=0;
+    if(active && pops_rumble_enabled && pops_rumble_context) {
+        int intr=sceKernelCpuSuspendIntr();
+        PopsPort p=pops_rumble_context->port[0];
+        int enabled=pops_rumble_context->enabled;
+        sceKernelCpuResumeIntr(intr);
+        if(p.polls!=polls){polls=p.polls;polled_at=now;}
+        if(enabled && !p.muted && sm_rumble_fresh(now,polled_at)){small=p.small;large=p.large;}
+    } else polled_at=0;
+    rumble_publish(small,large,now);
+}
 static void pops_rumble_stop(void) {
+    rumble_publish(0,0,0);
     if (!pops_rumble_call) return;
     SceModule *current=sceKernelFindModuleByName("pops");
     int intr=sceKernelCpuSuspendIntr();

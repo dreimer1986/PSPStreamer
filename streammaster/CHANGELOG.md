@@ -1,5 +1,17 @@
 # StreamMaster firmware changelog
 
+## 0.3.15 — POPS Bluetooth rumble output test
+
+- Return actual PS1 small/large motor values in the existing EP0 input exchange
+  with a matching PSP Consolizer build. No extra USB host channel or task.
+- Recognize the Xbox Bluetooth output-report layout used by the SF30 Pro in
+  XInput mode. Validate identity and descriptor; unknown devices stay input-only.
+- Coalesce motor states, bound output rate, use finite effects and stop stale
+  input. Output errors do not disable the controller's ordinary input path.
+- Include backend/VID/PID/output-fault diagnostics in existing PSP metadata.
+- Keep QIO80/IRAM, Wi-Fi settings, bonds, button profiles and media transport.
+- Builds/targeted host checks passed; physical rumble validation is pending.
+
 ## 0.3.14 — Wired USB HID controller test
 
 - Accept a wired HID joystick/gamepad instead of the external Bluetooth dongle.

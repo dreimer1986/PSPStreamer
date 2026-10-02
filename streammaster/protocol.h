@@ -61,6 +61,8 @@ _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");
 #define SM_DEV_PAD_META 0x53540033U
 /* Optional cached EP0 metadata. Sixteen four-byte chunks, 0x60..0x6f.
  * 255 means unknown battery, never zero. Old input packets stay unchanged. */
+/* reserved: rumble backend (0 unsupported,1 Xbox BT), output blocked flag,
+ * HID vendor and product IDs, little endian. Older readers ignore these. */
 typedef struct {char name[48];uint32_t state;int32_t error;uint8_t battery,valid,reserved[6];} SmPadMeta;
 _Static_assert(sizeof(SmPadMeta)==64,"Controller metadata layout");
 #define SM_RESIDENT_MAGIC 0x53504d31

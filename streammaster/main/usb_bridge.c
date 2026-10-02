@@ -3,6 +3,7 @@
 #include "bridge.h"
 #include "hotpath.h"
 #include "../gamepad_wire.h"
+#include "../rumble.h"
 #include <stdlib.h>
 #include <stdatomic.h>
 #include "freertos/FreeRTOS.h"
@@ -35,6 +36,8 @@ static SmPadMeta pad_metadata;
 static unsigned pad_meta_chunk=16;
 static int64_t pad_meta_at,pad_meta_cycle;
 static int pad_meta_disabled,pad_tx_metadata,pad_meta_capable,pad_home_capable;
+static int pad_rumble_capable,pad_tx_rumble;
+static unsigned pad_tx_session;
 #include "../pad_delivery.h"
 #endif
 static int new_address,gone,claimed,iface,rx_pending,tx_pending,rx_done,tx_done,busy;
@@ -160,6 +163,20 @@ static void client_event(const usb_host_client_event_msg_t *event,void *arg) {
 static void SM_HOT_CODE transfer_done(usb_transfer_t *transfer) {
     if(transfer==pad_tx){
         pad_pending=0;
+#if CONFIG_BT_BLUEDROID_ENABLED
+        if(pad_tx_rumble) {
+            const uint8_t *data=transfer->data_buffer+sizeof(usb_setup_packet_t);
+            if(transfer->status==USB_TRANSFER_STATUS_COMPLETED && transfer->actual_num_bytes==sizeof(usb_setup_packet_t)+SM_RUMBLE_BYTES && sm_rumble_valid(data,SM_RUMBLE_BYTES))
+                sm_gamepad_rumble_receive(data,SM_RUMBLE_BYTES,pad_tx_session);
+            else {
+                /* Output is optional: downgrade to the proven OUT-only
+                 * input path without disabling buttons or network traffic. */
+                sm_gamepad_rumble_receive(NULL,0,pad_tx_session);pad_rumble_capable=0;
+                ESP_LOGW("usb","Rumble EP0 unavailable; continuing input-only status=%d bytes=%d",transfer->status,transfer->actual_num_bytes);
+            }
+            return;
+        }
+#endif
         if(transfer->status!=USB_TRANSFER_STATUS_COMPLETED){
 #if CONFIG_BT_BLUEDROID_ENABLED
             sm_pad_send_failed(pad_tx_metadata,&pad_disabled,&pad_meta_disabled);
@@ -195,8 +212,9 @@ static int open_psp(int address) {
     const uint8_t *p=(const uint8_t *)config,*end=p+config->wTotalLength;
     int candidate=-1,found_in=0,found_out=0;pad_endpoint=desc->bcdDevice>=0x0101;
 #if CONFIG_BT_BLUEDROID_ENABLED
-    pad_meta_capable=desc->bcdDevice==0x0102 || desc->bcdDevice==0x0103;
-    pad_home_capable=desc->bcdDevice==0x0103 || desc->bcdDevice==0x0104;
+    pad_meta_capable=desc->bcdDevice==0x0102 || desc->bcdDevice==0x0103 || desc->bcdDevice==0x0105;
+    pad_home_capable=desc->bcdDevice>=0x0103 && desc->bcdDevice<=0x0106;
+    pad_rumble_capable=desc->bcdDevice==0x0105 || desc->bcdDevice==0x0106;
 #endif
     while(p+2<=end && p[0]>=2 && p+p[0]<=end) {
         if(p[1]==USB_B_DESCRIPTOR_TYPE_INTERFACE && p[0]>=9) {
@@ -223,7 +241,7 @@ static int open_psp(int address) {
         pad_disabled=0;pad_sent_at=0;pad_sequence=~0U;
 #if CONFIG_BT_BLUEDROID_ENABLED
         pad_meta_chunk=16;pad_meta_cycle=0;
-        pad_meta_disabled=pad_tx_metadata=0;
+        pad_meta_disabled=pad_tx_metadata=pad_tx_rumble=0;
 #endif
         return 1;
     }
@@ -294,7 +312,8 @@ void sm_usb_task(void *unused) {
             if(pad_meta_capable && !pad_meta_disabled && pad_meta_chunk==16 && (memcmp(&meta,&pad_metadata,sizeof(meta)) || now>=pad_meta_cycle)){
                 pad_metadata=meta;pad_meta_chunk=0;pad_meta_cycle=now+10000000;
             }
-            int send_kind=sm_pad_send_kind(now,pad_sent_at,input.sequence!=pad_sequence,pad_meta_capable,pad_meta_disabled,pad_meta_chunk,pad_meta_at);
+            int motor=pad_rumble_capable && sm_gamepad_rumble_capable();
+            int send_kind=sm_pad_send_kind(now,pad_sent_at,motor || input.sequence!=pad_sequence,pad_meta_capable,pad_meta_disabled,pad_meta_chunk,pad_meta_at);
             /* Metadata is strictly best-effort: due input always wins. */
             if(send_kind==SM_PAD_SEND_META){
                 const uint8_t *v=(const uint8_t *)&pad_metadata+pad_meta_chunk*4;
@@ -302,16 +321,18 @@ void sm_usb_task(void *unused) {
                     .wValue=v[0]|((unsigned)v[1]<<8),.wIndex=v[2]|((unsigned)v[3]<<8)};
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
                 pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
-                pad_tx_metadata=1;
+                pad_tx_metadata=1;pad_tx_rumble=0;
                 if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_meta_chunk++;pad_meta_at=now+40000;}
                 else {pad_meta_disabled=1;pad_meta_chunk=16;}
             } else if(send_kind==SM_PAD_SEND_INPUT) {
                 usb_setup_packet_t setup={.bmRequestType=0x40,.bRequest=input.connected?0x53:0x54,
                     .wValue=sm_pad_pack_buttons(input.buttons,pad_home_capable),.wIndex=input.x|((unsigned)input.y<<8),.wLength=0};
+                if(motor){setup.bmRequestType=0xc0;setup.bRequest=input.connected?0x55:0x56;setup.wLength=SM_RUMBLE_BYTES;}
                 memcpy(pad_tx->data_buffer,&setup,sizeof(setup));pad_tx->device_handle=device;
-                pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup);
-                pad_tx_metadata=0;
+                pad_tx->bEndpointAddress=0;pad_tx->num_bytes=sizeof(setup)+(motor?SM_RUMBLE_BYTES:0);
+                pad_tx_metadata=0;pad_tx_rumble=motor;pad_tx_session=input.session;
                 if(usb_host_transfer_submit_control(client,pad_tx)==ESP_OK){pad_pending=1;pad_sent_at=now;pad_sequence=input.sequence;}
+                else if(motor){pad_rumble_capable=0;sm_gamepad_rumble_receive(NULL,0,pad_tx_session);}
                 else pad_disabled=1; /* Input failure must not tear down a stream. */
             }
         }

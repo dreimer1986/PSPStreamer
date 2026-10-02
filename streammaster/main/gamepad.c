@@ -4,6 +4,7 @@
 #include "gamepad.h"
 #include "gamepad_options.h"
 #include "usb_gamepad.h"
+#include "../rumble.h"
 #include "nvs.h"
 #include "esp_bluedroid_hci.h"
 #include "esp_bt_main.h"
@@ -23,11 +24,13 @@ static portMUX_TYPE guard=portMUX_INITIALIZER_UNLOCKED;
 static SmBtStatus status;
 static char peer_name[48];
 static uint8_t peer_battery=255;
+static uint8_t rumble_diag[6]; /* backend, blocked, VID lo/hi, PID lo/hi */
 void sm_gamepad_metadata(SmPadMeta *out) {
     memset(out,0,sizeof(*out));
     portENTER_CRITICAL(&guard);
     memcpy(out->name,peer_name,sizeof(out->name));out->state=status.state;out->error=status.error;
     out->battery=status.state==SM_BT_CONNECTED?peer_battery:255;out->valid=1;
+    memcpy(out->reserved,rumble_diag,sizeof(rumble_diag));
     portEXIT_CRITICAL(&guard);
 }
 static SmBtUsbDiag usb_diag;
@@ -73,6 +76,50 @@ typedef struct {uint32_t version;StoredProfile slot[4];} ProfileStore;
 static ProfileStore profiles={.version=1};
 static SmBtProfile current_profile;
 static unsigned current_home;
+/* One latest-state mailbox and one in-flight report, not an effect queue.
+ * Protected by guard; all Bluetooth writes belong to lifecycle_task. */
+static int rumble_handle=-1,rumble_busy,rumble_blocked;
+static unsigned rumble_small,rumble_large,rumble_sent_small,rumble_sent_large;
+static int64_t rumble_received,rumble_sent_at;
+int sm_gamepad_rumble_capable(void) {
+    portENTER_CRITICAL(&guard);
+    int enabled=rumble_handle>=0 && !rumble_blocked && status.state==SM_BT_CONNECTED && pad.connected;
+    portEXIT_CRITICAL(&guard);return enabled;
+}
+void sm_gamepad_rumble_receive(const uint8_t *data,size_t bytes,unsigned session) {
+    int valid=sm_rumble_valid(data,bytes);
+    portENTER_CRITICAL(&guard);
+    if(session==pad.session && rumble_handle>=0 && pad.connected) {
+        rumble_small=valid?data[3]:0;rumble_large=valid?data[4]:0;
+        rumble_received=valid?esp_timer_get_time():0;
+    }
+    portEXIT_CRITICAL(&guard);
+}
+static void rumble_tick(int64_t now) {
+    uint8_t address[6],report[9];int send=0,timeout=0;
+    portENTER_CRITICAL(&guard);
+    if(rumble_handle>=0 && !rumble_blocked && status.state==SM_BT_CONNECTED) {
+        if(rumble_busy && now-rumble_sent_at>500000){rumble_busy=0;rumble_blocked=1;rumble_diag[1]=1;timeout=1;}
+        if(!rumble_busy && !rumble_blocked) {
+            int fresh=pad.connected && atomic_load(&accept_input) && sm_rumble_fresh(now,rumble_received);
+            unsigned small=fresh?rumble_small:0,large=fresh?rumble_large:0;
+            if(now-rumble_sent_at>=20000 &&
+               (small!=rumble_sent_small || large!=rumble_sent_large || ((small||large) && now-rumble_sent_at>=80000))) {
+                sm_rumble_xbox(report,small,large);memcpy(address,peer,6);
+                rumble_busy=1;rumble_sent_at=now;rumble_sent_small=small;rumble_sent_large=large;send=1;
+            }
+        }
+    }
+    portEXIT_CRITICAL(&guard);
+    if(timeout)ESP_LOGW(TAG,"Rumble ack timed out; motor output disabled until reconnect, input unchanged");
+    if(send) {
+        esp_err_t result=esp_bt_hid_host_send_data(address,report,sizeof(report));
+        if(result!=ESP_OK) {
+            portENTER_CRITICAL(&guard);rumble_busy=0;rumble_blocked=1;rumble_diag[1]=1;portEXIT_CRITICAL(&guard);
+            ESP_LOGW(TAG,"Rumble output failed: %s (input unchanged)",esp_err_to_name(result));
+        }
+    }
+}
 static void load_peer_profile_locked(const uint8_t address[6]) {
     current_profile=sm_bt_default_profile();current_home=0;
     /* Keep the former defaults (including any global button edits) as the
@@ -123,7 +170,8 @@ static const esp_bluedroid_hci_driver_callbacks_t *callback_enter(void) {
 }
 static void callback_leave(void){atomic_fetch_sub(&callback_users,1);}
 static void neutral(void) {
-    portENTER_CRITICAL(&guard);pad.buttons=0;pad.raw_buttons=0;pad.x=pad.y=128;pad.connected=0;pad.sequence++;portEXIT_CRITICAL(&guard);
+    portENTER_CRITICAL(&guard);pad.buttons=0;pad.raw_buttons=0;pad.x=pad.y=128;pad.connected=0;pad.sequence++;
+    rumble_received=0;rumble_small=rumble_large=0;portEXIT_CRITICAL(&guard);
 }
 static void state(unsigned s,int err) {
     portENTER_CRITICAL(&guard);status.state=s;status.error=err;portEXIT_CRITICAL(&guard);
@@ -290,6 +338,8 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};last_input_log=0;
         portENTER_CRITICAL(&guard);memcpy(peer,p->open.bd_addr,6);memcpy(status.selected,peer,6);pair_until=0;
         peer_name[0]=0;peer_battery=255;
+        rumble_handle=-1;rumble_busy=rumble_blocked=0;rumble_sent_small=rumble_sent_large=0;rumble_sent_at=0;
+        memset(rumble_diag,0,sizeof(rumble_diag));
         for(unsigned i=0;i<status.count;i++)if(!memcmp(status.device[i].address,peer,6))snprintf(peer_name,sizeof(peer_name),"%s",status.device[i].name);
         load_peer_profile_locked(peer);pad.session++;memset(pad.axes,128,sizeof(pad.axes));pad.axes_valid=pad.hat=0;
         portEXIT_CRITICAL(&guard);
@@ -301,8 +351,23 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
         if(p->dscp.handle!=active_handle)return;
         int ok=p->dscp.status==ESP_HIDH_OK && p->dscp.dsc_list && sm_hid_parse(&map,p->dscp.dsc_list,p->dscp.dl_len);
         ESP_LOGW(TAG,"HID descriptor vendor=%04x product=%04x bytes=%u fields=%u valid=%d",p->dscp.vendor_id,p->dscp.product_id,p->dscp.dl_len,map.count,ok);
+        int motor=ok && sm_rumble_xbox_descriptor(p->dscp.vendor_id,p->dscp.product_id,p->dscp.dsc_list,p->dscp.dl_len);
+        portENTER_CRITICAL(&guard);rumble_handle=motor?active_handle:-1;
+        rumble_diag[0]=motor;rumble_diag[2]=p->dscp.vendor_id;rumble_diag[3]=p->dscp.vendor_id>>8;
+        rumble_diag[4]=p->dscp.product_id;rumble_diag[5]=p->dscp.product_id>>8;
+        portEXIT_CRITICAL(&guard);
+        ESP_LOGW(TAG,"HID rumble backend: %s",motor?"Xbox Bluetooth / SF30 Pro XInput":"unsupported identity/report; input only");
         if(!ok){state(SM_BT_ERROR,SM_INVALID);neutral();}
         else atomic_store(&accept_input,1);
+    } else if(e==ESP_HIDH_DATA_EVT) {
+        int error=0;
+        portENTER_CRITICAL(&guard);
+        if((p->send_data.handle==rumble_handle || p->send_data.handle==0xff) && rumble_busy) {
+            rumble_busy=0;
+            if(p->send_data.status!=ESP_HIDH_OK){rumble_blocked=1;rumble_diag[1]=1;error=1;}
+        }
+        portEXIT_CRITICAL(&guard);
+        if(error)ESP_LOGW(TAG,"Rumble write status=%u reason=%u; input unchanged",p->send_data.status,p->send_data.reason);
     } else if(e==ESP_HIDH_DATA_IND_EVT && atomic_load(&online) && atomic_load(&accept_input)) {
         if(p->data_ind.handle==active_handle && p->data_ind.status==ESP_HIDH_OK && sm_hid_input(&map,p->data_ind.data,p->data_ind.len,&hidpad)) {
             portENTER_CRITICAL(&guard);
@@ -324,6 +389,7 @@ static void hid(esp_hidh_cb_event_t e,esp_hidh_cb_param_t *p) {
             atomic_store(&accept_input,0);neutral();return;
         }
         active_handle=-1;
+        portENTER_CRITICAL(&guard);rumble_handle=-1;rumble_busy=0;memset(rumble_diag,0,sizeof(rumble_diag));portEXIT_CRITICAL(&guard);
         atomic_store(&accept_input,0);neutral();memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};state(SM_BT_READY,0);
     }
 }
@@ -358,13 +424,17 @@ static void lifecycle_task(void *unused) {
         unsigned reconnect_index=0;reconnect_at=esp_timer_get_time()+5000000;
         while(atomic_load(&online) && !atomic_load(&failed) && rc==ESP_OK) {
             SmBtAction a;
-            uint8_t active_peer[6];int expired=0;int64_t now=esp_timer_get_time();
+            uint8_t active_peer[6];int expired=0,wait_ms=100;int64_t now=esp_timer_get_time();
+            /* Do not compete with a backed-up HCI transport. Finite effects
+             * expire on the controller even if this task cannot send a stop. */
+            if(uxQueueSpacesAvailable(sends)>4)rumble_tick(now);
             portENTER_CRITICAL(&guard);
             memcpy(active_peer,peer,6);
+            if(!rumble_blocked && sm_rumble_fresh(now,rumble_received))wait_ms=10;
             if(status.state==SM_BT_CONNECTING&&pair_until&&now>=pair_until){pair_until=0;expired=1;}
             portEXIT_CRITICAL(&guard);
             if(expired){esp_bt_hid_host_disconnect(active_peer);atomic_store(&accept_input,0);neutral();state(SM_BT_ERROR,ESP_ERR_TIMEOUT);}
-            if(xQueueReceive(actions,&a,pdMS_TO_TICKS(100))!=pdTRUE) {
+            if(xQueueReceive(actions,&a,pdMS_TO_TICKS(wait_ms))!=pdTRUE) {
                 int automatic=0;
                 portENTER_CRITICAL(&guard);
                 if(atomic_load(&ready) && options.reconnect && !atomic_load(&reconnect_suspended) && bonded_count &&
@@ -403,6 +473,8 @@ static void lifecycle_task(void *unused) {
         atomic_store(&closing,1);
         while(atomic_load(&callback_users))vTaskDelay(1);
         if(initialized)esp_bluedroid_deinit();
+        portENTER_CRITICAL(&guard);rumble_handle=-1;rumble_busy=rumble_blocked=0;
+        memset(rumble_diag,0,sizeof(rumble_diag));portEXIT_CRITICAL(&guard);
         /* Do not clear callback storage until the host has stopped. */
         host=NULL;esp_bluedroid_detach_hci_driver();
         state(atomic_load(&online)?SM_BT_ERROR:SM_BT_NONE,rc);
@@ -475,6 +547,9 @@ static int open_adapter(unsigned address) {
         peer[3]=d->idProduct>>8;peer[4]=d->idProduct;peer[5]=iface;
         memcpy(status.selected,peer,6);load_peer_profile_locked(peer);
         snprintf(peer_name,sizeof(peer_name),"USB HID %04x:%04x",d->idVendor,d->idProduct);
+        rumble_handle=-1;rumble_busy=rumble_blocked=0;memset(rumble_diag,0,sizeof(rumble_diag));
+        rumble_diag[2]=d->idVendor;rumble_diag[3]=d->idVendor>>8;
+        rumble_diag[4]=d->idProduct;rumble_diag[5]=d->idProduct>>8;
         peer_battery=255;pad.session++;memset(pad.axes,128,sizeof(pad.axes));pad.axes_valid=pad.hat=0;
         portEXIT_CRITICAL(&guard);
         usb_setup_packet_t request={.bmRequestType=0x81,.bRequest=6,.wValue=0x2200,.wIndex=iface,.wLength=descriptor_bytes};

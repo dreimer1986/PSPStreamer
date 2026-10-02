@@ -2,10 +2,12 @@
 
 ### Current build
 
-**POPS capture test (2026-10-02):** the updated `PSPConsolizerUSB.prx` adds
-opt-in DualShock serial negotiation and motor-value capture. This is **not yet
-physical rumble**. No StreamMaster firmware or PSPStreamer update is required
-for this specific test. See the POPS section below before enabling it.
+**POPS rumble output test (2026-10-02):** real motor commands were captured
+in Need for Speed High Stakes (`SLUS00826`). The updated `PSPConsolizerUSB.prx`
+and StreamMaster **0.3.15-bt-qio80-iram** now forward them to a compatible
+Bluetooth XInput controller. Physical vibration still needs hardware validation.
+The first test target is the **8BitDo SF30 Pro, X + START mode**.
+See the POPS section below; PSPStreamer itself needs no update for this test.
 
 Plugin directory, PRXs, INI and thread/module names now use PSPConsolizer.
 The new companion StreamMaster firmware is **0.3.13-bt-qio80-iram**. It adds
@@ -299,9 +301,11 @@ plugin/common bridge are GPL-2.0-or-later. Sony API semantics were checked again
 The [controller emulation example](https://github.com/crozone/PSP-EmulatedControllerTest)
 was reviewed, not copied. Runtime API lookup failures disable injection safely.
 
-## Experimental POPS DualShock / rumble capture
+## Experimental POPS DualShock / rumble output
 
-Default: `pops_rumble=0`. To test, replace only `PSPConsolizerUSB.prx` and add
+Default: `pops_rumble=0`. To test, update `PSPConsolizerUSB.prx`, flash the
+matching StreamMaster 0.3.15 firmware using its component `flash_args` (keeps
+NVS Wi-Fi/bonds), and add
 these settings to the existing `PSPConsolizer.ini`, preserving other settings:
 
 ```ini
@@ -336,7 +340,7 @@ while an external controller is unavailable. Verify ordinary controls and memory
 card loading too. Copy `last.log` **and** `last.log.previous` before launching
 additional apps: returning to VSH can rotate the PS1 run into the previous log.
 
-Look for `POPS DualShock capture installed; NO motor output`, followed by
+Look for `POPS DualShock capture installed; EP0 motor output`, followed by
 `POPS p0` lines. `seen` is a bitmask for commands 42..4D; `map` contains enabled
 positions / large-motor selection; `motor` gives the current small/large bytes;
 `peak` retains short pulses; the hexadecimal value at line end counts changes.
@@ -354,14 +358,50 @@ On plugin stop the call site is restored if still owned. The small user block
 is retained until the POPS process exits because a suspended user thread could
 still be executing it; it references no unloadable kernel code.
 
-Physical motor output is deliberately absent until the controller's actual
-output protocol is established. Neither a Bluetooth connection nor the SHANWAN
-adapter's input descriptor proves vibration support. There is no need to flash
-the ESP32 for this capture test.
+### SF30 Pro hardware test
+
+1. Power the SF30 Pro off, then hold **X + START** for XInput mode. Hold its
+   pairing button for three seconds and pair it through PSPStreamer's existing
+   StreamMaster Bluetooth menu. Relearn buttons if this mode has another layout.
+2. Start the PS1 title with `pops=1`, `pops_rumble=1`, `report=1` and `metadata=1`.
+   Enable vibration in the game's settings. If necessary, wait ten seconds and
+   reset the game from the PS menu to repeat controller negotiation.
+3. Trigger a collision in Need for Speed High Stakes. Check both motor response
+   and ordinary input. Pause/leave the game and disconnect/reconnect to check
+   that vibration stops and control returns.
+4. Preserve `last.log` and `last.log.previous`. `Rumble transport` records
+   controller VID/PID, backend (1 = Xbox Bluetooth), blocked output (1 = an
+   output error/timeout), metadata freshness and the count of EP0 replies.
+   Firmware UART logs also report the selected backend and write failures.
+
+The implemented report is Xbox Bluetooth output report 3, with the known
+`045e:02e0` / `045e:02fd` identities and an eight-byte report payload verified
+against the actual HID descriptor. A different identity or descriptor remains
+input-only and must be inspected, not blindly treated as compatible. Android,
+macOS and Switch modes of the SF30 Pro are **not** rumble-supported by this build.
+The SHANWAN `2563:0526` USB adapter also remains input-only: its descriptor has
+no Output/Feature reports and Linux exposes no force-feedback capability.
+This does not rule out an undocumented vendor command.
+
+Motor state returns in the existing input exchange over EP0; no extra USB pipe,
+PSP thread or dynamically growing effect queue is added. Only opted-in POPS
+sessions advertise this capability. Exchanges are capped at 50 Hz; unchanged
+active effects refresh at 80 ms. Effects last at most 200 ms per command, with
+no repeats. A 250 ms stale-input/game-poll watchdog requests zero output.
+Transfer errors downgrade to input-only; Bluetooth output errors disable only
+motor writes until reconnect. Existing WLAN/media transport is unchanged.
+
+Protocol references: [Linux hid-microsoft.c](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-microsoft.c),
+[SDL Xbox One HID driver](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_xboxone.c),
+[official SF30 Pro manual](https://download.8bitdo.com/Manual/Controller/SN30pro%2BSF30pro/SN30pro%2BSF30pro_Manual.pdf).
+Packet serialization is independently implemented, not copied driver code.
 
 Focused host checks (after building the PRX):
 
 ```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  tests/streammaster_rumble_test.c -o /tmp/streammaster-rumble-test
+/tmp/streammaster-rumble-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
   tests/pops_serial_test.c -o /tmp/pops-serial-test
 /tmp/pops-serial-test

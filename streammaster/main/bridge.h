@@ -21,4 +21,6 @@ int sm_usb_psp_status(void);
 void sm_gamepad_init(void);
 void sm_gamepad_snapshot(SmPad *out);
 void sm_gamepad_metadata(SmPadMeta *out);
+int sm_gamepad_rumble_capable(void);
+void sm_gamepad_rumble_receive(const uint8_t *data,size_t bytes,unsigned session);
 int sm_gamepad_command(const SmFrame *request,SmFrame *reply);

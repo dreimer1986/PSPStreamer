@@ -16,6 +16,7 @@ bridge.o: ../../streammaster/pad_metadata.h
 bridge.o: ../report_config.h ../../psp-client/streammaster_usb/bus_owner.h
 bridge.o: ../home_button.h
 bridge.o: ../../streammaster/gamepad_wire.h
+bridge.o: ../../streammaster/rumble.h
 bridge.o: ../../psp-overclock/title_rules.h ../../psp-overclock/title_rules_io.h
 bridge.o: ../pops_rumble.h ../pops_serial.h ../pops_signature.h pops_payload.inc
 pops_payload.o: ../pops_payload.c ../pops_serial.h

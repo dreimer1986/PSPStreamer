@@ -108,13 +108,14 @@ static int controller_worker(SceSize size,void *args) {
     int power=controller_callback<0?controller_callback:oc_register_power_callback(controller_callback,&automatic,&last);
     if(power<0){controller_log("power callback unavailable (disabled)",power);goto done;}
     int allowed=controller_enabled && controller_context(),last_state=-1;
+    pad_rumble_enabled=allowed && pops_rumble_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS;
     controller_log("Consolizer on-demand OSD: context",sceKernelInitKeyConfig());
     controller_log("kernel free bytes before OSD",sceKernelPartitionTotalFreeMemSize(1));
     controller_log("kernel largest block before OSD",sceKernelPartitionMaxFreeMemSize(1));
     controller_log("configured overlay mode",pad_overlay_enabled);
     controller_log("configured TV policy",controller_tvout);
     controller_log("metadata capability",pad_metadata_enabled);
-    controller_log("POPS serial capture v1 option (no motor output)",pops_rumble_enabled);
+    controller_log("POPS serial capture / EP0 rumble option",pops_rumble_enabled);
     controller_log("overlay initialization",pad_overlay_init());
     controller_log("kernel free bytes after OSD",sceKernelPartitionTotalFreeMemSize(1));
     controller_log("kernel largest block after OSD",sceKernelPartitionMaxFreeMemSize(1));
@@ -200,6 +201,7 @@ static int controller_worker(SceSize size,void *args) {
         sceKernelCpuResumeIntr(intr);
         int available=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && value.connected;
         int active=available && !in_streamer;
+        pops_rumble_publish(sample_now,active && !pad_emergency_stop);
         unsigned buttons=active?value.buttons&0xf3f9U:0;
         unsigned home_button=pad_home_button(&home,&buttons,now,active && controller_home);
         /* PSPStreamer reads ordinary buttons itself, but cannot deliver HOME
