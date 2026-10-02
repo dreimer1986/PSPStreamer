@@ -36,7 +36,6 @@ static volatile int running,active,cancelled,hooked,users,suspended;
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static void *saved_overlay;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded;
-static int attempted;
 static unsigned scaled_frames,changed_during_scale,scale_max_us;
 static unsigned long long scale_total_us;
 static SceUID snapshot_block=-1;
@@ -125,7 +124,7 @@ static int capture(const void *base,int stride,int format,int sync)
                 while(capture_held==ticket&&running&&!cancelled&&!suspended) {
                     if(sceKernelGetSystemTimeWide()-begin>=50000ULL) {
                         intr=sceKernelCpuSuspendIntr();
-                        if(capture_held==ticket){hold_timeouts++;cancelled=1;capture_held=0;capture_requested=0;}
+                        if(capture_held==ticket){hold_timeouts++;capture_held=0;capture_requested=0;}
                         sceKernelCpuResumeIntr(intr);break;
                     }
                     /* A forbidden wait context fails rather than spinning. */
@@ -188,8 +187,7 @@ static int restore(void)
 static int start_scale(void)
 {
     void *src=NULL;int stride=0,fmt=-1;
-    if(suspended||expanded||hooked)return -1;
-    if(attempted){record("one activation per launch in regression build",-1);return -1;}
+    if(suspended||expanded||hooked||users)return -1;
     if(cable_type()!=2){record("component cable required",-1);return -1;}
     if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||old_mode!=0x2d2||old_w!=480||old_h!=272){record("start in Sony game 480p TV mode",-1);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
@@ -200,7 +198,10 @@ static int start_scale(void)
     record("saved primary layer stride",saved_stride);
     record("saved primary layer format",saved_format);
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
-    attempted=1;
+    scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
+    copied_frames=copy_rejected=ge_busy=copy_max_us=0;copy_total_us=0;
+    handoffs=hold_timeouts=hold_errors=hold_max_us=0;
+    capture_requested=capture_held=0; /* Keep ticket monotonic across sessions. */
     int rc=change_edram(0x400000);record("expand VRAM",rc);if(rc<0)return rc;expanded=1;
     int intr=sceKernelCpuSuspendIntr();active=1;
     sctrlHENPatchSyscall((void *)get_edram_size,(void *)game_edram_size);
@@ -238,7 +239,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.6 bounded producer handoff",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.7 retry dropped captures",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -251,19 +252,18 @@ static int work(SceSize size,void *args)
     snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
     if(snapshot_block>=0)snapshot=sceKernelGetBlockHeadAddr(snapshot_block);
     if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);running=0;}
-    unsigned long long until=0,next=0,started_at=0,retry_at=0,last_good=0;unsigned previous=0;int back=1;
+    unsigned long long until=0,next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(active && !frames && now>started_at+2000000ULL)cancelled=1;
-        if(active&&!cancelled&&now>last_good+5000000ULL){record("no accepted snapshot for five seconds",-1);cancelled=1;}
         if(active&&!suspended&&now>=retry_at&&(cancelled||now>=until||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
             record("automatic/safety stop",cancelled);restore();retry_at=now+1000000;
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
             if(active)restore();
-            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();last_good=started_at;until=started_at+60000000ULL;next=0;retry_at=0;back=1;}
+            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();until=started_at+60000000ULL;next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
         if(active&&!cancelled&&!suspended&&now>=next) {
@@ -284,7 +284,7 @@ static int work(SceSize size,void *args)
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc>=0)rc=present((void *)dest,768,format,1);
             if(rc<0){record("presentation failed",rc);cancelled=1;}
-            back^=1;last_good=sceKernelGetSystemTimeWide();next=fs_next_frame(cycle,last_good);
+            back^=1;next=fs_next_frame(cycle,sceKernelGetSystemTimeWide());
         }
         sceKernelDelayThreadCB(active?2000:20000);
     }

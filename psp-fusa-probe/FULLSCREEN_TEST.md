@@ -1,4 +1,18 @@
-# FuSa-style fullscreen experiment 0.6 — bounded producer handoff
+# FuSa-style fullscreen experiment 0.7 — retry dropped captures
+
+0.7 corrects the overly aggressive 0.6 test policy: a single 50 ms producer
+deadline drops that capture and releases the game, **not** the entire test.
+There is no five-second no-frame rollback. The previous good output remains
+visible while capture retries continue, up to the normal 60-second limit.
+NOTE+R can activate again after complete restoration (no live hook/expanded
+VRAM or outstanding hook user). Statistics reset per activation; handshake
+tickets remain monotonic. Genuine wait/API/mode errors still request rollback.
+Reactivation is hardware-unverified; unlike withdrawn 0.2, GE-idle transitions
+remain in place. The 0.6 log showed nine good frames followed by one timed-out
+copy, which incorrectly ended the entire test. This build fixes that policy,
+not a demonstrated cure for all display artefacts.
+
+## Previous test history
 
 0.6 requests a capture at the next valid game presentation. That selected
 calling thread yields until the worker finishes copying the submitted buffer
@@ -23,8 +37,6 @@ copies, 16.388 ms mean copy, 13.896 ms mean RAM-source scale. Five seconds witho
 an accepted frame caused the rollback. This demonstrated optimistic-copy
 starvation, despite faster RAM-source scaling. 0.6 logs handoff count, wait
 timeouts/errors and maximum producer hold time in addition to copy timings.
-
-## Previous test history
 
 0.5 copies into a single 261,120-byte **user-partition RAM** buffer in the
 worker, never in the game's presentation hook. It accepts a copy only when GE
@@ -103,14 +115,15 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    gameplay after intro movies, and hold Sony's screen button to enable normal
    component TV output. Do not save progress during the experiment.
 5. Press physical **NOTE (music-note button) + R** together, then release. This
-   enables the scaler once per launch. After 60 seconds it attempts to return to normal TV output.
+   enables the scaler. After 60 seconds it attempts to return to normal TV output.
    Press the same chord again to return earlier. HOME or SCREEN also requests
    restoration; their normal system function is not swallowed.
+   After successful restoration, release and press NOTE+R again to retry.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
    Then exit the game and return `SEPLUGINS/FuSaFullscreenTest/test.log`.
 7. Disable the test and restore your previous GAME plugin entries afterwards.
 
-If nothing changes, return the log rather than repeatedly forcing activation.
+If activation fails, return the log rather than repeatedly forcing activation.
 If the screen goes black, release the buttons and allow the 60-second rollback.
 If the system itself hangs, the timeout cannot guarantee recovery; restart and
 disable the test. The first hardware run is experimental, not guaranteed safe
