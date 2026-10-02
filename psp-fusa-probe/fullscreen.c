@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "scale.h"
+#include "auto_zoom.h"
 #include "../psp-overclock/power_callback_slot.h"
 PSP_MODULE_INFO("FuSaFullscreenTest",0x1006,0,1);
 PSP_NO_CREATE_MAIN_THREAD();
@@ -63,6 +64,20 @@ static unsigned held_src,held_stride,held_format,held_sequence;
 static unsigned handoffs,hold_timeouts,hold_errors,hold_max_us;
 static unsigned long long request_at,hold_total_us;
 static unsigned held_completed;
+static int auto_zoom;
+static unsigned auto_delay=5;
+static void read_auto_config(void)
+{
+    char buffer[1025];
+    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.ini",PSP_O_RDONLY,0);
+    if(fd<0)return;
+    int n=sceIoRead(fd,buffer,sizeof(buffer)-1);sceIoClose(fd);
+    if(n<=0||n>=1024)return;
+    buffer[n]=0;
+    char *line=buffer;
+    while(*line){char *end=strchr(line,'\n');if(end)*end=0;
+        fs_auto_option(line,&auto_zoom,&auto_delay);if(!end)break;line=end+1;}
+}
 /* Selected presentation calls yield while the worker copies the submitted
  * front buffer. Only that producer is held, never the whole scheduler/GE.
  * Multi-producer/direct rendering is not assumed safe: observed changes still
@@ -281,7 +296,8 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.11 unlimited duration/OC allowed",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.12 optional automatic TV zoom",sceKernelDevkitVersion());
+    read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -298,6 +314,7 @@ static int work(SceSize size,void *args)
     finished_event=sceKernelCreateEventFlag("fullscreen finished",0,0,NULL);
     if(offered_event<0||finished_event<0){record("capture event allocation failed",offered_event<0?offered_event:finished_event);running=0;}
     unsigned long long next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
+    FsAutoZoom automatic_zoom={0};unsigned long long auto_poll=0;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
@@ -317,10 +334,22 @@ static int work(SceSize size,void *args)
             restore();retry_at=now+1000000;
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
+            automatic_zoom.handled=1; /* Never immediately undo manual choice. */
             if(active){record("stop: NOTE+R toggle",0);restore();}
             else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
+        if(auto_zoom&&!active&&!suspended&&!expanded&&!hooked&&now>=auto_poll) {
+            auto_poll=now+250000ULL;
+            int mode=0,w=0,h=0;
+            int tv=sceDisplayGetMode(&mode,&w,&h)>=0&&mode==0x2d2&&w==480&&h==272&&cable_type()==2;
+            if(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN|PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER))automatic_zoom.timing=0;
+            else if(fs_auto_tick(&automatic_zoom,now,tv,auto_delay)) {
+                record("automatic TV zoom requested",auto_delay);
+                int start_rc=start_scale();record("automatic TV zoom result",start_rc);
+                if(start_rc==0){started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+            }
+        }
         if(active&&!cancelled&&!suspended&&now>=next) {
             unsigned format;
             int mode=0,w=0,h=0;

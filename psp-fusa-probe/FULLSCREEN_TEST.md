@@ -1,4 +1,26 @@
-# FuSa-style fullscreen experiment 0.11 — unlimited duration
+# FuSa-style fullscreen experiment 0.12 — optional automatic TV zoom
+
+Place `FuSaFullscreenTest.ini` beside the PRX:
+
+```ini
+auto_zoom=1
+auto_zoom_delay_seconds=5
+```
+
+`auto_zoom`: 0 (default, manual only) or 1. Delay: 1–60 seconds, default 5.
+Settings are read at plugin/game startup. The timer starts after the existing
+10-second plugin initialization grace, once normal component game TV mode
+480x272 is observed. This does **not** switch LCD to TV automatically. Normal
+source/format/VRAM checks still apply; an unsupported game is not forced.
+The automatic attempt runs once per observed TV session. Manual NOTE+R choice,
+failed activation and automatic error restoration do not immediately retrigger
+zoom. Return to LCD and then TV to rearm, or use NOTE+R manually. Checks run only
+while inactive, every 250 ms; no new polling in the active scaling path.
+Release HOME/SCREEN/NOTE/R before the delay starts. No playback duration limit.
+Release defaults leave automatic activation off; the user's test-stick INI
+enables it with a five-second delay.
+
+## Previous test history
 
 0.11 removes the automatic one-minute stop. NOTE+R toggles off/on after clean
 restoration; HOME/SCREEN and actual safety failures still request restoration.
@@ -16,8 +38,6 @@ For complete statistics, toggle fullscreen off before exiting/mounting the PSP.
 8.935 ms mean scale, three handled producer timeouts and zero wait errors.
 User reported good gameplay. Game submissions were ~38.2/s, so output FPS alone
 is not proof of unaffected game speed; long-term/other-game/OC tests remain.
-
-## Previous test history
 
 0.10 raises only the request-to-request ceiling from 20 to 30 Hz (33,334 us).
 The 0.9 event handoff/copy/scaler stays unchanged, as do the 50 ms producer
@@ -171,7 +191,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - Component cable, Sony game TV mode `0x2D2`, 480x272.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
-- Manual activation and deactivation; no session time limit.
+- Manual or optional delayed automatic activation; no session time limit.
 - At most 30 preview images per second, with capture/scaling included in the
   period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
