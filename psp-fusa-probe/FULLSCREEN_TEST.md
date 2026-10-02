@@ -1,4 +1,18 @@
-# FuSa-style fullscreen experiment 0.2 — hardware validation required
+# FuSa-style fullscreen experiment 0.3 — regression investigation
+
+Version 0.2 is withdrawn after reported hard shutdowns in Soul Calibur and
+Street Fighter Alpha 3. Its log measured ~24 ms copying in the game's calling
+thread and ~52–57 ms scaling: the 30 Hz target was not achieved. Some sessions
+restored successfully; one ended between expansion and first presentation and
+the final one before the expansion result. The precise shutdown cause remains
+unproven. Do not use the 0.2 build for further testing.
+
+0.3 returns to worker-only live-source scaling, removes the snapshot writes and
+blocking copies from the game's presentation call, and adds a bounded GE-idle
+check around each EDRAM size switch. Scheduling and interrupts are excluded only
+for the immediate idle check/register change, not while waiting. Extra stage
+logs bracket that transition. **Only one activation attempt per game launch**
+is allowed during this regression investigation. It is not a proven crash fix.
 
 This is a new, separate test implementation, **not a repaired release of FuSa**
 and not yet part of Consolizer. It enlarges the completed 480x272 game image to
@@ -12,15 +26,9 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
 - Manual activation; automatically attempts restoration after 30 seconds.
-- Target 30 scaled pictures per second, including scaling time. Two packed
-  source snapshots in upper VRAM separate capture from scaling: the game caller
-  briefly copies a submitted frame before returning; the worker never scales a
-  live game buffer except the initial activation image. No allocation or waiting
-  in the capture hook; interrupt masking covers only small state changes.
-  Games submitting before their GPU finishes may still need additional handling.
-- A consumed snapshot cannot be overwritten. Stale queued snapshots can be
-  replaced without blocking the game. Destination reuse waits for a VBlank after
-  presentation. Copy/scale count and mean/max microseconds are logged at rollback.
+- At most 12 preview images per second plus scaling time, as in 0.1. This is a
+  stability comparison, not a speed improvement. Live-source tearing remains a
+  known limitation; do not assume missing frames explain all visual artefacts.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
   VBlank replacement, game-thread suspension or SpeedBooster.
 
@@ -39,7 +47,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    gameplay after intro movies, and hold Sony's screen button to enable normal
    component TV output. Do not save progress during the experiment.
 5. Press physical **NOTE (music-note button) + R** together, then release. This
-   toggles the scaler. After 30 seconds it attempts to return to normal TV output.
+   enables the scaler once per launch. After 30 seconds it attempts to return to normal TV output.
    Press the same chord again to return earlier. HOME or SCREEN also requests
    restoration; their normal system function is not swallowed.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
@@ -55,10 +63,9 @@ for unsaved gameplay. No other plugin configuration is edited by this package.
 ## Memory and lifecycle
 
 The SDK `sceGeEdramSetSize(4 MiB)` enables the upper VRAM area supported by newer
-hardware; two 768x480x16-bit buffers plus two packed 480x272x16-bit snapshots fit
-there (1,996,800 bytes). No equivalent kernel-RAM allocation is made. Restoration
-stops new snapshots and waits a bounded time for an in-flight copy before
-shrinking VRAM. User GE-size queries continue reporting 2 MiB
+hardware; two 768x480x16-bit buffers fit there (1,474,560 bytes). Snapshot buffers
+from 0.2 are no longer accessed. No equivalent kernel-RAM allocation is made.
+User GE-size queries continue reporting 2 MiB
 while testing so a conventional game does not claim the new space.
 
 Only the game's user `sceDisplaySetFrameBuf` syscall is intercepted to capture
