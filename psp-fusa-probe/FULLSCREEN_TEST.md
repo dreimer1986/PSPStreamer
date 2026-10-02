@@ -1,4 +1,36 @@
-# FuSa-style fullscreen experiment 0.8 — 20 Hz ceiling and explicit stop causes
+# FuSa-style fullscreen experiment 0.9 — bundled CPU-path optimizations
+
+0.9 bundles these changes for one hardware comparison against 0.8:
+
+- Producer completion uses an event wait rather than waking every 500 us. A
+  second event wakes the worker on an offered frame. Events persist across
+  activations, clear before reuse, wake on stop/restore, and are deleted only
+  after the worker and all hook users have exited. Single producer ownership,
+  monotonic tickets, GE/sequence checks and the 50 ms timeout are retained.
+- The 20 Hz period starts when requesting the frame, not when the worker later
+  receives it. Capture-wait time no longer adds to the intended period.
+- Eight-word copy batches reduce loop/control overhead without cached VRAM
+  reads, DMA, VFPU ownership or additional memory allocations.
+- The scaler computes a source row once and writes its one/two destination rows
+  together. No intermediate 1440-byte row buffer or second row-copy loop is
+  needed; nearest-neighbour mapping, bit patterns and padding remain identical.
+- Idle pacing sleeps up to 10 ms instead of polling every 2 ms; power callbacks
+  and controls remain serviced. Mean producer hold time is added to the logs.
+
+No CPU clock, GE-idle transition or framebuffer-layout changes. Two small event
+objects are new; the large snapshot remains in user RAM. Host tests check exact
+pixel mapping, copy guards, padding, snapshot independence and handoff/timing
+predicates. Event scheduling, speed and stability require the PSP test. No speed
+gain is claimed before measuring. Copy/scaler changes stay portable scalar C;
+compiler optimization remains -O2. DMA/cached game-VRAM/GE injection are deferred
+because they introduce separate ownership/cache/hardware hazards.
+
+0.8 hardware baseline: 884 outputs in 60 s (~14.73 Hz), 9.128 ms mean copy,
+11.030 ms mean scale, one producer timeout handled without abort, clean timed
+restoration. User reported visibly smoother output. Game submissions were ~45.6/s
+versus ~50.8/s in the previous scene; more capture work may slow the game.
+
+## Previous test history
 
 0.8 changes only the preview period from 83,333 to 50,000 us (20 Hz maximum)
 and stop diagnostics. The bounded worker handoff/copy/scaler is unchanged.
@@ -17,8 +49,6 @@ zero rejected copies/wait timeouts/errors, 9.327 ms mean copy and 14.973 ms mean
 scale. User confirmed good picture. Its earlier short activation cancelled for
 an unknown reason; the new diagnostics target that gap. One scale elapsed
 568.427 ms, including scheduling delays, so smoothness is not yet guaranteed.
-
-## Previous test history
 
 0.7 corrects the overly aggressive 0.6 test policy: a single 50 ms producer
 deadline drops that capture and releases the game, **not** the entire test.

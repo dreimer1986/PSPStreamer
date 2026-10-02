@@ -12,6 +12,7 @@
 #include <pspsysmem_kernel.h>
 #include <psploadcore.h>
 #include <pspintrman_kernel.h>
+#include <pspkerror.h>
 #include <systemctrl.h>
 #include <stdio.h>
 #include <string.h>
@@ -31,6 +32,8 @@ static unsigned game_edram_size(void){return 0x200000;}
 static int (*dve_mode)(int,int,int,int,int,int,int);
 static int (*cable_type)(void);
 static SceUID worker=-1,callback=-1;
+static SceUID offered_event=-1,finished_event=-1;
+#define FS_WAIT_TIMEOUT ((int)SCE_KERNEL_ERROR_WAIT_TIMEOUT)
 static int power_slot=-1;
 static volatile int running,active,cancelled,hooked,users,suspended;
 enum { STOP_NONE,STOP_WAIT,STOP_SOURCE,STOP_SUSPEND,STOP_RESUME,
@@ -43,6 +46,8 @@ static void request_stop(int reason,int detail)
     int intr=sceKernelCpuSuspendIntr();
     if(!cancelled){stop_reason=reason;stop_detail=detail;}
     cancelled=1;sceKernelCpuResumeIntr(intr);
+    if(finished_event>=0)sceKernelSetEventFlag(finished_event,1);
+    if(offered_event>=0)sceKernelSetEventFlag(offered_event,1);
 }
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static void *saved_overlay;
@@ -56,6 +61,8 @@ static unsigned long long copy_total_us;
 static volatile unsigned capture_requested,capture_held,capture_ticket;
 static unsigned held_src,held_stride,held_format,held_sequence;
 static unsigned handoffs,hold_timeouts,hold_errors,hold_max_us;
+static unsigned long long request_at,hold_total_us;
+static unsigned held_completed;
 /* Selected presentation calls yield while the worker copies the submitted
  * front buffer. Only that producer is held, never the whole scheduler/GE.
  * Multi-producer/direct rendering is not assumed safe: observed changes still
@@ -65,7 +72,10 @@ static int take_snapshot(unsigned *format)
     unsigned src,stride,sequence,ticket;
     int intr=sceKernelCpuSuspendIntr();
     ticket=capture_held;
-    if(!ticket){capture_requested=1;sceKernelCpuResumeIntr(intr);return 0;}
+    if(!ticket){
+        if(!capture_requested)request_at=sceKernelGetSystemTimeWide();
+        capture_requested=1;sceKernelCpuResumeIntr(intr);return 0;
+    }
     src=held_src;stride=held_stride;*format=held_format;sequence=held_sequence;
     sceKernelCpuResumeIntr(intr);
     if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
@@ -78,6 +88,7 @@ static int take_snapshot(unsigned *format)
     int valid=fs_handoff_valid(ticket,capture_held,sequence,frames,idle)&&!cancelled&&!suspended&&running;
     capture_held=0;capture_requested=0;
     sceKernelCpuResumeIntr(intr);
+    sceKernelSetEventFlag(finished_event,1);
     if(!valid){copy_rejected++;return 0;}
     copied_frames++;return 1;
 }
@@ -124,7 +135,8 @@ static int capture(const void *base,int stride,int format,int sync)
         if((sync==0||sync==1)&&fs_source_valid((uintptr_t)base,stride,format)) {
             intr=sceKernelCpuSuspendIntr();frame_addr=(unsigned)base;frame_stride=stride;frame_format=format;frames++;
             unsigned ticket=0;
-            if(can_wait&&running&&!cancelled&&!suspended&&capture_requested&&!capture_held) {
+            if(can_wait&&running&&!cancelled&&!suspended&&capture_requested&&!capture_held&&users==1) {
+                sceKernelClearEventFlag(finished_event,0);
                 if(++capture_ticket==0)capture_ticket=1;
                 ticket=capture_ticket;capture_held=ticket;capture_requested=0;
                 held_src=(unsigned)base;held_stride=stride;held_format=format;held_sequence=frames;handoffs++;
@@ -132,20 +144,27 @@ static int capture(const void *base,int stride,int format,int sync)
             sceKernelCpuResumeIntr(intr);
             if(ticket) {
                 unsigned long long begin=sceKernelGetSystemTimeWide();
+                sceKernelSetEventFlag(offered_event,1);
                 while(capture_held==ticket&&running&&!cancelled&&!suspended) {
-                    if(sceKernelGetSystemTimeWide()-begin>=50000ULL) {
+                    unsigned long long elapsed=sceKernelGetSystemTimeWide()-begin;
+                    if(elapsed>=50000ULL) {
                         intr=sceKernelCpuSuspendIntr();
                         if(capture_held==ticket){hold_timeouts++;capture_held=0;capture_requested=0;}
                         sceKernelCpuResumeIntr(intr);break;
                     }
-                    /* A forbidden wait context fails rather than spinning. */
-                    int wait_rc=sceKernelDelayThread(500);
-                    if(wait_rc<0){hold_errors++;request_stop(STOP_WAIT,wait_rc);break;}
+                    /* Sleep until completion, not every 500 us. The timeout
+                     * pointer is ours, never a caller-supplied user pointer. */
+                    SceUInt timeout=(SceUInt)(50000ULL-elapsed);
+                    unsigned k1=pspSdkSetK1(0);
+                    int wait_rc=sceKernelWaitEventFlag(finished_event,1,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,NULL,&timeout);
+                    pspSdkSetK1(k1);
+                    if(wait_rc<0&&wait_rc!=FS_WAIT_TIMEOUT){hold_errors++;request_stop(STOP_WAIT,wait_rc);break;}
                 }
                 intr=sceKernelCpuSuspendIntr();
                 if(capture_held==ticket){capture_held=0;capture_requested=0;}
                 unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
                 if(elapsed>hold_max_us)hold_max_us=elapsed;
+                hold_total_us+=elapsed;held_completed++;
                 sceKernelCpuResumeIntr(intr);
             }
             result=0;
@@ -167,6 +186,7 @@ static int power_event(int unknown,int flags,void *arg)
 static int restore(void)
 {
     int release_intr=sceKernelCpuSuspendIntr();capture_requested=0;capture_held=0;sceKernelCpuResumeIntr(release_intr);
+    if(finished_event>=0)sceKernelSetEventFlag(finished_event,1);
     if(!expanded&&!hooked)return 0;
     if(suspended)return -1; /* No hardware changes until resume. */
     /* Keep capture enabled while restoring mode/layers so game submissions
@@ -198,7 +218,8 @@ static int restore(void)
     record("producer handoffs",handoffs);
     record("producer hold timeouts",hold_timeouts);
     record("producer wait errors",hold_errors);
-    record("producer hold maximum us",hold_max_us);return rc;
+    record("producer hold maximum us",hold_max_us);
+    record("producer hold average us",held_completed?(int)(hold_total_us/held_completed):0);return rc;
 }
 static int start_scale(void)
 {
@@ -218,6 +239,8 @@ static int start_scale(void)
     scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
     copied_frames=copy_rejected=ge_busy=copy_max_us=0;copy_total_us=0;
     handoffs=hold_timeouts=hold_errors=hold_max_us=0;
+    hold_total_us=0;held_completed=0;request_at=0;
+    sceKernelClearEventFlag(offered_event,0);sceKernelClearEventFlag(finished_event,0);
     capture_requested=capture_held=0; /* Keep ticket monotonic across sessions. */
     int rc=change_edram(0x400000);record("expand VRAM",rc);if(rc<0)return rc;expanded=1;
     int intr=sceKernelCpuSuspendIntr();active=1;
@@ -256,7 +279,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.8 20Hz/detailed stop reasons",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.9 event handoff/fused scaler",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -269,6 +292,9 @@ static int work(SceSize size,void *args)
     snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
     if(snapshot_block>=0)snapshot=sceKernelGetBlockHeadAddr(snapshot_block);
     if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);running=0;}
+    offered_event=sceKernelCreateEventFlag("fullscreen offered",0,0,NULL);
+    finished_event=sceKernelCreateEventFlag("fullscreen finished",0,0,NULL);
+    if(offered_event<0||finished_event<0){record("capture event allocation failed",offered_event<0?offered_event:finished_event);running=0;}
     unsigned long long until=0,next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
@@ -303,8 +329,13 @@ static int work(SceSize size,void *args)
                 request_stop(STOP_MODE,mode_rc);record("observed mode",mode);record("observed width",w);
                 record("observed height",h);record("observed VRAM bytes",vram);continue;}
             unsigned dest=0x04200000+back*(768*480*2);
-            unsigned long long cycle=sceKernelGetSystemTimeWide();
-            if(!take_snapshot(&format)){sceKernelDelayThreadCB(2000);continue;}
+            if(!take_snapshot(&format)){
+                SceUInt timeout=2000;
+                int wait_rc=sceKernelWaitEventFlagCB(offered_event,1,PSP_EVENT_WAITOR|PSP_EVENT_WAITCLEAR,NULL,&timeout);
+                if(wait_rc<0&&wait_rc!=FS_WAIT_TIMEOUT)request_stop(STOP_WAIT,wait_rc);
+                continue;
+            }
+            unsigned long long cycle=request_at;
             unsigned sequence=frames;
             unsigned long long begin=sceKernelGetSystemTimeWide();
             fs_scale16((void *)(dest|0x40000000U),snapshot,480);
@@ -317,7 +348,12 @@ static int work(SceSize size,void *args)
             if(rc<0){request_stop(STOP_PRESENT,rc);}
             back^=1;next=fs_next_frame(cycle,sceKernelGetSystemTimeWide());
         }
-        sceKernelDelayThreadCB(active?2000:20000);
+        /* No 500 Hz polling while merely waiting for the next output slot.
+         * Controls/power callbacks still get service at least every 10 ms. */
+        unsigned delay=active?2000:20000;
+        if(active&&!cancelled){unsigned long long current=sceKernelGetSystemTimeWide();
+            if(next>current){unsigned long long left=next-current;delay=left>10000?10000:(unsigned)left;}}
+        sceKernelDelayThreadCB(delay);
     }
     if(active)record("stop: module shutdown",0);
     restore();
@@ -340,8 +376,12 @@ int module_start(SceSize size,void *args)
 int module_stop(SceSize size,void *args)
 {
     (void)size;(void)args;running=0;
+    if(finished_event>=0)sceKernelSetEventFlag(finished_event,1);
+    if(offered_event>=0)sceKernelSetEventFlag(offered_event,1);
     if(worker>=0){SceUInt wait=2000000;if(sceKernelWaitThreadEnd(worker,&wait)<0)return -1;}
     if(hooked||active||users||expanded)return -1; /* Never unload live hooks. */
+    if(offered_event>=0){sceKernelDeleteEventFlag(offered_event);offered_event=-1;}
+    if(finished_event>=0){sceKernelDeleteEventFlag(finished_event);finished_event=-1;}
     if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;
 }
