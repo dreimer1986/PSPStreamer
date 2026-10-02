@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.14 — Wired USB HID controller test
+
+- Accept a wired HID joystick/gamepad instead of the external Bluetooth dongle.
+- Read its report descriptor asynchronously and reuse persistent button/axis/
+  Home learning and the PSPStreamer/Consolizer input protocol.
+- Reuse existing USB transfers and task; keep Wi-Fi and media transport intact.
+- Validate descriptor bounds and release held controls on USB disconnect.
+- One controller transport at a time. Rumble remains unimplemented pending a
+  verified output protocol. Live hardware tests are still required.
+
 ## 0.3.13 — Per-controller PS / Home assignment
 
 - Setup v2 exposes Home as a separate learnable target; store its source in an

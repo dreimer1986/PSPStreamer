@@ -1,12 +1,34 @@
 # USB Bluetooth controllers — Onju Voice V3
 
-Current standard: **0.3.10-bt-qio80-iram**. Controller learning, player/Monkey
+Current test build: **0.3.14-bt-qio80-iram**, adding wired USB HID input.
+Controller learning, player/Monkey
 control and four-deep downloads are hardware-tested; extended Bluetooth soak
 testing remains open. Run `bash build-bluetooth.sh` and
 `bash package-bluetooth.sh` without arguments for this standard. Earlier version
 sections below document the development history, not installation choices.
 
 ## Hardware and scope
+
+### Wired USB HID (0.3.14)
+
+Instead of the Bluetooth dongle, attach a USB HID gamepad or PSX-to-USB adapter
+to the powered hub. It connects automatically; no pairing or scan is needed.
+Use the existing controller-learning menu for buttons, D-pad, Home and analog
+axes. Profiles use the adapter VID/PID/interface and persist in NVS. Identical
+adapters share a mapping. PSPStreamer and Consolizer use the same normalized
+input as Bluetooth; no PSP binary update is required for this firmware change.
+
+The initial implementation handles one controller transport at a time: unplug
+the Bluetooth dongle when testing wired HID. It supports non-boot HID joystick/
+gamepad report descriptors up to 1024 bytes and interrupt-IN packets up to 64
+bytes. Consumer/keyboard interfaces are not used. No guessed button offsets,
+rumble packets or extra streaming buffers are introduced. Device disconnect
+releases controls and drains transfers before releasing the interface.
+
+The connected SHANWAN 2563:0526 descriptor and synthetic reports pass host
+tests. Live input, unplug/replug and concurrent media streaming still require
+the hardware test. Rumble is not implemented: this device currently advertises
+no HID output report; drivers found for 2563:0575 use a different layout.
 
 - Use the Onju V3, **one powered USB hub**, the PSP and a USB Bluetooth adapter.
   Do not add another hub, keyboard, storage device or USB audio device.
@@ -16,7 +38,7 @@ sections below document the development history, not installation choices.
   mode. Its actual report descriptor/button ordering still needs a live test.
 - Xbox One **1697 has no Bluetooth** and cannot pair through either dongle.
 - The S3's internal Bluetooth radio is **not** used. This is Bluetooth Classic
-  HID over an external HCI adapter, not a general USB-controller driver or BLE
+  HID over an external HCI adapter, not a BLE
   controller implementation. Pairing uses Just Works or legacy PIN `0000`.
 - This experiment is not built for generic S2/S3 boards yet.
 

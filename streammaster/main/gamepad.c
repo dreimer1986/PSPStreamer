@@ -3,6 +3,7 @@
 #include "bridge.h"
 #include "gamepad.h"
 #include "gamepad_options.h"
+#include "usb_gamepad.h"
 #include "nvs.h"
 #include "esp_bluedroid_hci.h"
 #include "esp_bt_main.h"
@@ -53,6 +54,8 @@ static int evt_pending,acl_pending,tx_pending,evt_done,acl_done;
 static atomic_int online,ready,failed;
 static atomic_int accept_input;
 static int gone;
+static int wired,descriptor_done,descriptor_pending;
+static unsigned descriptor_bytes;
 static QueueHandle_t sends,actions;
 static TaskHandle_t lifecycle;
 static _Atomic(const esp_bluedroid_hci_driver_callbacks_t *) host;
@@ -124,6 +127,19 @@ static void neutral(void) {
 }
 static void state(unsigned s,int err) {
     portENTER_CRITICAL(&guard);status.state=s;status.error=err;portEXIT_CRITICAL(&guard);
+}
+static void publish_input(const SmHidPad *input) {
+    portENTER_CRITICAL(&guard);
+    pad.buttons=sm_bt_profile_buttons(&current_profile,input->raw_buttons,input->hat);
+    unsigned sources=input->raw_buttons|((unsigned)(input->hat&15)<<16);
+    if(current_home && current_home<=20 && (sources&(1U<<(current_home-1))))pad.buttons|=0x10000U;
+    pad.raw_buttons=input->raw_buttons;memcpy(pad.axes,input->axes,sizeof(pad.axes));
+    pad.axes_valid=input->axes_valid;pad.hat=input->hat;
+    pad.x=sm_bt_profile_axis(&current_profile,input->axes,input->axes_valid,0);
+    pad.y=sm_bt_profile_axis(&current_profile,input->axes,input->axes_valid,1);
+    pad.connected=1;pad.sequence++;status.reports++;
+    peer_battery=input->battery_valid?input->battery:255;
+    portEXIT_CRITICAL(&guard);
 }
 void sm_gamepad_snapshot(SmPad *out) {
     portENTER_CRITICAL(&guard);*out=pad;portEXIT_CRITICAL(&guard);
@@ -412,7 +428,8 @@ static void receive(Assembly *a,unsigned type,const uint8_t *p,unsigned n) {
 static void complete(usb_transfer_t *t) {
     if(t==evt){evt_pending=0;evt_done=1;}
     else if(t==acl){acl_pending=0;acl_done=1;}
-    else {tx_pending=0;if(t->status!=USB_TRANSFER_STATUS_COMPLETED)atomic_store(&failed,1);}
+    else {tx_pending=0;if(descriptor_pending){descriptor_pending=0;descriptor_done=1;}
+        if(t->status!=USB_TRANSFER_STATUS_COMPLETED)atomic_store(&failed,1);}
 }
 static void event(const usb_host_client_event_msg_t *e,void *arg) {
     (void)arg;
@@ -431,7 +448,6 @@ static int open_adapter(unsigned address) {
     probe.device_class=(unsigned)d->bDeviceClass<<16|(unsigned)d->bDeviceSubClass<<8|d->bDeviceProtocol;
     probe.phase=SM_BT_PROBE_FILTER;
     known=(d->idVendor==0x0a12&&d->idProduct==1)||(d->idVendor==0x33fa&&d->idProduct==0x10);
-    if(!known){probe.result=ESP_ERR_NOT_SUPPORTED;goto reject;}
     portENTER_CRITICAL(&guard);status.vid=d->idVendor;status.pid=d->idProduct;portEXIT_CRITICAL(&guard);
     /* A dongle present at power-on must not win the endpoint-allocation race
      * against the PSP's transition from Sony USB mode to StreamMaster. Release
@@ -440,6 +456,35 @@ static int open_adapter(unsigned address) {
     if(sm_usb_psp_status()!=SM_OK){probe.phase=SM_BT_PROBE_WAIT_PSP;probe.result=SM_BUSY;goto reject;}
     probe.phase=SM_BT_PROBE_CONFIG;
     if((probe.result=usb_host_get_active_config_descriptor(dev,&c))!=ESP_OK)goto reject;
+    wired=0;
+    if(!known) {
+        SmUsbGamepad h;
+        if(!sm_usb_gamepad_interface((const uint8_t *)c,c->wTotalLength,&h)){
+            probe.result=ESP_ERR_NOT_SUPPORTED;goto reject;
+        }
+        iface=h.interface;ep_evt=h.endpoint;evt_mps=h.packet;ep_in=ep_out=0;
+        probe.interface_class=(unsigned)iface<<24|3U<<16;probe.endpoints=ep_evt;
+        probe.phase=SM_BT_PROBE_CLAIM;
+        if((probe.result=usb_host_interface_claim(client,dev,iface,0))!=ESP_OK)goto reject;
+        wired=1;descriptor_bytes=h.report_bytes;descriptor_done=descriptor_pending=0;
+        evt_done=acl_done=0;memset(&map,0,sizeof(map));hidpad=(SmHidPad){.x=128,.y=128};
+        atomic_store(&failed,0);neutral();state(SM_BT_STARTING,0);
+        portENTER_CRITICAL(&guard);
+        /* Local profile key, not a Bluetooth address: stable across USB ports. */
+        peer[0]=0xfe;peer[1]=d->idVendor>>8;peer[2]=d->idVendor;
+        peer[3]=d->idProduct>>8;peer[4]=d->idProduct;peer[5]=iface;
+        memcpy(status.selected,peer,6);load_peer_profile_locked(peer);
+        snprintf(peer_name,sizeof(peer_name),"USB HID %04x:%04x",d->idVendor,d->idProduct);
+        peer_battery=255;pad.session++;memset(pad.axes,128,sizeof(pad.axes));pad.axes_valid=pad.hat=0;
+        portEXIT_CRITICAL(&guard);
+        usb_setup_packet_t request={.bmRequestType=0x81,.bRequest=6,.wValue=0x2200,.wIndex=iface,.wLength=descriptor_bytes};
+        memcpy(tx->data_buffer,&request,8);tx->device_handle=dev;tx->bEndpointAddress=0;
+        tx->num_bytes=8+((descriptor_bytes+d->bMaxPacketSize0-1)/d->bMaxPacketSize0)*d->bMaxPacketSize0;
+        probe.result=usb_host_transfer_submit_control(client,tx);
+        if(probe.result==ESP_OK){tx_pending=descriptor_pending=1;probe.phase=SM_BT_PROBE_STARTED;}
+        else atomic_store(&failed,1);
+        record_probe(&probe);return 1;
+    }
     probe.phase=SM_BT_PROBE_INTERFACE;
     iface=-1;ep_evt=ep_in=ep_out=0;
     const uint8_t *p=(const uint8_t *)c,*end=p+c->wTotalLength;
@@ -494,14 +539,34 @@ static void usb_task(void *unused) {
         if(!dev)continue;
         if(gone) {
             usb_host_endpoint_halt(dev,ep_evt);usb_host_endpoint_flush(dev,ep_evt);
-            usb_host_endpoint_halt(dev,ep_in);usb_host_endpoint_flush(dev,ep_in);
-            usb_host_endpoint_halt(dev,ep_out);usb_host_endpoint_flush(dev,ep_out);
+            if(ep_in){usb_host_endpoint_halt(dev,ep_in);usb_host_endpoint_flush(dev,ep_in);}
+            if(ep_out){usb_host_endpoint_halt(dev,ep_out);usb_host_endpoint_flush(dev,ep_out);}
             if(evt_pending||acl_pending||tx_pending||host)continue;
             if(usb_host_interface_release(client,dev,iface)!=ESP_OK)continue;
             if(usb_host_device_close(client,dev)!=ESP_OK)continue;
-            dev=NULL;gone=0;iface=-1;continue;
+            dev=NULL;gone=0;iface=-1;wired=descriptor_done=descriptor_pending=0;
+            state(SM_BT_NONE,0);continue;
         }
         if(atomic_load(&failed)){neutral();state(SM_BT_ERROR,SM_IO);continue;}
+        if(wired) {
+            if(descriptor_done) {
+                descriptor_done=0;
+                int ok=tx->actual_num_bytes==(int)descriptor_bytes+8 &&
+                    sm_usb_gamepad_descriptor(tx->data_buffer+8,descriptor_bytes) &&
+                    sm_hid_parse(&map,tx->data_buffer+8,descriptor_bytes);
+                ESP_LOGI(TAG,"USB HID descriptor bytes=%u fields=%u valid=%d",descriptor_bytes,map.count,ok);
+                if(!ok){atomic_store(&failed,1);continue;}
+                state(SM_BT_CONNECTED,0);
+            }
+            if(!map.count)continue;
+            if(evt_done){evt_done=0;
+                if(evt->status!=USB_TRANSFER_STATUS_COMPLETED){atomic_store(&failed,1);continue;}
+                if(sm_hid_input(&map,evt->data_buffer,evt->actual_num_bytes,&hidpad))publish_input(&hidpad);
+            }
+            if(!evt_pending){evt->device_handle=dev;evt->bEndpointAddress=ep_evt;evt->num_bytes=evt_mps;
+                if(usb_host_transfer_submit(evt)==ESP_OK)evt_pending=1;else atomic_store(&failed,1);}
+            continue;
+        }
         if(evt_done){evt_done=0;if(evt->status==USB_TRANSFER_STATUS_COMPLETED)receive(&events,4,evt->data_buffer,evt->actual_num_bytes);else atomic_store(&failed,1);}
         if(acl_done){acl_done=0;if(acl->status==USB_TRANSFER_STATUS_COMPLETED)receive(&acls,2,acl->data_buffer,acl->actual_num_bytes);else atomic_store(&failed,1);}
         if(!evt_pending){evt->device_handle=dev;evt->bEndpointAddress=ep_evt;evt->num_bytes=evt_mps;
