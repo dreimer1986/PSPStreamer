@@ -1,4 +1,25 @@
-# FuSa-style fullscreen experiment 0.4 — packed scaler
+# FuSa-style fullscreen experiment 0.5 — validated worker RAM capture
+
+0.5 copies into a single 261,120-byte **user-partition RAM** buffer in the
+worker, never in the game's presentation hook. It accepts a copy only when GE
+is idle before and after copying and the observed presentation sequence has not
+changed. Rejected copies are not displayed; the previous output remains visible.
+Scaling reads only this private snapshot, including at startup (black until the
+first accepted capture). This is optimistic validation, not a universal GPU
+fence: direct writers or rendering not reflected by these observations can still
+escape detection. Hardware validation, especially Soul Calibur, is required.
+
+The 12 Hz limit now measures start-to-start time, including capture/scaling,
+instead of adding 83 ms after each scale. Late frames do not trigger catch-up
+bursts. Five seconds without an accepted/displayed snapshot requests rollback.
+Logs include accepted/rejected captures, GE-busy polls and copy timings. Source
+submissions during scaling are now expected and harmless to the private copy.
+The 60-second limit, one activation per launch and GE-idle VRAM transitions stay.
+
+The 0.4 hardware run restored cleanly: 441 scales in 60 s (7.35 Hz), 39.757 ms
+mean scale, 823.231 ms maximum elapsed scale (including scheduling delays).
+All 441 scales overlapped source submissions; this supported but did not prove
+the live-source tearing hypothesis. Visual stair artefacts remained.
 
 0.4 retains the 0.3 transition/capture path confirmed stable by the user, but
 packs four input pixels into three 32-bit output writes instead of six 16-bit
@@ -35,9 +56,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
 - Manual activation; automatically attempts restoration after 60 seconds.
-- At most 12 preview images per second plus scaling time, as in 0.1. This is a
-  stability comparison, not a speed improvement. Live-source tearing remains a
-  known limitation; do not assume missing frames explain all visual artefacts.
+- At most 12 preview images per second, with capture/scaling included in the
+  period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
   VBlank replacement, game-thread suspension or SpeedBooster.
 
@@ -72,8 +92,11 @@ for unsaved gameplay. No other plugin configuration is edited by this package.
 ## Memory and lifecycle
 
 The SDK `sceGeEdramSetSize(4 MiB)` enables the upper VRAM area supported by newer
-hardware; two 768x480x16-bit buffers fit there (1,474,560 bytes). Snapshot buffers
-from 0.2 are no longer accessed. No equivalent kernel-RAM allocation is made.
+hardware; two 768x480x16-bit buffers fit there (1,474,560 bytes). VRAM snapshots
+from 0.2 are no longer accessed. The 0.5 snapshot uses 261,120 bytes of the user
+partition, allocated once, released only after the worker has ended and all
+hooks/expanded VRAM are safely released. Allocation failure refuses activation.
+It does not consume an equivalent block of scarce kernel RAM.
 User GE-size queries continue reporting 2 MiB
 while testing so a conventional game does not claim the new space.
 

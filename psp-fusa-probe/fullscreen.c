@@ -38,6 +38,28 @@ static int saved_stride,saved_format,old_mode,old_w,old_h,expanded;
 static int attempted;
 static unsigned scaled_frames,changed_during_scale,scale_max_us;
 static unsigned long long scale_total_us;
+static SceUID snapshot_block=-1;
+static uint16_t *snapshot;
+static unsigned copied_frames,copy_rejected,ge_busy,copy_max_us;
+static unsigned long long copy_total_us;
+/* Optimistic capture, never in the game's syscall. No waiting with interrupts
+ * or scheduling disabled. This detects observed swaps/GE activity, not every
+ * possible direct VRAM writer; it is intentionally not a universal fence. */
+static int take_snapshot(unsigned *format)
+{
+    unsigned src,stride,sequence;
+    int intr=sceKernelCpuSuspendIntr();
+    src=frame_addr;stride=frame_stride;*format=frame_format;sequence=frames;
+    sceKernelCpuResumeIntr(intr);
+    if(!sequence||sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
+    unsigned long long begin=sceKernelGetSystemTimeWide();
+    fs_copy16(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
+    unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
+    copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
+    int idle=sceGeDrawSync(1)==PSP_GE_LIST_DONE;
+    if(!fs_copy_unchanged(sequence,frames,idle)||cancelled||suspended){copy_rejected++;return 0;}
+    copied_frames++;return 1;
+}
 static void record(const char *event,int result)
 {
     unsigned long long now=sceKernelGetSystemTimeWide();
@@ -111,7 +133,13 @@ static int restore(void)
     record("scaled frames",scaled_frames);
     record("source submissions during scale",changed_during_scale);
     record("scale average us",scaled_frames?(int)(scale_total_us/scaled_frames):0);
-    record("scale maximum us",scale_max_us);return rc;
+    record("scale maximum us",scale_max_us);
+    record("RAM snapshots accepted",copied_frames);
+    record("RAM snapshots rejected",copy_rejected);
+    record("snapshot GE busy polls",ge_busy);
+    unsigned copies=copied_frames+copy_rejected;
+    record("snapshot copy average us",copies?(int)(copy_total_us/copies):0);
+    record("snapshot copy maximum us",copy_max_us);return rc;
 }
 static int start_scale(void)
 {
@@ -134,7 +162,8 @@ static int start_scale(void)
     sctrlHENPatchSyscall((void *)get_edram_size,(void *)game_edram_size);
     sctrlHENPatchSyscall((void *)present,(void *)capture);hooked=1;sceKernelCpuResumeIntr(intr);
     memset((void *)0x44200000,0,2*768*480*2);
-    fs_scale16((void *)0x44200000,(void *)((frame_addr&0x1fffffffU)|0x40000000U),frame_stride);
+    /* Never scale live game VRAM, including the first frame. The cleared
+     * output stays black until the worker accepts a RAM snapshot. */
     rc=dve_mode(0,0x1d2,720,480,1,15,0);record("720x480 output",rc);
     if(rc>=0)rc=set_internal(0,(void *)0x04200000,768,fmt,1);
     if(rc>=0)rc=present((void *)0x04200000,768,fmt,1);
@@ -165,7 +194,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.4 packed scaler",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.5 validated RAM snapshot",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -174,38 +203,46 @@ static int work(SceSize size,void *args)
     if(callback>=0)power_slot=oc_register_power_callback(callback,&automatic,&last);
     if(power_slot<0){record("no power callback; refuse test",power_slot);
         if(callback>=0){sceKernelDeleteCallback(callback);callback=-1;}return 0;}
-    unsigned long long until=0,next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
+    /* User partition, not scarce kernel RAM. Refuse cleanly if unavailable. */
+    snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
+    if(snapshot_block>=0)snapshot=sceKernelGetBlockHeadAddr(snapshot_block);
+    if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);running=0;}
+    unsigned long long until=0,next=0,started_at=0,retry_at=0,last_good=0;unsigned previous=0;int back=1;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(active && !frames && now>started_at+2000000ULL)cancelled=1;
+        if(active&&!cancelled&&now>last_good+5000000ULL){record("no accepted snapshot for five seconds",-1);cancelled=1;}
         if(active&&!suspended&&now>=retry_at&&(cancelled||now>=until||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
             record("automatic/safety stop",cancelled);restore();retry_at=now+1000000;
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
             if(active)restore();
-            else if(start_scale()==0){started_at=now;until=now+60000000ULL;next=0;retry_at=0;back=1;}
+            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();last_good=started_at;until=started_at+60000000ULL;next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
         if(active&&!cancelled&&!suspended&&now>=next) {
-            unsigned src,stride,format,sequence;int intr=sceKernelCpuSuspendIntr();
-            src=frame_addr;stride=frame_stride;format=frame_format;sequence=frames;sceKernelCpuResumeIntr(intr);
+            unsigned format;
             int mode,w,h;
             if(sceDisplayGetMode(&mode,&w,&h)<0||mode!=0x1d2||w!=720||h!=480||
                sceGeEdramGetSize()!=0x400000){cancelled=1;continue;}
             unsigned dest=0x04200000+back*(768*480*2);
+            unsigned long long cycle=sceKernelGetSystemTimeWide();
+            if(!take_snapshot(&format)){sceKernelDelayThreadCB(2000);continue;}
+            unsigned sequence=frames;
             unsigned long long begin=sceKernelGetSystemTimeWide();
-            fs_scale16((void *)(dest|0x40000000U),(void *)((src&0x1fffffffU)|0x40000000U),stride);
+            fs_scale16((void *)(dest|0x40000000U),snapshot,480);
             unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
             scaled_frames++;scale_total_us+=elapsed;if(elapsed>scale_max_us)scale_max_us=elapsed;
             if(frames!=sequence)changed_during_scale++;
+            if(cancelled||suspended)continue;
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc>=0)rc=present((void *)dest,768,format,1);
             if(rc<0){record("presentation failed",rc);cancelled=1;}
-            back^=1;next=sceKernelGetSystemTimeWide()+83333; /* <=12 Hz preview */
+            back^=1;last_good=sceKernelGetSystemTimeWide();next=fs_next_frame(cycle,last_good);
         }
-        sceKernelDelayThreadCB(20000);
+        sceKernelDelayThreadCB(active?2000:20000);
     }
     restore();
     if(power_slot>=0)scePowerUnregisterCallback(power_slot);
@@ -229,5 +266,6 @@ int module_stop(SceSize size,void *args)
     (void)size;(void)args;running=0;
     if(worker>=0){SceUInt wait=2000000;if(sceKernelWaitThreadEnd(worker,&wait)<0)return -1;}
     if(hooked||active||users||expanded)return -1; /* Never unload live hooks. */
+    if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;
 }

@@ -16,6 +16,25 @@ static int fs_source_valid(uintptr_t address,int stride,int format)
  * Four source pixels a,b,c,d become a,a,b,c,c,d in three 32-bit stores.
  * may_alias permits the packed view of the original uint16_t pixels. */
 typedef uint32_t FsWord __attribute__((may_alias));
+/* Worker-owned packed RAM copy. Volatile source reads bypass compiler reuse;
+ * the caller additionally uses the uncached VRAM alias and validates capture. */
+static void fs_copy16(uint16_t *out,const uint16_t *in,int stride)
+{
+    for(unsigned y=0;y<272;y++) {
+        const volatile FsWord *src=(const volatile FsWord *)(in+y*stride);
+        FsWord *dst=(FsWord *)(out+y*480);
+        for(unsigned x=0;x<240;x++)dst[x]=src[x];
+    }
+}
+static int fs_copy_unchanged(unsigned before,unsigned after,int idle)
+{
+    return before==after&&idle;
+}
+/* Fixed start-to-start period; never burst to catch up after a slow frame. */
+static unsigned long long fs_next_frame(unsigned long long begin,unsigned long long end)
+{
+    return end<begin+83333ULL?begin+83333ULL:end;
+}
 static void fs_scale16(uint16_t *out,const uint16_t *in,int stride)
 {
     uint32_t row[360];
