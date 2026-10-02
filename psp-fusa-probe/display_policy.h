@@ -19,8 +19,9 @@ static int fs_redirect_mode(int active,int own,int lcd_requested,int mode,int wi
  * frame submission or unrelated GE activity. A slower copy must still show. */
 static int fs_snapshot_layout_valid(unsigned before,unsigned after)
 {return before==after;}
-static inline int fs_capture_pending(unsigned submitted,unsigned copied)
-{return (int32_t)(submitted-copied)>0;}
+/* One output per two real vblanks; late copies skip slots, never catch up. */
+static int fs_output_due(int valid,unsigned previous,unsigned current)
+{return !valid||(unsigned)(current-previous)>=2;}
 enum { FS_FORWARD,FS_SYSTEM,FS_GAME };
 static int fs_layer_route(int active,int own,int layer)
 {return !active||own?FS_FORWARD:layer==0?FS_SYSTEM:layer==2?FS_GAME:FS_FORWARD;}

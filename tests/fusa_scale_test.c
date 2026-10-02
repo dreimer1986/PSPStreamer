@@ -14,10 +14,6 @@ int main(void)
     assert(fs_source_alias(0xabbbc000)==0xabbbc000);
     assert(fs_source_alias(0x8bbbc000)==0xabbbc000);
     assert(fs_source_alias(0x04000000)==0x44000000);
-    assert(fs_next_frame(1000,21000)==34334);
-    assert(fs_next_frame(1000,34334)==34334);
-    assert(fs_next_frame(1000,41000)==41000);
-    assert(fs_next_frame(1000,100000)==100000);
     FsSnapshots ring={0};
     assert(fs_snapshot_read(&ring)==-1);
     int a=fs_snapshot_write(&ring),b=fs_snapshot_write(&ring);

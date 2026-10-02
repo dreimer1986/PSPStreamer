@@ -1,4 +1,28 @@
-# FuSa-style fullscreen experiment 0.20 — VFPU and coordinated capture
+# FuSa-style fullscreen experiment 0.21 — remove game/output lockstep
+
+0.20 hardware result: clean images across tested games, but slower gameplay
+and stuttering audio. Soul Calibur copy averaged 1.856 ms (previously 15.4 ms),
+while output settled near 20 Hz. The coordination waited for every submitted
+frame to be captured at the slower output cadence, then performed another Sony
+VBlank wait. There were 32 coordination timeouts in the last logged run.
+
+0.21 runs the original Sony wait FIRST and guards only a copy already in
+progress, for at most 4 ms rather than 100 ms. Skipped output frames, scaling,
+idle output intervals and upcoming captures never hold the game. Guard calls,
+timeouts and average additional delay are logged. It remains optional via the
+same `experimental_speedboost` setting (enabled on the user's test PSP).
+
+Output pacing now uses actual VBlank counts (one capture slot per two blanks),
+not 33.334 ms delay followed by another VBlank wait. Worker priority 24 is set
+before waiting so it can promptly capture at the boundary, then restored to 56
+before scaling. VFPU copying, strict snapshot validation, HOME and reboot
+cleanup remain. Residual CPU/bus load and possible timing effects still require
+hardware validation; this is not a promise of native game speed.
+
+Test Metal Slug XX and Soul Calibur: clean moving image AND game/audio speed,
+then HOME/exit. Build before targeted policy/config/scalar-reference tests.
+
+## 0.20 — VFPU and coordinated capture
 
 0.19 restored menu output but hardware feedback confirmed tearing in both
 Metal Slug XX and Soul Calibur. Soul Calibur's scalar 16-bit copy averaged

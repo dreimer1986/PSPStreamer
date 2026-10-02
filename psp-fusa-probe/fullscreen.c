@@ -83,10 +83,12 @@ static unsigned copied_frames,copy_rejected,ge_busy,copy_max_us;
 static unsigned long long copy_total_us;
 static unsigned long long request_at,last_snapshot_at;
 static unsigned last_snapshot_sequence,timeout_snapshots;
+static volatile int capture_busy;
 void fs_copy16_vfpu(uint16_t *,const void *,int);
 void fs_copy32_vfpu(uint16_t *,const void *,int);
 static void copy_source(unsigned base,int stride,int format)
 {
+    capture_busy=1;
     unsigned physical=base&0x1fffffffU;
     const void *source=(void *)fs_source_alias(base);
     if(physical<0x08000000U) {
@@ -98,31 +100,36 @@ static void copy_source(unsigned base,int stride,int format)
     }
     if(format==3)fs_copy32_vfpu(snapshot,source,stride);
     else fs_copy16_vfpu(snapshot,source,stride);
+    capture_busy=0;
 }
 static int auto_zoom;
 static int keep_fullscreen;
 static unsigned auto_delay=5;
 static int experimental_speedboost,wait_hooks;
-static volatile unsigned consumed_frame,wait_users;
+static volatile unsigned wait_users;
 static unsigned wait_calls,wait_timeouts;
+static unsigned long long coordinated_us;
 static int (*original_wait[4])(void);
 /* Coordination belongs at game wait points, NEVER inside the display setter.
  * This is an ARK adaptation, not the commented legacy fake-interrupt code. */
 static int coordinated_wait(unsigned index)
 {
-    int intr=sceKernelCpuSuspendIntr();wait_users++;unsigned target=frames;
+    int intr=sceKernelCpuSuspendIntr();wait_users++;
     sceKernelCpuResumeIntr(intr);
-    if(active&&!restoring&&!saved_overlay&&running&&sceKernelGetThreadId()!=worker&&target) {
+    /* Sony's wait runs exactly once FIRST. Never add another vblank after
+     * capture and never wait for a future 30 Hz output slot. */
+    int rc=original_wait[index]();
+    if(rc>=0&&active&&!restoring&&!saved_overlay&&running&&capture_busy&&sceKernelGetThreadId()!=worker) {
         wait_calls++;
-        unsigned long long deadline=sceKernelGetSystemTimeWide()+100000ULL;
+        unsigned long long begin=sceKernelGetSystemTimeWide(),deadline=begin+4000ULL;
         while(active&&!restoring&&!cancelled&&!suspended&&!saved_overlay&&running&&
-              fs_capture_pending(target,consumed_frame)) {
+              capture_busy) {
             if((unsigned long long)sceKernelGetSystemTimeWide()>=deadline){wait_timeouts++;break;}
             /* Preserve callback dispatch for the CB entry points. */
-            if(index&1)sceKernelDelayThreadCB(1000);else sceKernelDelayThread(1000);
+            if(index&1)sceKernelDelayThreadCB(250);else sceKernelDelayThread(250);
         }
+        coordinated_us+=(unsigned long long)sceKernelGetSystemTimeWide()-begin;
     }
-    int rc=original_wait[index]();
     intr=sceKernelCpuSuspendIntr();wait_users--;sceKernelCpuResumeIntr(intr);
     return rc;
 }
@@ -314,7 +321,6 @@ static int take_snapshot(unsigned *format)
     if(!valid){copy_rejected++;return 0;}
     if(sequence==last_snapshot_sequence)timeout_snapshots++;
     last_snapshot_sequence=sequence;last_snapshot_at=now;
-    consumed_frame=sequence;
     copied_frames++;return 1;
 }
 static void record(const char *event,int result)
@@ -418,6 +424,7 @@ static int restore(void)
     record("snapshot copy maximum us",copy_max_us);
     record("coordinated game VBlank calls",wait_calls);
     record("coordinated game VBlank timeouts",wait_timeouts);
+    record("coordinated game wait average us",wait_calls?(int)(coordinated_us/wait_calls):0);
     return rc;
 }
 static int start_scale(void)
@@ -441,7 +448,7 @@ static int start_scale(void)
     overlay_copies=overlay_rejected=0;overlay_sequence++;
     mode_remaps=0;timeout_snapshots=0;last_snapshot_at=0;last_snapshot_sequence=~0U;
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
-    consumed_frame=0;wait_calls=wait_timeouts=0;
+    wait_calls=wait_timeouts=0;coordinated_us=0;
     restoring=0;
     stop_reason=STOP_NONE;stop_detail=0;stop_addr=stop_stride=stop_format=stop_sync=0;
     scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
@@ -491,7 +498,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.20 VFPU synchronized snapshots",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.21 bounded in-flight capture guard",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -533,7 +540,7 @@ static int work(SceSize size,void *args)
         record("user RAM largest block",sceKernelPartitionMaxFreeMemSize(2));running=0;}
     offered_event=sceKernelCreateEventFlag("fullscreen offered",0,0,NULL);
     if(offered_event<0){record("capture event allocation failed",offered_event);running=0;}
-    unsigned long long next=0,started_at=0,retry_at=0,diagnostic_next=0;unsigned previous=0;int back=1,logged_system=-1;
+    unsigned long long started_at=0,retry_at=0,diagnostic_next=0;unsigned previous=0,last_output_vblank=0;int output_clock_valid=0,back=1,logged_system=-1;
     FsAutoZoom automatic_zoom={0};unsigned long long auto_poll=0;int zoom_armed=0;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
@@ -585,7 +592,7 @@ static int work(SceSize size,void *args)
             if(active||(keep_fullscreen&&zoom_armed)){zoom_armed=0;record("stop: NOTE+R toggle",0);restore();}
             else {
                 if(keep_fullscreen){zoom_armed=1;automatic_zoom=(FsAutoZoom){0};}
-                if(start_scale()==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+                if(start_scale()==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();output_clock_valid=0;retry_at=0;back=1;}
             }
         }
         previous=pad.Buttons;
@@ -600,11 +607,11 @@ static int work(SceSize size,void *args)
                 record("automatic TV zoom requested",auto_delay);
                 if(keep_fullscreen)zoom_armed=1;
                 int start_rc=start_scale();record("automatic TV zoom result",start_rc);
-                if(start_rc==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+                if(start_rc==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();output_clock_valid=0;retry_at=0;back=1;}
                 else if(keep_fullscreen&&zoom_armed)automatic_zoom=(FsAutoZoom){0};
             }
         }
-        if(active&&!cancelled&&!suspended&&now>=next) {
+        if(active&&!cancelled&&!suspended) {
             unsigned format;
             int mode=0,w=0,h=0;
             int mode_rc=sceDisplayGetMode(&mode,&w,&h);
@@ -613,8 +620,12 @@ static int work(SceSize size,void *args)
                 observed_mode=mode;observed_w=w;observed_h=h;observed_vram=vram;
                 request_stop(STOP_MODE,mode_rc);continue;}
             unsigned dest=FS_OUTPUT_BASE+back*FS_OUTPUT_BYTES;
-            sceDisplayWaitVblankStart();
             sceKernelChangeThreadPriority(0,24);
+            sceDisplayWaitVblankStart();
+            unsigned vblank=(unsigned)sceDisplayGetVcount();
+            if(!fs_output_due(output_clock_valid,last_output_vblank,vblank)||cancelled||suspended||!running) {
+                sceKernelChangeThreadPriority(0,0x38);continue;
+            }
             int captured=take_snapshot(&format);
             sceKernelChangeThreadPriority(0,0x38);
             if(!captured){
@@ -623,7 +634,7 @@ static int work(SceSize size,void *args)
                 if(wait_rc<0&&wait_rc!=FS_WAIT_TIMEOUT)request_stop(STOP_WAIT,wait_rc);
                 continue;
             }
-            unsigned long long cycle=request_at;
+            last_output_vblank=vblank;output_clock_valid=1;
             unsigned sequence=frames;
             unsigned long long begin=sceKernelGetSystemTimeWide();
             fs_scale16((void *)(dest|0x40000000U),snapshot,480);
@@ -638,18 +649,15 @@ static int work(SceSize size,void *args)
                 displayed_base=dest;displayed_format=format;
                 sceKernelCpuResumeIntr(intr);
             }
-            back^=1;next=fs_next_frame(cycle,sceKernelGetSystemTimeWide());
+            back^=1;
             int system=saved_overlay!=NULL;
             if(system!=logged_system) {
                 logged_system=system;record("system layer selected",system);
                 if(system){record("system source",(int)saved_overlay);record("system stride",saved_stride);record("system format",saved_format);}
             }
         }
-        /* No 500 Hz polling while merely waiting for the next output slot.
-         * Controls/power callbacks still get service at least every 10 ms. */
+        /* Active pacing is driven by real vblanks, not a second time delay. */
         unsigned delay=active?2000:20000;
-        if(active&&!cancelled){unsigned long long current=sceKernelGetSystemTimeWide();
-            if(next>current){unsigned long long left=next-current;delay=left>10000?10000:(unsigned)left;}}
         sceKernelDelayThreadCB(delay);
     }
     if(active)record("stop: module shutdown",0);

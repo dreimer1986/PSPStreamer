@@ -1,4 +1,11 @@
-# FuSa reference audit — updated for 0.20 (2026-10-03)
+# FuSa reference audit — updated for 0.21 (2026-10-03)
+
+0.21 corrects the independent coordination experiment: 0.20's clean image came
+with game/output lockstep and audible slowdown. The guard now applies only to
+an in-progress copy after the normal Sony wait (4 ms deadline), never to a
+future capture. Scheduling follows every second real VBlank instead of stacking
+a wall-clock delay and VBlank wait. This remains an independent adaptation, not
+the released original Speedbooster. See FULLSCREEN_TEST.md for measured evidence.
 
 ## 0.20 follow-up and correction
 
