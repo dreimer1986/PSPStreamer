@@ -279,7 +279,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.9 event handoff/fused scaler",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.10 30Hz/event handoff",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;

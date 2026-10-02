@@ -1,4 +1,19 @@
-# FuSa-style fullscreen experiment 0.9 — bundled CPU-path optimizations
+# FuSa-style fullscreen experiment 0.10 — 30 Hz ceiling
+
+0.10 raises only the request-to-request ceiling from 20 to 30 Hz (33,334 us).
+The 0.9 event handoff/copy/scaler stays unchanged, as do the 50 ms producer
+timeout, 60-second test, repeat activation, CPU clock and compiler flags.
+Actual output and game speed must be checked on hardware; more captures can
+increase producer stalls even when the displayed animation is smoother.
+
+0.9 hardware baseline: 1,135 outputs in ~60 s (18.91 Hz, ~28% above 0.8),
+8.102 ms mean copy, 9.382 ms mean scale, 8.388 ms mean producer hold. Three
+producer timeouts and two rejected copies were tolerated with zero wait errors
+and clean timed restoration. Maximum scale elapsed time was 388.018 ms; this
+includes scheduler delays and does not establish their cause. User reported
+visibly smoother output. This is not a claim that all stutters are eliminated.
+
+## Previous test history
 
 0.9 bundles these changes for one hardware comparison against 0.8:
 
@@ -29,8 +44,6 @@ because they introduce separate ownership/cache/hardware hazards.
 11.030 ms mean scale, one producer timeout handled without abort, clean timed
 restoration. User reported visibly smoother output. Game submissions were ~45.6/s
 versus ~50.8/s in the previous scene; more capture work may slow the game.
-
-## Previous test history
 
 0.8 changes only the preview period from 83,333 to 50,000 us (20 Hz maximum)
 and stop diagnostics. The bounded worker handoff/copy/scaler is unchanged.
@@ -142,7 +155,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
 - Manual activation; automatically attempts restoration after 60 seconds.
-- At most 20 preview images per second, with capture/scaling included in the
+- At most 30 preview images per second, with capture/scaling included in the
   period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
   VBlank replacement, global thread suspension or SpeedBooster. Selected
