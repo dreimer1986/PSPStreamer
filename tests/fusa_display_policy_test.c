@@ -5,6 +5,11 @@ int main(void)
     assert(fs_display_layer(0)==0&&fs_display_layer(1)==2);
     assert(fs_game_tv_layout(0x2d2,480,272));
     assert(fs_game_tv_layout(0x1d2,480,272)); /* Metal Slug scene transition. */
+    assert(fs_repair_tv_layout(0x1d2,480,272,0x400000,2)); /* First transition. */
+    assert(fs_repair_tv_layout(0x2d2,480,272,0x400000,2));
+    assert(!fs_repair_tv_layout(0,480,272,0x400000,2));
+    assert(!fs_repair_tv_layout(0x1d2,480,272,0x200000,2));
+    assert(!fs_repair_tv_layout(0x1d2,480,272,0x400000,0));
     assert(!fs_game_tv_layout(0,480,272)); /* Never force LCD back to TV. */
     assert(!fs_game_tv_layout(0x1d2,720,480)); /* Already scaled, not a source. */
     assert(!fs_game_tv_layout(0x1d1,480,272)); /* No guessed interlace mode. */

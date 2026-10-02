@@ -63,6 +63,14 @@ static void *saved_overlay;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded,retiring;
 static volatile unsigned overlay_sequence;
 static unsigned overlay_copies,overlay_rejected;
+static unsigned system_ram_start[4],system_ram_end[4];
+static unsigned displayed_base,displayed_format,mode_repairs;
+static int system_source_valid(uintptr_t base,int stride,int format)
+{
+    if(fs_source_valid(base,stride,format))return 1;
+    for(unsigned i=0;i<4;i++)if(fs_ram_source_valid(base,stride,format,system_ram_start[i],system_ram_end[i]))return 1;
+    return 0;
+}
 static unsigned scaled_frames,changed_during_scale,scale_max_us;
 static unsigned long long scale_total_us;
 static SceUID snapshot_block=-1;
@@ -83,8 +91,10 @@ static unsigned auto_delay=5;
 static int capture_internal(int layer,void *base,int stride,int format,int sync)
 {
     int intr=sceKernelCpuSuspendIntr();internal_users++;
-    int intercept=active&&layer==0;
-    if(intercept&&((sync==0||sync==1)&&fs_source_valid((uintptr_t)base,stride,format))) {
+    /* DVE can itself call this entry during our worker's mode repair. Those
+     * are output operations, not a newly submitted Sony menu source. */
+    int intercept=active&&layer==0&&sceKernelGetThreadId()!=worker;
+    if(intercept&&((sync==0||sync==1)&&system_source_valid((uintptr_t)base,stride,format))) {
         saved_overlay=base;saved_stride=stride;saved_format=format;overlay_sequence++;
     } else if(intercept&&fs_blank_source((uintptr_t)base,stride,format,sync)) {
         saved_overlay=NULL;saved_stride=stride;saved_format=format;overlay_sequence++;
@@ -141,9 +151,9 @@ static int take_overlay_snapshot(unsigned *format)
     capture_requested=capture_held=0;
     sceKernelCpuResumeIntr(intr);
     sceKernelSetEventFlag(finished_event,1);
-    if(!fs_source_valid((uintptr_t)base,stride,fmt)||sceGeDrawSync(1)!=PSP_GE_LIST_DONE)return 0;
+    if(!system_source_valid((uintptr_t)base,stride,fmt)||sceGeDrawSync(1)!=PSP_GE_LIST_DONE)return 0;
     request_at=sceKernelGetSystemTimeWide();
-    void *source=(void *)(((unsigned)base&0x1fffffffU)|0x40000000U);
+    void *source=(void *)fs_source_alias((uintptr_t)base);
     if(fmt==3)fs_copy32(snapshot,source,stride);else fs_copy16(snapshot,source,stride);
     int valid=sceGeDrawSync(1)==PSP_GE_LIST_DONE&&sequence==overlay_sequence&&!cancelled&&!suspended;
     if(!valid){overlay_rejected++;return 0;}
@@ -180,8 +190,8 @@ static int take_snapshot(unsigned *format)
     sceKernelCpuResumeIntr(intr);
     if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE){ge_busy++;return 0;}
     unsigned long long begin=sceKernelGetSystemTimeWide();
-    if(*format==3)fs_copy32(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
-    else fs_copy16(snapshot,(void *)((src&0x1fffffffU)|0x40000000U),stride);
+    if(*format==3)fs_copy32(snapshot,(void *)fs_source_alias(src),stride);
+    else fs_copy16(snapshot,(void *)fs_source_alias(src),stride);
     *format=fs_output_format(*format);
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
@@ -346,6 +356,7 @@ static int restore(void)
     record("RAM snapshots rejected",copy_rejected);
     record("system snapshots accepted",overlay_copies);
     record("system snapshots rejected",overlay_rejected);
+    record("in-place TV layout repairs",mode_repairs);
     record("snapshot GE busy polls",ge_busy);
     unsigned copies=copied_frames+copy_rejected;
     record("snapshot copy average us",copies?(int)(copy_total_us/copies):0);
@@ -374,8 +385,9 @@ static int start_scale(void)
     record("saved primary layer address",(int)saved_overlay);
     record("saved primary layer stride",saved_stride);
     record("saved primary layer format",saved_format);
-    if(saved_overlay&&!fs_source_valid((uintptr_t)saved_overlay,saved_stride,saved_format))return -1;
+    if(saved_overlay&&!system_source_valid((uintptr_t)saved_overlay,saved_stride,saved_format))return -1;
     overlay_copies=overlay_rejected=0;overlay_sequence++;
+    mode_repairs=0;
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
     stop_reason=STOP_NONE;stop_detail=0;stop_addr=stop_stride=stop_format=stop_sync=0;
     scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
@@ -397,6 +409,7 @@ static int start_scale(void)
     rc=dve_mode(0,0x1d2,720,480,1,15,0);record("720x480 output",rc);
     if(rc>=0)rc=set_internal(0,(void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
     if(rc>=0)rc=present((void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
+    displayed_base=FS_OUTPUT_BASE;displayed_format=fs_output_format(fmt);
     record("first fullscreen frame",rc);
     if(rc<0){restore();return rc;}
     return 0;
@@ -423,7 +436,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.16 system layer capture",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.17 RAM impose and live TV repair",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -434,6 +447,21 @@ static int work(SceSize size,void *args)
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup",rc);if(rc<0)return 0;
+    /* Resolve real partitions once, never assume that every model has 64 MiB.
+     * Only the system layer gains RAM access; game source rules are unchanged. */
+    /* Slim impose's ABBBC000 is in extended system RAM (partition 8),
+     * distinct from partition 11 used to allocate our snapshot. Read only. */
+    const int partitions[4]={2,5,8,11};
+    for(unsigned i=0;i<4;i++) {
+        PspSysmemPartitionInfo info={.size=sizeof(info)};
+        if(sceKernelQueryMemoryPartitionInfo(partitions[i],&info)>=0) {
+            unsigned start=info.startaddr&0x1fffffffU;
+            if(start>=0x08000000U&&start<0x0c000000U&&info.memsize<=0x0c000000U-start) {
+                system_ram_start[i]=start;system_ram_end[i]=start+info.memsize;
+                record("system RAM partition",partitions[i]);record("system RAM start",start);record("system RAM end",start+info.memsize);
+            }
+        }
+    }
     callback=sceKernelCreateCallback("fullscreen power",power_event,NULL);
     int automatic,last;
     if(callback>=0)power_slot=oc_register_power_callback(callback,&automatic,&last);
@@ -517,6 +545,23 @@ static int work(SceSize size,void *args)
             int mode=0,w=0,h=0;
             int mode_rc=sceDisplayGetMode(&mode,&w,&h);
             unsigned vram=sceGeEdramGetSize();
+            if(mode_rc>=0&&fs_game_tv_layout(mode,w,h)&&fs_repair_tv_layout(mode,w,h,vram,cable_type())) {
+                /* A single scene transition is enough to reset Sony geometry.
+                 * Keep hooks, source state and both completed output buffers;
+                 * reattach the last frame instead of teardown/rearm/black. */
+                int intr=sceKernelCpuSuspendIntr();capture_requested=capture_held=0;sceKernelCpuResumeIntr(intr);
+                sceKernelSetEventFlag(finished_event,1);
+                rc=dve_mode(0,0x1d2,720,480,1,15,0);
+                if(rc>=0)rc=set_internal(0,(void *)displayed_base,768,displayed_format,1);
+                if(rc>=0)rc=present((void *)displayed_base,768,displayed_format,1);
+                if(rc<0){request_stop(STOP_PRESENT,rc);continue;}
+                mode_repairs++;
+                /* Do not interpret a VBlank-pending mode immediately as a
+                 * failed repair. Recheck next cycle with the output attached. */
+                next=sceKernelGetSystemTimeWide()+16667;
+                record("TV layout reattached in place",mode_repairs);
+                continue;
+            }
             if(mode_rc<0||mode!=0x1d2||w!=720||h!=480||vram!=0x400000){
                 observed_mode=mode;observed_w=w;observed_h=h;observed_vram=vram;
                 request_stop(STOP_MODE,mode_rc);continue;}
@@ -538,6 +583,7 @@ static int work(SceSize size,void *args)
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc>=0)rc=present((void *)dest,768,format,1);
             if(rc<0){request_stop(STOP_PRESENT,rc);}
+            else {displayed_base=dest;displayed_format=format;}
             back^=1;next=fs_next_frame(cycle,sceKernelGetSystemTimeWide());
             int system=saved_overlay!=NULL;
             if(system!=logged_system) {

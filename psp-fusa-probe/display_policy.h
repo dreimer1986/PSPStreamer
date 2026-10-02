@@ -13,6 +13,8 @@ static int fs_relocatable(uint32_t insn)
 }
 static int fs_game_tv_layout(int mode,int width,int height)
 {return (mode==0x2d2||mode==0x1d2)&&width==480&&height==272;}
+static int fs_repair_tv_layout(int mode,int width,int height,unsigned vram,int cable)
+{return fs_game_tv_layout(mode,width,height)&&vram==0x400000U&&cable==2;}
 /* Sony's public game buffer is internal selector 2, not selector 1. */
 static int fs_display_layer(unsigned index){return index?2:0;}
 #endif

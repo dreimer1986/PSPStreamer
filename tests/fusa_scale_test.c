@@ -4,6 +4,16 @@
 #include "../psp-fusa-probe/snapshot.h"
 int main(void)
 {
+    assert(fs_ram_source_valid(0xabbbc000,512,1,0x0b800000,0x0bc00000));
+    assert(fs_ram_source_valid(0x8bbbc000,512,1,0x0b800000,0x0bc00000));
+    assert(!fs_ram_source_valid(0xabbbc000,512,3,0x0b800000,0x0bc00000)); /* Crosses end. */
+    assert(!fs_ram_source_valid(0xabbbc001,512,1,0x0b800000,0x0bc00000));
+    assert(!fs_ram_source_valid(0xabbbc000,-512,1,0x0b800000,0x0bc00000));
+    assert(!fs_ram_source_valid(0xabbbc000,512,1,0,0));
+    assert(!fs_ram_source_valid(0xabbbc000,512,1,0x0b800000,0xffffffff));
+    assert(fs_source_alias(0xabbbc000)==0xabbbc000);
+    assert(fs_source_alias(0x8bbbc000)==0xabbbc000);
+    assert(fs_source_alias(0x04000000)==0x44000000);
     assert(fs_handoff_valid(1,1,7,7,1));
     assert(!fs_handoff_valid(1,1,7,8,1));
     assert(!fs_handoff_valid(1,1,7,7,0));
@@ -40,13 +50,20 @@ int main(void)
     assert(!fs_blank_source(0,0,4,1));
     assert(fs_output_format(3)==0&&fs_output_format(1)==1);
     uint32_t *rgba=calloc(512*272,sizeof(*rgba));
-    uint16_t *rgb=malloc((480*272+2)*sizeof(*rgb));
-    assert(rgba&&rgb);rgb[0]=rgb[480*272+1]=0xdead;
+    uint16_t *rgb=malloc((480*272+4)*sizeof(*rgb));
+    assert(rgba&&rgb);rgb[0]=rgb[1]=rgb[480*272+2]=rgb[480*272+3]=0xdead;
     rgba[0]=0xff0000ff;rgba[1]=0xff00ff00;rgba[2]=0xffff0000;
     rgba[271*512+479]=0xffffffff;
-    fs_copy32(rgb+1,rgba,512);
-    assert(rgb[1]==0x001f&&rgb[2]==0x07e0&&rgb[3]==0xf800);
-    assert(rgb[480*272]==0xffff&&rgb[0]==0xdead&&rgb[480*272+1]==0xdead);
+    fs_copy32(rgb+2,rgba,512);
+    assert(rgb[2]==0x001f&&rgb[3]==0x07e0&&rgb[4]==0xf800);
+    assert(rgb[480*272+1]==0xffff&&rgb[0]==0xdead&&rgb[1]==0xdead&&rgb[480*272+2]==0xdead&&rgb[480*272+3]==0xdead);
+    for(unsigned i=0;i<512*272;i++)rgba[i]=i*2654435761U;
+    fs_copy32(rgb+2,rgba,512);
+    for(unsigned y=0;y<272;y++)for(unsigned x=0;x<480;x++) {
+        unsigned p=rgba[y*512+x];
+        unsigned reference=((p&0xf8U)>>3)|((p&0xfc00U)>>5)|((p&0xf80000U)>>8);
+        assert(rgb[2+y*480+x]==reference);
+    }
     free(rgba);free(rgb);
     assert(!fs_source_valid(0x04000000,768,1));
     assert(!fs_source_valid(0x04000001,512,1));

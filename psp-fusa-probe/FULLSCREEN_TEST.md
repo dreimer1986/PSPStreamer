@@ -1,4 +1,32 @@
-# FuSa-style fullscreen experiment 0.16 — HOME/system layer capture
+# FuSa-style fullscreen experiment 0.17 — RAM HOME buffer and live mode repair
+
+0.16 logs identify HOME layer 0 at `0xABBBC000`, stride 512, RGB5551. It is
+main RAM, not VRAM. System sources now accept complete buffers inside queried
+partitions 2/5/8/11, including extended system partition 8 containing the observed
+buffer on Slim. The source uses uncached KSEG1, not the VRAM alias. No fixed
+64 MiB assumption, extra RAM allocation or partition resizing is introduced.
+Game source validation remains lower-2MiB VRAM only.
+
+Metal Slug XX failed even on its first scene transition: recovery speed alone
+was not sufficient. A live 480x272 external progressive layout now reconfigures
+the output in place and reattaches the last completed 720x480 frame. Hooks,
+VRAM mapping, source tracking and buffers survive; no five-second teardown/
+rearm cycle and no manual LCD round trip should be needed. The next cycle
+checks the VBlank-pending mode. LCD selection/cable removal are not overridden.
+Each repair is logged, with a session count on exit.
+
+RGB8888-to-RGB565 copying now processes four pixels per iteration, with two
+packed aligned stores. Pixel results are unchanged. Host checks cover full-frame
+reference conversion, guard words, RAM boundaries/aliases and repair policy.
+This is an optimization candidate, not a measured PSP speedup; clocks remain
+unchanged. The 0.16 sample spent about 17.8 ms copying and 5.0 ms scaling RGB32.
+
+Build first, then focused tests. Pending hardware checks: visible HOME and
+resume/exit, Metal Slug's first gameplay transition without Screen, repeated
+Star Ocean First Departure intro transitions, and video smoothness at the same
+clock. Consolizer, firmware and rumble are unchanged.
+
+## 0.16 HOME/system layer capture
 
 0.15 hardware feedback: cold VSH TV activation works; Metal Slug XX can now
 allocate its snapshot and scale gameplay after a manual LCD/TV cycle. Save/load
