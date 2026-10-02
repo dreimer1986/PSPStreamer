@@ -6,6 +6,12 @@
 #include <string.h>
 /* EP0 input transaction reply. No native struct layout on the wire. */
 #define SM_RUMBLE_BYTES 8
+#define SM_GAMEPAD_HCI_QUEUE_DEPTH 4
+/* Leave one queue slot for other Bluetooth traffic. With a four-slot queue,
+ * requiring more than four free slots permanently disabled motor output. */
+static inline int sm_rumble_transport_ready(unsigned free_slots) {
+    return free_slots>=2;
+}
 enum { SM_RUMBLE_BACKEND=1, SM_RUMBLE_RX_NONZERO=2, SM_RUMBLE_TX_NONZERO=4,
        SM_RUMBLE_ACK_NONZERO=8, SM_RUMBLE_RX_VALID=16 };
 static inline int sm_rumble_fresh(uint64_t now,uint64_t stamp) {

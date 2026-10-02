@@ -4,7 +4,7 @@
 
 **POPS rumble output test (2026-10-02):** real motor commands were captured
 in Need for Speed High Stakes (`SLUS00826`). The updated `PSPConsolizerUSB.prx`
-and StreamMaster **0.3.16-bt-qio80-iram** now forward them to a compatible
+and StreamMaster **0.3.17-bt-qio80-iram** now forward them to a compatible
 Bluetooth XInput controller. Physical vibration still needs hardware validation.
 The first test target is the **8BitDo SF30 Pro, X + START mode**.
 See the POPS section below; PSPStreamer itself needs no update for this test.
@@ -304,7 +304,7 @@ was reviewed, not copied. Runtime API lookup failures disable injection safely.
 ## Experimental POPS DualShock / rumble output
 
 Default: `pops_rumble=0`. To test, update `PSPConsolizerUSB.prx`, flash the
-matching StreamMaster 0.3.16 firmware using its component `flash_args` (keeps
+matching StreamMaster 0.3.17 firmware using its component `flash_args` (keeps
 NVS Wi-Fi/bonds), and add
 these settings to the existing `PSPConsolizer.ini`, preserving other settings:
 
@@ -410,7 +410,11 @@ by [xpadneo](https://github.com/atar-axis/xpadneo/blob/master/hid-xpadneo/src/xp
 The prior Wipeout 3 log (`SCES02845`) confirmed actual motor commands (peak
 `1/190`), recognized `045e:02e0`, and continuous EP0 replies without an output
 fault; it did not record nonzero values at each output stage. Therefore the
-mask change is a reference-backed candidate fix, not yet a confirmed diagnosis.
+mask change is a compatibility measure, not the confirmed cause of silence.
+The 0.3.16 follow-up showed `rx_nz=1`, `tx_nz=0`, `ack_nz=0`: the ESP32 received
+motor values but never submitted a motor report. 0.3.17 fixes the impossible
+queue guard (`free > 4` on a four-slot queue) to allow output with at least two
+free slots. No new PSP plugin is needed over 0.3.16's companion plugin.
 
 Focused host checks (after building the PRX):
 

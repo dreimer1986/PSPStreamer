@@ -1,6 +1,6 @@
 # USB Bluetooth controllers — Onju Voice V3
 
-Current test build: **0.3.16-bt-qio80-iram**, adding guarded POPS rumble output
+Current test build: **0.3.17-bt-qio80-iram**, adding guarded POPS rumble output
 for a Bluetooth XInput controller; wired USB HID input remains available.
 Controller learning, player/Monkey
 control and four-deep downloads are hardware-tested; extended Bluetooth soak
@@ -236,7 +236,7 @@ No BTstack or USB Host Shield implementation is bundled. Complete corresponding
 project source/build scripts are in the repository; ESP-IDF v5.5.1 source is at
 <https://github.com/espressif/esp-idf/tree/v5.5.1>.
 
-## POPS rumble test (firmware 0.3.16)
+## POPS rumble test (firmware 0.3.17)
 
 Use the matching PSP Consolizer build with `pops_rumble=1`. The initial motor
 output target is an **8BitDo SF30 Pro in XInput mode (X + START)**, paired through

@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.17 — Unblock Bluetooth motor output
+
+- Fix the impossible admission condition: a four-slot HCI queue cannot have
+  more than four free slots. Allow motor output with at least two free slots,
+  retaining headroom for other traffic and the existing one-in-flight limit.
+- Add a regression check tied to the queue's actual configured depth.
+- Hardware 0.3.16 logs prove nonzero motor values reach the ESP32 but no
+  Bluetooth motor write is attempted. This fix addresses that confirmed cause;
+  physical vibration remains to be verified. PSP plugin update is not required.
+
 ## 0.3.16 — Rumble actuator-mask compatibility and end-to-end diagnostics
 
 - Use SDL's all-actuator mask (0x0f), keeping trigger magnitudes zero. This

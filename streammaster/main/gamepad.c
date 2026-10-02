@@ -433,9 +433,9 @@ static void lifecycle_task(void *unused) {
         while(atomic_load(&online) && !atomic_load(&failed) && rc==ESP_OK) {
             SmBtAction a;
             uint8_t active_peer[6];int expired=0,wait_ms=100;int64_t now=esp_timer_get_time();
-            /* Do not compete with a backed-up HCI transport. Finite effects
-             * expire on the controller even if this task cannot send a stop. */
-            if(uxQueueSpacesAvailable(sends)>4)rumble_tick(now);
+            /* Keep space for other Bluetooth traffic; the motor command is
+             * coalesced, never queued repeatedly while transport is busy. */
+            if(sm_rumble_transport_ready(uxQueueSpacesAvailable(sends)))rumble_tick(now);
             portENTER_CRITICAL(&guard);
             memcpy(active_peer,peer,6);
             if(!rumble_blocked && sm_rumble_fresh(now,rumble_received))wait_ms=10;
@@ -684,7 +684,7 @@ void sm_gamepad_init(void) {
         }
         nvs_close(n);
     }
-    sends=xQueueCreate(4,sizeof(Packet));actions=xQueueCreate(4,sizeof(SmBtAction));
+    sends=xQueueCreate(SM_GAMEPAD_HCI_QUEUE_DEPTH,sizeof(Packet));actions=xQueueCreate(4,sizeof(SmBtAction));
     if(sends&&actions && xTaskCreate(lifecycle_task,"bt-host",6144,NULL,5,&lifecycle)==pdPASS &&
        xTaskCreate(usb_task,"bt-usb",6144,NULL,7,NULL)==pdPASS)return;
     if(lifecycle)vTaskDelete(lifecycle);

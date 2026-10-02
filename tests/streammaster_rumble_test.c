@@ -4,6 +4,11 @@
 #include "../streammaster/rumble.h"
 #include "../streammaster/pad_delivery.h"
 int main(void) {
+    _Static_assert(SM_GAMEPAD_HCI_QUEUE_DEPTH>=2,"rumble admission must be reachable");
+    assert(sm_rumble_transport_ready(SM_GAMEPAD_HCI_QUEUE_DEPTH));
+    assert(sm_rumble_transport_ready(SM_GAMEPAD_HCI_QUEUE_DEPTH-1));
+    assert(sm_rumble_transport_ready(2));
+    assert(!sm_rumble_transport_ready(1));assert(!sm_rumble_transport_ready(0));
     assert(!sm_rumble_fresh(1000,0));assert(!sm_rumble_fresh(999,1000));
     assert(sm_rumble_fresh(1000,1000));assert(sm_rumble_fresh(250999,1000));
     assert(!sm_rumble_fresh(251000,1000));assert(!sm_rumble_fresh(UINT64_MAX,1));
