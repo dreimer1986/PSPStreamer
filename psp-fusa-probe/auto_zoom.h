@@ -4,7 +4,7 @@
 #include <string.h>
 typedef struct { unsigned long long since; int timing,handled; } FsAutoZoom;
 /* Read one bounded INI line. Unknown/malformed entries preserve defaults. */
-static void fs_auto_option(char *line,int *enabled,unsigned *seconds)
+static void fs_auto_option(char *line,int *enabled,unsigned *seconds,int *keep)
 {
     char *p=line;while(*p==' '||*p=='\t')p++;
     char *key=p;while(*p&&*p!='='&&*p!=' '&&*p!='\t')p++;
@@ -18,7 +18,13 @@ static void fs_auto_option(char *line,int *enabled,unsigned *seconds)
     if(*p&&*p!=';'&&*p!='#')return;
     if(!strcmp(key,"auto_zoom")&&value<=1)*enabled=value;
     if(!strcmp(key,"auto_zoom_delay_seconds")&&value>=1)*seconds=value;
+    if(!strcmp(key,"keep_fullscreen")&&value<=1)*keep=value;
 }
+/* User intent survives automatic restoration, but not an explicit toggle off. */
+static int fs_zoom_wanted(int automatic,int keep,int armed)
+{return automatic||(keep&&armed);}
+static int fs_button_exit(int keep,unsigned buttons,unsigned mask)
+{return !keep&&(buttons&mask)!=0;}
 static int fs_auto_tick(FsAutoZoom *state,unsigned long long now,int tv,unsigned delay)
 {
     if(!tv){state->timing=0;state->handled=0;return 0;}

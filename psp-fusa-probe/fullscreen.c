@@ -65,6 +65,7 @@ static unsigned handoffs,hold_timeouts,hold_errors,hold_max_us;
 static unsigned long long request_at,hold_total_us;
 static unsigned held_completed;
 static int auto_zoom;
+static int keep_fullscreen;
 static unsigned auto_delay=5;
 static void read_auto_config(void)
 {
@@ -76,7 +77,7 @@ static void read_auto_config(void)
     buffer[n]=0;
     char *line=buffer;
     while(*line){char *end=strchr(line,'\n');if(end)*end=0;
-        fs_auto_option(line,&auto_zoom,&auto_delay);if(!end)break;line=end+1;}
+        fs_auto_option(line,&auto_zoom,&auto_delay,&keep_fullscreen);if(!end)break;line=end+1;}
 }
 /* Selected presentation calls yield while the worker copies the submitted
  * front buffer. Only that producer is held, never the whole scheduler/GE.
@@ -241,9 +242,13 @@ static int start_scale(void)
     void *src=NULL;int stride=0,fmt=-1;
     if(suspended||expanded||hooked||users)return -1;
     if(cable_type()!=2){record("component cable required",-1);return -1;}
-    if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||old_mode!=0x2d2||old_w!=480||old_h!=272){record("start in Sony game 480p TV mode",-1);return -1;}
+    if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||old_mode!=0x2d2||old_w!=480||old_h!=272){
+        record("start in Sony game 480p TV mode",-1);record("start mode",old_mode);
+        record("start width",old_w);record("start height",old_h);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
-    if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!fs_source_valid((uintptr_t)src,stride,fmt)){record("requires 16-bit lower-VRAM game frame",-1);return -1;}
+    if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!fs_source_valid((uintptr_t)src,stride,fmt)){
+        record("requires 16-bit lower-VRAM game frame",-1);record("start source address",(int)src);
+        record("start source stride",stride);record("start source format",fmt);return -1;}
     int saved_sync=0;
     if(get_internal(0,&saved_overlay,&saved_stride,&saved_format,&saved_sync)<0){record("cannot save primary layer",-1);return -1;}
     record("saved primary layer address",(int)saved_overlay);
@@ -292,8 +297,14 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.13 coexistence enabled",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.14 persistent fullscreen",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
+    record("keep fullscreen enabled",keep_fullscreen);
+    record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
+    const char *launch_path=sceKernelInitFileName();
+    if(launch_path)record(launch_path,0);
+    SceGameInfo *game=sceKernelGetGameInfo();
+    if(game){char title[48];snprintf(title,sizeof(title),"title ID: %.16s",game->title_id);record(title,0);}
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup",rc);if(rc<0)return 0;
@@ -305,18 +316,20 @@ static int work(SceSize size,void *args)
     /* User partition, not scarce kernel RAM. Refuse cleanly if unavailable. */
     snapshot_block=sceKernelAllocPartitionMemory(2,"fullscreen snapshot",PSP_SMEM_High,480*272*2,NULL);
     if(snapshot_block>=0)snapshot=sceKernelGetBlockHeadAddr(snapshot_block);
-    if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);running=0;}
+    if(!snapshot){record("RAM snapshot allocation failed",snapshot_block);
+        record("user RAM free bytes",sceKernelPartitionTotalFreeMemSize(2));
+        record("user RAM largest block",sceKernelPartitionMaxFreeMemSize(2));running=0;}
     offered_event=sceKernelCreateEventFlag("fullscreen offered",0,0,NULL);
     finished_event=sceKernelCreateEventFlag("fullscreen finished",0,0,NULL);
     if(offered_event<0||finished_event<0){record("capture event allocation failed",offered_event<0?offered_event:finished_event);running=0;}
     unsigned long long next=0,started_at=0,retry_at=0;unsigned previous=0;int back=1;
-    FsAutoZoom automatic_zoom={0};unsigned long long auto_poll=0;
+    FsAutoZoom automatic_zoom={0};unsigned long long auto_poll=0;int zoom_armed=0;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
-        if(active && !frames && now>started_at+2000000ULL)request_stop(STOP_NO_FRAMES,0);
-        if(active&&!suspended&&now>=retry_at&&(cancelled||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
+        if(active && !keep_fullscreen && !frames && now>started_at+2000000ULL)request_stop(STOP_NO_FRAMES,0);
+        if(active&&!suspended&&now>=retry_at&&(cancelled||fs_button_exit(keep_fullscreen,pad.Buttons,PSP_CTRL_HOME|PSP_CTRL_SCREEN))) {
             static const char * const reasons[]={"stop: unspecified","stop: producer wait error",
                 "stop: unsupported source submission","stop: suspend","stop: resume",
                 "stop: restore failed","stop: VRAM restore failed","stop: no game submissions",
@@ -328,22 +341,30 @@ static int work(SceSize size,void *args)
                     record("rejected source format",stop_format);record("rejected source sync",stop_sync);}
             } else record("stop: HOME/SCREEN button",pad.Buttons);
             restore();retry_at=now+1000000;
+            if(keep_fullscreen&&zoom_armed){automatic_zoom=(FsAutoZoom){0};auto_poll=retry_at;}
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
             automatic_zoom.handled=1; /* Never immediately undo manual choice. */
-            if(active){record("stop: NOTE+R toggle",0);restore();}
-            else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+            if(active||(keep_fullscreen&&zoom_armed)){zoom_armed=0;record("stop: NOTE+R toggle",0);restore();}
+            else {
+                if(keep_fullscreen){zoom_armed=1;automatic_zoom=(FsAutoZoom){0};}
+                if(start_scale()==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+            }
         }
         previous=pad.Buttons;
-        if(auto_zoom&&!active&&!suspended&&!expanded&&!hooked&&now>=auto_poll) {
+        if(fs_zoom_wanted(auto_zoom,keep_fullscreen,zoom_armed)&&!active&&!suspended&&!expanded&&!hooked&&now>=auto_poll) {
             auto_poll=now+250000ULL;
             int mode=0,w=0,h=0;
             int tv=sceDisplayGetMode(&mode,&w,&h)>=0&&mode==0x2d2&&w==480&&h==272&&cable_type()==2;
-            if(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN|PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER))automatic_zoom.timing=0;
+            unsigned inhibit=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
+            if(!keep_fullscreen)inhibit|=PSP_CTRL_HOME|PSP_CTRL_SCREEN;
+            if(pad.Buttons&inhibit)automatic_zoom.timing=0;
             else if(fs_auto_tick(&automatic_zoom,now,tv,auto_delay)) {
                 record("automatic TV zoom requested",auto_delay);
+                if(keep_fullscreen)zoom_armed=1;
                 int start_rc=start_scale();record("automatic TV zoom result",start_rc);
-                if(start_rc==0){started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+                if(start_rc==0){zoom_armed=1;started_at=sceKernelGetSystemTimeWide();next=0;retry_at=0;back=1;}
+                else if(keep_fullscreen&&zoom_armed)automatic_zoom=(FsAutoZoom){0};
             }
         }
         if(active&&!cancelled&&!suspended&&now>=next) {

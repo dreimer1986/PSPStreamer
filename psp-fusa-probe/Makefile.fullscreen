@@ -5,7 +5,7 @@ BUILD_PRX = 1
 USE_KERNEL_LIBS = 1
 CFLAGS = -O2 -G0 -Wall -Wextra
 LDFLAGS = -nostartfiles
-LIBS = -lpspge_driver -lpsppower_driver -lpspsystemctrl_kernel -lgcc
+LIBS = -lpspge_driver -lpsppower_driver -lpspsystemctrl_kernel -lpspsysmem_kernel_660 -lgcc
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 fullscreen.o: scale.h snapshot.h auto_zoom.h ../psp-overclock/power_callback_slot.h

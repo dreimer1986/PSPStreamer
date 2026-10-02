@@ -1,4 +1,23 @@
-# FuSa-style fullscreen experiment 0.13 — plugin coexistence
+# FuSa-style fullscreen experiment 0.14 — persistent fullscreen
+
+Add `keep_fullscreen=1` to `FuSaFullscreenTest.ini` (included in the new example).
+Missing/zero retains the old behaviour. With this option, HOME/SCREEN no longer
+requests restoration and the initial two-second no-submission timeout is off.
+An explicit NOTE+R activation or automatic activation remembers the fullscreen
+intent, even if an intro initially presents an unsupported frame. After an
+actual error is restored, zoom is retried after `auto_zoom_delay_seconds` in
+normal supported component TV mode. Repeated failures are spaced by that delay.
+NOTE+R explicitly disables zoom and cancels pending recovery.
+
+This is persistent intent, not a promise of uninterrupted fullscreen under any
+hardware condition: suspend, invalid buffers, failed API calls and lost VRAM
+ownership still require recovery. It does not force TV when the cable is absent
+or LCD mode is selected, nor does it add 32-bit capture. A system HOME menu that
+uses a different rendering path may still require recovery after closing.
+New logs identify the rejected initial source address, stride, pixel format and
+display mode. HOME visibility, persistence and recovery need hardware testing.
+
+## 0.13 coexistence
 
 Consolizer, PSPStreamer and StreamerOC (including their overlays) are no longer
 blocked. There is no model, firmware-version or GAME-only allowlist. Actual
@@ -12,6 +31,7 @@ Place `FuSaFullscreenTest.ini` beside the PRX:
 ```ini
 auto_zoom=1
 auto_zoom_delay_seconds=5
+keep_fullscreen=1
 ```
 
 `auto_zoom`: 0 (default, manual only) or 1. Delay: 1–60 seconds, default 5.
@@ -218,8 +238,8 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    component TV output. Do not save progress during the experiment.
 5. Press physical **NOTE (music-note button) + R** together, then release. This
    enables the scaler without a time limit.
-   Press the same chord again to return. HOME or SCREEN also requests
-   restoration; their normal system function is not swallowed.
+   Press the same chord again to return. With `keep_fullscreen=0`, HOME or SCREEN
+   also requests restoration. Their normal system function is not swallowed.
    After successful restoration, release and press NOTE+R again to retry.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
    Then exit the game and return `SEPLUGINS/FuSaFullscreenTest/test.log`.

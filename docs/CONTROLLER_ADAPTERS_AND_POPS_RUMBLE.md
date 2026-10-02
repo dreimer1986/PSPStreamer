@@ -118,3 +118,36 @@ Next step remains inspection of matching decrypted POPS code around serial-pad
 command handling (or a read-only diagnostic capture during a known PS1 rumble
 scene). The mounted stick contains no usable POPS module dump. The PDF alone
 does not close this evidence gap; real motor output is not implemented.
+
+### Follow-up `rumble.txt`
+
+The proposed PPSSPP procedure cannot inspect Sony POPS: PPSSPP does not run
+PS1/POPS titles (https://www.ppsspp.org/docs/faq/). The quoted
+0x08000000–0x0A000000 range is also not a PS1 RAM map. Disassembling the actual
+matching POPS module is a valid approach, but the text does not establish that
+two motor bytes are stored, name their offsets, or identify an instruction
+signature. Looking up `scePops_Manager` and adding a guessed offset would not
+solve that; the controller-processing module and each memory region must be
+identified first. The existing scratchpad reference is a counterexample to
+assuming every relevant structure is module-base-relative.
+
+Needed for runtime investigation: a specific PS1 game/region and reproducible
+rumble scene (ideally a save just before it), confirmation of stock POPS versus
+POPSLoader, and matching decrypted firmware modules or a targeted read-only
+diagnostic capture. Do not assume the emulated controller advertises DualShock
+or that the game sends motor commands without actuator negotiation.
+
+### FuSa and Snes9xTYL follow-up
+
+The mounted FuSa 0.13 log contains HOME/SCREEN restores, two user-RAM snapshot
+allocation failures (800200D9), refusal of already-expanded VRAM, and one setup
+at 333.947 s. Old sessions have no title IDs, so assignment to individual games
+is not established. Version 0.14 adds launch path/title and source/RAM details.
+
+The installed s9xTYLcm_mod README points to esmjanus/snes9xTYL, branch mecm.
+Upstream `psp/pg.c` reads normal `sceCtrlPeekBufferPositive` input, but
+`pgwaitPress()` has non-yielding polling loops. Consolizer runs at priority
+0x30 and FuSa at 0x38; scheduler starvation is a plausible explanation for
+missing external input and late initialization, not a confirmed diagnosis.
+Most menus also yield normally, and installed binary/source equivalence has
+not been established. No global controller-priority change was made.
