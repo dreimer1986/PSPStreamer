@@ -33,7 +33,7 @@ static int fs_handoff_valid(unsigned ticket,unsigned held,unsigned before,unsign
 /* Fixed start-to-start period; never burst to catch up after a slow frame. */
 static unsigned long long fs_next_frame(unsigned long long begin,unsigned long long end)
 {
-    return end<begin+83333ULL?begin+83333ULL:end;
+    return end<begin+50000ULL?begin+50000ULL:end; /* 20 Hz preview ceiling */
 }
 static void fs_scale16(uint16_t *out,const uint16_t *in,int stride)
 {

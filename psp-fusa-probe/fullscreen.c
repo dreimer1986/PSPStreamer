@@ -33,6 +33,17 @@ static int (*cable_type)(void);
 static SceUID worker=-1,callback=-1;
 static int power_slot=-1;
 static volatile int running,active,cancelled,hooked,users,suspended;
+enum { STOP_NONE,STOP_WAIT,STOP_SOURCE,STOP_SUSPEND,STOP_RESUME,
+       STOP_RESTORE,STOP_VRAM_RESTORE,STOP_NO_FRAMES,STOP_MODE,STOP_PRESENT };
+static volatile int stop_reason,stop_detail;
+static unsigned stop_addr,stop_stride,stop_format,stop_sync;
+/* First cause wins; hooks/callbacks only latch data, never perform file I/O. */
+static void request_stop(int reason,int detail)
+{
+    int intr=sceKernelCpuSuspendIntr();
+    if(!cancelled){stop_reason=reason;stop_detail=detail;}
+    cancelled=1;sceKernelCpuResumeIntr(intr);
+}
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static void *saved_overlay;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded;
@@ -128,7 +139,8 @@ static int capture(const void *base,int stride,int format,int sync)
                         sceKernelCpuResumeIntr(intr);break;
                     }
                     /* A forbidden wait context fails rather than spinning. */
-                    if(sceKernelDelayThread(500)<0){hold_errors++;cancelled=1;break;}
+                    int wait_rc=sceKernelDelayThread(500);
+                    if(wait_rc<0){hold_errors++;request_stop(STOP_WAIT,wait_rc);break;}
                 }
                 intr=sceKernelCpuSuspendIntr();
                 if(capture_held==ticket){capture_held=0;capture_requested=0;}
@@ -137,15 +149,19 @@ static int capture(const void *base,int stride,int format,int sync)
                 sceKernelCpuResumeIntr(intr);
             }
             result=0;
-        } else {cancelled=1;result=-1;}
+        } else {
+            intr=sceKernelCpuSuspendIntr();
+            if(!cancelled){stop_addr=(unsigned)base;stop_stride=stride;stop_format=format;stop_sync=sync;}
+            request_stop(STOP_SOURCE,-1);sceKernelCpuResumeIntr(intr);result=-1;
+        }
     } else result=present(base,stride,format,sync);
     intr=sceKernelCpuSuspendIntr();users--;sceKernelCpuResumeIntr(intr);return result;
 }
 static int power_event(int unknown,int flags,void *arg)
 {
     (void)unknown;(void)arg;
-    if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY)){suspended=1;cancelled=1;}
-    if(flags&PSP_POWER_CB_RESUME_COMPLETE){suspended=0;cancelled=1;}
+    if(flags&(PSP_POWER_CB_SUSPENDING|PSP_POWER_CB_STANDBY)){suspended=1;request_stop(STOP_SUSPEND,flags);}
+    if(flags&PSP_POWER_CB_RESUME_COMPLETE){suspended=0;request_stop(STOP_RESUME,flags);}
     return 0;
 }
 static int restore(void)
@@ -160,8 +176,8 @@ static int restore(void)
     int frame_rc=present((void *)frame_addr,frame_stride,frame_format,1);
     sceKernelDelayThread(50000);
     /* Do not shrink VRAM if a failed restoration might still scan its upper half. */
-    if(rc<0||overlay_rc<0||frame_rc<0){cancelled=1;record("restore failed; retain expanded VRAM",rc<0?rc:overlay_rc<0?overlay_rc:frame_rc);return -1;}
-    if(expanded){rc=change_edram(0x200000);if(rc<0){cancelled=1;return rc;}expanded=0;}
+    if(rc<0||overlay_rc<0||frame_rc<0){request_stop(STOP_RESTORE,rc<0?rc:overlay_rc<0?overlay_rc:frame_rc);record("restore failed; retain expanded VRAM",stop_detail);return -1;}
+    if(expanded){rc=change_edram(0x200000);if(rc<0){request_stop(STOP_VRAM_RESTORE,rc);return rc;}expanded=0;}
     int intr=sceKernelCpuSuspendIntr();active=0;
     if(hooked){sctrlHENPatchSyscall((void *)capture,(void *)present);hooked=0;}
     sceKernelCpuResumeIntr(intr);
@@ -198,6 +214,7 @@ static int start_scale(void)
     record("saved primary layer stride",saved_stride);
     record("saved primary layer format",saved_format);
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
+    stop_reason=STOP_NONE;stop_detail=0;stop_addr=stop_stride=stop_format=stop_sync=0;
     scaled_frames=changed_during_scale=scale_max_us=0;scale_total_us=0;
     copied_frames=copy_rejected=ge_busy=copy_max_us=0;copy_total_us=0;
     handoffs=hold_timeouts=hold_errors=hold_max_us=0;
@@ -239,7 +256,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.7 retry dropped captures",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.8 20Hz/detailed stop reasons",sceKernelDevkitVersion());
     for(int i=0;i<100&&running;i++)sceKernelDelayThreadCB(100000);
     if(!running)return 0;
     int rc=setup();record("setup (-2: competing plugins)",rc);if(rc<0)return 0;
@@ -257,20 +274,34 @@ static int work(SceSize size,void *args)
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
-        if(active && !frames && now>started_at+2000000ULL)cancelled=1;
+        if(active && !frames && now>started_at+2000000ULL)request_stop(STOP_NO_FRAMES,0);
         if(active&&!suspended&&now>=retry_at&&(cancelled||now>=until||(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN)))) {
-            record("automatic/safety stop",cancelled);restore();retry_at=now+1000000;
+            static const char * const reasons[]={"stop: unspecified","stop: producer wait error",
+                "stop: unsupported source submission","stop: suspend","stop: resume",
+                "stop: restore failed","stop: VRAM restore failed","stop: no game submissions",
+                "stop: output mode/VRAM changed","stop: presentation failed"};
+            if(cancelled) {
+                int reason=stop_reason;
+                record(reason>=0&&reason<(int)(sizeof(reasons)/sizeof(reasons[0]))?reasons[reason]:reasons[0],stop_detail);
+                if(reason==STOP_SOURCE){record("rejected source address",stop_addr);record("rejected source stride",stop_stride);
+                    record("rejected source format",stop_format);record("rejected source sync",stop_sync);}
+            } else if(pad.Buttons&(PSP_CTRL_HOME|PSP_CTRL_SCREEN))record("stop: HOME/SCREEN button",pad.Buttons);
+            else record("stop: 60 second limit",0);
+            restore();retry_at=now+1000000;
         }
         if(!suspended && (pad.Buttons&chord)==chord && (previous&chord)!=chord) {
-            if(active)restore();
+            if(active){record("stop: NOTE+R toggle",0);restore();}
             else if(start_scale()==0){started_at=sceKernelGetSystemTimeWide();until=started_at+60000000ULL;next=0;retry_at=0;back=1;}
         }
         previous=pad.Buttons;
         if(active&&!cancelled&&!suspended&&now>=next) {
             unsigned format;
-            int mode,w,h;
-            if(sceDisplayGetMode(&mode,&w,&h)<0||mode!=0x1d2||w!=720||h!=480||
-               sceGeEdramGetSize()!=0x400000){cancelled=1;continue;}
+            int mode=0,w=0,h=0;
+            int mode_rc=sceDisplayGetMode(&mode,&w,&h);
+            unsigned vram=sceGeEdramGetSize();
+            if(mode_rc<0||mode!=0x1d2||w!=720||h!=480||vram!=0x400000){
+                request_stop(STOP_MODE,mode_rc);record("observed mode",mode);record("observed width",w);
+                record("observed height",h);record("observed VRAM bytes",vram);continue;}
             unsigned dest=0x04200000+back*(768*480*2);
             unsigned long long cycle=sceKernelGetSystemTimeWide();
             if(!take_snapshot(&format)){sceKernelDelayThreadCB(2000);continue;}
@@ -283,11 +314,12 @@ static int work(SceSize size,void *args)
             if(cancelled||suspended)continue;
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc>=0)rc=present((void *)dest,768,format,1);
-            if(rc<0){record("presentation failed",rc);cancelled=1;}
+            if(rc<0){request_stop(STOP_PRESENT,rc);}
             back^=1;next=fs_next_frame(cycle,sceKernelGetSystemTimeWide());
         }
         sceKernelDelayThreadCB(active?2000:20000);
     }
+    if(active)record("stop: module shutdown",0);
     restore();
     if(power_slot>=0)scePowerUnregisterCallback(power_slot);
     if(callback>=0)sceKernelDeleteCallback(callback);

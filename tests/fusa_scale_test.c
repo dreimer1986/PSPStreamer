@@ -11,7 +11,8 @@ int main(void)
     assert(!fs_handoff_valid(1,0,7,7,1)); /* Timeout/cancellation. */
     assert(!fs_handoff_valid(1,2,7,7,1)); /* Different producer ticket. */
     assert(!fs_handoff_valid(0,0,7,7,1)); /* No owner. */
-    assert(fs_next_frame(1000,41000)==84333);
+    assert(fs_next_frame(1000,41000)==51000);
+    assert(fs_next_frame(1000,51000)==51000);
     assert(fs_next_frame(1000,100000)==100000);
     FsSnapshots ring={0};
     assert(fs_snapshot_read(&ring)==-1);

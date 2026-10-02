@@ -1,4 +1,24 @@
-# FuSa-style fullscreen experiment 0.7 — retry dropped captures
+# FuSa-style fullscreen experiment 0.8 — 20 Hz ceiling and explicit stop causes
+
+0.8 changes only the preview period from 83,333 to 50,000 us (20 Hz maximum)
+and stop diagnostics. The bounded worker handoff/copy/scaler is unchanged.
+Actual output may be slower; increasing capture frequency can also reduce game
+speed because the submitting thread yields during each selected RAM copy.
+No clock changes are made. The 60-second duration and reactivation remain.
+
+The first cancellation cause and its error code are retained without file I/O
+in hooks/callbacks. Worker logs distinguish unsupported source (including its
+address, stride, format and sync), wait failure, suspend/resume, mode/VRAM
+change, presentation/restore failure, missing submissions, HOME/SCREEN,
+NOTE+R, timeout and module shutdown. A slow capture alone is still only dropped.
+
+0.7's second hardware activation completed 60 s with 579 accepted/scaled frames,
+zero rejected copies/wait timeouts/errors, 9.327 ms mean copy and 14.973 ms mean
+scale. User confirmed good picture. Its earlier short activation cancelled for
+an unknown reason; the new diagnostics target that gap. One scale elapsed
+568.427 ms, including scheduling delays, so smoothness is not yet guaranteed.
+
+## Previous test history
 
 0.7 corrects the overly aggressive 0.6 test policy: a single 50 ms producer
 deadline drops that capture and releases the game, **not** the entire test.
@@ -11,8 +31,6 @@ Reactivation is hardware-unverified; unlike withdrawn 0.2, GE-idle transitions
 remain in place. The 0.6 log showed nine good frames followed by one timed-out
 copy, which incorrectly ended the entire test. This build fixes that policy,
 not a demonstrated cure for all display artefacts.
-
-## Previous test history
 
 0.6 requests a capture at the next valid game presentation. That selected
 calling thread yields until the worker finishes copying the submitted buffer
@@ -94,7 +112,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
 - Manual activation; automatically attempts restoration after 60 seconds.
-- At most 12 preview images per second, with capture/scaling included in the
+- At most 20 preview images per second, with capture/scaling included in the
   period. Actual rate depends on accepted captures and CPU/memory contention.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
   VBlank replacement, global thread suspension or SpeedBooster. Selected
