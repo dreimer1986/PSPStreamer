@@ -9,3 +9,4 @@ LIBS = -lpspge_driver -lpsppower_driver -lpspsystemctrl_kernel -lpspsysmem_kerne
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 fullscreen.o: scale.h snapshot.h auto_zoom.h ../psp-overclock/power_callback_slot.h
+fullscreen.o: display_policy.h

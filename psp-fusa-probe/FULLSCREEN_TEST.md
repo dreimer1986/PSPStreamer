@@ -1,4 +1,37 @@
-# FuSa-style fullscreen experiment 0.15 — system display handoff
+# FuSa-style fullscreen experiment 0.16 — HOME/system layer capture
+
+0.15 hardware feedback: cold VSH TV activation works; Metal Slug XX can now
+allocate its snapshot and scale gameplay after a manual LCD/TV cycle. Save/load
+dialogs stay fullscreen. HOME opens but is invisible in all three tested games.
+
+0.16 handles the missing internal primary-layer path, following the original
+FuSa source's priority: use Sony layer 0 when nonblank, otherwise the game.
+The internal setter entry is intercepted because kernel impose calls bypass
+the public game syscall. Only two position-independent prologue instructions
+are relocated; branches/jumps/unknown instructions are refused and logged.
+The hook only remembers source state. No copying, blocking, logging or extra
+allocation takes place there. Our own output bypasses the hook through its
+trampoline; the latest original system source is preserved for restoration.
+
+The existing worker refreshes system snapshots even while HOME pauses game
+submissions. It checks source bounds, GE idle and layer sequence across copying;
+this is not a guarantee against all direct-rendering tearing. System snapshot
+accept/reject counters appear when leaving fullscreen. The RGB16 game handoff,
+RGB32 conversion, 30 Hz pacing and single 255 KiB RAM snapshot are unchanged.
+Internal game-layer queries now use selector 2, as in FuSa, rather than 1.
+
+Both known progressive external 480x272 layouts (0x2d2 and 0x1d2) can re-enter
+scaling. This repairs the automatic recovery gap after Metal Slug's scene
+transition without forcing a deliberately selected LCD or interlaced output.
+The configured recovery delay remains in effect.
+
+Only the FuSa PRX changes. Consolizer, ESP firmware, INIs, OC and rumble stay
+unchanged. Build first, then focused host checks of source copying, mode/layer
+policy, prologue validation and automatic activation. Hardware validation is
+still required: visible HOME, resume/exit in all three games, and Metal Slug's
+menu-to-game transition without manually cycling LCD/TV.
+
+## 0.15 system display handoff
 
 The 0.14 hardware logs identified two separate failures: Metal Slug XX had only
 192 KiB of contiguous user RAM for a 255 KiB snapshot; Soul Calibur submitted a
