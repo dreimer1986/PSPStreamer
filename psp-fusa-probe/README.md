@@ -1,5 +1,9 @@
 # FuSa / ARK 6.61 investigation — diagnostic build, NOT fullscreen
 
+The initial probe has been evaluated. A separate, opt-in fullscreen hardware
+experiment is now available: see [FULLSCREEN_TEST.md](FULLSCREEN_TEST.md).
+It is not yet a confirmed working port or integrated into Consolizer.
+
 The original FuSa SD source was inspected at
 https://github.com/andy-man/psp-fusa-sd/commit/3f0a89797c2b1ccd554cdf720d4fae5527163d8e .
 This independent MIT-licensed probe contains no copied FuSa implementation.
