@@ -1,8 +1,21 @@
 #include <assert.h>
 #include <stdlib.h>
 #include "../psp-fusa-probe/scale.h"
+#include "../psp-fusa-probe/snapshot.h"
 int main(void)
 {
+    FsSnapshots ring={0};
+    assert(fs_snapshot_read(&ring)==-1);
+    int a=fs_snapshot_write(&ring),b=fs_snapshot_write(&ring);
+    assert(a==0&&b==1&&fs_snapshot_write(&ring)==-1);
+    fs_snapshot_publish(&ring,a,1);fs_snapshot_publish(&ring,b,2);
+    assert(fs_snapshot_read(&ring)==b&&ring.format[b]==2&&ring.state[a]==FS_FREE);
+    assert(fs_snapshot_write(&ring)==a);
+    assert(fs_snapshot_write(&ring)==-1); /* Reader may never be overwritten. */
+    fs_snapshot_publish(&ring,a,0);
+    assert(fs_snapshot_write(&ring)==a); /* Supersede stale queued frame only. */
+    fs_snapshot_publish(&ring,a,1);ring.state[b]=FS_FREE;
+    assert(fs_snapshot_read(&ring)==a&&ring.format[a]==1);
     assert(fs_source_valid(0x04044000,512,1));
     assert(fs_source_valid(0x44000000,1024,2));
     assert(!fs_source_valid(0x041fff00,512,1));

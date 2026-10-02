@@ -1,4 +1,4 @@
-# FuSa-style fullscreen experiment 0.1 — hardware validation required
+# FuSa-style fullscreen experiment 0.2 — hardware validation required
 
 This is a new, separate test implementation, **not a repaired release of FuSa**
 and not yet part of Consolizer. It enlarges the completed 480x272 game image to
@@ -12,9 +12,15 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 - 16-bit source formats 5650/5551/4444, stride 512 or 1024, wholly in lower 2 MiB.
   The user's probe captured 5551/512. 32-bit games are refused for now.
 - Manual activation; automatically attempts restoration after 30 seconds.
-- At most 12 scaled pictures per second, plus copy time. This tests geometry,
-  colours and restoration, **not final performance**. Tearing is possible because
-  the game can reuse its original buffer during the CPU copy.
+- Target 30 scaled pictures per second, including scaling time. Two packed
+  source snapshots in upper VRAM separate capture from scaling: the game caller
+  briefly copies a submitted frame before returning; the worker never scales a
+  live game buffer except the initial activation image. No allocation or waiting
+  in the capture hook; interrupt masking covers only small state changes.
+  Games submitting before their GPU finishes may still need additional handling.
+- A consumed snapshot cannot be overwritten. Stale queued snapshots can be
+  replaced without blocking the game. Destination reuse waits for a VBlank after
+  presentation. Copy/scale count and mean/max microseconds are logged at rollback.
 - No clock changes, no old inline patch trampolines, no firmware offsets,
   VBlank replacement, game-thread suspension or SpeedBooster.
 
@@ -49,8 +55,10 @@ for unsaved gameplay. No other plugin configuration is edited by this package.
 ## Memory and lifecycle
 
 The SDK `sceGeEdramSetSize(4 MiB)` enables the upper VRAM area supported by newer
-hardware; two 768x480x16-bit buffers fit there (1,474,560 bytes). No equivalent
-kernel-RAM allocation is made. User GE-size queries continue reporting 2 MiB
+hardware; two 768x480x16-bit buffers plus two packed 480x272x16-bit snapshots fit
+there (1,996,800 bytes). No equivalent kernel-RAM allocation is made. Restoration
+stops new snapshots and waits a bounded time for an in-flight copy before
+shrinking VRAM. User GE-size queries continue reporting 2 MiB
 while testing so a conventional game does not claim the new space.
 
 Only the game's user `sceDisplaySetFrameBuf` syscall is intercepted to capture
