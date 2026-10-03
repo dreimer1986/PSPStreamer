@@ -1,14 +1,14 @@
-# Read RUMBLE.md first. No verified game addresses are shipped.
+# Read RUMBLE.md first. User-tested ULES01298 (Soul Calibur: Broken Destiny).
 # Settings -> Plugins -> PSPConsolizer: Game rumble can create/edit profiles.
-# Replace the example ID with your EXACT game's ID; do not enable address=0.
-[title:ULUS00000]
+# Verify your game revision. Keep the infinite-health cheat itself OFF.
+[title:ULES01298]
 enabled=0
-address=0
-type=2
+address=0x08BE364C
+type=4
 pointer=0
 offset=0
 minimum=0
-maximum=100
+maximum=240
 strength=180
 duration_ms=120
 cooldown_ms=200

@@ -4,8 +4,10 @@
 
 - Add optional PSP game hit rumble: read-only health profiles by title ID/path,
   edited in PSPStreamer, with integer/float types, optional pointer/battle flag,
-  range checks, finite pulses and cooldown. No guessed game addresses shipped;
-  see `psp-controller/RUMBLE.md` for setup and the pending hardware test.
+  range checks, finite pulses and cooldown. Soul Calibur ULES01298 confirmed
+  by the user. Add guided CWCheat-line / PPSSPP RetroArch-result import, with
+  explicit type/full-health confirmation and disabled drafts; never run cheats.
+  See `psp-controller/RUMBLE.md` for setup and import limitations.
 - Add Monkey hull collision damage (player 30%, enemy 60%) and independently
   adjustable native bass/beat and impact rumble, both off by default. Reuse
   the existing StreamMaster motor channel without extra network polling.

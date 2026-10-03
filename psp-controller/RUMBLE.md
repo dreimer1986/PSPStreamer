@@ -6,7 +6,9 @@ It never modifies game memory, enables an infinite-health cheat, or patches
 game instructions. Existing PS1/POPS motor commands and Monkey's native-app
 rumble remain separate.
 
-There are **no verified Soul Calibur addresses included**. A game's title ID
+The user confirmed **ULES01298 / Soul Calibur: Broken Destiny** at address
+`0x08BE364C`, float32 health, maximum 240. The example profile is still disabled
+until deliberately enabled. A game's title ID
 does not guarantee that every revision, region or mod uses the same address.
 Only enable a profile after checking your exact copy. A wrong but plausible
 address can cause false vibrations; no generic detector can infer its meaning.
@@ -70,6 +72,48 @@ using the FPU in the kernel worker.
 
 ## Finding an address with PPSSPP or other memory tools
 
+### Import a cheat/search result in the PSP GUI
+
+In the **Game rumble profile list**, choose **Import CWCheat line** or
+**Import RetroArch result**. Type/paste the text through the existing text-entry
+UI (including remote text entry). These are guided **single-result imports**,
+not whole cheat-database or `.cht` file imports.
+
+- **CWCheat:** paste one direct `_L` write, such as
+  `_L 0x203E364C 0x43700000`. Direct 8/16/32-bit writes (types 0/1/2) are
+  accepted. The command prefix is removed and the offset is added to
+  `0x08800000`. Pointer scripts, conditionals, multi-line cheats and patches
+  using other opcodes are rejected, never executed.
+- Confirm the **data type**: 1=u8, 2=u16, 3=u32, 4=float32. A 32-bit write
+  does not tell us whether the number is an integer or float. For the Soul
+  Calibur line, choose **4**: `0x43700000` represents **240.0**, not an enormous
+  integer health value. The wizard then suggests 240 as the full-health bound;
+  confirm it only if that is the actual maximum.
+- **RetroArch:** enter the hexadecimal RAM-search offset for the **PPSSPP
+  core**, e.g. `00BCFF34`. Its RAM export starts at `0x08000000`, so this
+  becomes `0x08BCFF34`. Do not enter a full PSP address here, and do not use
+  this conversion for unrelated cores. Choose the search's actual data type
+  and enter the observed **full-health** maximum, not the damaged value.
+- Enter the title ID. Existing title profiles are not overwritten or duplicated:
+  edit that profile instead. The resulting profile is **OFF** in the editor;
+  review it, enable it, return to the list and START-save. Canceling a wizard
+  leaves the existing profile data untouched; nothing is written automatically.
+
+**Infinite-health cheats are a useful first lead**, especially a single line
+that repeatedly writes full health. They can save a manual RAM search. However,
+some patch instructions or write a flag rather than health. Even a direct
+write must be checked with the cheat **disabled**: does that address really
+decrease on a hit and refill on a new round? Keeping the cheat active can
+prevent the decrease that rumble needs. Importing never turns on the cheat.
+
+`duration_ms=120` means a 120 ms motor pulse. `cooldown_ms=200` means a minimum
+200 ms between trigger starts, not an additional wait after the pulse. Decreases
+inside that interval are not queued. This helps avoid repeatedly triggering
+on an animated bar draining after one hit. Strength is 0–255, with 255 the
+maximum requested amplitude; physical strength is controller-dependent.
+
+### Manual discovery
+
 Use the **same game region/revision** as on the PSP. Search candidate values
 at full health, take a controlled hit, filter for decreased values, then repeat.
 If the exact health number is hidden, start with an unknown-value search and
@@ -122,6 +166,24 @@ Kampf. „Motor“ (0–255), Impulsdauer und Sperrzeit sind persönliche Einste
 Zeiger/Offset und Kampfstatus sind optional und bleiben zunächst AUS/0.
 Eine plausible Zahl an einer falschen Adresse bleibt trotzdem ein Fehlalarm.
 Nicht den CWCheat-Befehl oder eine PC-Adresse als PSP-Lebensadresse verwenden!
+
+Die Profilliste bietet jetzt **CWCheat-Zeile importieren** und
+**RetroArch-Fund importieren**. Dort darf die komplette einzelne `_L`-Schreibzeile
+bzw. der PPSSPP-RAM-Suchoffset eingegeben/eingefügt werden. Keine ganzen
+Cheat-Dateien oder Skripte. Danach Typ, volle Lebenszahl und Spiel-ID bestätigen.
+Bei Soul Calibur: Typ **4 (float32)**, Maximum **240**. Neue Profile bleiben
+zunächst AUS; nach Prüfung aktivieren und mit START in der Liste speichern.
+Bestehende Titel werden nicht überschrieben. Der Cheat selbst bleibt AUS.
+
+Unendlich-Leben-Cheats sind ein guter erster Ansatz, aber kein Beweis für eine
+Lebensadresse: Manche verändern Programmcode oder einen Unverwundbarkeits-Schalter.
+Unser Import führt keinen Cheat aus und erkennt die Bedeutung nicht automatisch.
+Die Originalsuche von RetroArch und CWCheat haben unterschiedliche Adressbasen;
+der gewählte Import übernimmt diese Umrechnung.
+
+**Impulsdauer** ist die Vibrationsdauer, **Sperrzeit** der Mindestabstand zwischen
+zwei Auslösungen, jeweils in Millisekunden. Treffer während der Sperrzeit werden
+nicht nachgeholt. Stärke 0 ist AUS, 255 die maximale angeforderte Motorstärke.
 
 Datentyp: uint8/uint16/uint32 = positive Ganzzahl mit 1/2/4 Bytes;
 float32 = Gleitkommazahl mit 4 Bytes. Der Default uint16 ist keine automatische

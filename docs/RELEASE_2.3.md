@@ -39,8 +39,10 @@ Changes since tag **2.2**:
 - **PSP game hit rumble:** opt-in, read-only health monitoring through per-title
   or launch-path profiles, configurable directly in PSPStreamer. Supports
   integer/float health, optional pointer and battle flag, pulse strength/duration
-  and cooldown. Includes bilingual guidance and diagnostics; verified game
-  addresses must be supplied by the user. No automatic cheat/address detection.
+  and cooldown. Includes bilingual guidance, diagnostics and a user-confirmed
+  Soul Calibur ULES01298 example. Guided single-line CWCheat and PPSSPP/RetroArch
+  search-result imports convert address bases and request the actual value type;
+  imported profiles remain off for review. Cheats are never activated.
 - **Release cleanup:** FuSa Fullscreen now has its permanent name, a concise
   installation guide and a separate development history; confirmed tasks have
   been removed from the ToDo.

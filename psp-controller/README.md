@@ -466,4 +466,6 @@ The resident bridge can monitor a verified health address without modifying
 game memory. Configure **SELECT -> Plugins -> PSPConsolizer: Game rumble** in
 PSPStreamer. This is separate from native POPS rumble and Monkey effects.
 Read [RUMBLE.md](RUMBLE.md) for every field, address discovery, limitations and
-testing. No verified game addresses are bundled; profiles default to off.
+testing. The disabled example contains the user-confirmed Soul Calibur
+ULES01298 health address. Guided CWCheat-line and RetroArch-result imports
+convert addresses without enabling cheats; imported profiles default to off.

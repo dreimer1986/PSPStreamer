@@ -1,4 +1,5 @@
 #include "plugin_settings_io.h"
+#include "health_import.h"
 #include "../psp-overclock/config_parse.h"
 typedef struct {const char *key;TextId label;int min,max,def;} PluginField;
 static const PluginField plugin_oc[]={
@@ -124,19 +125,47 @@ static int plugin_rule_name(char *name,int kind) {
     if(!kind){int n=0;for(char *p=name;*p;p++){if(*p=='-')continue;if(!((*p>='0'&&*p<='9')||(*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')))return -1;n++;}if(n!=9)return -1;}
     return 1;
 }
+static int plugin_import_health(PluginIni *d,int retro,int sections){
+    char text[96]={0},name[256]={0};uint32_t address=0,value=0;int width=3,type,maximum;
+    if(!settings_text(text,sizeof(text),0,tr(retro?TXT_HI_RETRO_INPUT:TXT_HI_CW_INPUT)))return -1;
+    if(retro?hi_retro(text,&address):hi_cw(text,&address,&value,&width))goto invalid;
+    /* 32-bit writes do not identify float versus integer. Always ask. */
+    snprintf(text,sizeof(text),"%d",width);
+    if(!settings_text(text,sizeof(text),0,tr(TXT_HI_TYPE)))return -1;
+    char *end;errno=0;long v=strtol(text,&end,10);
+    if(errno||end==text||*end||v<1||v>4)goto invalid;
+    type=(int)v;
+    if(!hi_address(address,type)||(!retro&&type!=width&&!(width==3&&type==4)))goto invalid;
+    maximum=retro?0:hi_maximum(value,type);
+    if(maximum)snprintf(text,sizeof(text),"%d",maximum);else text[0]=0;
+    if(!settings_text(text,sizeof(text),0,tr(TXT_HI_MAX)))return -1;
+    errno=0;v=strtol(text,&end,10);
+    if(errno||end==text||*end||v<1||v>INT_MAX)goto invalid;
+    maximum=(int)v;
+    int rc=plugin_rule_name(name,0);if(!rc)return -1;if(rc<0)goto invalid;
+    for(int i=0;i<sections;i++){size_t a,b;char header[384];pi_section(d,i,&a,&b,header);
+        if(!strncmp(header,"[title:",7)){char *e=strrchr(header,']');if(e)*e=0;
+            if(title_rule_equal(header+7,name,1)){plugin_notice(TXT_HI_DUPLICATE);return -1;}}}
+    char row[512];snprintf(row,sizeof(row),"%s[title:%s]\nenabled=0\naddress=0x%08X\ntype=%d\nminimum=0\nmaximum=%d\n",
+        d->length&&d->text[d->length-1]!='\n'?"\n":"",name,(unsigned)address,type,maximum);
+    if(pi_replace(d,d->length,d->length,row))goto invalid;
+    plugin_notice(TXT_HI_REVIEW);return sections;
+invalid:plugin_notice(TXT_PLUGIN_ERROR);return -1;
+}
 static void plugin_rules(PluginIni *d,const PluginField *fields,int count,const char *title) {
     /* Structurally valid profiles remain editable even if their enabled
      * address/range needs repairing. Semantic checks apply when saving. */
     TitleRuleKey keys[TITLE_RULE_MAX_KEYS];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
     if(pi_validate_rules(d,keys,count)){plugin_notice(TXT_PLUGIN_ERROR);return;}
-    int sel=0,dirty=1,confirm=-1;PluginKeys k;plugin_keys_reset(&k);
+    int sel=0,dirty=1,confirm=-1,actions=fields==plugin_health?4:2;PluginKeys k;plugin_keys_reset(&k);
     while(1){
         int sections=0;size_t a,b;while(!pi_section(d,sections,&a,&b,NULL))sections++;
-        int total=sections+2;if(sel>=total)sel=total-1;
+        int total=sections+actions;if(sel>=total)sel=total-1;
         if(dirty){settings_shell(title);int first=sel/7*7;
             for(int i=first;i<total&&i<first+7;i++){char name[384];
                 if(i<2)snprintf(name,sizeof(name),"%s",tr(i?TXT_PLUGIN_ADD_PATH:TXT_PLUGIN_ADD_TITLE));
-                else pi_section(d,i-2,&a,&b,name);
+                else if(i<actions)snprintf(name,sizeof(name),"%s",tr(i==2?TXT_HI_CW:TXT_HI_RETRO));
+                else pi_section(d,i-actions,&a,&b,name);
                 char display[56];snprintf(display,sizeof(display),"%.48s",name);settings_line(i-first,i==sel,display);
             }
             settings_line(8,0,tr(TXT_PLUGIN_HELP));settings_help(tr(confirm>=0?TXT_PLUGIN_CONFIRM:TXT_PLUGIN_RULE_HELP));dirty=0;
@@ -145,20 +174,23 @@ static void plugin_rules(PluginIni *d,const PluginField *fields,int count,const 
         if(hit&PSP_CTRL_START){if(!plugin_rules_valid(d,fields,count)&&!pi_save(d)){plugin_notice(TXT_PLUGIN_RESTART);return;}plugin_notice(TXT_PLUGIN_ERROR);plugin_keys_reset(&k);dirty=1;}
         if(hit&PSP_CTRL_UP){sel=(sel+total-1)%total;confirm=-1;dirty=1;}
         else if(hit&PSP_CTRL_DOWN){sel=(sel+1)%total;confirm=-1;dirty=1;}
-        else if(sel>=2&&(hit&PSP_CTRL_TRIANGLE)){
-            if(confirm==sel){pi_section(d,sel-2,&a,&b,NULL);pi_replace(d,a,b,"");confirm=-1;}else confirm=sel;dirty=1;
+        else if(sel>=actions&&(hit&PSP_CTRL_TRIANGLE)){
+            if(confirm==sel){pi_section(d,sel-actions,&a,&b,NULL);pi_replace(d,a,b,"");confirm=-1;}else confirm=sel;dirty=1;
         }else if(hit&(PSP_CTRL_CROSS|PSP_CTRL_SQUARE)){
             confirm=-1;
-            if(sel>=2&&(hit&PSP_CTRL_CROSS))plugin_fields(d,sel-2,fields,count,title);
+            if(sel>=2&&sel<actions){
+                if(hit&PSP_CTRL_CROSS){int added=plugin_import_health(d,sel==3,sections);if(added>=0)sel=added+actions;}
+            }
+            else if(sel>=actions&&(hit&PSP_CTRL_CROSS))plugin_fields(d,sel-actions,fields,count,title);
             else {
                 char name[256]={0},header[384];int kind=sel==1;
-                if(sel>=2){pi_section(d,sel-2,&a,&b,header);kind=!strncmp(header,"[path:",6);char *end=strrchr(header,']');if(end)*end=0;
+                if(sel>=actions){pi_section(d,sel-actions,&a,&b,header);kind=!strncmp(header,"[path:",6);char *end=strrchr(header,']');if(end)*end=0;
                     if(strlen(header+(kind?6:7))>=sizeof(name)){plugin_notice(TXT_PLUGIN_ERROR);plugin_keys_reset(&k);dirty=1;continue;}
                     snprintf(name,sizeof(name),"%s",header+(kind?6:7));}
                 int rc=plugin_rule_name(name,kind);
                 if(rc>0){snprintf(header,sizeof(header),"%s[%s:%s]\n",sel<2&&d->length&&d->text[d->length-1]!='\n'?"\n":"",kind?"path":"title",name);
-                    if(sel>=2){pi_section(d,sel-2,&a,&b,NULL);rc=pi_replace(d,a,pi_next(d,a),header);}else rc=pi_replace(d,d->length,d->length,header);
-                    if(rc)plugin_notice(TXT_PLUGIN_ERROR);else if(sel<2)sel=sections+2;
+                    if(sel>=actions){pi_section(d,sel-actions,&a,&b,NULL);rc=pi_replace(d,a,pi_next(d,a),header);}else rc=pi_replace(d,d->length,d->length,header);
+                    if(rc)plugin_notice(TXT_PLUGIN_ERROR);else if(sel<2)sel=sections+actions;
                 }else if(rc<0)plugin_notice(TXT_PLUGIN_ERROR);
             }
             plugin_keys_reset(&k);dirty=1;
