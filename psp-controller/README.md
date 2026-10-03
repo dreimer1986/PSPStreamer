@@ -1,6 +1,6 @@
 # PSP Consolizer 0.2 — StreamMaster controller plugin
 
-FuSaFullscreenTest 0.25+ overlay compatibility: update PSPConsolizerUSB.prx
+FuSaFullscreen 0.25+ overlay compatibility: update PSPConsolizerUSB.prx
 together with the fullscreen plugin. Both overlay methods (1/2) send text and
 visibility to its compositor, at the top right; normal output is unchanged.
 Always-on configuration remains effective. No loader or ESP firmware update

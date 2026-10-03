@@ -24,7 +24,7 @@
 #define FS_OSD_SERVER 1
 #include "../psp-overclock/fullscreen_osd.h"
 #include "../psp-overclock/overlay_pixels.h"
-PSP_MODULE_INFO("FuSaFullscreenTest",0x1006,0,1);
+PSP_MODULE_INFO("FuSaFullscreen",0x1006,0,26);
 PSP_NO_CREATE_MAIN_THREAD();
 static int (*set_internal)(int,void *,int,int,int);
 static int (*internal_entry)(int,void *,int,int,int);
@@ -374,7 +374,7 @@ static int take_overlay_snapshot(unsigned *format)
 static void read_auto_config(void)
 {
     char buffer[1025];
-    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.ini",PSP_O_RDONLY,0);
+    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreen/FuSaFullscreen.ini",PSP_O_RDONLY,0);
     if(fd<0)return;
     int n=sceIoRead(fd,buffer,sizeof(buffer)-1);sceIoClose(fd);
     if(n<=0||n>=1024)return;
@@ -423,7 +423,7 @@ static void record(const char *event,int result)
         (unsigned)(now/1000000),(unsigned)(now%1000000),event,result,active,frames,frame_addr,frame_stride,frame_format);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
-    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreenTest/test.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreen/fullscreen.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(fd>=0){sceIoWrite(fd,text,n);sceIoClose(fd);}
 }
 /* GE completion alone is racy: a game thread could enqueue another list
@@ -587,7 +587,7 @@ static int setup(void)
     edram_size=(void *)sctrlHENFindFunction("sceGE_Manager","sceGe_driver",0x5BAA5439);
     get_edram_size=(void *)sctrlHENFindFunction("sceGE_Manager","sceGe_driver",0x1F6752AD);
     if(!sceKernelFindModuleByName("pspDveManager_Module")) {
-        int id=sceKernelLoadModule("ms0:/SEPLUGINS/FuSaFullscreenTest/dvemgr.prx",0,NULL),status;
+        int id=sceKernelLoadModule("ms0:/SEPLUGINS/FuSaFullscreen/dvemgr.prx",0,NULL),status;
         if(id<0)return id;
         int rc=sceKernelStartModule(id,0,NULL,&status,NULL);if(rc<0)return rc;
     }
@@ -598,7 +598,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.25 composed plugin overlays",sceKernelDevkitVersion());
+    record("FuSaFullscreen 0.26 standalone release",sceKernelDevkitVersion());
     int osd_rc=sceIoAddDrv(&osd_driver);osd_registered=osd_rc>=0;record("fullscreen OSD mailbox",osd_rc);
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
@@ -628,7 +628,7 @@ static int work(SceSize size,void *args)
     callback=sceKernelCreateCallback("fullscreen power",power_event,NULL);
     int automatic,last;
     if(callback>=0)power_slot=oc_register_power_callback(callback,&automatic,&last);
-    if(power_slot<0){record("no power callback; refuse test",power_slot);
+    if(power_slot<0){record("no power callback; activation unavailable",power_slot);
         if(callback>=0){sceKernelDeleteCallback(callback);callback=-1;}return 0;}
     /* Managed extra shell partition on Slim, when available. No repartition,
      * fixed RAM addresses or theft from the scarce kernel partition. */
@@ -780,7 +780,7 @@ static int work(SceSize size,void *args)
 int module_start(SceSize size,void *args)
 {
     (void)size;(void)args;
-    running=1;worker=sceKernelCreateThread("fullscreen test",work,0x38,8192,PSP_THREAD_ATTR_VFPU,NULL);
+    running=1;worker=sceKernelCreateThread("fullscreen scaler",work,0x38,8192,PSP_THREAD_ATTR_VFPU,NULL);
     if(worker<0)return worker;
     int rc=sceKernelStartThread(worker,0,NULL);
     if(rc<0){running=0;sceKernelDeleteThread(worker);worker=-1;}

@@ -67,7 +67,7 @@ POPS commands. Do not promise the PSX adapter supports it yet.
 
 ## Fullscreen plugin coexistence
 
-FuSaFullscreenTest 0.13 removes module, model, firmware and GAME-only allowlists.
+FuSaFullscreen 0.13 removes module, model, firmware and GAME-only allowlists.
 Consolizer and both overlays may run alongside it. Memory/source validation and
 the 30 Hz capture scheduler remain. The PRX was copied and byte-verified on the
 mounted PSP. Coexistence is now open for hardware testing, not yet confirmed.

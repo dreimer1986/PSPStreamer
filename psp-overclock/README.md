@@ -1,6 +1,6 @@
 # StreamerOC — optional experimental kernel plugin
 
-With FuSaFullscreenTest 0.25+, both `overlay=1` and `overlay=2` publish their
+With FuSaFullscreen 0.25+, both `overlay=1` and `overlay=2` publish their
 text to the fullscreen compositor. `overlay_always` remains effective. Update
 StreamerOC.prx together with the fullscreen plugin; no INI change is needed.
 Normal output keeps its original renderer. Only text is transferred, without

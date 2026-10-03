@@ -1,1 +1,1 @@
-game, ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.prx, off
+game, ms0:/SEPLUGINS/FuSaFullscreen/FuSaFullscreen.prx, off

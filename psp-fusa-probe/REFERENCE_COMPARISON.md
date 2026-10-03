@@ -3,13 +3,13 @@
 0.25 adds project-specific OC/Consolizer text composition after scaling, unlike
 legacy FuSa. Both existing overlay methods retain normal rendering outside
 fullscreen and publish bounded text/visibility while it is active. No extra
-framebuffer or imported callback is needed. See FULLSCREEN_TEST.md.
+framebuffer or imported callback is needed. See FULLSCREEN.md.
 
 0.24 adds auxiliary layer 1 as a separately tracked menu source for CustomHOME.
 The inspected FuSa source only explicitly substitutes layer 0; the additional
 capture is our compatibility extension. Original layer-1 calls remain intact.
 Primary system source takes precedence, followed by auxiliary, then game.
-All three layers participate in retirement checks. See FULLSCREEN_TEST.md.
+All three layers participate in retirement checks. See FULLSCREEN.md.
 
 0.23: Star Ocean logs establish an actual 80000107 return from the redirected
 SetMode call, with zero GetMode queries. Reuse an already verified physical
@@ -28,7 +28,7 @@ with game/output lockstep and audible slowdown. The guard now applies only to
 an in-progress copy after the normal Sony wait (4 ms deadline), never to a
 future capture. Scheduling follows every second real VBlank instead of stacking
 a wall-clock delay and VBlank wait. This remains an independent adaptation, not
-the released original Speedbooster. See FULLSCREEN_TEST.md for measured evidence.
+the released original Speedbooster. See FULLSCREEN.md for measured evidence.
 
 ## 0.20 follow-up and correction
 
@@ -46,7 +46,7 @@ working source implementation of the released Speedbooster. 0.20's opt-in
 `experimental_speedboost` is an independent, bounded wait/capture coordination
 for the four user VBlank syscalls, not binary/source parity with that feature.
 Original Sony waits/counts/interrupts remain real; coordination may slow games.
-See FULLSCREEN_TEST.md for scope, limits and test settings.
+See FULLSCREEN.md for scope, limits and test settings.
 
 ## 0.19 corrections to the 0.18 audit
 

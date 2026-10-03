@@ -1,8 +1,10 @@
-# FuSa / ARK 6.61 investigation — diagnostic build, NOT fullscreen
+# FuSa Fullscreen and original ARK display probe
 
-The initial probe has been evaluated. A separate, opt-in fullscreen hardware
-experiment is now available: see [FULLSCREEN_TEST.md](FULLSCREEN_TEST.md).
-It is not yet a confirmed working port or integrated into Consolizer.
+For the standalone fullscreen plugin, use [FULLSCREEN.md](FULLSCREEN.md).
+Metal Slug XX, Soul Calibur, Star Ocean movie transitions, CustomHOME and both
+OC/Consolizer overlay methods have passed the user's PSP/ARK hardware tests.
+It remains separate from Consolizer. This directory also retains the original
+diagnostic probe below; that probe is not the fullscreen plugin.
 
 The original FuSa SD source was inspected at
 https://github.com/andy-man/psp-fusa-sd/commit/3f0a89797c2b1ccd554cdf720d4fae5527163d8e .

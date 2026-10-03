@@ -1,4 +1,4 @@
-TARGET = FuSaFullscreenTest
+TARGET = FuSaFullscreen
 OBJS = fullscreen.o snapshot_vfpu.o
 PSP_FW_VERSION = 661
 BUILD_PRX = 1

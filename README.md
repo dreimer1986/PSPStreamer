@@ -2,6 +2,12 @@
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
+[FuSa Fullscreen](psp-fusa-probe/FULLSCREEN.md) is the standalone game-TV
+scaler, with Sony HOME, CustomHOME and OC/Consolizer overlay support. Install
+`SEPLUGINS/FuSaFullscreen/FuSaFullscreen.prx` with its INI and `dvemgr.prx`.
+It remains separate from PSP Consolizer; replace old plugin entries when
+updating and preserve your INI settings.
+
 [PSP Consolizer](psp-controller/README.md) brings StreamMaster Bluetooth input
 to games and XMB, with optional TV activation and compact overlays. Install
 `SEPLUGINS/PSPConsolizer/PSPConsolizer.prx` plus `PSPConsolizerUSB.prx` and

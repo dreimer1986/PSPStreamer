@@ -1,4 +1,10 @@
-# FuSa-style fullscreen experiment 0.25 — composed OC/Consolizer overlays
+# FuSa Fullscreen development history
+
+For current installation and configuration, see [FULLSCREEN.md](FULLSCREEN.md).
+The following entries document historical changes and their test status at the
+time; they are not a current list of outstanding tests.
+
+## 0.25 — composed OC/Consolizer overlays
 
 CustomHOME in fullscreen is hardware-confirmed with 0.24. Both our overlay
 paths previously queried/drew game buffers, which are not fullscreen scanout;
@@ -14,7 +20,7 @@ clock/input changes. Slots expire after 500 ms without refresh so unload or
 suspension does not leave permanent text. Existing visibility/always-on rules
 remain in the owners. Older plugin versions cannot publish the new text.
 
-Install all three updated PRXs (FuSaFullscreenTest, StreamerOC,
+Install all three updated PRXs (FuSaFullscreen, StreamerOC,
 PSPConsolizerUSB); keep the Consolizer loader and INIs. Test overlay=1 and 2,
 each plugin separately and together, including entry/exit from fullscreen,
 CustomHOME and timed versus always-on visibility. No ESP flash required.
@@ -278,7 +284,7 @@ or uninterrupted fullscreen HOME composition yet. Existing INIs are preserved.
 
 ## 0.14 persistent fullscreen
 
-Add `keep_fullscreen=1` to `FuSaFullscreenTest.ini` (included in the new example).
+Add `keep_fullscreen=1` to `FuSaFullscreen.ini` (included in the new example).
 Missing/zero retains the old behaviour. With this option, HOME/SCREEN no longer
 requests restoration and the initial two-second no-submission timeout is off.
 An explicit NOTE+R activation or automatic activation remembers the fullscreen
@@ -304,7 +310,7 @@ validated. Removing an allowlist does not implement 32-bit capture or kernel
 presentation interception. The capture scheduler remains 30 Hz; there is no
 session duration limit. Existing INI settings are unchanged.
 
-Place `FuSaFullscreenTest.ini` beside the PRX:
+Place `FuSaFullscreen.ini` beside the PRX:
 
 ```ini
 auto_zoom=1
@@ -504,12 +510,12 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
 
 ## Install and test
 
-1. Copy the `SEPLUGINS/FuSaFullscreenTest` folder, including `dvemgr.prx`.
+1. Copy the `SEPLUGINS/FuSaFullscreen` folder, including `dvemgr.prx`.
 2. Consolizer and StreamerOC, including overlays, may remain enabled.
    Coexistence is permitted, not a guarantee of compatibility with every hook.
 3. Add/enable this ARK entry (supplied example is off):
 
-   `game, ms0:/SEPLUGINS/FuSaFullscreenTest/FuSaFullscreenTest.prx, on`
+   `game, ms0:/SEPLUGINS/FuSaFullscreen/FuSaFullscreen.prx, on`
 
 4. Start the **same game as the probe**, wait at least 10 seconds, enter actual
    gameplay after intro movies, and hold Sony's screen button to enable normal
@@ -520,7 +526,7 @@ Use the TV's 16:9 interpretation of 480p; sample pixels are not square.
    also requests restoration. Their normal system function is not swallowed.
    After successful restoration, release and press NOTE+R again to retry.
 6. Note: correct/full picture? Colours? Sound? Successful return to normal TV?
-   Then exit the game and return `SEPLUGINS/FuSaFullscreenTest/test.log`.
+   Then exit the game and return `SEPLUGINS/FuSaFullscreen/fullscreen.log`.
 7. Disable the test and restore your previous GAME plugin entries afterwards.
 
 If activation fails, return the log rather than repeatedly forcing activation.
