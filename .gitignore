@@ -8,7 +8,7 @@ __pycache__/
 *.prx
 *.PBP
 PARAM.SFO
-psp-client/release/
+psp-client/release
 
 # Local toolchains and vendored build dependencies
 .toolchain/
