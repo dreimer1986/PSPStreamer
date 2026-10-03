@@ -260,6 +260,15 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step3_title="O zurück zur Liste; nochmals: Abbruch",
         .step3_text="Filter: Teilpfade mit Groß/Kleinschrift."
     },
+    [HELP_PAGE_HEALTH_RUMBLE]={
+        .title="PSP: Vibration bei Lebensverlust",
+        .step1_title="Plugins: Consolizer > Spiel-Vibration",
+        .step1_text="Spiel-ID und geprüfte Adresse eintragen.",
+        .step2_title="Typ und gültigen Lebensbereich setzen",
+        .step2_text="Zeiger und Kampfstatus sind optional.",
+        .step3_title="Aktivieren; O zur Liste; START sichern",
+        .step3_text="Spiel neu starten. Details: RUMBLE.md."
+    },
     [HELP_PAGE_PRESET_SETTINGS]={
         .title="Preset-Ordner in Einstellungen",
         .step1_title="MilkDrop-Preset wählen, dann X",

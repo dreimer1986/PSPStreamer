@@ -18,6 +18,23 @@ static const PluginField plugin_fusa[]={
     {"auto_zoom",TXT_PLUGIN_AUTOZOOM,0,1,0},{"auto_zoom_delay_seconds",TXT_PLUGIN_DELAY,1,60,5},
     {"keep_fullscreen",TXT_PLUGIN_KEEP,0,1,1},{"experimental_speedboost",TXT_PLUGIN_GUARD,0,1,0}
 };
+static const PluginField plugin_health[]={
+    {"enabled",TXT_OC_ENABLED,0,1,0},{"address",TXT_HR_ADDRESS,0,0x09ffffff,0},
+    {"type",TXT_HR_TYPE,1,4,2},{"pointer",TXT_HR_POINTER,0,1,0},
+    {"offset",TXT_HR_OFFSET,0,65535,0},{"minimum",TXT_HR_MIN,0,2147483647,0},
+    {"maximum",TXT_HR_MAX,1,2147483647,100},{"strength",TXT_HR_STRENGTH,0,255,180},
+    {"duration_ms",TXT_HR_DURATION,10,1000,120},{"cooldown_ms",TXT_HR_COOLDOWN,20,5000,200},
+    {"gate_address",TXT_HR_GATE,0,0x09ffffff,0},{"gate_value",TXT_HR_GATE_VALUE,0,2147483647,1}
+};
+static int plugin_hex(const PluginField *f){return strstr(f->key,"address")!=NULL || !strcmp(f->key,"offset");}
+static TextId plugin_health_hint(const char *key){
+    if(strstr(key,"address"))return !strcmp(key,"address")?TXT_HR_ADDRESS_HINT:TXT_HR_GATE_HINT;
+    if(!strcmp(key,"type"))return TXT_HR_TYPE_HINT;
+    if(!strcmp(key,"pointer")||!strcmp(key,"offset"))return TXT_HR_POINTER_HINT;
+    if(!strcmp(key,"minimum")||!strcmp(key,"maximum"))return TXT_HR_RANGE_HINT;
+    if(!strcmp(key,"cooldown_ms"))return TXT_HR_COOLDOWN_HINT;
+    return TXT_HR_DEFAULT_HINT;
+}
 static int plugin_global_valid(PluginIni *d,const PluginField *fields,int count) {
     if(fields==plugin_oc){char *copy=malloc(d->length+1);if(!copy)return -1;
         memcpy(copy,d->text,d->length+1);OcConfig config;int keys,line;
@@ -47,6 +64,8 @@ static unsigned plugin_keys(PluginKeys *k) {
 }
 static void plugin_value(char *out,size_t cap,const PluginField *f,int v) {
     if(v<0)snprintf(out,cap,"%s",tr(TXT_PLUGIN_INHERIT));
+    else if(plugin_hex(f))snprintf(out,cap,"0x%08X",(unsigned)v);
+    else if(f->label==TXT_HR_TYPE)snprintf(out,cap,"%s",v==1?"uint8":v==2?"uint16":v==3?"uint32":"float32");
     else if(!strcmp(f->key,"overlay"))snprintf(out,cap,"%s",tr(v==2?TXT_PLUGIN_HOOK:v==1?TXT_PLUGIN_POLL:TXT_PLUGIN_OFF));
     else if(!strcmp(f->key,"tvout"))snprintf(out,cap,"%s",tr(v==2?TXT_PLUGIN_START:v==1?TXT_PLUGIN_CONNECTED:TXT_PLUGIN_OFF));
     else if(f->max==1)snprintf(out,cap,"%s",tr(v?TXT_PLUGIN_ON:TXT_PLUGIN_OFF));
@@ -57,10 +76,10 @@ static int plugin_fields(PluginIni *d,int section,const PluginField *fields,int 
     while(1){
         if(dirty){settings_shell(title);int first=sel/7*7;
             for(int i=first;i<count&&i<first+7;i++){
-                char value[48],row[128];plugin_value(value,sizeof(value),fields+i,pi_get(d,section,fields[i].key,section<0?fields[i].def:-1));
+                char value[48],row[128];plugin_value(value,sizeof(value),fields+i,pi_get(d,section,fields[i].key,(section<0||fields==plugin_health)?fields[i].def:-1));
                 snprintf(row,sizeof(row),"%s: %s",tr(fields[i].label),value);settings_line(i-first,i==sel,row);
             }
-            settings_line(8,0,tr(!strcmp(fields[sel].key,"target_mhz")?TXT_OC_WARNING:section<0?TXT_PLUGIN_MAIN_HINT:TXT_PLUGIN_PATH_HINT));
+            settings_line(8,0,tr(fields==plugin_health?plugin_health_hint(fields[sel].key):!strcmp(fields[sel].key,"target_mhz")?TXT_OC_WARNING:section<0?TXT_PLUGIN_MAIN_HINT:TXT_PLUGIN_PATH_HINT));
             settings_help(tr(section<0?TXT_PLUGIN_HELP:TXT_PLUGIN_VALUES_HELP));dirty=0;
         }
         unsigned hit=plugin_keys(&k);if(hit&PSP_CTRL_CIRCLE)return 0;
@@ -68,16 +87,17 @@ static int plugin_fields(PluginIni *d,int section,const PluginField *fields,int 
         if(hit&PSP_CTRL_UP){sel=(sel+count-1)%count;dirty=1;}
         else if(hit&PSP_CTRL_DOWN){sel=(sel+1)%count;dirty=1;}
         else if(hit&(PSP_CTRL_LEFT|PSP_CTRL_RIGHT|PSP_CTRL_CROSS|PSP_CTRL_SQUARE)){
-            const PluginField *f=fields+sel;int v=pi_get(d,section,f->key,section<0?f->def:-1);
+            const PluginField *f=fields+sel;int v=pi_get(d,section,f->key,(section<0||fields==plugin_health)?f->def:-1);
             if(section>=0&&(hit&PSP_CTRL_SQUARE))v=-1;
             else if((hit&PSP_CTRL_CROSS)&&f->max>2){
-                char text[24];snprintf(text,sizeof(text),"%d",v<0?f->def:v);
+                char text[24];if(plugin_hex(f))snprintf(text,sizeof(text),"0x%08X",(unsigned)(v<0?f->def:v));else snprintf(text,sizeof(text),"%d",v<0?f->def:v);
                 if(!settings_text(text,sizeof(text),0,tr(f->label))){plugin_keys_reset(&k);dirty=1;continue;}
-                char *end;long number=strtol(text,&end,10);
-                if(!text[0]||*end||number<f->min||number>f->max){plugin_notice(TXT_PLUGIN_ERROR);plugin_keys_reset(&k);dirty=1;continue;}
+                char *end,*start=text;while(*start==' '||*start=='\t')start++;
+                errno=0;long number=strtol(start,&end,plugin_hex(f)&&start[0]=='0'&&(start[1]=='x'||start[1]=='X')?16:10);
+                if(errno||end==start||*end||number<f->min||number>f->max){plugin_notice(TXT_PLUGIN_ERROR);plugin_keys_reset(&k);dirty=1;continue;}
                 v=(int)number;plugin_keys_reset(&k);
             }else if(hit&(PSP_CTRL_LEFT|PSP_CTRL_RIGHT|PSP_CTRL_CROSS)){
-                if(v<0)v=f->def;else v+=(hit&PSP_CTRL_LEFT)?-1:1;
+                if(v<0)v=f->def;else if(hit&PSP_CTRL_LEFT){if(v>f->min || f->max<=2)v--;}else if(v<f->max || f->max<=2)v++;
                 if(v<f->min)v=f->max>2?f->min:f->max;
                 if(v>f->max)v=f->max>2?f->max:f->min;
             }else continue;
@@ -86,8 +106,17 @@ static int plugin_fields(PluginIni *d,int section,const PluginField *fields,int 
     }
 }
 static int plugin_rules_valid(PluginIni *d,const PluginField *fields,int count) {
-    TitleRuleKey keys[8];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
-    return pi_validate_rules(d,keys,count);
+    TitleRuleKey keys[TITLE_RULE_MAX_KEYS];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
+    if(pi_validate_rules(d,keys,count))return -1;
+    if(fields==plugin_health){size_t a,b;
+        for(int s=0;!pi_section(d,s,&a,&b,NULL);s++){
+            int c[12];for(int i=0;i<12;i++)c[i]=pi_get(d,s,fields[i].key,fields[i].def);
+            if(!c[0])continue;
+            unsigned bytes=c[3]?4:c[2]==1?1:c[2]==2?2:4;
+            if(c[1]<0x08800000||c[1]>0x0a000000-(int)bytes||(c[1]&(bytes-1))||c[5]>=c[6]||(!c[3]&&c[4]))return -1;
+            if(c[10]&&(c[10]<0x08800000||c[10]>0x09fffffc||(c[10]&3)))return -1;
+        }
+    }return 0;
 }
 static int plugin_rule_name(char *name,int kind) {
     if(!settings_text(name,256,0,tr(kind?TXT_PLUGIN_ADD_PATH:TXT_PLUGIN_ADD_TITLE)))return 0;
@@ -96,7 +125,10 @@ static int plugin_rule_name(char *name,int kind) {
     return 1;
 }
 static void plugin_rules(PluginIni *d,const PluginField *fields,int count,const char *title) {
-    if(plugin_rules_valid(d,fields,count)){plugin_notice(TXT_PLUGIN_ERROR);return;}
+    /* Structurally valid profiles remain editable even if their enabled
+     * address/range needs repairing. Semantic checks apply when saving. */
+    TitleRuleKey keys[TITLE_RULE_MAX_KEYS];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
+    if(pi_validate_rules(d,keys,count)){plugin_notice(TXT_PLUGIN_ERROR);return;}
     int sel=0,dirty=1,confirm=-1;PluginKeys k;plugin_keys_reset(&k);
     while(1){
         int sections=0;size_t a,b;while(!pi_section(d,sections,&a,&b,NULL))sections++;
@@ -167,23 +199,24 @@ static void plugin_settings(void) {
     const int counts[]={8,10,4},rules[]={5,7,0};
     int sel=0,dirty=1;PluginKeys k;plugin_keys_reset(&k);
     /* Flattened hub keeps all destinations directly reachable. */
-    const int owner[]={0,0,1,1,1,2},kind[]={0,1,0,1,2,0};
+    const int owner[]={0,0,1,1,1,2,1},kind[]={0,1,0,1,2,0,3};
     while(1){
-        if(dirty){settings_shell(tr(TXT_PLUGINS));for(int i=0;i<6;i++){char row[96];snprintf(row,sizeof(row),"%s: %s",names[owner[i]],tr(kind[i]==1?TXT_PLUGIN_RULES:kind[i]==2?TXT_PLUGIN_FILTERS:TXT_PLUGIN_GLOBAL));settings_line(i,i==sel,row);}
+        if(dirty){settings_shell(tr(TXT_PLUGINS));for(int i=0;i<7;i++){char row[96];snprintf(row,sizeof(row),"%s: %s",names[owner[i]],tr(kind[i]==3?TXT_HR_TITLE:kind[i]==1?TXT_PLUGIN_RULES:kind[i]==2?TXT_PLUGIN_FILTERS:TXT_PLUGIN_GLOBAL));settings_line(i,i==sel,row);}
             settings_line(8,0,tr(TXT_PLUGIN_MAIN_HINT));settings_help(tr(TXT_PLUGIN_HELP));dirty=0;}
         unsigned hit=plugin_keys(&k);if(hit&PSP_CTRL_CIRCLE)return;
-        if(hit&PSP_CTRL_UP){sel=(sel+5)%6;dirty=1;}
-        else if(hit&PSP_CTRL_DOWN){sel=(sel+1)%6;dirty=1;}
+        if(hit&PSP_CTRL_UP){sel=(sel+6)%7;dirty=1;}
+        else if(hit&PSP_CTRL_DOWN){sel=(sel+1)%7;dirty=1;}
         else if(hit&PSP_CTRL_CROSS){int o=owner[sel],r=kind[sel];char path[192];
-            snprintf(path,sizeof(path),"ms0:/SEPLUGINS/%s/%s%s.ini",names[o],names[o],r==1?"-rules":"");
+            snprintf(path,sizeof(path),"ms0:/SEPLUGINS/%s/%s%s.ini",names[o],names[o],r==3?"-rumble":r==1?"-rules":"");
             /* Plugins must already be installed; never silently create a
              * disabled plugin or change ARK's registrations. OC alone has ef0 support. */
             char mainpath[192];snprintf(mainpath,sizeof(mainpath),"ms0:/SEPLUGINS/%s/%s.ini",names[o],names[o]);
             FILE *f=fopen(mainpath,"rb");
             if(!f&&o==0&&errno==ENOENT){memcpy(mainpath,"ef0",3);f=fopen(mainpath,"rb");if(f)memcpy(path,"ef0",3);}
             if(!f)plugin_notice(TXT_PLUGIN_ERROR);
-            else {fclose(f);PluginIni d;if(pi_open(&d,path,r==1?65536:o==2?1023:2047))plugin_notice(TXT_PLUGIN_ERROR);
-                else {if(r==1)plugin_rules(&d,fields[o],rules[o],names[o]);
+            else {fclose(f);PluginIni d;if(pi_open(&d,path,(r==1||r==3)?65536:o==2?1023:2047))plugin_notice(TXT_PLUGIN_ERROR);
+                else {if(r==3)plugin_rules(&d,plugin_health,12,tr(TXT_HR_TITLE));
+                    else if(r==1)plugin_rules(&d,fields[o],rules[o],names[o]);
                     else if(plugin_global_valid(&d,fields[o],counts[o]))plugin_notice(TXT_PLUGIN_ERROR);
                     else if(r==2)plugin_filters(&d);
                     else plugin_fields(&d,-1,fields[o],counts[o],names[o]);

@@ -1,0 +1,16 @@
+# Read RUMBLE.md first. No verified game addresses are shipped.
+# Settings -> Plugins -> PSPConsolizer: Game rumble can create/edit profiles.
+# Replace the example ID with your EXACT game's ID; do not enable address=0.
+[title:ULUS00000]
+enabled=0
+address=0
+type=2
+pointer=0
+offset=0
+minimum=0
+maximum=100
+strength=180
+duration_ms=120
+cooldown_ms=200
+gate_address=0
+gate_value=1

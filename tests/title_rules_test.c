@@ -38,5 +38,15 @@ int main(void)
     assert(title_rules_load("file","",keys,2,values)==2&&values[1]==266);
     input="[title:OTHER]\ntarget_mhz=400\n";
     assert(title_rules_load("file","",keys,2,values)==0&&values[1]==266);
+    TitleRuleKey address_key[]={ {"address",0,0x09ffffff} };int address[]={0};
+    input="[title:ULUS12345]\naddress=0x08801000\n";
+    assert(title_rules_load("file","",address_key,1,address)==1&&address[0]==0x08801000);
+    input="[title:ULUS12345]\naddress=142610432\n";
+    assert(title_rules_load("file","",address_key,1,address)==1&&address[0]==142610432);
+    input="[title:ULUS12345]\naddress=0xFFFFFFFFFFFFFFFF\n";
+    assert(title_rules_load("file","",address_key,1,address)<0);
+    input="[title:ULUS12345]\naddress=2147483648\n";
+    assert(title_rules_load("file","",address_key,1,address)<0);
+    assert(title_rules_load("file","",keys,TITLE_RULE_MAX_KEYS+1,values)<0);
     return 0;
 }

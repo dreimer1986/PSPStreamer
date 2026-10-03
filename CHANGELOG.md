@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Add optional PSP game hit rumble: read-only health profiles by title ID/path,
+  edited in PSPStreamer, with integer/float types, optional pointer/battle flag,
+  range checks, finite pulses and cooldown. No guessed game addresses shipped;
+  see `psp-controller/RUMBLE.md` for setup and the pending hardware test.
+- Add Monkey hull collision damage (player 30%, enemy 60%) and independently
+  adjustable native bass/beat and impact rumble, both off by default. Reuse
+  the existing StreamMaster motor channel without extra network polling.
+
 - Rename all Consolizer plugin files, configuration paths and ARK entries to
   PSPConsolizer; keep the unrelated StreamMaster app transport name unchanged.
 - Add per-controller PS/Home learning with firmware 0.3.13, preserving existing

@@ -1,4 +1,4 @@
-# 2.3 — PSP Consolizer, Fullscreen TV Gaming and PS1 Rumble
+# 2.3 — PSP Consolizer, Fullscreen TV Gaming and Configurable Rumble
 
 Changes since tag **2.2**:
 
@@ -19,7 +19,7 @@ Changes since tag **2.2**:
   Soul Calibur and Star Ocean on the tested PSP-3000 / ARK-5 setup.
 - **Real PS1 rumble:** POPS motor commands reach supported Bluetooth controllers
   through StreamMaster. Confirmed with the SF30 Pro in XInput mode in Need for
-  Speed: High Stakes and Wipeout 3. PSP games do not gain synthetic rumble.
+  Speed: High Stakes and Wipeout 3. This path preserves real PS1 motor commands.
 - **Wired USB HID:** added input support through the existing controller
   mapping workflow; individual adapters still require compatibility testing.
 - **Lean plugin memory use:** compact, on-demand overlay storage and coordinated
@@ -36,6 +36,11 @@ Changes since tag **2.2**:
   feedback in Monkey, including light wall scraping, heavier crashes and enemy
   hits. Uses the existing StreamMaster controller channel, with expiring output
   and no additional network polling. Both strength sliders default to off.
+- **PSP game hit rumble:** opt-in, read-only health monitoring through per-title
+  or launch-path profiles, configurable directly in PSPStreamer. Supports
+  integer/float health, optional pointer and battle flag, pulse strength/duration
+  and cooldown. Includes bilingual guidance and diagnostics; verified game
+  addresses must be supplied by the user. No automatic cheat/address detection.
 - **Release cleanup:** FuSa Fullscreen now has its permanent name, a concise
   installation guide and a separate development history; confirmed tasks have
   been removed from the ToDo.
@@ -48,6 +53,9 @@ Changes since tag **2.2**:
 - Native Monkey rumble also needs the updated **PSPConsolizerUSB.prx** when the
   resident plugin is used; restart the PSP. Existing POPS-rumble-capable ESP
   firmware remains compatible and does not need reflashing for this addition.
+- PSP health rumble requires that same updated resident plugin. See
+  `psp-controller/RUMBLE.md` (also packaged as `RUMBLE.md`) before enabling a
+  profile. Preserve your `PSPConsolizer-rumble.ini` across updates.
 - Migrate the old fullscreen folder/INI/ARK entry to
   `SEPLUGINS/FuSaFullscreen/FuSaFullscreen.prx`; do not enable both copies.
 - The new plugin editor does not install plugins or modify ARK registrations.
@@ -56,7 +64,7 @@ Changes since tag **2.2**:
 - Supported POPS rumble requires the corresponding StreamMaster firmware;
   it is not a promise of universal controller, firmware or game compatibility.
 
-The settings editor and Monkey collision/native-rumble additions have passed
+The settings editor, Monkey collision/native-rumble and health-profile additions have passed
 their builds and focused host-side checks; their final on-device tests remain
 pending. Existing fullscreen and
 overlay behavior was confirmed by the user before these additions.

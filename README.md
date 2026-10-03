@@ -1,6 +1,6 @@
 # PSP Streamer
 
-Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and PS1 Rumble](docs/RELEASE_2.3.md).
+Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and Configurable Rumble](docs/RELEASE_2.3.md).
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
@@ -1938,3 +1938,11 @@ to HTTP occurs. Use a trusted/VPN path when that risk is unacceptable.
 See [HTTPS and settings setup](docs/HTTPS_AND_SETTINGS.md). Browser HTTPS should
 use a normally trusted certificate. Docker and HA media sources/web assets are
 checked for equality in the test suite; both include mkvtoolnix for MKV PGS.
+
+## Optional PSP game hit feedback
+
+PSP Consolizer also offers opt-in health-triggered rumble profiles, edited in
+PSPStreamer under **SELECT -> Plugins -> PSPConsolizer: Game rumble**.
+This reads a verified health value; it does not modify games or automatically
+discover addresses. [Configuration and address-finding guide](psp-controller/RUMBLE.md)
+explains all fields, optional pointer/battle checks and the disabled defaults.

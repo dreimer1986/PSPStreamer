@@ -59,7 +59,10 @@ static int pi_key(const char *line,const char *key,const char **value) {
 static int pi_get(const PluginIni *d,int section,const char *key,int fallback) {
     size_t a=0,b=d->length;if(section>=0&&pi_section(d,section,&a,&b,NULL))return fallback;
     for(size_t p=a;p<b;p=pi_next(d,p)) {
-        char s[384];const char *v;if(!pi_line(d,p,s,sizeof(s))&&pi_key(s,key,&v))fallback=atoi(v);
+        char s[384];const char *v;if(!pi_line(d,p,s,sizeof(s))&&pi_key(s,key,&v)){
+            char *end;errno=0;long n=strtol(v,&end,v[0]=='0'&&(v[1]=='x'||v[1]=='X')?16:10);
+            if(!errno&&end!=v&&n>=0&&n<=INT_MAX)fallback=(int)n;
+        }
     }
     return fallback;
 }

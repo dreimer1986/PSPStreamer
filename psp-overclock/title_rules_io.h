@@ -7,6 +7,7 @@
 static int title_rules_load(const char *file,const char *path,
                             const TitleRuleKey *keys,int count,int *values)
 {
+    if(count<1||count>TITLE_RULE_MAX_KEYS)return -1;
     char id[17]={0},line[384],chunk[256];
     SceGameInfo *info=sceKernelGetGameInfo();
     if(info){memcpy(id,info->title_id,16);id[16]=0;}

@@ -2,9 +2,11 @@
 #ifndef PSP_TITLE_RULES_H
 #define PSP_TITLE_RULES_H
 #include <string.h>
+#include <limits.h>
+#define TITLE_RULE_MAX_KEYS 16
 typedef struct { const char *name; int minimum, maximum; } TitleRuleKey;
 typedef struct {
-    int values[8], draft[8], base[8], rank, best, line, error;
+    int values[TITLE_RULE_MAX_KEYS], draft[TITLE_RULE_MAX_KEYS], base[TITLE_RULE_MAX_KEYS], rank, best, line, error;
     int section, selected_line;
 } TitleRules;
 static int title_rule_equal(const char *a,const char *b,int id)
@@ -27,6 +29,7 @@ static int title_rules_line(TitleRules *r,char *s,const char *id,const char *pat
                             const TitleRuleKey *keys,int count)
 {
     char *end; int value=0,digits=0,k;
+    if(count<1||count>TITLE_RULE_MAX_KEYS){r->error=r->line+1;return -1;}
     r->line++;
     if(r->line==1 && strlen(s)>=3 && (unsigned char)s[0]==0xef &&
        (unsigned char)s[1]==0xbb && (unsigned char)s[2]==0xbf)s+=3;
@@ -54,7 +57,12 @@ static int title_rules_line(TitleRules *r,char *s,const char *id,const char *pat
     for(k=0;k<count;k++)if(!strcmp(s,keys[k].name))break;
     if(k==count)goto invalid;
     while(*v==' '||*v=='\t')v++;
-    while(*v>='0'&&*v<='9'){value=value*10+(*v++-'0');if(value>1000)goto invalid;digits++;}
+    int radix=10;
+    if(v[0]=='0'&&(v[1]=='x'||v[1]=='X')){radix=16;v+=2;}
+    for(;;){int digit=*v>='0'&&*v<='9'?*v-'0':radix==16&&*v>='a'&&*v<='f'?*v-'a'+10:radix==16&&*v>='A'&&*v<='F'?*v-'A'+10:-1;
+        if(digit<0)break;
+        if(value>(INT_MAX-digit)/radix)goto invalid;
+        value=value*radix+digit;v++;digits++;}
     while(*v==' '||*v=='\t'||*v=='\r')v++;
     if(!digits||(*v&&*v!='#'&&*v!=';')||value<keys[k].minimum||value>keys[k].maximum)goto invalid;
     r->draft[k]=value;

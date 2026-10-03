@@ -260,6 +260,15 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step3_title="O leaves rule values; O again cancels",
         .step3_text="Filters: case-sensitive path fragments."
     },
+    [HELP_PAGE_HEALTH_RUMBLE]={
+        .title="PSP game health rumble",
+        .step1_title="Plugins: PSPConsolizer > Game rumble",
+        .step1_text="Add exact game ID; use verified address.",
+        .step2_title="Set type and valid health range",
+        .step2_text="Pointer and battle flag are optional.",
+        .step3_title="Enable; O to list; START saves",
+        .step3_text="Restart game. Details: RUMBLE.md."
+    },
     [HELP_PAGE_PRESET_SETTINGS]={
         .title="Preset folders in settings",
         .step1_title="Choose MilkDrop preset, then X",
