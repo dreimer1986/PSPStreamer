@@ -44,13 +44,17 @@ The existing INI is backed up as `.ini.bak` when saved.
 | `type` | 1 = unsigned 8-bit, 2 = unsigned 16-bit (default), 3 = unsigned 32-bit, 4 = float32 | **Yes**, match how the game stores the number. A 100-point bar can use any of these. |
 | `minimum` | Lowest valid health, normally 0 | Usually 0; negative/signed health is not supported. |
 | `maximum` | Highest valid health; default 100 is an example, not a detected value | **Yes**, use the real full-health value, which may be 240, 1000, 1.0, etc. Bounds are whole numbers; float values inside them retain their fractional precision. |
-| `strength` | Large motor amplitude 0–255; default 180 | Personal preference, not game memory. 0 disables the effect. |
-| `duration_ms` | Each pulse lasts 10–1000 ms; default 120 | Personal preference. |
-| `cooldown_ms` | Minimum gap between new triggers, 20–5000 ms; default 200 | Prevents a draining health bar or repeated samples from starting too many pulses. |
+| `strength` | Large motor amplitude/cap 0–255; default 180 | Fixed strength or dynamic maximum; 0 disables the effect. |
+| `duration_ms` | Fixed-mode pulse, 10–1000 ms; default 120 | Not used in dynamic mode. |
+| `cooldown_ms` | Minimum gap between triggers, 20–5000 ms; default 200 | Dynamic mode lets stronger hits upgrade a running pulse. |
 | `pointer` | Default 0: read address directly. 1: read a 32-bit pointer at address | **Optional**, only for health that moves in RAM. |
 | `offset` | With pointer=1, add this nonnegative byte offset to that pointer; default 0 | **Optional**, must be measured for that game's object structure. One pointer level is supported. |
 | `gate_address` | Optional address of a uint32 battle-active flag; 0 disables the check | **Optional**, useful when the health location is reused during menus/loading. |
 | `gate_value` | Exact flag value that permits monitoring; default 1 | Only needed if a battle flag address is supplied. |
+| `dynamic` | 0 = fixed (compatible default), 1 = damage-based | Old/imported profiles stay fixed until enabled. |
+| `damage_peak` | Damage reaching the motor cap; default 120 | Calibration, **not total health**. |
+| `duration_min_ms` | Minimum dynamic pulse, default 60 ms | 10–1000 ms; no greater than maximum. |
+| `duration_max_ms` | Maximum dynamic pulse, default 500 ms | 10–1000 ms; no less than minimum. |
 
 The valid health range is **not a vibration setting**. If normal health is
 0–240 and a menu reuses the location for 65,535, the sample is ignored and the
@@ -106,7 +110,7 @@ write must be checked with the cheat **disabled**: does that address really
 decrease on a hit and refill on a new round? Keeping the cheat active can
 prevent the decrease that rumble needs. Importing never turns on the cheat.
 
-`duration_ms=120` means a 120 ms motor pulse. `cooldown_ms=200` means a minimum
+In fixed mode, `duration_ms=120` means a 120 ms motor pulse. `cooldown_ms=200` means a minimum
 200 ms between trigger starts, not an additional wait after the pulse. Decreases
 inside that interval are not queued. This helps avoid repeatedly triggering
 on an animated bar draining after one hit. Strength is 0–255, with 255 the
@@ -133,6 +137,57 @@ infinite-health cheat might patch instructions instead of storing health.
 Useful findings to report: title ID, game revision/region, full address, type,
 full-health value, one value after damage, and whether the address survives a
 round change and restart. Pointer/flag details are optional refinements.
+
+## Damage-based feedback / Schadensabhängiges Rumble
+
+Choose **Rumble mode: Damage-based** in the profile editor. Missing new keys
+preserve the original fixed behavior. For Soul Calibur, keep `maximum=240`
+(valid health range) and add:
+
+```ini
+dynamic=1
+damage_peak=120
+strength=255
+duration_min_ms=60
+duration_max_ms=500
+```
+
+| Observed damage | Percentage of configured motor cap | Pulse |
+|---:|---:|---:|
+| 1 HP | 15% | 60 ms |
+| 25 HP | 25% | 100 ms |
+| 60 HP | 60% | 220 ms |
+| 90 HP | 85% | 350 ms |
+| 120 HP and above | 100% | 500 ms |
+
+Intermediate values are interpolated. Tiny positive damage also starts at 15%.
+Percentages scale against `strength`: a cap of 180 means the strongest hit
+requests 180, not 255. Motor integer rounding applies. Changing `damage_peak`
+stretches the damage axis; min/max duration stretch the duration axis. These
+are haptic tuning choices, not verified attack-damage claims.
+
+A stronger hit immediately replaces a weaker running pulse, even during
+cooldown. Equal/weaker damage does not weaken or extend a running dynamic
+pulse. After expiry, cooldown must also have elapsed before a new pulse starts.
+Ignored changes are never queued or accumulated for later playback. Existing
+settling, validity and pointer/gate checks still apply. There is no special
+Ring Out / Critical Finish pattern because health alone cannot identify them.
+
+Prefer actual health to a draining display animation. At 50 Hz, multiple hits
+between samples appear as one combined decrease; a gradual display can split
+one hit into small changes. This is not an attack/ combo detector. Float health
+is converted to Q16 fixed-point before subtraction, without kernel FPU usage;
+fractions below 1/65536 HP are below calculation resolution. Only hit processing
+adds work; no new threads, polling channels or resident heap buffers.
+
+**Deutsch:** Im Profil **Rumble-Modus: Schadensabhängig** wählen. Schaden für
+Maximum = **120**, gültiges Lebensmaximum weiterhin **240**. „Max. Motor“ auf
+255 erlaubt volle Stärke, bei 180 bleibt auch der stärkste Treffer auf 180
+begrenzt. Min./Max. Impuls bestimmen die dynamische Dauer (Standard 60–500 ms).
+„Fester Impuls“ gilt nur für den festen Modus. Alte Profile bleiben zunächst fest.
+Ein stärkerer Treffer ersetzt einen laufenden schwächeren Impuls sofort, auch
+während der Sperrzeit. Gleiche/schwächere Treffer verlängern ihn nicht. Nichts
+wird für später aufgestaut. Nach Änderungen speichern und das Spiel neu starten.
 
 ## Files, diagnostics and cost
 

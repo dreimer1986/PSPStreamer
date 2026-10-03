@@ -25,10 +25,13 @@ static const PluginField plugin_health[]={
     {"offset",TXT_HR_OFFSET,0,65535,0},{"minimum",TXT_HR_MIN,0,2147483647,0},
     {"maximum",TXT_HR_MAX,1,2147483647,100},{"strength",TXT_HR_STRENGTH,0,255,180},
     {"duration_ms",TXT_HR_DURATION,10,1000,120},{"cooldown_ms",TXT_HR_COOLDOWN,20,5000,200},
-    {"gate_address",TXT_HR_GATE,0,0x09ffffff,0},{"gate_value",TXT_HR_GATE_VALUE,0,2147483647,1}
+    {"gate_address",TXT_HR_GATE,0,0x09ffffff,0},{"gate_value",TXT_HR_GATE_VALUE,0,2147483647,1},
+    {"dynamic",TXT_HR_MODE,0,1,0},{"damage_peak",TXT_HR_PEAK,1,2147483647,120},
+    {"duration_min_ms",TXT_HR_DURATION_MIN,10,1000,60},{"duration_max_ms",TXT_HR_DURATION_MAX,10,1000,500}
 };
 static int plugin_hex(const PluginField *f){return strstr(f->key,"address")!=NULL || !strcmp(f->key,"offset");}
 static TextId plugin_health_hint(const char *key){
+    if(!strcmp(key,"dynamic")||!strcmp(key,"damage_peak"))return TXT_HR_DYNAMIC_HINT;
     if(strstr(key,"address"))return !strcmp(key,"address")?TXT_HR_ADDRESS_HINT:TXT_HR_GATE_HINT;
     if(!strcmp(key,"type"))return TXT_HR_TYPE_HINT;
     if(!strcmp(key,"pointer")||!strcmp(key,"offset"))return TXT_HR_POINTER_HINT;
@@ -65,6 +68,7 @@ static unsigned plugin_keys(PluginKeys *k) {
 }
 static void plugin_value(char *out,size_t cap,const PluginField *f,int v) {
     if(v<0)snprintf(out,cap,"%s",tr(TXT_PLUGIN_INHERIT));
+    else if(f->label==TXT_HR_MODE)snprintf(out,cap,"%s",tr(v?TXT_HR_DYNAMIC:TXT_HR_FIXED));
     else if(plugin_hex(f))snprintf(out,cap,"0x%08X",(unsigned)v);
     else if(f->label==TXT_HR_TYPE)snprintf(out,cap,"%s",v==1?"uint8":v==2?"uint16":v==3?"uint32":"float32");
     else if(!strcmp(f->key,"overlay"))snprintf(out,cap,"%s",tr(v==2?TXT_PLUGIN_HOOK:v==1?TXT_PLUGIN_POLL:TXT_PLUGIN_OFF));
@@ -111,7 +115,8 @@ static int plugin_rules_valid(PluginIni *d,const PluginField *fields,int count) 
     if(pi_validate_rules(d,keys,count))return -1;
     if(fields==plugin_health){size_t a,b;
         for(int s=0;!pi_section(d,s,&a,&b,NULL);s++){
-            int c[12];for(int i=0;i<12;i++)c[i]=pi_get(d,s,fields[i].key,fields[i].def);
+            int c[16];for(int i=0;i<16;i++)c[i]=pi_get(d,s,fields[i].key,fields[i].def);
+            if(c[12]&&c[14]>c[15])return -1;
             if(!c[0])continue;
             unsigned bytes=c[3]?4:c[2]==1?1:c[2]==2?2:4;
             if(c[1]<0x08800000||c[1]>0x0a000000-(int)bytes||(c[1]&(bytes-1))||c[5]>=c[6]||(!c[3]&&c[4]))return -1;
@@ -247,7 +252,7 @@ static void plugin_settings(void) {
             if(!f&&o==0&&errno==ENOENT){memcpy(mainpath,"ef0",3);f=fopen(mainpath,"rb");if(f)memcpy(path,"ef0",3);}
             if(!f)plugin_notice(TXT_PLUGIN_ERROR);
             else {fclose(f);PluginIni d;if(pi_open(&d,path,(r==1||r==3)?65536:o==2?1023:2047))plugin_notice(TXT_PLUGIN_ERROR);
-                else {if(r==3)plugin_rules(&d,plugin_health,12,tr(TXT_HR_TITLE));
+                else {if(r==3)plugin_rules(&d,plugin_health,16,tr(TXT_HR_TITLE));
                     else if(r==1)plugin_rules(&d,fields[o],rules[o],names[o]);
                     else if(plugin_global_valid(&d,fields[o],counts[o]))plugin_notice(TXT_PLUGIN_ERROR);
                     else if(r==2)plugin_filters(&d);

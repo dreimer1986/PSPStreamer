@@ -1,11 +1,12 @@
 #include "health_rumble.h"
-static int health_config[HR_COUNT]={0,0,2,0,0,0,100,180,120,200,0,1};
+static int health_config[HR_COUNT]={0,0,2,0,0,0,100,180,120,200,0,1,0,120,60,500};
 static HealthRumble health_state;
 static const TitleRuleKey health_keys[]={
     {"enabled",0,1},{"address",0,0x09ffffff},{"type",1,4},
     {"pointer",0,1},{"offset",0,65535},{"minimum",0,2147483647},
     {"maximum",1,2147483647},{"strength",0,255},{"duration_ms",10,1000},
-    {"cooldown_ms",20,5000},{"gate_address",0,0x09ffffff},{"gate_value",0,2147483647}
+    {"cooldown_ms",20,5000},{"gate_address",0,0x09ffffff},{"gate_value",0,2147483647},
+    {"dynamic",0,1},{"damage_peak",1,2147483647},{"duration_min_ms",10,1000},{"duration_max_ms",10,1000}
 };
 static void health_load(void) {
     if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME)return;

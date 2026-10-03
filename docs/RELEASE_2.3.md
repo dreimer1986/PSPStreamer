@@ -43,6 +43,10 @@ Changes since tag **2.2**:
   Soul Calibur ULES01298 example. Guided single-line CWCheat and PPSSPP/RetroArch
   search-result imports convert address bases and request the actual value type;
   imported profiles remain off for review. Cheats are never activated.
+- **Damage-scaled feedback:** optional per-game strength and duration based on
+  observed health loss, reaching the configured cap at 120 HP by default.
+  Stronger hits upgrade active pulses without a backlog; the fixed mode remains
+  available. All tuning options are editable in PSPStreamer.
 - **Release cleanup:** FuSa Fullscreen now has its permanent name, a concise
   installation guide and a separate development history; confirmed tasks have
   been removed from the ToDo.

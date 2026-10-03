@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Add optional damage-scaled game rumble with a configurable full-power
+  threshold (120 HP default), motor cap and pulse range (60–500 ms default).
+  Stronger hits can upgrade running pulses without queued effects; preserve
+  fixed-mode profiles and use integer-only float-health decoding in the plugin.
+
 - Add optional PSP game hit rumble: read-only health profiles by title ID/path,
   edited in PSPStreamer, with integer/float types, optional pointer/battle flag,
   range checks, finite pulses and cooldown. Soul Calibur ULES01298 confirmed

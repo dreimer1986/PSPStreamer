@@ -48,5 +48,39 @@ int main(void){
         c[HR_TYPE]=type;c[HR_MAX]=100;health=100;assert(!step(&s,c,0));settle(&s,c);
         health=99;assert(step(&s,c,1)==180);
     }
-    puts("Health rumble: types, validity, pointer/gate, cooldown, expiry, re-arm and no-read-disabled OK");
+    c[HR_DYNAMIC]=1;c[HR_PEAK]=120;c[HR_DURATION_MIN]=60;c[HR_DURATION_MAX]=500;c[HR_STRENGTH]=255;
+    const unsigned hits[]={1,25,60,90,120,140,240};
+    const unsigned powers[]={38,64,153,217,255,255,255};
+    const unsigned times[]={60,100,220,350,500,500,500};
+    for(unsigned i=0;i<sizeof(hits)/sizeof(*hits);i++){
+        unsigned power,ms;hr_curve((uint64_t)hits[i]<<16,c,&power,&ms);
+        assert(power==powers[i]&&ms==times[i]);
+    }
+    assert(hr_health_q16(0x43700000,4)==(240u<<16));
+    assert(hr_health_q16(0x3f000000,4)==32768);
+    assert(hr_health_q16(1,4)==0);
+    assert(hr_health_q16(0x4effffff,4)==((uint64_t)2147483520u<<16));
+    c[HR_MAX]=240;c[HR_TYPE]=4;health=hr_float_bound(240);assert(!step(&s,c,0));settle(&s,c);
+    health=hr_float_bound(215);assert(step(&s,c,1)==64&&s.damage==(25u<<16));
+    assert(s.effect_until==now+100000);
+    health=hr_float_bound(125);assert(step(&s,c,1)==217&&s.events==2); /* stronger bypasses cooldown */
+    uint64_t end=s.effect_until;
+    health=hr_float_bound(120);assert(step(&s,c,1)==217&&s.events==2&&s.effect_until==end);
+    for(int i=0;i<17;i++)step(&s,c,1);
+    assert(!step(&s,c,1));health=0;assert(step(&s,c,1)==255&&s.damage==(120u<<16));
+    assert(s.effect_until==now+500000);
+    assert(!step(&s,c,0));health=hr_float_bound(240);settle(&s,c);
+    c[HR_DURATION_MIN]=600;health=hr_float_bound(200);assert(!step(&s,c,1)&&!s.baseline);
+    c[HR_DURATION_MIN]=60;c[HR_STRENGTH]=0;health=hr_float_bound(240);settle(&s,c);
+    health=hr_float_bound(120);assert(!step(&s,c,1));
+    c[HR_STRENGTH]=180;unsigned power,ms;hr_curve(120u<<16,c,&power,&ms);assert(power==180&&ms==500);
+    c[HR_PEAK]=240;hr_curve(120u<<16,c,&power,&ms);assert(power==108&&ms==220);
+    c[HR_PEAK]=120;unsigned last_power=0,last_ms=0;
+    for(unsigned d=1;d<=360;d++){
+        hr_curve((uint64_t)d<<16,c,&power,&ms);
+        assert(power>=last_power&&power<=180&&ms>=last_ms&&ms<=500);
+        last_power=power;last_ms=ms;
+    }
+    hr_curve((uint64_t)2147483647u<<16,c,&power,&ms);assert(power==180&&ms==500);
+    puts("Health rumble: fixed/dynamic modes, integer-only float damage, 120 HP cap, stronger-hit upgrade and expiry OK");
 }

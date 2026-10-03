@@ -23,18 +23,23 @@ static void feed(const unsigned *p,int count){memcpy(keys,p,count*sizeof(*p));po
 int main(void){
     PluginIni d;assert(!pi_open(&d,"/no-such-folder/test.ini",65536));
     strcpy(d.text,"[title:ULUS12345]\nenabled=1\naddress=0x08801000\nmaximum=240\n");d.length=strlen(d.text);
-    assert(!plugin_rules_valid(&d,plugin_health,12));assert(pi_get(&d,0,"address",0)==0x08801000);
+    assert(!plugin_rules_valid(&d,plugin_health,16));assert(pi_get(&d,0,"address",0)==0x08801000);
     char value[48];plugin_value(value,sizeof(value),plugin_health+1,0x08801000);assert(!strcmp(value,"0x08801000"));
-    assert(!pi_set(&d,0,"address",1));assert(plugin_rules_valid(&d,plugin_health,12)<0);
+    assert(!pi_set(&d,0,"address",1));assert(plugin_rules_valid(&d,plugin_health,16)<0);
     /* Enter the address field, accept hexadecimal input, return to list. */
     unsigned edit[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_CROSS,0,PSP_CTRL_CIRCLE};
-    input="0x08801000";feed(edit,sizeof(edit)/sizeof(*edit));plugin_fields(&d,0,plugin_health,12,"rumble");
-    assert(pi_get(&d,0,"address",0)==0x08801000);assert(!plugin_rules_valid(&d,plugin_health,12));
-    assert(!pi_set(&d,0,"minimum",241));assert(plugin_rules_valid(&d,plugin_health,12)<0);
-    assert(!pi_set(&d,0,"minimum",0));assert(!pi_set(&d,0,"gate_address",0x08801001));assert(plugin_rules_valid(&d,plugin_health,12)<0);
-    assert(!pi_set(&d,0,"gate_address",0));assert(!plugin_rules_valid(&d,plugin_health,12));
-    assert(!pi_set(&d,0,"offset",4));assert(plugin_rules_valid(&d,plugin_health,12)<0);
-    assert(!pi_set(&d,0,"pointer",1));assert(!plugin_rules_valid(&d,plugin_health,12));
+    input="0x08801000";feed(edit,sizeof(edit)/sizeof(*edit));plugin_fields(&d,0,plugin_health,16,"rumble");
+    assert(pi_get(&d,0,"address",0)==0x08801000);assert(!plugin_rules_valid(&d,plugin_health,16));
+    assert(!pi_set(&d,0,"minimum",241));assert(plugin_rules_valid(&d,plugin_health,16)<0);
+    assert(!pi_set(&d,0,"minimum",0));assert(!pi_set(&d,0,"gate_address",0x08801001));assert(plugin_rules_valid(&d,plugin_health,16)<0);
+    assert(!pi_set(&d,0,"gate_address",0));assert(!plugin_rules_valid(&d,plugin_health,16));
+    assert(!pi_set(&d,0,"offset",4));assert(plugin_rules_valid(&d,plugin_health,16)<0);
+    assert(!pi_set(&d,0,"pointer",1));assert(!plugin_rules_valid(&d,plugin_health,16));
+    assert(!pi_set(&d,0,"dynamic",1));assert(!pi_set(&d,0,"damage_peak",120));
+    assert(!pi_set(&d,0,"duration_min_ms",60));assert(!pi_set(&d,0,"duration_max_ms",500));
+    assert(!plugin_rules_valid(&d,plugin_health,16));
+    assert(!pi_set(&d,0,"duration_min_ms",600));assert(plugin_rules_valid(&d,plugin_health,16)<0);
+    assert(!pi_set(&d,0,"duration_min_ms",60));
     unsigned exit[]={0,PSP_CTRL_CIRCLE};feed(exit,2);plugin_settings();
     uint32_t a,v;int w;
     assert(!hi_cw("_L 0x203E364C 0x43700000",&a,&v,&w)&&a==0x08be364c&&w==3);
