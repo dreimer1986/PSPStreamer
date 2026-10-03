@@ -34,6 +34,7 @@ int md_cave_control(int shoulders,int analog_x,int analog_y,int throttle,int rol
 /* Labels: health, score, hall, return, save failure, game over, start, exit,
  * hold to exit, no entries, menu navigation. */
 void md_cave_game_ui(const unsigned char *font,int paused,const char *const labels[11]);
+void md_cave_rumble(int playing,unsigned *small,unsigned *large);
 int md_cave_game_menu(int move,int ship_move,int confirm,int back);
 void md_profile_reset(int enabled);
 void md_profile_select(const char *name,int tv,int fullscreen,int preset);

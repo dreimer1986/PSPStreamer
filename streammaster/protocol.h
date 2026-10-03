@@ -59,6 +59,7 @@ _Static_assert(sizeof(SmBtUsbDiag)==264,"Bluetooth USB diagnostics layout");
 #define SM_DEV_RESIDENT 0x53540031U
 #define SM_DEV_APP_OWNER 0x53540032U
 #define SM_DEV_PAD_META 0x53540033U
+#define SM_DEV_APP_RUMBLE 0x53540034U /* Validated 8-byte RM frame; cached, no USB wait. */
 /* Optional cached EP0 metadata. Sixteen four-byte chunks, 0x60..0x6f.
  * 255 means unknown battery, never zero. Old input packets stay unchanged. */
 /* reserved: rumble backend/progress flags (rumble.h), output blocked flag,

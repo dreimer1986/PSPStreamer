@@ -1353,6 +1353,8 @@ These settings are saved in the existing `pspstreamer.cfg`:
 | `cave_noise` | `0` | Original wall-noise amount, 0–16; 0 disables it, matching the desktop default |
 | `cave_flight_sensitivity` | `50` | Flight steering strength, 10–100; lower gives gentler steering and rolling |
 | `cave_flight_inertia` | `65` | Flight response smoothing, 0–100; higher responds and settles more slowly |
+| `cave_rumble_music` | `0` | Monkey bass/beat vibration strength, 0–100%; 0 disables it |
+| `cave_rumble_game` | `0` | Monkey impacts/scraping vibration strength, 0–100%; 0 disables it |
 | `preset_random_seconds` | `10` | Additional random automatic-switch delay, 0–120 seconds |
 | `preset_hard_cuts` | `0` | Enable music-triggered immediate preset switches, 0/1 |
 | `preset_hard_threshold` | `250` | Hard-cut sensitivity threshold, 125–400 percent |
@@ -1502,6 +1504,33 @@ bounds follow the chosen model. These are choices, not upgrades.
 
 Destroyed enemies use the player's 2.5-second particle explosion at the kill
 position. They still award 100 points exactly once.
+
+Colliding with an enemy removes **30 player shield points** and **60% of the
+enemy's maximum health**, once per contact rather than every frame. A swept
+hull check catches crossings between frames. Existing damage protection is
+respected; barrel rolls still block shots, not physical hull collisions.
+Three blaster hits still destroy a full-health enemy. Ram kills use the same
+explosion and scoring path as blaster kills.
+
+Monkey's Circle options include separate **Music rumble (%)** and **Impact
+rumble (%)** sliders, initially 0 (off). Music drives a soft bass/beat response;
+wall scraping is light, frontal wall impacts stronger, and enemy collisions
+strongest. Received blaster hits also vibrate. The variable motor follows the
+configured strength; the binary small motor adds a kick only for strong impacts.
+Pause, leaving Monkey and stopping playback stop output. Stalled updates expire
+after 250 ms in the bridge; firmware motor effects are also time-limited.
+
+Update **EBOOT.PBP, PSPStreamer.prx and StreamMasterUSB.prx together**, plus
+**PSPConsolizerUSB.prx** if the resident plugin is installed, and restart the PSP.
+The existing POPS-rumble-capable ESP firmware is sufficient; no new flash is
+needed. Supported controllers are the same as for POPS rumble (tested backend:
+SF30 Pro in XInput mode); generic wired adapters do not gain guessed output
+protocols. The native app submits an 8-byte cached command at most 20 times/s;
+the existing controller USB reply carries it, without extra network requests,
+blocking USB exchanges, worker threads or audio-thread work. Native and POPS
+motor values have separate caches, so the resident POPS service cannot overwrite
+the app's output. This is deliberate native-app feedback, not PSP game rumble
+emulation.
 
 A neon-green **Astro Shield** pickup floats on the automatic tunnel path. Fly
 through its face to restore **66 percentage points of shield**, capped at 100.

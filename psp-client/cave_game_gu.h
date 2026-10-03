@@ -1,5 +1,13 @@
 /* Game-only overlay. Normal Monkey rendering never allocates this atlas. */
 #include "cave_scores.h"
+#include "cave_rumble.h"
+void md_cave_rumble(int playing,unsigned *small,unsigned *large) {
+    *small=*large=0;if(!cave_scene)return;
+    CaveScene *s=cave_scene;
+    cave_rumble_mix(s->motion.bass,s->motion.pulse,
+        s->flight&&(s->game.phase==CAVE_GAME_ALIVE||s->game.phase==CAVE_GAME_EXPLODING)?s->rumble_event:0,
+        cave_options.rumble_music,cave_options.rumble_game,playing&&!s->game.paused,small,large);
+}
 #include <stdlib.h>
 static const unsigned char *cave_hud_font;
 static unsigned short *cave_hud_atlas;

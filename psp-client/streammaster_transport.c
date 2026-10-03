@@ -9,6 +9,23 @@
 #include <stdio.h>
 #include <string.h>
 #include "streammaster_transport.h"
+#include "../streammaster/rumble.h"
+void stm_app_rumble(unsigned small,unsigned large) {
+    static unsigned long long last;
+    static int claimed,nonzero;
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    if(!small&&!large&&!nonzero)return;
+    if((small||large)&&nonzero&&now>=last&&now-last<50000)return;
+    if(!claimed){
+        if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)==SM_RESIDENT_MAGIC &&
+           sceIoDevctl("stm:",SM_DEV_APP_OWNER,NULL,0,NULL,0)<0)return;
+        claimed=1;
+    }
+    unsigned char frame[SM_RUMBLE_BYTES];sm_rumble_frame(frame,small,large>255?255:large);
+    int rc=sceIoDevctl("stm:",SM_DEV_APP_RUMBLE,frame,sizeof(frame),NULL,0);
+    last=now;nonzero=!!(small||large);
+    if(rc<0)claimed=0;
+}
 #define FD_BASE 0x60000000
 #define LOCAL_SOCKETS 12
 typedef struct {

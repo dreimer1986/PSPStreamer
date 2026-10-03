@@ -25,6 +25,14 @@ that is the separate StreamMaster transport, not the Consolizer plugin.
 
 ### Per-title and exact-path settings
 
+The current USB bridge also accepts expiring native-app rumble from PSPStreamer
+Monkey. App and POPS motor caches are separate, and ownership selects one source;
+the POPS worker cannot erase an app effect. Capability is advertised independently
+of `pops_rumble` so the app does not require USB re-enumeration. Outside app
+ownership, `pops_rumble=0` still disables POPS output. No extra worker or bulk
+channel is allocated. Update both `PSPConsolizerUSB.prx` and the app's standalone
+`StreamMasterUSB.prx` when updating PSPStreamer; the ESP firmware is unchanged.
+
 PSPStreamer now exposes main options, title/path rules and allow/exclude filters
 under **Settings → Plugins → PSPConsolizer**. Changes are startup-only; Start
 saves the current draft with a `.bak` backup. ARK registration is unchanged.

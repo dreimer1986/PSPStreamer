@@ -94,6 +94,8 @@ main.o cave_visual.o milkdrop_gu.o: cave_game.h
 main.o cave_visual.o milkdrop_gu.o: cave_combat.h
 cave_visual.o: cave_combat_impl.h cave_models_bounds.h
 milkdrop_gu.o: cave_models_data.h cave_combat_gu.h
+milkdrop_gu.o: cave_rumble.h
+streammaster_transport.o: ../streammaster/rumble.h
 milkdrop_gu.o: cave_shield_data.h cave_game_gu.h
 milkdrop_gu.o: cave_clip.h cave_style.h cave_bend.h
 milkdrop_gu.o: cave_ship_data.h

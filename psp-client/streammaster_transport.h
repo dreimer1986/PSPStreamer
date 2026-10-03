@@ -5,6 +5,7 @@
 #include "../streammaster/protocol.h"
 int stm_init(int enabled,const char *host,int port,int https);
 int stm_enabled(void);
+void stm_app_rumble(unsigned small,unsigned large);
 void stm_diagnostic_enable(int enabled);
 int stm_diagnostic_snapshot(char *line,unsigned size,int buffers);
 int stm_download_snapshot(int fd,char *line,unsigned size);

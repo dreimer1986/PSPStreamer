@@ -29,15 +29,25 @@ Changes since tag **2.2**:
 - **Plugin settings on the PSP:** edit OC, Consolizer and FuSa options, manage
   title/path rules and Consolizer path filters, with verified writes, INI backups
   and bilingual help. No PC is needed to adjust an installed plugin.
+- **Monkey combat:** enemy collisions now damage both hulls (30% player / 60%
+  enemy maximum health), once per contact, with swept detection, explosions and
+  kill credit. Three-shot blaster kills remain unchanged.
+- **Native-app rumble:** optional, independently adjustable bass/beat and impact
+  feedback in Monkey, including light wall scraping, heavier crashes and enemy
+  hits. Uses the existing StreamMaster controller channel, with expiring output
+  and no additional network polling. Both strength sliders default to off.
 - **Release cleanup:** FuSa Fullscreen now has its permanent name, a concise
   installation guide and a separate development history; confirmed tasks have
   been removed from the ToDo.
 
 ## Updating
 
-- Copy **EBOOT.PBP and PSPStreamer.prx together**. Preserve your player config,
+- Copy **EBOOT.PBP, PSPStreamer.prx and StreamMasterUSB.prx together**. Preserve your player config,
   media, controller mappings and plugin INIs.
 - Use the current Consolizer/OC plugins for fullscreen overlay integration.
+- Native Monkey rumble also needs the updated **PSPConsolizerUSB.prx** when the
+  resident plugin is used; restart the PSP. Existing POPS-rumble-capable ESP
+  firmware remains compatible and does not need reflashing for this addition.
 - Migrate the old fullscreen folder/INI/ARK entry to
   `SEPLUGINS/FuSaFullscreen/FuSaFullscreen.prx`; do not enable both copies.
 - The new plugin editor does not install plugins or modify ARK registrations.
@@ -46,6 +56,7 @@ Changes since tag **2.2**:
 - Supported POPS rumble requires the corresponding StreamMaster firmware;
   it is not a promise of universal controller, firmware or game compatibility.
 
-The new settings editor has passed its build and focused host-side checks;
-its final on-device interaction test remains pending. Existing fullscreen and
-overlay behavior was confirmed by the user before this settings-only change.
+The settings editor and Monkey collision/native-rumble additions have passed
+their builds and focused host-side checks; their final on-device tests remain
+pending. Existing fullscreen and
+overlay behavior was confirmed by the user before these additions.

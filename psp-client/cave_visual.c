@@ -13,7 +13,7 @@
 #include <math.h>
 
 static float mix(float a,float b,float t){return a+(b-a)*t;}
-CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65,0};
+CaveOptions cave_options={1,1,1,1,1,8,8,-1,100,0,0,50,65,0,0,0};
 static float flight_axis(int value) {
     float x=value-128;
     if(fabsf(x)<=20)return 0;
@@ -233,9 +233,12 @@ static void cave_flight_step(CaveScene *s,float distance,float dt) {
         s->flight_x+=delta[0];s->flight_y+=delta[1];s->motion.travel+=delta[2];
     }
     if(collided) {
+        s->rumble_event=fmaxf(s->rumble_event,.12f);
         cave_game_wall_hit(&s->game);
         s->flight_stuck=(s->motion.travel-before<distance*.15f)?s->flight_stuck+dt:0;
         if(s->flight_impact<=0) {
+            float headon=fabsf(hit_normal[0]*dx+hit_normal[1]*dy+hit_normal[2])/sqrtf(dx*dx+dy*dy+1);
+            s->rumble_event=fmaxf(s->rumble_event,.2f+.45f*headon);
             s->flight_impact=.7f;
             /* One short recoil per contact cooldown. Throttle stays forward;
              * only the collision response may move slightly backwards. */
@@ -601,6 +604,7 @@ CaveSlice *cave_prepare(CaveScene *s,const unsigned char bands[12],int level,uns
     (void)level;
     double elapsed=s->motion.previous && now>=s->motion.previous?(now-s->motion.previous)*.000001:0;
     cave_game_tick(&s->game,elapsed);
+    s->rumble_event*=expf(-(float)elapsed*8);
     if(s->game.phase==CAVE_GAME_HALL)s->flight=0;
     float dt=(float)elapsed;
     s->motion.previous=now;if(dt>.1f)dt=.1f;

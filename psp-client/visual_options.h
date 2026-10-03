@@ -23,6 +23,8 @@ static VisualOption visual_options[]={
     {"cave_flight_sensitivity",TXT_CAVE_FLIGHT_SENSITIVITY,&cave_options.flight_sensitivity,10,100,5},
     {"cave_flight_inertia",TXT_CAVE_FLIGHT_INERTIA,&cave_options.flight_inertia,0,100,5},
     {"cave_autopilot_ship",TXT_CAVE_AUTOPILOT,&cave_options.autopilot_ship,0,1,1},
+    {"cave_rumble_music",TXT_CAVE_RUMBLE_MUSIC,&cave_options.rumble_music,0,100,5},
+    {"cave_rumble_game",TXT_CAVE_RUMBLE_GAME,&cave_options.rumble_game,0,100,5},
     {"preset_live_transitions",TXT_PRESET_LIVE,&md_live_transitions,0,1,1},
     {"preset_random_seconds",TXT_PRESET_RANDOM,&preset_random_seconds,0,120,5},
     {"preset_hard_cuts",TXT_PRESET_HARD,&preset_hard_cuts,0,1,1},
@@ -38,7 +40,7 @@ static VisualOption visual_options[]={
     {"spectrum_led_count",TXT_SETTINGS_SPECTRUM_LEDS,&spectrum_led_count,8,32,1}
 };
 #define VISUAL_OPTION_COUNT ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
-#define VISUAL_CAVE_OPTIONS 14
+#define VISUAL_CAVE_OPTIONS 16
 #define VISUAL_SPECTRUM_OPTIONS 8
 static int visual_option_parse(const char *line) {
     for(int i=0;i<VISUAL_OPTION_COUNT;i++) {

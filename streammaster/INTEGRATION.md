@@ -1,5 +1,26 @@
 # Integrating StreamMaster into another PSP homebrew
 
+## Native controller rumble (current bridge)
+
+The current `StreamMasterUSB.prx` and `PSPConsolizerUSB.prx` support native
+homebrew feedback through `SM_DEV_APP_RUMBLE`, using the existing POPS-rumble
+firmware protocol. This drives the connected controller, not a motor in the PSP.
+After acquiring the bridge as described below, use `stm_app_rumble(small, large)`
+from `streammaster_transport.h`: small is binary, large is 0–255. It caches a
+validated 8-byte `RM` frame via `sceIoDevctl`, never waits for USB, and limits
+nonzero updates to 20 Hz. Zero stops bypass the rate limit.
+
+Submit only while feedback is active and send `(0,0)` on pause, stop, menu entry
+and exit. The kernel cache expires after 250 ms; the firmware also uses finite
+motor effects. Existing controller replies carry the motor data—there is no
+new socket, bulk channel or worker. App ownership selects an independent cache,
+leaving POPS feedback separate. Unsupported/older bridges reject the new
+command without receiving guessed motor reports. Controller support is the
+same as the existing firmware rumble backend; native feedback does not add
+rumble support to arbitrary USB adapters.
+
+The original networking integration guide follows.
+
 This guide describes the code shipped with firmware **0.2.2**, including the
 optional O3 comparison build. It is a source-level integration, not an installed
 replacement for Sony's WLAN driver. Unmodified games, the XMB browser and other

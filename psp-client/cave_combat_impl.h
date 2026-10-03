@@ -52,7 +52,7 @@ static void cave_combat_spawn(CaveScene *s) {
             }
             if(!clear || (cave_density(s,px-.6f,py+.25f,z)<.008f &&
                           cave_density(s,px+.6f,py+.25f,z)<.008f))continue;
-            c->health=CAVE_ENEMY_HITS;c->model=model;c->drone=drone;c->waypoint_wait=0;
+            c->health=CAVE_ENEMY_MAX_HEALTH;c->contact=0;c->model=model;c->drone=drone;c->waypoint_wait=0;
             c->spawn_sequence++;
             c->enemy[0]=px;c->enemy[1]=py;c->enemy[2]=z;
             c->aim[0]=0;c->aim[1]=0;c->aim[2]=-1;c->visible=0;
@@ -141,6 +141,34 @@ static void cave_shield_step(CaveScene *s,float dt,const float player[3]) {
     }
     memcpy(c->previous_player,player,sizeof(c->previous_player));c->previous_player_valid=1;
 }
+static void cave_enemy_destroy(CaveScene *s) {
+    CaveCombat *c=&s->combat;c->health=0;
+    cave_game_enemy_destroyed(&s->game,100);
+    memcpy(c->explosion,c->enemy,sizeof(c->explosion));c->explosion_age=0;c->explosion_active=1;
+}
+/* Swept expanded hull: catches passage between frames. Keep one hit per
+ * contact, including during protection; release only after separation. */
+static void cave_enemy_contact(CaveScene *s,const float player[3]) {
+    CaveCombat *c=&s->combat;float lo=0,hi=1;int hit=1;
+    if(c->health<=0||s->game.phase!=CAVE_GAME_ALIVE||s->game.paused)return;
+    const float *before=c->previous_player_valid?c->previous_player:player;
+    for(int k=0;k<3;k++){
+        float enemy_half=cave_model_half[c->model][k]*CAVE_ENEMY_SCALE;
+        /* Enemy heading and player banking can exchange horizontal axes. */
+        if(k!=1)enemy_half=fmaxf(cave_model_half[c->model][0],cave_model_half[c->model][2])*CAVE_ENEMY_SCALE;
+        float own=k==1?fmaxf(s->ship_half[1],fabsf(sinf(s->flight_roll))*s->ship_half[0]):s->ship_half[k];
+        float radius=enemy_half+own,a=before[k]-c->enemy[k],v=player[k]-before[k];
+        if(fabsf(v)<1e-7f){if(fabsf(a)>radius)hit=0;}
+        else {float t0=(-radius-a)/v,t1=(radius-a)/v;lo=fmaxf(lo,fminf(t0,t1));hi=fminf(hi,fmaxf(t0,t1));}
+    }
+    hit=hit&&lo<=hi;
+    if(hit&&!c->contact&&s->game.protection<=0){
+        c->health-=CAVE_ENEMY_RAM_DAMAGE;c->flash=.3f;
+        if(c->health<=0)cave_enemy_destroy(s);
+        cave_game_ram_hit(&s->game);s->flight_impact=.7f;s->rumble_event=1;
+    }
+    c->contact=hit;
+}
 static void cave_combat_step(CaveScene *s,float dt) {
     CaveCombat *c=&s->combat;
     if(!s->flight || s->game.phase!=CAVE_GAME_ALIVE || s->game.paused || dt<=0)return;
@@ -153,7 +181,6 @@ static void cave_combat_step(CaveScene *s,float dt) {
         if(c->health>0){c->pending_spawn=0;c->spawn=15+(random_step(&c->random)%5001)*.001f;}
     }
     float player[3]={s->flight_x,s->flight_y,s->motion.travel+2};
-    cave_shield_step(s,dt,player);
     c->fire_cooldown=fmaxf(0,c->fire_cooldown-dt);
     if(c->fire && !c->fire_cooldown && s->flight_age>.85f) {
         float dx,dy;cave_flight_direction(s,&dx,&dy);float dir[3]={dx,dy,1};unit3(dir);
@@ -162,6 +189,11 @@ static void cave_combat_step(CaveScene *s,float dt) {
     }
     if(c->health>0) {
         cave_drone_step(s,dt);
+        cave_enemy_contact(s,player);
+    }
+    if(s->game.phase!=CAVE_GAME_ALIVE)return;
+    cave_shield_step(s,dt,player);
+    if(c->health>0) {
         int visible=cave_combat_clear(s,c->enemy,player);
         c->visible=visible?c->visible+dt:0;
         if(c->visible>.55f) {
@@ -187,15 +219,14 @@ static void cave_combat_step(CaveScene *s,float dt) {
         for(int k=0;k<3;k++)endpoint[k]=hit?b->p[k]+(next[k]-b->p[k])*fraction:next[k];
         if(!cave_combat_clear(s,b->p,endpoint)){b->life=0;continue;}
         if(hit && b->enemy) {
-            if(cave_game_blaster_hit(&s->game,s->flight_barrel!=0))s->flight_impact=.2f;
+            if(cave_game_blaster_hit(&s->game,s->flight_barrel!=0)){s->flight_impact=.2f;s->rumble_event=fmaxf(s->rumble_event,.6f);}
             b->life=0;
         } else if(hit) {
             /* Enemy hull is counted in exact thirds: no 1% remainder after
              * three rounded 33-percent hits. Player damage remains 10. */
-            c->health--;c->flash=.18f;b->life=0;
+            c->health-=CAVE_ENEMY_SHOT_DAMAGE;c->flash=.18f;b->life=0;
             if(c->health<=0) {
-                cave_game_enemy_destroyed(&s->game,100);
-                memcpy(c->explosion,c->enemy,sizeof(c->explosion));c->explosion_age=0;c->explosion_active=1;
+                cave_enemy_destroy(s);
             }
         }
         memcpy(b->p,next,sizeof(next));

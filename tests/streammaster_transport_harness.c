@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include "streammaster/protocol.h"
+#include "streammaster/rumble.h"
 static int64_t esp_timer_get_time(void){static int64_t ticks;return ++ticks;}
 typedef int SceUID;
 typedef unsigned SceUInt;
@@ -128,10 +129,12 @@ static SmFrame pending_reply;
 static SmBulkResult pending_bulk;
 static int async_pending,async_begins,async_finishes;
 static int resident_available,resident_claims;
+static unsigned app_rumble_calls;static uint8_t app_rumble_frame[8];
 static int sceIoDevctl(const char *name,unsigned op,void *in,int inlen,void *out,int outlen){
     (void)name;(void)inlen;(void)outlen;
     if(op==SM_DEV_RESIDENT)return resident_available?SM_RESIDENT_MAGIC:0;
     if(op==SM_DEV_APP_OWNER){resident_claims++;return 0;}
+    if(op==SM_DEV_APP_RUMBLE){assert(sm_rumble_valid(in,inlen)&&!outlen);memcpy(app_rumble_frame,in,8);app_rumble_calls++;return 0;}
     if(op==SM_DEV_STATUS)return 1;
     if(op==SM_DEV_BULK_CAPS)return bulk_bridge && !legacy_bridge && !legacy_async?1:SM_INVALID;
     if(op==SM_DEV_BULK_EXT_CAPS)return extended_bridge?1:SM_INVALID;
@@ -398,5 +401,11 @@ int main(void){
     int before_unload=unload_count;
     assert(!load_driver() && resident_driver && module==0 && resident_claims==1);
     stm_driver_stop();assert(unload_count==before_unload && module==0);
+    stm_app_rumble(0,0);assert(!app_rumble_calls);
+    stm_app_rumble(1,999);assert(app_rumble_calls==1&&app_rumble_frame[3]==1&&app_rumble_frame[4]==255);
+    clock_us+=10000;stm_app_rumble(1,90);assert(app_rumble_calls==1);
+    clock_us+=40000;stm_app_rumble(1,90);assert(app_rumble_calls==2&&app_rumble_frame[4]==90);
+    stm_app_rumble(0,0);assert(app_rumble_calls==3&&!app_rumble_frame[3]&&!app_rumble_frame[4]);
+    stm_app_rumble(0,0);assert(app_rumble_calls==3);
     puts("StreamMaster: legacy/extended profiles, 10000 PSP cycles + 4000 ESP owner runs; isolation, cleanup and fallback OK");
 }

@@ -1,5 +1,6 @@
 /* Music workers keep running; caller has released the GU. */
 static void music_visual_options(int cave) {
+    stm_app_rumble(0,0);
     int first=cave==2?VISUAL_OPTION_COUNT-VISUAL_SPECTRUM_OPTIONS:cave?0:VISUAL_CAVE_OPTIONS;
     int count=cave==2?VISUAL_SPECTRUM_OPTIONS:cave?VISUAL_CAVE_OPTIONS:VISUAL_OPTION_COUNT-VISUAL_CAVE_OPTIONS,row=0,dirty=1;
     unsigned old=PSP_CTRL_CIRCLE|PSP_CTRL_SELECT;unsigned long long repeat=0;

@@ -2235,10 +2235,14 @@ static int play_audio_once(const char *media_id, const char *title) {
             preset_notice_tick = ~0ULL;
             lcd_music_reset(); tv_music_reset();
         }
+        unsigned rumble_small=0,rumble_large=0;
+        if(visual_preset==6 && music_visual_active)md_cave_rumble(audio_start,&rumble_small,&rumble_large);
+        stm_app_rumble(rumble_small,rumble_large);
         old = pad.Buttons;
         sceKernelDelayThread(MUSIC_UI_INPUT_POLL_US);
     }
     music_remote_running = 0;
+    stm_app_rumble(0,0);
     video_watch_ping("music stop: close socket");
     audio_running = 0; audio_start = 1;
     /* Bounded producer polls observe cancellation. Never shutdown an fd

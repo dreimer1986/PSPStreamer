@@ -3,6 +3,9 @@
 #ifndef PSPSTREAMER_CAVE_COMBAT_H
 #define PSPSTREAMER_CAVE_COMBAT_H
 enum { CAVE_SHIPS=7, CAVE_BOLTS=32, CAVE_ENEMY_MODEL=7, CAVE_ENEMY_HITS=3 };
+#define CAVE_ENEMY_MAX_HEALTH 15
+#define CAVE_ENEMY_SHOT_DAMAGE 5
+#define CAVE_ENEMY_RAM_DAMAGE 9
 #define CAVE_ENEMY_SCALE .60f
 #define CAVE_PLAYER_FIRE_SECONDS .5f
 #define CAVE_ENEMY_FIRE_SECONDS CAVE_PLAYER_FIRE_SECONDS
@@ -20,6 +23,7 @@ typedef struct {
     int shield_active,previous_player_valid;
     float explosion[3],explosion_age;
     int explosion_active;
+    int contact;
     unsigned random;
 } CaveCombat;
 #endif
