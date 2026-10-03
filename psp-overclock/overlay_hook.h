@@ -24,6 +24,7 @@ static int oc_hook_buffer_count;
 #define OC_HOOK_BUFFER_COUNT oc_hook_buffer_count
 #endif
 static int oc_hook_width,oc_hook_height;
+static int oc_output_external;
 #ifdef OC_EXTERNAL_OSD
 static int (*oc_external_osd)(const void *,int,int);
 static volatile unsigned oc_external_users;
@@ -41,9 +42,15 @@ static int oc_hook_lock(void) {
     sceKernelCpuResumeIntr(intr);return acquired;
 }
 static void oc_hook_unlock(void) {__sync_synchronize();oc_hook_busy=0;}
+static void oc_hook_set_external_output(int active) {
+    if(active==oc_output_external||!oc_hook_lock())return;
+    for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
+    oc_output_external=active;oc_hook_unlock();
+}
 /* Caller holds the shared raster lock. The worker fallback and syscall path
  * must use the same backups, never independently paint over one another. */
 static int oc_hook_render(const void *base,int stride,int format) {
+    if(oc_output_external)return 0;
     if(!OC_HOOK_BUFFER_COUNT)return 0;
     int mode,width,height;
     if(sceDisplayGetMode(&mode,&width,&height)<0 ||

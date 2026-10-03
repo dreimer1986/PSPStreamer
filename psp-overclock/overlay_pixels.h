@@ -49,14 +49,14 @@ static uint32_t oc_osd_color(int format,int foreground) {
     if(format==2)return 0xf200;
     return 0xff280000U;
 }
-static uint32_t oc_osd_get(volatile void *base,int index,int format) {
+static inline uint32_t oc_osd_get(volatile void *base,int index,int format) {
     return format==3?((volatile uint32_t *)base)[index]:((volatile uint16_t *)base)[index];
 }
 static void oc_osd_set(volatile void *base,int index,int format,uint32_t value) {
     if(format==3)((volatile uint32_t *)base)[index]=value;
     else ((volatile uint16_t *)base)[index]=(uint16_t)value;
 }
-static void oc_osd_restore(OcOverlay *o) {
+static inline void oc_osd_restore(OcOverlay *o) {
     if(!o->valid)return;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
         int i=y*OC_OSD_W+x,offset=(y+8)*o->stride+x+OC_OSD_X;
@@ -67,7 +67,7 @@ static void oc_osd_restore(OcOverlay *o) {
     }
     o->valid=0;
 }
-static void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,const char lines[3][40]) {
+static inline void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,const char lines[3][40]) {
     o->base=base;o->stride=stride;o->format=format;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
         int row=(y-3)/8,col=(x-3)/6;
@@ -82,7 +82,7 @@ static void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,c
     }
     o->valid=1;
 }
-static int oc_osd_layout(uintptr_t address,unsigned int vram,int width,int height,int stride,int format) {
+static inline int oc_osd_layout(uintptr_t address,unsigned int vram,int width,int height,int stride,int format) {
     if(format<0||format>3||width<OC_OSD_W+8||height<OC_OSD_H+8||
        width>720||height>480||stride<width||stride>1024||stride%16)return 0;
     if(address&15)return 0;
@@ -90,5 +90,14 @@ static int oc_osd_layout(uintptr_t address,unsigned int vram,int width,int heigh
     if(physical<0x04000000U||physical>=0x04000000U+vram)return 0;
     unsigned int bytes=(format==3?4:2)*stride*height;
     return bytes<=vram-(physical-0x04000000U);
+}
+/* Fresh scaler backbuffer: no backups/restoration required. */
+static inline void oc_osd_draw_fresh(volatile void *base,int stride,int format,int left,int width,const char lines[3][40]) {
+    for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<width;x++) {
+        int row=(y-3)/8,col=(x-3)/6;
+        int bit=y>=3&&y<27&&x>=3&&x<width-5&&row<3&&col<38&&
+            oc_osd_bit(lines[row][col],(x-3)%6,(y-3)%8);
+        oc_osd_set(base,(y+8)*stride+left+x,format,oc_osd_color(format,bit));
+    }
 }
 #endif

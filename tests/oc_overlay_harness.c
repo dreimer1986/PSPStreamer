@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "overlay_pixels.h"
+#define FS_OSD_SERVER 1
+#include "fullscreen_osd.h"
 static OcOverlay overlay;
 static int running=1,suspended,blank_result,become_blank,cancel_at;
 static unsigned long long tick;
@@ -10,6 +12,12 @@ static int sceDisplayIsVblank(void){return become_blank && tick>=1000?1:blank_re
 static void sceKernelDelayThreadCB(int us){tick+=us;if(cancel_at && tick>=400)suspended=1;}
 #include "overlay_vblank.h"
 int main(void) {
+    FsOsdText message={.version=1,.slot=0,.visible=1};
+    assert(fs_osd_message_valid(&message));
+    message.slot=1;assert(fs_osd_message_valid(&message));
+    message.slot=2;assert(!fs_osd_message_valid(&message));
+    message.slot=0;message.visible=2;assert(!fs_osd_message_valid(&message));
+    message.visible=0;message.version=2;assert(!fs_osd_message_valid(&message));
     _Static_assert(sizeof(overlay.painted)==(OC_OSD_W*OC_OSD_H+7)/8,
                    "overlay colors must remain bit packed");
     assert(!oc_overlay_vblank() && tick==20000);
@@ -51,6 +59,16 @@ int main(void) {
             }
             oc_osd_restore(&overlay);
             for(int i=0;i<size;i++)assert(image[i]==0x12);
+        }
+        free(image);
+        size=768*480*bytes;image=malloc(size);assert(image);memset(image,0x12,size);
+        oc_osd_draw_fresh(image,768,mode,8,236,lines);
+        oc_osd_draw_fresh(image,768,mode,500,212,lines);
+        for(int y=0;y<480;y++)for(int x=0;x<768;x++) {
+            int drawn=y>=8&&y<38&&((x>=8&&x<244)||(x>=500&&x<712));
+            unsigned value=oc_osd_get(image,y*768+x,mode);
+            if(drawn)assert(value==oc_osd_color(mode,0)||value==oc_osd_color(mode,1));
+            else assert(value==(mode==3?0x12121212U:0x1212U));
         }
         free(image);
     }

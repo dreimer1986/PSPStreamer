@@ -1,4 +1,9 @@
-# FuSa reference audit — updated for 0.24 (2026-10-03)
+# FuSa reference audit — updated for 0.25 (2026-10-03)
+
+0.25 adds project-specific OC/Consolizer text composition after scaling, unlike
+legacy FuSa. Both existing overlay methods retain normal rendering outside
+fullscreen and publish bounded text/visibility while it is active. No extra
+framebuffer or imported callback is needed. See FULLSCREEN_TEST.md.
 
 0.24 adds auxiliary layer 1 as a separately tracked menu source for CustomHOME.
 The inspected FuSa source only explicitly substitutes layer 0; the additional

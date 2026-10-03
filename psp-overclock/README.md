@@ -1,5 +1,11 @@
 # StreamerOC — optional experimental kernel plugin
 
+With FuSaFullscreenTest 0.25+, both `overlay=1` and `overlay=2` publish their
+text to the fullscreen compositor. `overlay_always` remains effective. Update
+StreamerOC.prx together with the fullscreen plugin; no INI change is needed.
+Normal output keeps its original renderer. Only text is transferred, without
+additional framebuffer backups or changes to clock control.
+
 This is separate from PSP Streamer and does not change its configuration file.
 **Not hardware-validated. Leave disabled until you are ready for a controlled
 test. Overclocking can freeze/reboot the PSP and corrupt files being written.**

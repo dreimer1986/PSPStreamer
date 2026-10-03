@@ -61,6 +61,7 @@ static OcOverlay overlay;
 #include "overlay_vblank.h"
 #define OC_EXTERNAL_OSD 1
 #include "overlay_hook.h"
+#include "fullscreen_osd.h"
 
 /* The I/O manager dispatches this optional API without mandatory client
  * imports. All hardware writes stay in our worker, never the caller thread. */
@@ -117,10 +118,12 @@ static void overlay_notify(void) {
 
 static void overlay_update(int toggle) {
     if(!overlay_enabled)return;
+    oc_hook_set_external_output(fs_osd_active());
     /* A resumed application may have reused VRAM: never restore stale pixels. */
-    if(suspended){overlay.valid=0;overlay_until=0;oc_hook_publish(NULL,0);return;}
+    if(suspended){overlay.valid=0;overlay_until=0;oc_hook_publish(NULL,0);if(oc_output_external)fs_osd_publish(0,NULL,0);return;}
     unsigned long long now=sceKernelGetSystemTimeWide();
     overlay_until=oc_overlay_deadline(overlay_until,now,toggle,overlay_always,running&&!overlay_stopping);
+    if(oc_output_external){overlay.valid=0;if(!overlay_until){fs_osd_publish(0,NULL,0);return;}}
     if(oc_hook_installed && !overlay_until){
         int was_visible=oc_hook_visible;
         oc_hook_publish(NULL,0);
@@ -131,15 +134,15 @@ static void overlay_update(int toggle) {
     if(overlay_until && now<overlay_next_draw && !toggle)return;
     /* Bounded polling, not an unbounded VBlank wait: display shutdown or
      * cable removal must not strand module_stop. Only active OSD waits. */
-    if(!oc_hook_installed && !oc_overlay_vblank())return;
+    if(!oc_output_external && !oc_hook_installed && !oc_overlay_vblank())return;
     if(suspended){overlay.valid=0;overlay_until=0;return;}
     void *base=NULL;int stride,format,mode,width,height;
-    if(!oc_hook_installed && (sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
+    if(!oc_output_external && !oc_hook_installed && (sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
        sceDisplayGetMode(&mode,&width,&height)<0 ||
        !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format))) {
         overlay.valid=0;return;
     }
-    if(!oc_hook_installed) {
+    if(!oc_output_external && !oc_hook_installed) {
         if(overlay.valid && (overlay.stride!=stride || overlay.format!=format))overlay.valid=0;
         oc_osd_restore(&overlay);
     }
@@ -157,7 +160,8 @@ static void overlay_update(int toggle) {
     snprintf(lines[0],40,"OC CPU %u.%u BUS %u.%u MHZ EST",cpu/1000,(cpu%1000)/100,bus/1000,(bus%1000)/100);
     snprintf(lines[1],40,"TARGET %d SONY %d MHZ",target,scePowerGetCpuClockFrequencyInt());
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
-    if(oc_hook_installed){oc_hook_publish(lines,1);oc_hook_idle_refresh(0);}
+    if(oc_output_external)fs_osd_publish(0,lines,1);
+    else if(oc_hook_installed){oc_hook_publish(lines,1);oc_hook_idle_refresh(0);}
     else oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
     overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }

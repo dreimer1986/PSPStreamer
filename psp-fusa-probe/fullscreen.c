@@ -13,6 +13,7 @@
 #include <psploadcore.h>
 #include <pspintrman_kernel.h>
 #include <pspkerror.h>
+#include <pspiofilemgr_kernel.h>
 #include <systemctrl.h>
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,9 @@
 #include "auto_zoom.h"
 #include "display_policy.h"
 #include "../psp-overclock/power_callback_slot.h"
+#define FS_OSD_SERVER 1
+#include "../psp-overclock/fullscreen_osd.h"
+#include "../psp-overclock/overlay_pixels.h"
 PSP_MODULE_INFO("FuSaFullscreenTest",0x1006,0,1);
 PSP_NO_CREATE_MAIN_THREAD();
 static int (*set_internal)(int,void *,int,int,int);
@@ -49,6 +53,35 @@ static SceUID offered_event=-1;
 #define FS_WAIT_TIMEOUT ((int)SCE_KERNEL_ERROR_WAIT_TIMEOUT)
 static int power_slot=-1;
 static volatile int running,active,cancelled,suspended,restoring;
+static FsOsdText osd_text[2];
+static unsigned long long osd_updated[2];
+static int osd_registered;
+static int osd_devctl(PspIoDrvFileArg *arg,const char *name,unsigned cmd,void *in,int inlen,void *out,int outlen)
+{
+    (void)arg;(void)name;
+    if(pspSdkGetK1()!=0||out||outlen)return -1;
+    if(cmd==FS_OSD_STATUS&&!in&&!inlen)return active&&!restoring&&!cancelled&&!suspended&&running;
+    if(cmd!=FS_OSD_TEXT||!in||inlen!=sizeof(FsOsdText)||(uintptr_t)in<0x88000000U)return -1;
+    FsOsdText text;memcpy(&text,in,sizeof(text));
+    if(!fs_osd_message_valid(&text))return -1;
+    for(unsigned row=0;row<3;row++)text.lines[row][39]=0;
+    int intr=sceKernelCpuSuspendIntr();osd_text[text.slot]=text;
+    osd_updated[text.slot]=sceKernelGetSystemTimeWide();sceKernelCpuResumeIntr(intr);return 0;
+}
+static int osd_init(PspIoDrvArg *arg){(void)arg;return 0;}
+static PspIoDrvFuncs osd_functions={.IoInit=osd_init,.IoExit=osd_init,.IoDevctl=osd_devctl};
+static PspIoDrv osd_driver={"fusafullscreen",0x10,0x800,"Fullscreen text OSD",&osd_functions};
+static void draw_output_osd(unsigned dest,unsigned format)
+{
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    for(unsigned slot=0;slot<2;slot++) {
+        int intr=sceKernelCpuSuspendIntr();
+        FsOsdText text=osd_text[slot];unsigned long long stamp=osd_updated[slot];
+        sceKernelCpuResumeIntr(intr);
+        if(text.visible&&stamp&&now>=stamp&&now-stamp<500000ULL)
+            oc_osd_draw_fresh((void *)(dest|0x40000000U),768,format,slot?500:8,slot?212:236,text.lines);
+    }
+}
 enum { STOP_NONE,STOP_WAIT,STOP_SOURCE,STOP_SUSPEND,STOP_RESUME,
        STOP_RESTORE,STOP_VRAM_RESTORE,STOP_NO_FRAMES,STOP_MODE,STOP_PRESENT };
 static volatile int stop_reason,stop_detail;
@@ -497,6 +530,7 @@ static int start_scale(void)
         record("start width",old_w);record("start height",old_h);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
     logical_mode=old_mode;logical_width=old_w;logical_height=old_h;
+    memset(osd_updated,0,sizeof(osd_updated));
     mode_queries=mode_events=0;
     if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!system_source_valid((uintptr_t)src,stride,fmt)){
         record("requires nonoverlapping 16/32-bit source frame",-1);record("start source address",(int)src);
@@ -564,7 +598,8 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.24 auxiliary menu capture",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.25 composed plugin overlays",sceKernelDevkitVersion());
+    int osd_rc=sceIoAddDrv(&osd_driver);osd_registered=osd_rc>=0;record("fullscreen OSD mailbox",osd_rc);
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -717,6 +752,7 @@ static int work(SceSize size,void *args)
             scaled_frames++;scale_total_us+=elapsed;if(elapsed>scale_max_us)scale_max_us=elapsed;
             if(frames!=sequence)changed_during_scale++;
             if(cancelled||suspended)continue;
+            draw_output_osd(dest,format);
             rc=set_internal(0,(void *)dest,768,format,1);
             if(rc<0){request_stop(STOP_PRESENT,rc);}
             else {
@@ -757,6 +793,7 @@ int module_stop(SceSize size,void *args)
     if(worker>=0){SceUInt wait=2000000;if(sceKernelWaitThreadEnd(worker,&wait)<0)return -1;}
     remove_wait_hooks();
     if(active||expanded||internal_hooked||internal_users||mode_hooked||mode_users||query_hooked||mode_query_users||wait_users)return -1; /* Never unload live hooks. */
+    if(osd_registered){int rc=sceIoDelDrv("fusafullscreen");if(rc<0)return rc;osd_registered=0;}
     if(offered_event>=0){sceKernelDeleteEventFlag(offered_event);offered_event=-1;}
     if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;

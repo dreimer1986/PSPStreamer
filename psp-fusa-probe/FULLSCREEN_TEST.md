@@ -1,4 +1,25 @@
-# FuSa-style fullscreen experiment 0.24 — CustomHOME auxiliary layer
+# FuSa-style fullscreen experiment 0.25 — composed OC/Consolizer overlays
+
+CustomHOME in fullscreen is hardware-confirmed with 0.24. Both our overlay
+paths previously queried/drew game buffers, which are not fullscreen scanout;
+720-wide mode plus 512-stride game buffers can also fail their layout check.
+
+0.25 adds an optional kernel-only text mailbox (`fusafullscreen:`). Updated
+StreamerOC and PSPConsolizerUSB publish visibility plus three text lines each.
+Both overlay=1 polling and overlay=2 presentation mode use it while fullscreen
+is active; normal drawing is suppressed then and resumes afterward. Scaler
+draws OC at top left, Consolizer at top right on its completed backbuffer before
+presentation. No new frame backups, retained callback pointers, GE lists or
+clock/input changes. Slots expire after 500 ms without refresh so unload or
+suspension does not leave permanent text. Existing visibility/always-on rules
+remain in the owners. Older plugin versions cannot publish the new text.
+
+Install all three updated PRXs (FuSaFullscreenTest, StreamerOC,
+PSPConsolizerUSB); keep the Consolizer loader and INIs. Test overlay=1 and 2,
+each plugin separately and together, including entry/exit from fullscreen,
+CustomHOME and timed versus always-on visibility. No ESP flash required.
+
+## 0.24 — CustomHOME auxiliary layer
 
 Star Ocean's movie transition is user-confirmed working with 0.23.
 

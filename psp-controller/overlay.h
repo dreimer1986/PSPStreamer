@@ -2,6 +2,7 @@
 #include <pspdisplay.h>
 #include <pspge.h>
 #include "../psp-overclock/control_api.h"
+#include "../psp-overclock/fullscreen_osd.h"
 static int pad_osd_x;
 #define OC_OSD_W 212
 #define OC_OSD_X pad_osd_x
@@ -95,9 +96,10 @@ static void pad_overlay_update(int state,int error,int is_suspended) {
     if(state!=previous || error!=previous_error || memcmp(&meta,&previous_meta,sizeof(meta))){
         until=now+5000000;previous=state;previous_error=error;previous_meta=meta;
     }
-    if(is_suspended){oc_hook_publish(NULL,0);return;}
+    if(is_suspended){oc_hook_publish(NULL,0);if(oc_output_external)fs_osd_publish(1,NULL,0);return;}
     if(now<next)return;
     next=now+33333;
+    oc_hook_set_external_output(fs_osd_active());
     char lines[3][40]={{0}};
     snprintf(lines[0],40,"%.33s",meta.valid && meta.name[0]?meta.name:"PSP CONSOLIZER");
     for(unsigned i=0;i<sizeof(lines[0]);i++){
@@ -113,6 +115,7 @@ static void pad_overlay_update(int state,int error,int is_suspended) {
     else snprintf(lines[2],40,"NOTE VOLUP 2S - DISABLE");
     int visible=pad_overlay_enabled && (pad_overlay_always || now<until);
     oc_hook_publish(lines,visible);
+    if(oc_output_external){fs_osd_publish(1,lines,visible);return;}
     if(oc_hook_installed){oc_hook_idle_refresh(0);return;}
     if(sceDisplayIsVblank()>0){
         void *base=NULL;int stride,format;
