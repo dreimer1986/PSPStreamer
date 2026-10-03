@@ -8,10 +8,11 @@ validated. Component TV output is required by the current implementation.
 
 ## Install or update
 
-Copy the complete `SEPLUGINS/FuSaFullscreen` folder to the Memory Stick:
+Copy the release's `FuSaFullscreen` folder into `ms0:/SEPLUGINS/`:
 
 - `FuSaFullscreen.prx` — fullscreen plugin.
-- `FuSaFullscreen.ini` — configuration.
+- `FuSaFullscreen.ini.example` — copy to `FuSaFullscreen.ini` for a new install;
+  preserve your existing INI when updating.
 - `dvemgr.prx` — required TV-output helper.
 
 Use one GAME entry in ARK's `SEPLUGINS/PLUGINS.TXT`:

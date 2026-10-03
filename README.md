@@ -1002,8 +1002,8 @@ values select the default; explicit depth=2 retains the older two-request route.
 Older firmware/drivers retain their negotiated legacy route. Keep the same ready
 file, HTTP route, card, hub and clock when comparing settings. No speedup is assumed.
 
-The current Onju package is `StreamMaster-Onju-V3` (firmware
-`0.3.10-bt-qio80-iram`). Install all three companion PSP files: `EBOOT.PBP`,
+The current Onju firmware is in `StreamMaster/Onju-V3` (firmware
+`0.3.17-bt-qio80-iram`). Install all three companion PSP files: `EBOOT.PBP`,
 `PSPStreamer.prx` and `StreamMasterUSB.prx`. Four-deep HTTP downloads measured
 747.5 KiB/s versus 700.5 KiB/s for two requests on the tested setup. IRAM alone
 has no demonstrated mean-speed advantage. Firmware version is visible in the

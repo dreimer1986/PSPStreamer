@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-# Bluetooth control needs the EP0-capable PSP kernel bridge as well as the
-# application. Always ship the three together, including firmware-only updates.
-for file in ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx; do
-    test -s "$file"
-done
-mkdir -p release/PSPStreamer
-cp ../psp-client/EBOOT.PBP ../psp-client/PSPStreamer.prx ../psp-client/streammaster_usb/StreamMasterUSB.prx release/PSPStreamer/
+# Firmware-only development staging. Canonical app/plugin/firmware distribution
+# is tools/package_release.py; never embed a duplicate PSP app here.
 mode_selection="${1:-qio80-iram}"
 case "$mode_selection" in
     all) modes=(dio qio qio80 qio80-iram);;
@@ -20,6 +15,7 @@ for mode in "${modes[@]}"; do
     [[ "$mode" == dio ]] || build_dir="build-bluetooth-$mode"
     [[ "$mode" != qio80* ]] || flash_freq=80m
     release_dir="release/StreamMaster-Bluetooth-${mode^^}"
+    [[ "$mode" != qio80-iram ]] || release_dir="release/StreamMaster-Onju-V3"
     for file in bootloader/bootloader.bin partition_table/partition-table.bin streammaster_onju_v3.bin flash_args; do
         test -s "$build_dir/$file"
         mkdir -p "$release_dir/$(dirname "$file")"
@@ -44,8 +40,3 @@ for mode in "${modes[@]}"; do
         0x10000 "$build_dir/streammaster_onju_v3.bin"
     (cd "$release_dir" && sha256sum bootloader/bootloader.bin partition_table/partition-table.bin ./*.bin > SHA256SUMS)
 done
-# Published Onju default: the hardware-validated four-deep/IRAM combination.
-if [[ "$mode_selection" == all || "$mode_selection" == qio80-iram ]]; then
-    mkdir -p release/StreamMaster-Onju-V3
-    cp -a release/StreamMaster-Bluetooth-QIO80-IRAM/. release/StreamMaster-Onju-V3/
-fi

@@ -1,9 +1,9 @@
 # StreamMaster — Onju Voice V3 USB/Wi-Fi bridge
 
-**Current Onju standard: 0.3.10-bt-qio80-iram, QIO flash at 80 MHz, CPU 240 MHz,
+**Current Onju standard: 0.3.17-bt-qio80-iram, QIO flash at 80 MHz, CPU 240 MHz,
 Octal PSRAM 80 MHz, with USB Bluetooth controller support.** Build with
-`bash build-bluetooth.sh`, package with `bash package-bluetooth.sh` (or
-`bash package.sh` without arguments). Use the packaged `flash_args` to flash
+`bash build-bluetooth.sh`. Publish with `tools/package_release.py` from the
+repository root; firmware-only scripts produce development staging. Use `flash_args` to flash
 bootloader, partitions and app while preserving NVS. See [BLUETOOTH.md](BLUETOOTH.md).
 The older DIO40 build/flash examples below describe the legacy non-Bluetooth
 variant, not the current default. Do not apply their 40m override to QIO80.

@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Consolidate release packaging: one current folder/ZIP per app or plugin,
+  one StreamMaster package with current 0.3.17 Onju/S3/S2 hardware variants,
+  verified embedded versions and file hashes. Archive historical test copies
+  outside the published release; preserve generic UNTESTED labels.
 - Add optional damage-scaled game rumble with a configurable full-power
   threshold (120 HP default), motor cap and pulse range (60–500 ms default).
   Stronger hits can upgrade running pulses without queued effects; preserve

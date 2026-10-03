@@ -2,13 +2,17 @@
 
 ## 0.3.17 — Unblock Bluetooth motor output
 
+- Release consolidation: rebuild Onju and generic S3/S2 QIO80 targets from
+  the same source; generic binaries now report the same 0.3.17 base instead
+  of the stale 0.3.0 label. Generic hardware remains UNTESTED and network-only.
 - Fix the impossible admission condition: a four-slot HCI queue cannot have
   more than four free slots. Allow motor output with at least two free slots,
   retaining headroom for other traffic and the existing one-in-flight limit.
 - Add a regression check tied to the queue's actual configured depth.
 - Hardware 0.3.16 logs prove nonzero motor values reach the ESP32 but no
   Bluetooth motor write is attempted. This fix addresses that confirmed cause;
-  physical vibration remains to be verified. PSP plugin update is not required.
+  physical vibration was subsequently confirmed by the user with SF30 Pro,
+  NFS High Stakes and Wipeout 3. PSP plugin update is not required by this fix.
 
 ## 0.3.16 — Rumble actuator-mask compatibility and end-to-end diagnostics
 

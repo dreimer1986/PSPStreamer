@@ -5,6 +5,12 @@ PSRAM. They have **not been tested on physical generic boards**. Successful
 compilation is not a claim of board compatibility, throughput or stability.
 The tested Onju Voice V3 package remains separate and unchanged.
 
+**Current consolidated release:** all generic targets are freshly built from
+the same **0.3.17** source as Onju, in `StreamMaster/ESP32-…-UNTESTED/`.
+Only the QIO80 variants below are published there; older DIO40 commands
+describe optional developer builds. Generics remain **UNTESTED**, network-only,
+with no USB-Bluetooth claim. Use each folder's `flash_args` for updates.
+
 ## Choose the matching package
 
 | Package | Chip | External RAM interface |
