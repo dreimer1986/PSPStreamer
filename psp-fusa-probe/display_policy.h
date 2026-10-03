@@ -26,9 +26,11 @@ static int fs_snapshot_layout_valid(unsigned before,unsigned after)
 /* One output per two real vblanks; late copies skip slots, never catch up. */
 static int fs_output_due(int valid,unsigned previous,unsigned current)
 {return !valid||(unsigned)(current-previous)>=2;}
-enum { FS_FORWARD,FS_SYSTEM,FS_GAME };
+enum { FS_FORWARD,FS_SYSTEM,FS_GAME,FS_AUX };
 static int fs_layer_route(int active,int own,int layer)
-{return !active||own?FS_FORWARD:layer==0?FS_SYSTEM:layer==2?FS_GAME:FS_FORWARD;}
+{return !active||own?FS_FORWARD:layer==0?FS_SYSTEM:layer==1?FS_AUX:layer==2?FS_GAME:FS_FORWARD;}
+static int fs_selected_source(int primary,int auxiliary)
+{return primary?0:auxiliary?1:2;}
 /* Sony's public game buffer is internal selector 2, not selector 1. */
-static int fs_display_layer(unsigned index){return index?2:0;}
+static int fs_display_layer(unsigned index){return (int)index;}
 #endif

@@ -67,6 +67,8 @@ static void request_stop(int reason,int detail)
 static volatile unsigned frame_addr,frame_stride,frame_format,frames;
 static volatile unsigned source_layout;
 static void *saved_overlay;
+static void *saved_aux;
+static int aux_stride,aux_format;
 static int saved_stride,saved_format,old_mode,old_w,old_h,expanded,retiring;
 static volatile unsigned overlay_sequence;
 static unsigned overlay_copies,overlay_rejected;
@@ -123,10 +125,10 @@ static int coordinated_wait(unsigned index)
     /* Sony's wait runs exactly once FIRST. Never add another vblank after
      * capture and never wait for a future 30 Hz output slot. */
     int rc=original_wait[index]();
-    if(rc>=0&&active&&!restoring&&!saved_overlay&&running&&capture_busy&&sceKernelGetThreadId()!=worker) {
+    if(rc>=0&&active&&!restoring&&!saved_overlay&&!saved_aux&&running&&capture_busy&&sceKernelGetThreadId()!=worker) {
         wait_calls++;
         unsigned long long begin=sceKernelGetSystemTimeWide(),deadline=begin+4000ULL;
-        while(active&&!restoring&&!cancelled&&!suspended&&!saved_overlay&&running&&
+        while(active&&!restoring&&!cancelled&&!suspended&&!saved_overlay&&!saved_aux&&running&&
               capture_busy) {
             if((unsigned long long)sceKernelGetSystemTimeWide()>=deadline){wait_timeouts++;break;}
             /* Preserve callback dispatch for the CB entry points. */
@@ -207,7 +209,19 @@ static int capture_internal(int layer,void *base,int stride,int format,int sync)
     int game=fs_layer_route(active,sceKernelGetThreadId()==worker,layer)==FS_GAME;
     int rc=intercept?set_internal(0,(void *)output_base,768,output_format,sync):
         game?capture_game(base,stride,format,sync):set_internal(layer,base,stride,format,sync);
-    intr=sceKernelCpuSuspendIntr();internal_users--;sceKernelCpuResumeIntr(intr);
+    intr=sceKernelCpuSuspendIntr();
+    /* CustomHOME uses auxiliary layer 1. Preserve its actual driver call and
+     * separately capture its menu source; primary layer 0 remains scanout. */
+    if(rc>=0&&fs_layer_route(active&&!restoring,sceKernelGetThreadId()==worker,layer)==FS_AUX) {
+        if(system_source_valid((uintptr_t)base,stride,format)||fs_blank_source((uintptr_t)base,stride,format,sync)) {
+            saved_aux=fs_blank_source((uintptr_t)base,stride,format,sync)?NULL:base;
+            aux_stride=stride;aux_format=format;source_layout++;overlay_sequence++;
+        } else {
+            if(!cancelled){stop_addr=(unsigned)base;stop_stride=stride;stop_format=format;stop_sync=sync;stop_layer=1;}
+            request_stop(STOP_SOURCE,-1);
+        }
+    }
+    internal_users--;sceKernelCpuResumeIntr(intr);
     return rc;
 }
 static int install_entry(unsigned *entry,void *replacement,unsigned *trampoline,unsigned *original)
@@ -312,6 +326,7 @@ static int take_overlay_snapshot(unsigned *format)
 {
     int intr=sceKernelCpuSuspendIntr();
     void *base=saved_overlay;int stride=saved_stride,fmt=saved_format;
+    if(fs_selected_source(base!=NULL,saved_aux!=NULL)==1){base=saved_aux;stride=aux_stride;fmt=aux_format;}
     unsigned layout=source_layout;
     unsigned sequence=overlay_sequence;
     if(!base){sceKernelCpuResumeIntr(intr);return -1;}
@@ -361,7 +376,7 @@ static int take_snapshot(unsigned *format)
     unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
     copy_total_us+=elapsed;if(elapsed>copy_max_us)copy_max_us=elapsed;
     intr=sceKernelCpuSuspendIntr();
-    int valid=fs_snapshot_layout_valid(layout,source_layout)&&sequence==frames&&!game_writers&&!saved_overlay&&!cancelled&&!suspended&&running;
+    int valid=fs_snapshot_layout_valid(layout,source_layout)&&sequence==frames&&!game_writers&&!saved_overlay&&!saved_aux&&!cancelled&&!suspended&&running;
     sceKernelCpuResumeIntr(intr);
     if(!valid){copy_rejected++;return 0;}
     if(sequence==last_snapshot_sequence)timeout_snapshots++;
@@ -391,7 +406,7 @@ static int change_edram(int bytes)
         int intr=sceKernelCpuSuspendIntr();
         int state=sceGeDrawSync(1);
         int lower=1;
-        if(bytes==0x200000)for(unsigned index=0;index<2;index++) {
+        if(bytes==0x200000)for(unsigned index=0;index<3;index++) {
             int layer=fs_display_layer(index);
             void *addr=NULL;int stride=0,format=0,sync=0;
             if(get_internal(layer,&addr,&stride,&format,&sync)<0){lower=0;break;}
@@ -492,6 +507,8 @@ static int start_scale(void)
     record("saved primary layer stride",saved_stride);
     record("saved primary layer format",saved_format);
     if(saved_overlay&&!system_source_valid((uintptr_t)saved_overlay,saved_stride,saved_format))return -1;
+    if(get_internal(1,&saved_aux,&aux_stride,&aux_format,&saved_sync)<0){record("cannot save auxiliary layer",-1);return -1;}
+    if(saved_aux&&!system_source_valid((uintptr_t)saved_aux,aux_stride,aux_format)){record("unsupported auxiliary source",(int)saved_aux);return -1;}
     overlay_copies=overlay_rejected=0;overlay_sequence++;
     mode_remaps=0;timeout_snapshots=0;last_snapshot_at=0;last_snapshot_sequence=~0U;
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
@@ -547,7 +564,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.23 verified physical mode reuse",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.24 auxiliary menu capture",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -708,10 +725,10 @@ static int work(SceSize size,void *args)
                 sceKernelCpuResumeIntr(intr);
             }
             back^=1;
-            int system=saved_overlay!=NULL;
+            int system=fs_selected_source(saved_overlay!=NULL,saved_aux!=NULL);
             if(system!=logged_system) {
-                logged_system=system;record("system layer selected",system);
-                if(system){record("system source",(int)saved_overlay);record("system stride",saved_stride);record("system format",saved_format);}
+                logged_system=system;record("source layer selected (0 system, 1 auxiliary, 2 game)",system);
+                if(system!=2){record("menu source",(int)(system==0?saved_overlay:saved_aux));record("menu stride",system==0?saved_stride:aux_stride);record("menu format",system==0?saved_format:aux_format);}
             }
         }
         /* Active pacing is driven by real vblanks, not a second time delay. */

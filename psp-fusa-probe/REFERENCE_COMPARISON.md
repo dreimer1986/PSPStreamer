@@ -1,4 +1,10 @@
-# FuSa reference audit — updated for 0.23 (2026-10-03)
+# FuSa reference audit — updated for 0.24 (2026-10-03)
+
+0.24 adds auxiliary layer 1 as a separately tracked menu source for CustomHOME.
+The inspected FuSa source only explicitly substitutes layer 0; the additional
+capture is our compatibility extension. Original layer-1 calls remain intact.
+Primary system source takes precedence, followed by auxiliary, then game.
+All three layers participate in retirement checks. See FULLSCREEN_TEST.md.
 
 0.23: Star Ocean logs establish an actual 80000107 return from the redirected
 SetMode call, with zero GetMode queries. Reuse an already verified physical

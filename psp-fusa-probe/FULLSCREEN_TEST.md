@@ -1,4 +1,27 @@
-# FuSa-style fullscreen experiment 0.23 — verified physical mode reuse
+# FuSa-style fullscreen experiment 0.24 — CustomHOME auxiliary layer
+
+Star Ocean's movie transition is user-confirmed working with 0.23.
+
+CustomHOME 1.3.7 displays/closes its menu using internal layer 1, while this
+scaler previously handled only primary/system layer 0 and game layer 2. Source
+reference: https://github.com/PSP-Archive/Custom-Home-Mod (`main.c` MenuButton,
+`common.c` cusHomeClose). The supplied ZIP URL returned HTTP 403, so this source
+mirror was inspected; no claim of byte-identical installed binaries.
+
+0.24 captures validated auxiliary sources after successful layer-1 submissions,
+without replacing their driver calls. Source priority: primary system menu,
+auxiliary menu, then game. Menu updates are refreshed without game submissions;
+closing the menu clears the auxiliary source. Existing layer-1 state is read
+when enabling zoom. VRAM retirement checks all three layers. No extra picture
+buffer, CustomHOME modification, timing or game mode changes.
+
+Test open/navigate/close CustomHOME in fullscreen and after toggling zoom while
+the menu is open. The log identifies source layer 1. CustomHOME can suspend
+threads created after its startup snapshot; if the scaler thread is caught by
+that policy this needs separate evidence/handling, not blind thread resuming.
+StreamerOC overlay testing remains separate from this menu change.
+
+## 0.23 — verified physical mode reuse
 
 0.22 Star Ocean evidence: `queries=0`, but the intercepted mode-0 480x272
 request returned `80000107` (display argument/invalid mode) after we replaced

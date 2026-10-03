@@ -2,7 +2,7 @@
 #include "../psp-fusa-probe/display_policy.h"
 int main(void)
 {
-    assert(fs_display_layer(0)==0&&fs_display_layer(1)==2);
+    assert(fs_display_layer(0)==0&&fs_display_layer(1)==1&&fs_display_layer(2)==2);
     assert(fs_game_tv_layout(0x2d2,480,272));
     assert(fs_game_tv_layout(0x1d2,480,272)); /* Metal Slug scene transition. */
     assert(fs_redirect_mode(1,0,0,0,480,272)); /* Game asks for LCD-shaped geometry. */
@@ -23,7 +23,13 @@ int main(void)
     assert(!fs_scaled_mode(0,720,480));
     assert(fs_layer_route(1,0,0)==FS_SYSTEM);
     assert(fs_layer_route(1,0,2)==FS_GAME);
-    assert(fs_layer_route(1,0,1)==FS_FORWARD);
+    assert(fs_layer_route(1,0,1)==FS_AUX);
+    assert(fs_layer_route(1,1,1)==FS_FORWARD);
+    assert(fs_layer_route(0,0,1)==FS_FORWARD);
+    assert(fs_selected_source(0,0)==2);
+    assert(fs_selected_source(0,1)==1);
+    assert(fs_selected_source(1,0)==0);
+    assert(fs_selected_source(1,1)==0);
     assert(fs_layer_route(1,1,0)==FS_FORWARD);
     assert(fs_layer_route(1,1,2)==FS_FORWARD);
     assert(fs_layer_route(0,0,0)==FS_FORWARD);
