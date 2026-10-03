@@ -1,4 +1,25 @@
-# FuSa-style fullscreen experiment 0.21 — remove game/output lockstep
+# FuSa-style fullscreen experiment 0.22 — logical game geometry
+
+0.21: Metal Slug XX and Soul Calibur hardware tests pass. Star Ocean's movie
+after name entry proceeds without the plugin but blanks with it. Latest log:
+frame 649, null game source/zero stride after two intercepted mode calls; zero
+copy rejects and zero added VBlank waits. This implicates plugin interaction,
+not a confirmed root cause. It is not evidence of a slow-copy bottleneck.
+
+0.22 pairs mode redirection with a user-syscall GetMode view: successful game
+requests are remembered as logical mode/width/height, while actual scanout
+remains 720x480. Game queries no longer unexpectedly expose the scaler geometry.
+The worker and kernel display paths still query actual hardware mode. Sony's
+getter validates pointers and supplies its normal result before substitution;
+errors are not hidden. The hook is removed with the other display hooks.
+
+Log mode requests/results and query counts without I/O in the hook. If the
+game never queries this API, this change will not explain/fix the movie stall;
+the new diagnostics distinguish that case. Pixel copy, scheduling and INI are
+unchanged. Test the name-entry -> fade -> movie transition first, then a short
+regression check in the two working games. No OC/firmware changes.
+
+## 0.21 — remove game/output lockstep
 
 0.20 hardware result: clean images across tested games, but slower gameplay
 and stuttering audio. Soul Calibur copy averaged 1.856 ms (previously 15.4 ms),

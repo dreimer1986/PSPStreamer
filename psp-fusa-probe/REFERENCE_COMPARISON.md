@@ -1,4 +1,10 @@
-# FuSa reference audit — updated for 0.21 (2026-10-03)
+# FuSa reference audit — updated for 0.22 (2026-10-03)
+
+0.22 adds a logical GetMode view for user syscalls to complement redirected
+SetMode requests. This is an intentional extension beyond the inspected FuSa
+source, addressing a code-level API inconsistency, not a verified Star Ocean
+root cause. Actual kernel/worker geometry remains physical. Mode return values
+and query counts are logged to establish whether the failing movie uses it.
 
 0.21 corrects the independent coordination experiment: 0.20's clean image came
 with game/output lockstep and audible slowdown. The guard now applies only to

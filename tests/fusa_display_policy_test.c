@@ -13,6 +13,10 @@ int main(void)
     assert(!fs_redirect_mode(0,0,0,0,480,272));
     assert(!fs_redirect_mode(1,0,0,0x1d1,480,272));
     assert(!fs_redirect_mode(1,0,0,0x1d2,720,480));
+    assert(fs_report_game_mode(1,0,0));
+    assert(!fs_report_game_mode(0,0,0)); /* Restore/suspend/inactive. */
+    assert(!fs_report_game_mode(1,1,0)); /* Worker sees physical output. */
+    assert(!fs_report_game_mode(1,0,-1)); /* Pointer/error result preserved. */
     assert(fs_layer_route(1,0,0)==FS_SYSTEM);
     assert(fs_layer_route(1,0,2)==FS_GAME);
     assert(fs_layer_route(1,0,1)==FS_FORWARD);

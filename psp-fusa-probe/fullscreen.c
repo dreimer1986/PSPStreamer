@@ -31,6 +31,10 @@ static int (*mode_entry)(int,int,int),(*set_mode_original)(int,int,int);
 static unsigned mode_trampoline[4] __attribute__((aligned(64)));
 static unsigned mode_original[2];
 static volatile int mode_hooked,mode_users;
+static int (*get_mode_original)(int *,int *,int *);
+static volatile unsigned mode_queries,mode_query_users,mode_events;
+static int query_hooked,logical_mode,logical_width,logical_height;
+static int requested_mode,requested_width,requested_height,requested_result;
 static volatile unsigned long long screen_until;
 /* Unlike the public getter, the internal getter RETURNS sync via a pointer.
  * Do not copy FuSa's literal 1 here: it can become a write to address 1. */
@@ -229,10 +233,32 @@ static int capture_mode(int mode,int width,int height)
     if(active&&!own)source_layout++;
     int lcd_requested=(unsigned long long)sceKernelGetSystemTimeWide()<screen_until;
     int redirect=fs_redirect_mode(active&&!restoring&&!suspended&&!cancelled,own,lcd_requested,mode,width,height);
+    int input_mode=mode,input_width=width,input_height=height;
     if(redirect){mode=0x1d2;width=720;height=480;mode_remaps++;}
     sceKernelCpuResumeIntr(intr);
     int rc=set_mode_original(mode,width,height);
-    intr=sceKernelCpuSuspendIntr();mode_users--;sceKernelCpuResumeIntr(intr);return rc;
+    intr=sceKernelCpuSuspendIntr();
+    if(active&&!own) {
+        requested_mode=input_mode;requested_width=input_width;requested_height=input_height;requested_result=rc;mode_events++;
+        if(rc>=0&&redirect){logical_mode=input_mode;logical_width=input_width;logical_height=input_height;}
+    }
+    mode_users--;sceKernelCpuResumeIntr(intr);return rc;
+}
+/* Only user syscalls see logical game geometry. The display driver, worker,
+ * DVE and kernel system UI must continue to see actual output geometry. */
+static int game_get_mode(int *mode,int *width,int *height)
+{
+    int intr=sceKernelCpuSuspendIntr();mode_query_users++;sceKernelCpuResumeIntr(intr);
+    /* Sony performs its normal user pointer validation before any overwrite. */
+    int rc=get_mode_original(mode,width,height);
+    intr=sceKernelCpuSuspendIntr();
+    if(fs_report_game_mode(active&&!restoring&&!cancelled&&!suspended,sceKernelGetThreadId()==worker,rc)) {
+        if(mode)*mode=logical_mode;
+        if(width)*width=logical_width;
+        if(height)*height=logical_height;
+        mode_queries++;
+    }
+    mode_query_users--;sceKernelCpuResumeIntr(intr);return rc;
 }
 static int install_internal_hook(void)
 {
@@ -247,6 +273,7 @@ static int install_internal_hook(void)
 static void remove_internal_hook(void)
 {
     int intr=sceKernelCpuSuspendIntr();
+    if(query_hooked){sctrlHENPatchSyscall((void *)game_get_mode,(void *)get_mode_original);query_hooked=0;}
     if(mode_hooked){
         unsigned *entry=(unsigned *)mode_entry;entry[0]=mode_original[0];entry[1]=mode_original[1];
         sceKernelDcacheWritebackInvalidateRange(entry,8);sceKernelIcacheInvalidateRange(entry,8);mode_hooked=0;
@@ -430,12 +457,14 @@ static int restore(void)
 static int start_scale(void)
 {
     void *src=NULL;int stride=0,fmt=-1;
-    if(suspended||expanded||internal_users||internal_hooked||mode_hooked||mode_users||wait_users)return -1;
+    if(suspended||expanded||internal_users||internal_hooked||mode_hooked||mode_users||mode_query_users||wait_users)return -1;
     if(cable_type()!=2){record("component cable required",-1);return -1;}
     if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||!fs_game_tv_layout(old_mode,old_w,old_h)){
         record("start in Sony game 480p TV mode",-1);record("start mode",old_mode);
         record("start width",old_w);record("start height",old_h);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
+    logical_mode=old_mode;logical_width=old_w;logical_height=old_h;
+    mode_queries=mode_events=0;
     if(sceDisplayGetFrameBuf(&src,&stride,&fmt,1)<0||!system_source_valid((uintptr_t)src,stride,fmt)){
         record("requires nonoverlapping 16/32-bit source frame",-1);record("start source address",(int)src);
         record("start source stride",stride);record("start source format",fmt);return -1;}
@@ -463,6 +492,7 @@ static int start_scale(void)
     rc=change_edram(0x400000);record("expand VRAM",rc);if(rc<0){remove_internal_hook();return rc;}expanded=1;
     int intr=sceKernelCpuSuspendIntr();active=1;
     sctrlHENPatchSyscall((void *)get_edram_size,(void *)game_edram_size);
+    sctrlHENPatchSyscall((void *)get_mode_original,(void *)game_get_mode);query_hooked=1;
     sceKernelCpuResumeIntr(intr);
     memset((void *)(FS_OUTPUT_BASE|0x40000000U),0,2*FS_OUTPUT_BYTES);
     /* Never scale live game VRAM, including the first frame. The cleared
@@ -480,6 +510,7 @@ static int setup(void)
     /* Resolve capabilities, not a plugin/model/firmware allowlist. Overlays
      * and Consolizer may coexist; source and VRAM ownership are checked live. */
     mode_entry=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",0x0E20F177);
+    get_mode_original=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",0xDEA197D4);
     set_mode_original=mode_entry;
     set_internal=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay_driver",0x63E22A26);
     internal_entry=set_internal;
@@ -493,12 +524,12 @@ static int setup(void)
     }
     dve_mode=(void *)sctrlHENFindFunction("pspDveManager_Module","pspDveManager_driver",0xF9C86C73);
     cable_type=(void *)sctrlHENFindFunction("pspDveManager_Module","pspDveManager_driver",0x2ACFCB6D);
-    return mode_entry&&set_internal&&get_internal&&edram_size&&get_edram_size&&dve_mode&&cable_type?0:-3;
+    return mode_entry&&get_mode_original&&set_internal&&get_internal&&edram_size&&get_edram_size&&dve_mode&&cable_type?0:-3;
 }
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.21 bounded in-flight capture guard",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.22 logical game mode queries",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -540,20 +571,29 @@ static int work(SceSize size,void *args)
         record("user RAM largest block",sceKernelPartitionMaxFreeMemSize(2));running=0;}
     offered_event=sceKernelCreateEventFlag("fullscreen offered",0,0,NULL);
     if(offered_event<0){record("capture event allocation failed",offered_event);running=0;}
-    unsigned long long started_at=0,retry_at=0,diagnostic_next=0;unsigned previous=0,last_output_vblank=0;int output_clock_valid=0,back=1,logged_system=-1;
+    unsigned long long started_at=0,retry_at=0,diagnostic_next=0;unsigned previous=0,last_output_vblank=0,logged_mode_events=0;int output_clock_valid=0,back=1,logged_system=-1;
     FsAutoZoom automatic_zoom={0};unsigned long long auto_poll=0;int zoom_armed=0;
     while(running) {
         SceCtrlData pad={0};sceCtrlPeekBufferPositive(&pad,1);
         unsigned chord=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if(active&&mode_events!=logged_mode_events) {
+            int intr=sceKernelCpuSuspendIntr();
+            int m=requested_mode,w=requested_width,h=requested_height,result=requested_result;
+            logged_mode_events=mode_events;
+            sceKernelCpuResumeIntr(intr);
+            char message[112];
+            snprintf(message,sizeof(message),"game mode request mode=%X size=%dx%d events=%u queries=%u",m,w,h,logged_mode_events,mode_queries);
+            record(message,result);
+        }
         if(pad.Buttons&PSP_CTRL_SCREEN){int intr=sceKernelCpuSuspendIntr();screen_until=now+6000000ULL;sceKernelCpuResumeIntr(intr);}
         if(active&&!suspended&&now>=diagnostic_next) {
             diagnostic_next=now+10000000ULL;
             void *actual=NULL;int stride=0,format=0,sync=0;
             int query=get_internal(2,&actual,&stride,&format,&sync);
-            char message[112];
-            snprintf(message,sizeof(message),"state outputs=%u rejected=%u modes=%u actual_game=%08X",
-                scaled_frames,copy_rejected,mode_remaps,(unsigned)actual);
+            char message[144];
+            snprintf(message,sizeof(message),"state outputs=%u rejected=%u modes=%u queries=%u actual_game=%08X",
+                scaled_frames,copy_rejected,mode_remaps,mode_queries,(unsigned)actual);
             record(message,query);
         }
         if(retiring&&!suspended&&now>=retry_at) {
@@ -681,7 +721,7 @@ int module_stop(SceSize size,void *args)
     if(offered_event>=0)sceKernelSetEventFlag(offered_event,1);
     if(worker>=0){SceUInt wait=2000000;if(sceKernelWaitThreadEnd(worker,&wait)<0)return -1;}
     remove_wait_hooks();
-    if(active||expanded||internal_hooked||internal_users||mode_hooked||mode_users||wait_users)return -1; /* Never unload live hooks. */
+    if(active||expanded||internal_hooked||internal_users||mode_hooked||mode_users||query_hooked||mode_query_users||wait_users)return -1; /* Never unload live hooks. */
     if(offered_event>=0){sceKernelDeleteEventFlag(offered_event);offered_event=-1;}
     if(snapshot_block>=0){sceKernelFreePartitionMemory(snapshot_block);snapshot_block=-1;snapshot=NULL;}
     if(worker>=0){sceKernelDeleteThread(worker);worker=-1;}return 0;
