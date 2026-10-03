@@ -1,4 +1,10 @@
-# FuSa reference audit — updated for 0.22 (2026-10-03)
+# FuSa reference audit — updated for 0.23 (2026-10-03)
+
+0.23: Star Ocean logs establish an actual 80000107 return from the redirected
+SetMode call, with zero GetMode queries. Reuse an already verified physical
+720x480 mode; apply fixed replacement arguments in kernel context only when a
+physical change is needed. This is an ARK compatibility adaptation, not a
+verbatim copy of the legacy always-call-SetMode path. Real failures propagate.
 
 0.22 adds a logical GetMode view for user syscalls to complement redirected
 SetMode requests. This is an intentional extension beyond the inspected FuSa

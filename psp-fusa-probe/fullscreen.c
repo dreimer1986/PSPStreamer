@@ -34,7 +34,7 @@ static volatile int mode_hooked,mode_users;
 static int (*get_mode_original)(int *,int *,int *);
 static volatile unsigned mode_queries,mode_query_users,mode_events;
 static int query_hooked,logical_mode,logical_width,logical_height;
-static int requested_mode,requested_width,requested_height,requested_result;
+static int requested_mode,requested_width,requested_height,requested_result,requested_route;
 static volatile unsigned long long screen_until;
 /* Unlike the public getter, the internal getter RETURNS sync via a pointer.
  * Do not copy FuSa's literal 1 here: it can become a write to address 1. */
@@ -236,10 +236,28 @@ static int capture_mode(int mode,int width,int height)
     int input_mode=mode,input_width=width,input_height=height;
     if(redirect){mode=0x1d2;width=720;height=480;mode_remaps++;}
     sceKernelCpuResumeIntr(intr);
-    int rc=set_mode_original(mode,width,height);
+    int rc,route=0;
+    if(redirect) {
+        /* A logical game reset does not require resetting an already correct
+         * physical TV mode. Verify before accepting the idempotent request;
+         * do not feed privileged TV arguments back through a user-context
+         * call and return INVALID_MODE to a movie's initialization loop. */
+        int actual_mode=0,actual_width=0,actual_height=0;
+        /* This query writes plugin-owned kernel-stack locals, not user data. */
+        unsigned k1=pspSdkSetK1(0);
+        rc=sceDisplayGetMode(&actual_mode,&actual_width,&actual_height);
+        if(rc>=0&&fs_scaled_mode(actual_mode,actual_width,actual_height)){route=1;rc=0;}
+        else if(rc>=0) {
+            route=2;
+            /* Only our validated, pointer-free fixed output arguments get
+             * kernel context. Unredirected user calls retain their checks. */
+            rc=set_mode_original(mode,width,height);
+        }
+        pspSdkSetK1(k1);
+    } else rc=set_mode_original(mode,width,height);
     intr=sceKernelCpuSuspendIntr();
     if(active&&!own) {
-        requested_mode=input_mode;requested_width=input_width;requested_height=input_height;requested_result=rc;mode_events++;
+        requested_mode=input_mode;requested_width=input_width;requested_height=input_height;requested_result=rc;requested_route=route;mode_events++;
         if(rc>=0&&redirect){logical_mode=input_mode;logical_width=input_width;logical_height=input_height;}
     }
     mode_users--;sceKernelCpuResumeIntr(intr);return rc;
@@ -529,7 +547,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreenTest 0.22 logical game mode queries",sceKernelDevkitVersion());
+    record("FuSaFullscreenTest 0.23 verified physical mode reuse",sceKernelDevkitVersion());
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
     record("PSP model",sceKernelGetModel());record("execution context",sceKernelInitKeyConfig());
@@ -579,11 +597,11 @@ static int work(SceSize size,void *args)
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(active&&mode_events!=logged_mode_events) {
             int intr=sceKernelCpuSuspendIntr();
-            int m=requested_mode,w=requested_width,h=requested_height,result=requested_result;
+            int m=requested_mode,w=requested_width,h=requested_height,result=requested_result,route=requested_route;
             logged_mode_events=mode_events;
             sceKernelCpuResumeIntr(intr);
             char message[112];
-            snprintf(message,sizeof(message),"game mode request mode=%X size=%dx%d events=%u queries=%u",m,w,h,logged_mode_events,mode_queries);
+            snprintf(message,sizeof(message),"game mode request mode=%X size=%dx%d events=%u queries=%u route=%d",m,w,h,logged_mode_events,mode_queries,route);
             record(message,result);
         }
         if(pad.Buttons&PSP_CTRL_SCREEN){int intr=sceKernelCpuSuspendIntr();screen_until=now+6000000ULL;sceKernelCpuResumeIntr(intr);}

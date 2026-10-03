@@ -17,6 +17,8 @@ static int fs_redirect_mode(int active,int own,int lcd_requested,int mode,int wi
 {return active&&!own&&!lcd_requested&&(mode==0||mode==0x1d2||mode==0x2d2)&&width==480&&height==272;}
 static int fs_report_game_mode(int virtualizing,int own,int result)
 {return virtualizing&&!own&&result>=0;}
+static int fs_scaled_mode(int mode,int width,int height)
+{return mode==0x1d2&&width==720&&height==480;}
 /* This generation changes for layout/source-class transitions, NOT each
  * frame submission or unrelated GE activity. A slower copy must still show. */
 static int fs_snapshot_layout_valid(unsigned before,unsigned after)

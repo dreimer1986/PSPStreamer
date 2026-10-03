@@ -1,4 +1,23 @@
-# FuSa-style fullscreen experiment 0.22 — logical game geometry
+# FuSa-style fullscreen experiment 0.23 — verified physical mode reuse
+
+0.22 Star Ocean evidence: `queries=0`, but the intercepted mode-0 480x272
+request returned `80000107` (display argument/invalid mode) after we replaced
+its arguments with TV output geometry. The movie then never supplies a new
+buffer. Logical GetMode was not used and did not fix this run.
+
+0.23 checks actual output geometry in kernel context. If it is already the
+required 0x1d2/720x480, a logical game reset reuses it and succeeds without a
+redundant Sony mode call. Otherwise only the fixed, validated replacement
+arguments are applied with K1 temporarily cleared, restored on all branches.
+User passthrough requests are unchanged. Query/set failures still propagate;
+this does not blindly hide error 80000107. The K1 cause of Sony's rejection is
+plausible, not independently proven; idempotent reuse avoids that call entirely.
+
+Mode diagnostics: route=0 passthrough/query failure, 1 verified existing mode,
+2 actual kernel-context change. Test Star Ocean name entry -> fade -> movie.
+Copy, VBlank pacing, OC and INI remain unchanged.
+
+## 0.22 — logical game geometry
 
 0.21: Metal Slug XX and Soul Calibur hardware tests pass. Star Ocean's movie
 after name entry proceeds without the plugin but blanks with it. Latest log:
