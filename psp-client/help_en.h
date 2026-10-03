@@ -243,13 +243,22 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step3_text="Accepting text alone does not save."
     },
     [HELP_PAGE_PLUGIN]={
-        .title="StreamerOC plugin settings",
-        .step1_title="Settings: StreamerOC plugin, then X",
+        .title="Plugins: OC / Consolizer / Fullscreen",
+        .step1_title="Settings: Plugins, then X",
         .step1_text="UP/DOWN: row; LEFT/RIGHT: value.",
         .step2_title="START saves the plugin INI; O cancels",
         .step2_text="Changes apply at the next app start.",
-        .step3_title="Use only clocks tested on this PSP",
+        .step3_title="Rules: SQUARE inherits global values",
         .step3_text="Old INI is kept as .ini.bak."
+    },
+    [HELP_PAGE_PLUGIN_RULES]={
+        .title="Plugin rules and path filters",
+        .step1_title="Add title ID or complete launch path",
+        .step1_text="Title ID wins; first matching rule wins.",
+        .step2_title="X edits; SQUARE renames a rule",
+        .step2_text="TRIANGLE twice deletes; START saves.",
+        .step3_title="O leaves rule values; O again cancels",
+        .step3_text="Filters: case-sensitive path fragments."
     },
     [HELP_PAGE_PRESET_SETTINGS]={
         .title="Preset folders in settings",

@@ -25,6 +25,10 @@ that is the separate StreamMaster transport, not the Consolizer plugin.
 
 ### Per-title and exact-path settings
 
+PSPStreamer now exposes main options, title/path rules and allow/exclude filters
+under **Settings → Plugins → PSPConsolizer**. Changes are startup-only; Start
+saves the current draft with a `.bak` backup. ARK registration is unchanged.
+
 Copy `PSPConsolizer-rules.ini.example` to `PSPConsolizer-rules.ini` in the plugin
 directory. This separate file survives changes to the general configuration.
 

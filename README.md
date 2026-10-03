@@ -1,5 +1,7 @@
 # PSP Streamer
 
+Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and PS1 Rumble](docs/RELEASE_2.3.md).
+
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
 [FuSa Fullscreen](psp-fusa-probe/FULLSCREEN.md) is the standalone game-TV
@@ -1096,19 +1098,30 @@ Start underclock testing at 222 MHz, not 66 MHz: low clocks can slow the
 browser, decoding and storage/network I/O. Requested MHz are not guaranteed
 exact physical frequencies. Enable plugin `overlay=1` to see changes.
 
-**Select → StreamerOC plugin → X** opens the optional plugin's own settings.
-Up/Down selects a row; Left/Right changes it. The submenu exposes `enabled`,
-`target_mhz`, `enforce`, `enforce_unlimited`, `app_control`, `report` and `overlay`.
+**Select → Plugins → X** opens settings for **StreamerOC**, **PSP Consolizer**
+and **FuSa Fullscreen**. Up/Down selects a row; Left/Right changes its value.
+X also opens numeric entry for MHz/delay. All main numeric INI options are
+available, including always-on overlays, TV policy, metadata and POPS rumble.
 **Start saves this INI independently of the outer app settings; Circle cancels.**
 Changes take effect at the **next application start**, not in the running plugin.
-The file is `ms0:/SEPLUGINS/StreamerOC/StreamerOC.ini` (an existing `ef0:` file
-is used if the Memory Stick file is absent). A missing INI starts disabled;
-install the plugin/directory first. Invalid INIs are not overwritten. Saving
-validates all values, writes a temporary file and keeps the previous INI as
-`StreamerOC.ini.bak`. Comments are replaced with the standard eight-key layout.
+The files are `ms0:/SEPLUGINS/<plugin>/<plugin>.ini`. StreamerOC alone also uses
+an existing `ef0:` INI if its Memory Stick INI is absent. Install the plugin and
+INI first. Unreadable, oversized or invalid supported settings are not overwritten.
+Saving verifies a temporary file and keeps the previous INI as `.ini.bak`.
+Unchanged keys and comments are preserved; editing a key replaces its old lines.
 Per-title and exact launch-path overrides live separately in
 `StreamerOC-rules.ini` and `PSPConsolizer-rules.ini`, beside each plugin's main
-INI, so settings saves preserve them. See the
+INI. Open **Title / path rules** to add an actual DISC_ID or full launch path,
+X to edit values, Square to rename, and Triangle twice to delete a rule.
+Inside a rule, Square removes the selected override ("Global"). Circle returns
+to the rule list without saving; **Start in the list saves all rule edits**;
+Circle there discards the draft. Title ID takes precedence over path, with the
+first matching section winning ties. FuSa has no per-title rule engine.
+Consolizer's **Path filters** edits up to eight allowed and eight excluded
+case-sensitive path substrings. Triangle twice deletes a filter; Start saves.
+These global filters still apply even when a title rule enables the controller.
+No new kernel hooks or resident plugin buffers are added by these menus.
+See the
 [OC rules](psp-overclock/README.md#per-game-and-homebrew-rules) and
 [Consolizer rules](psp-controller/README.md#per-title-and-exact-path-settings)
 for supported keys, precedence and examples.

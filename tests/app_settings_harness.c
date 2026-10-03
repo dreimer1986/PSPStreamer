@@ -13,7 +13,7 @@ void spectrum_analysis_reset(void){}
 typedef struct {unsigned int Buttons;} SceCtrlData;
 enum {PSP_CTRL_UP=1,PSP_CTRL_DOWN=2,PSP_CTRL_LEFT=4,PSP_CTRL_RIGHT=8,
       PSP_CTRL_CROSS=16,PSP_CTRL_CIRCLE=32,PSP_CTRL_START=64,PSP_CTRL_SELECT=128,
-      PSP_CTRL_LTRIGGER=256,PSP_CTRL_RTRIGGER=512};
+      PSP_CTRL_LTRIGGER=256,PSP_CTRL_RTRIGGER=512,PSP_CTRL_TRIANGLE=1024,PSP_CTRL_SQUARE=2048};
 #define TV_AMBER 1
 #define TV_WHITE 2
 static char server_host[64]="example.test",server_password[129]="ä:test",music_preset_file[256]="active.milk";
@@ -71,6 +71,26 @@ static void streammaster_settings(void){streammaster_visits++;}
 #include "app_settings.h"
 static void sequence(const unsigned int *values,int count) {memcpy(keys,values,count*sizeof(*values));total=count;position=0;tick=0;}
 int main(void) {
+    /* Plugin rule editor uses the same controls on LCD and TV; no disk writes
+     * until START in the outer list. Global inheritance removes the key. */
+    PluginIni ini={0};ini.text=calloc(1,PI_CAP);assert(ini.text);ini.limit=65536;
+    strcpy(ini.text,"[title:ULUS12345]\nenabled=1\n[path:ms0:/PSP/GAME/A/EBOOT.PBP]\nenabled=0\n");ini.length=strlen(ini.text);
+    for(tv_ui_active=0;tv_ui_active<2;tv_ui_active++){
+        const unsigned int edit_rule[]={0,PSP_CTRL_SQUARE,0,PSP_CTRL_CIRCLE};
+        sequence(edit_rule,4);plugin_fields(&ini,0,plugin_oc,5,"OC");
+        assert(pi_get(&ini,0,"enabled",-1)==-1);
+        assert(pi_get(&ini,1,"enabled",-1)==0);
+        assert(!plugin_rules_valid(&ini,plugin_oc,5));
+    }
+    tv_ui_active=0;
+    const unsigned int remove_rule[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_DOWN,0,PSP_CTRL_TRIANGLE,0,PSP_CTRL_TRIANGLE,0,PSP_CTRL_CIRCLE};
+    sequence(remove_rule,10);plugin_rules(&ini,plugin_oc,5,"OC");
+    assert(!strstr(ini.text,"ULUS12345"));assert(strstr(ini.text,"[path:"));
+    assert(!pi_set(&ini,0,"target_mhz",66));
+    const unsigned int clamp_clock[]={0,PSP_CTRL_DOWN,0,PSP_CTRL_LEFT,0,PSP_CTRL_CIRCLE};
+    sequence(clamp_clock,6);plugin_fields(&ini,0,plugin_oc,5,"OC");
+    assert(pi_get(&ini,0,"target_mhz",-1)==66);
+    free(ini.text);
     AppSettings resolution;
     settings_capture(&resolution);assert(resolution.value[SET_RESOLUTION]==1);
     resolution.value[SET_RESOLUTION]=0;settings_apply(&resolution);assert(!md_high_resolution);

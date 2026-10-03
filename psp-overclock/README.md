@@ -16,8 +16,9 @@ the picker plugin or ARK's own overclock override. No automatic maximum search.
 ## Per-game and homebrew rules
 
 Copy `StreamerOC-rules.ini.example` to `StreamerOC-rules.ini` next to the main
-INI. Uncomment only the rules you need. The PSP settings screen changes the
-main INI only and therefore preserves these rules. Rules are read at launch.
+INI. Uncomment only the rules you need, or use PSPStreamer **Settings → Plugins
+→ StreamerOC: Title / path rules**. Global settings and rule files are saved
+separately, with backups. Rules are read at launch.
 
 ```ini
 [title:ULUS12345]
@@ -521,8 +522,10 @@ compiled without running tests, as requested; hardware validation is pending.
 
 ## Editing from PSPStreamer
 
-In PSPStreamer, open **Select → StreamerOC plugin → X**. The submenu edits all
-seven INI options without a PC. **Start** saves the plugin INI (with a `.bak`
+In PSPStreamer, open **Select → Plugins → StreamerOC: General settings**.
+The submenu edits all eight INI options without a PC, including `overlay_always`.
+The separate rules screen supports title IDs and exact launch paths.
+**Start** saves the selected INI (with a `.bak`
 copy); **Circle** cancels. Changes apply at the **next application start** and
 do not touch the running clock-control path. This is separate from saving the
 player's CPU profiles. Only use target clocks already tested on your PSP.

@@ -28,6 +28,10 @@ separate PSP Consolizer function, not an instruction to enable this in VSH.
 
 ## Controls and configuration
 
+PSPStreamer exposes these four settings under **Settings → Plugins →
+FuSaFullscreen**. Start saves a backup-protected INI; restart the game to apply.
+This does not register the plugin in ARK or alter an active display session.
+
 First enable normal component TV output, manually or through Consolizer.
 **NOTE + R** toggles fullscreen. The PSP Screen button retains LCD/TV switching.
 There is no session-duration limit.

@@ -98,7 +98,7 @@ static int settings_text(char *text,int capacity,int secret,const char *title) {
         old=pad.Buttons;sceKernelDelayThread(20000);
     }
 }
-#include "oc_settings_ui.h"
+#include "plugin_settings_ui.h"
 static void streammaster_settings(void);
 static int app_settings(void) {
     AppSettings original,draft;settings_capture(&original);draft=original;
@@ -168,7 +168,7 @@ static int app_settings(void) {
                 dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
             }
             if(selected==SET_OC) {
-                oc_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
+                plugin_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
             }
             if(selected==SET_STREAMMASTER) {
                 streammaster_settings();dirty=1;sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;

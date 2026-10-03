@@ -243,13 +243,22 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step3_text="Text übernehmen allein reicht nicht."
     },
     [HELP_PAGE_PLUGIN]={
-        .title="StreamerOC-Plugin einstellen",
-        .step1_title="Einstellungen: StreamerOC-Plugin, X",
+        .title="Plugins: OC / Consolizer / Vollbild",
+        .step1_title="Einstellungen: Plugins, dann X",
         .step1_text="HOCH/RUNTER: Zeile; LINKS/RECHTS: Wert",
         .step2_title="START speichert Plugin-INI; O zurück",
         .step2_text="Gilt erst beim nächsten App-Start.",
-        .step3_title="Nur auf dieser PSP getestete Takte!",
+        .step3_title="Regel: QUADRAT übernimmt Globalwert",
         .step3_text="Alte INI bleibt als .ini.bak erhalten."
+    },
+    [HELP_PAGE_PLUGIN_RULES]={
+        .title="Plugin-Regeln und Pfadfilter",
+        .step1_title="Titel-ID oder ganzen Startpfad wählen",
+        .step1_text="Titel-ID vor Pfad; erster Treffer gilt.",
+        .step2_title="X ändert; QUADRAT benennt Regel um",
+        .step2_text="DREIECK zweimal löscht; START speichert.",
+        .step3_title="O zurück zur Liste; nochmals: Abbruch",
+        .step3_text="Filter: Teilpfade mit Groß/Kleinschrift."
     },
     [HELP_PAGE_PRESET_SETTINGS]={
         .title="Preset-Ordner in Einstellungen",
