@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Xbox preview 0.2.3: initialize controllers before GUI/network workers,
+  deduplicate connection events, restore Back-to-dashboard during loading
+  and playback, and capture SDK assertions. Hardware startup retest pending.
 - Xbox preview 0.2.2: expose catalog loading before worker startup and add
   stage diagnostics for the post-network-init stall; live catalog/parser
   check passes on host, console diagnosis remains pending.

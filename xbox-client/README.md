@@ -1,4 +1,4 @@
-# Original Xbox — native player preview 0.2.2
+# Original Xbox — native player preview 0.2.3
 
 The connection-only preview has been tested successfully on a real Xbox.
 This next preview adds the familiar receiver GUI, analog VU meters, library
@@ -57,13 +57,16 @@ item, artwork, watched reporting, radio, visualizations or offline cache yet.
 
 ## Synchronization and isolation
 
-Preview 0.2.2 is a diagnostic build for a hardware-only stall after network
-initialization. It presents the loading status before starting the catalog
-worker and records worker creation, HTTP completion, controller opening and
-JSON parsing separately. The live server reply passes the native catalog
-parser on the host (`tests/xbox_catalog.c`), but this does not verify Xbox
-thread scheduling or input/rendering. The startup stall is not yet confirmed
-fixed; retain `xbox-player.log` after the console test.
+Preview 0.2.2's hardware log located the startup stall inside controller
+opening, after successful worker creation. Preview 0.2.3 opens existing
+controllers before graphical UI allocation and concurrent network work,
+deduplicates the queued connection events, and omits the unused SDL timer
+thread. Back now requests exit during loading and playback as well.
+SDK C assertions (separate from SDL assertions) are saved to the log when
+running at passive IRQL, then displayed before the fatal halt. This also
+covers failures previously missing from the log. The actual cause inside
+controller opening is not yet proven; the reordered startup requires a
+console test. Keep `xbox-player.log` if it stalls again.
 
 Preview 0.2.1 fixes the first-menu black screen caused by a clip command
 without a preceding viewport after SDL flushes temporary text textures.

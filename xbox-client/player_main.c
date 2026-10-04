@@ -23,12 +23,34 @@
 static void menu_draw(void);
 
 static SDL_Window *window;static SDL_Renderer *renderer;static TTF_Font *font;static SDL_Texture *skin;
+static SDL_GameController *pads[4];
 static int width=640,height=480,options,fullscreen=1,quit;
 static char status[160]="Connecting...";static float meters[2];
 static int first_frame=1;
 static void startup_note(const char *stage){FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"startup: %s | SDL: %s\n",stage,SDL_GetError());fclose(f);}}
 static SDL_AssertState assertion_log(const SDL_AssertData *data,void *unused){
     (void)unused;FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"SDL assertion: %s at %s:%d (%s)\n",data->condition,data->filename,data->linenum,data->function);fclose(f);}return SDL_ASSERTION_ABORT;
+}
+/* The SDK's C assert handler stops the CPU with cli/hlt, without saving a
+ * diagnostic. SDL's assertion handler does not cover these USB/libc asserts.
+ * Preserve the failure on disk before retaining the SDK's fatal-stop policy. */
+void _xbox_assert(const char *expression,const char *file,const char *function,unsigned long line){
+    if(KeGetCurrentIrql()==0){
+        FILE *f=fopen("D:\\xbox-player.log","a");
+        if(f){fprintf(f,"SDK assertion: %s at %s:%lu (%s)\n",expression,file,line,function);fclose(f);}
+    }
+    debugClearScreen();debugResetCursor();
+    debugPrint("SDK assertion: %s\n%s:%lu\n%s\nSee xbox-player.log\n",expression,file,line,function);
+    __asm__ __volatile__("cli\n1: hlt\njmp 1b");
+    __builtin_unreachable();
+}
+static void controller_open(int device){
+    SDL_JoystickID id=SDL_JoystickGetDeviceInstanceID(device);
+    if(id<0)return;
+    for(int i=0;i<4;i++)if(pads[i]&&SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i]))==id)return;
+    startup_note("controller: opening device");
+    for(int i=0;i<4;i++)if(!pads[i]){pads[i]=SDL_GameControllerOpen(device);break;}
+    startup_note("controller: open returned");
 }
 /* nxdk's pinned SDL software backend requires SETVIEWPORT before SETCLIPRECT
  * in EACH command batch. Destroying a temporary text texture flushes a batch;
@@ -124,6 +146,8 @@ static void frame_draw(plm_frame_t *f){
     }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(double)f->width/f->height;int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);SDL_RenderPresent(renderer);}
 }
 static void button_down(int button){
+    /* Back must also work while a catalog request or playback is active. */
+    if(button==SDL_CONTROLLER_BUTTON_BACK){quit=1;return;}
     if(fetch.thread){if(button==SDL_CONTROLLER_BUTTON_B){fetch_stop();snprintf(status,sizeof(status),"Cancelled");}return;}
     if(playing){
         if(button==SDL_CONTROLLER_BUTTON_B){player_stop();snprintf(status,sizeof(status),"Stopped");}
@@ -134,7 +158,6 @@ static void button_down(int button){
         else if(button==SDL_CONTROLLER_BUTTON_DPAD_LEFT||button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT){double p=player_position()+(button==SDL_CONTROLLER_BUTTON_DPAD_LEFT?-30:30);if(p<0)p=0;if(media_duration>1&&p>=media_duration)p=media_duration-1;player_start(p);}
         return;
     }
-    if(button==SDL_CONTROLLER_BUTTON_BACK){quit=1;return;}
     if(options){
         int rows=media_audio?2:4;
         if(button==SDL_CONTROLLER_BUTTON_B){options=0;return;}
@@ -157,12 +180,17 @@ static void button_down(int button){
     else if(button==SDL_CONTROLLER_BUTTON_A&&entry_count){Entry *e=&entries[entry_index];if(e->folder)browse(e->target,0);else select_media(e);}
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.2 startup diagnostics\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.3 controller startup\n",boot);fclose(boot);}
     XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
     if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}
     VIDEO_MODE mode=XVideoGetMode();width=mode.width;height=mode.height;
-    if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMECONTROLLER|SDL_INIT_TIMER)||TTF_Init()){debugPrint("SDL/TTF startup failed\n");for(;;)Sleep(1000);}
+    if(SDL_Init(SDL_INIT_GAMECONTROLLER)){debugPrint("Controller initialization failed\n");for(;;)Sleep(1000);}
     SDL_SetAssertionHandler(assertion_log,NULL);
+    /* Establish input before allocating the graphical UI and before starting
+     * concurrent catalog work. Queued DEVICEADDED events are deduplicated.
+     * No SDL timer callbacks are used: GetTicks/Delay do not need TIMER init. */
+    for(int i=0;i<SDL_NumJoysticks();i++)if(SDL_IsGameController(i))controller_open(i);
+    if(SDL_InitSubSystem(SDL_INIT_VIDEO)||TTF_Init()){debugPrint("SDL/TTF startup failed\n");for(;;)Sleep(1000);}
     SDL_SetHint(SDL_HINT_RENDER_BATCHING,"1");
     window=SDL_CreateWindow("PSPStreamer Xbox",0,0,width,height,SDL_WINDOW_SHOWN);renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);
     font=TTF_OpenFont("D:\\font.ttf",18);SDL_Surface *image=IMG_Load("D:\\theme.png");if(image){skin=SDL_CreateTextureFromSurface(renderer,image);SDL_FreeSurface(image);}
@@ -170,11 +198,11 @@ int main(void){
     FILE *log=fopen("D:\\xbox-player.log","a");if(log){MM_STATISTICS memory={0};memory.Length=sizeof(memory);MmQueryStatistics(&memory);fprintf(log,"RAM pages=%lu output=%dx%d\n",(unsigned long)memory.TotalPhysicalPages,width,height);fclose(log);}
     menu_draw();startup_note("network initialization");int network=nxNetInit(NULL);startup_note("network initialization returned");if(configured&&!network)browse("",0);else snprintf(status,sizeof(status),"Check server.cfg / Ethernet (network=%d)",network);
     startup_note("main: entering event loop");
-    SDL_GameController *pads[4]={0};SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1;
+    SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1;
     while(!quit){
         if(first_poll)startup_note("main: before first event poll");
         while(SDL_PollEvent(&event)){
-            if(event.type==SDL_CONTROLLERDEVICEADDED){startup_note("controller: opening device");for(int i=0;i<4;i++)if(!pads[i]){pads[i]=SDL_GameControllerOpen(event.cdevice.which);break;}startup_note("controller: open returned");}
+            if(event.type==SDL_CONTROLLERDEVICEADDED){controller_open(event.cdevice.which);}
             else if(event.type==SDL_CONTROLLERDEVICEREMOVED){held=-1;for(int i=0;i<4;i++)if(pads[i]&&SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i]))==event.cdevice.which){SDL_GameControllerClose(pads[i]);pads[i]=NULL;}}
             else if(event.type==SDL_CONTROLLERBUTTONDOWN){button_down(event.cbutton.button);if(event.cbutton.button==SDL_CONTROLLER_BUTTON_DPAD_UP||event.cbutton.button==SDL_CONTROLLER_BUTTON_DPAD_DOWN){held=event.cbutton.button;repeat=SDL_GetTicks()+400;}}
             else if(event.type==SDL_CONTROLLERBUTTONUP&&held==event.cbutton.button)held=-1;
