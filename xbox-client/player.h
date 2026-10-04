@@ -2,6 +2,7 @@
 #define PLM_NO_STDIO
 #include "vendor/pl_mpeg.h"
 #include "audio.h"
+#include "mpeg_video.h"
 #define PACKET_LIMIT (256*1024)
 #define QUEUE_BYTES (1536*1024)
 typedef struct {unsigned char *data;unsigned size;int64_t pts;} Packet;
@@ -11,8 +12,16 @@ typedef struct {
     Packets video,audio;unsigned bytes,flags;int ended;char error[120],path[6000];
 } Stream;
 static Stream stream;
-static plm_buffer_t *video_buffer,*audio_buffer;static plm_video_t *video_decoder;static plm_audio_t *audio_decoder;
-static plm_frame_t *next_frame;static int64_t frame_pts,video_pts[64];static unsigned pts_read,pts_count;
+static plm_buffer_t *audio_buffer;static plm_audio_t *audio_decoder;
+static XboxVideo video;static unsigned char *video_input;
+static plm_frame_t video_frame,*next_frame;static int64_t frame_pts;
+static int video_codec=1; /* 0=MPEG-1, 1=MPEG-2 */
+static int audio_matrix;
+static const char *matrix_keys[]={"none","dolby","dplii"};
+static const char *matrix_names[]={"Stereo","Dolby Surround","Dolby Pro Logic II"};
+static const char *quality_names[]={"480x272","640x360","720x480 (16:9)","720x576 (16:9)","1280x720 (HD)","1920x1080 (HD)"};
+static const char *quality_keys[]={"480p-low","360p","480p","576p","720p","1080p"};
+static int display_wide=1;
 static SDL_Texture *video_texture;static int texture_w,texture_h,playing,paused,decoder_ended,stream_video,stream_audio;
 static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
@@ -56,18 +65,18 @@ static void player_stop(void){
     if(stream.thread){SDL_AtomicSet(&stream.cancel,1);SDL_WaitThread(stream.thread,NULL);stream.thread=NULL;}
     if(stream.lock){Packet p;while(pop_packet(&stream.video,&p))free(p.data);while(pop_packet(&stream.audio,&p))free(p.data);SDL_DestroyMutex(stream.lock);stream.lock=NULL;}
     if(pcm&&!audio_reset())audio_failed=1;
-    if(video_decoder)plm_video_destroy(video_decoder);video_decoder=NULL;video_buffer=NULL;
+    xbox_video_close(&video);free(video_input);video_input=NULL;
     if(audio_decoder)plm_audio_destroy(audio_decoder);audio_decoder=NULL;audio_buffer=NULL;
     if(video_texture)SDL_DestroyTexture(video_texture);video_texture=NULL;texture_w=texture_h=0;
-    playing=paused=0;next_frame=NULL;pts_read=pts_count=0;decoder_ended=0;
+    playing=paused=0;next_frame=NULL;decoder_ended=0;
 }
 static int player_start(double seconds){
     player_stop();if(!audio_init())return 0;
     memset(&stream,0,sizeof(stream));stream.lock=SDL_CreateMutex();if(!stream.lock)return 0;
     char token[4700];if(!url_encode(media_id,token,sizeof(token))){player_stop();return 0;}
     unsigned start_ms=(unsigned)(seconds*1000);
-    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality?"tv":"normal",start_ms/1000,start_ms%1000);
-    video_buffer=plm_buffer_create_with_capacity(PACKET_LIMIT*2);video_decoder=plm_video_create_with_buffer(video_buffer,1);plm_video_set_no_delay(video_decoder,1);
+    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=tv&xbox_size=%s&xbox_codec=%s&xbox_matrix=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality_keys[quality],video_codec?"mpeg2":"mpeg1",matrix_keys[audio_matrix],start_ms/1000,start_ms%1000);
+    if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}
     playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;underrun=0;log_time=SDL_GetTicks();return 1;
@@ -75,7 +84,7 @@ static int player_start(double seconds){
 static int safe_video(const Packet *p){
     for(unsigned i=0;i+7<p->size;i++)if(!memcmp(p->data+i,"\0\0\1\xb3",4)){
         unsigned w=p->data[i+4]*16+(p->data[i+5]>>4),h=(p->data[i+5]&15)*256+p->data[i+6];
-        if(!w||!h||w>640||h>480)return 0;
+        if(!w||!h||w>1920||h>1088)return 0;
     }
     return 1;
 }
@@ -104,16 +113,28 @@ static int player_tick(void){
     if(stream_audio&&!audio_finished&&SDL_AtomicGet(&stream.done)&&!queue_count(&stream.audio)&&!queued){
         audio_finished=1;silent_start=SDL_GetTicks();silent_pts=audio_clock<0?0:audio_clock;
     }
-    while(stream_video&&!next_frame&&pts_count<2&&pop_packet(&stream.video,&p)){
-        if(!safe_video(&p)){free(p.data);stream_error("Video exceeds preview limits");return -1;}
-        plm_buffer_write(video_buffer,p.data,p.size);free(p.data);
-        video_pts[(pts_read+pts_count)%64]=p.pts;pts_count++;
-    }
-    if(stream_video&&SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!decoder_ended){plm_buffer_signal_end(video_buffer);decoder_ended=1;}
-    if(stream_video&&!next_frame&&(pts_count>=2||(pts_count&&decoder_ended))){
-        next_frame=plm_video_decode(video_decoder);
-        if(next_frame){frame_pts=video_pts[pts_read];pts_read=(pts_read+1)%64;pts_count--;}
-        else if(decoder_ended){stream_error("Incomplete MPEG-1 picture");return -1;}
+    for(int work=0;stream_video&&!next_frame&&work<4;work++){
+        if(video.needs_input){
+            free(video_input);video_input=NULL;
+            if(pop_packet(&stream.video,&p)){
+                if(!safe_video(&p)){free(p.data);stream_error("Unsupported MPEG dimensions");return -1;}
+                video_input=p.data;xbox_video_feed(&video,p.data,p.size,p.pts);
+            }else if(SDL_AtomicGet(&stream.done)){
+                if(!stream.ended){stream_error("Stream interrupted (MPEG)");return -1;}
+                if(!video.finished)xbox_video_end(&video);
+                else{decoder_ended=1;if(video.displayed!=video.submitted){stream_error("Incomplete MPEG stream at EOF");return -1;}break;}
+            }else break;
+        }
+        int result=xbox_video_step(&video);
+        if(result<0){stream_error("MPEG decode: invalid data or insufficient RAM");return -1;}
+        if(result>0){
+            const mpeg2_sequence_t *s=video.info->sequence;const mpeg2_fbuf_t *f=video.info->display_fbuf;
+            video_frame.width=s->picture_width;video_frame.height=s->picture_height;
+            video_frame.y.data=f->buf[0];video_frame.y.width=s->width;
+            video_frame.cb.data=f->buf[1];video_frame.cb.width=s->chroma_width;
+            video_frame.cr.data=f->buf[2];video_frame.cr.width=s->chroma_width;
+            next_frame=&video_frame;frame_pts=video.pts;
+        }
     }
     if(!stream_audio&&next_frame&&!silent_start){silent_start=SDL_GetTicks();silent_pts=frame_pts;}
     int64_t now=stream_audio&&!audio_finished?audio_clock:silent_pts+(int64_t)(SDL_GetTicks()-silent_start)*90;
@@ -125,6 +146,6 @@ static int player_tick(void){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
         snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes);log_time=SDL_GetTicks();
     }
-    if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&!pts_count&&!next_frame&&!queued)return stream.ended?2:-1;
+    if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&(!stream_video||decoder_ended)&&!next_frame&&!queued)return stream.ended?2:-1;
     return 0;
 }

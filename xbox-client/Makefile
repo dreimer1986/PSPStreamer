@@ -3,7 +3,9 @@ NXDK_DIR ?= $(abspath ../.toolchain/nxdk)
 NXDK_NET = y
 NXDK_SDL = y
 SRCS = $(CURDIR)/player_main.c
-CFLAGS += -O2 -Wall -Wextra
+SRCS += $(wildcard $(CURDIR)/vendor/libmpeg2/*.c)
+LTO = y
+CFLAGS += -O3 -Wall -Wextra -I$(CURDIR)/vendor/libmpeg2
 CFLAGS += -I$(CURDIR)/../psp-client -I$(CURDIR)/shared
 LDFLAGS += -map:$(CURDIR)/bin/player.map
 include $(NXDK_DIR)/Makefile

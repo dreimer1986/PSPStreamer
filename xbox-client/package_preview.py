@@ -11,9 +11,9 @@ if not (out / 'default.xbe').is_file():
 for name in ('README.md', 'server.cfg.example'):
     shutil.copy2(root / name, out / name)
 (out / 'source').mkdir(exist_ok=True)
-for name in ('player_main.c', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
+for name in ('player_main.c', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'mpeg_video.h', 'display.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)
-shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True)
+shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True, ignore=shutil.ignore_patterns('*.obj','*.d'))
 (out / 'source/shared').mkdir(exist_ok=True)
 for name in ('spectrum_analysis.h','spectrum_analysis_impl.h','spectrum_paint.h','monkey_audio.h'):
     shutil.copy2(root.parent / 'psp-client' / name, out / 'source/shared' / name)

@@ -171,6 +171,7 @@ static void wrapped(const char *s,int y,int lines){
     }
 }
 #include "spectrum.h"
+#include "display.h"
 static void seek_playback(double seconds){
     if(!playing||media_live)return;if(seconds<0)seconds=0;if(media_duration>1&&seconds>=media_duration)seconds=media_duration-1;
     player_start(seconds);report_time=0;
@@ -221,6 +222,16 @@ static void menu_render(void){
     if(panel==1){
         const char *help[]={"A: Open / Play / Pause; B: Back / Stop", "Start: Playback menu (chapters, files, seek)", "Up/Down: Volume; Y: Fullscreen", "LB / RB: Previous / next file; triggers: chapters", "Music X: Spectrum; Video X: Playback menu", "Menu X: Settings; Y: Help; options Y: Info", "Options X: Start / Resume; Back: Dashboard", "Only clean playback end advances automatically"};
         for(int i=0;i<8;i++)text_at(help[i],35,64+i*28,492,normal);
+    }else if(panel==7){
+        if(display_confirm){
+            text_at("Keep this output?",35,95,492,selected);
+            text_at("A: Keep | B: Restore previous mode",35,135,492,normal);
+            char countdown[80];snprintf(countdown,sizeof(countdown),"Automatic restore in %u seconds",(unsigned)((display_deadline-SDL_GetTicks()+999)/1000));text_at(countdown,35,175,492,normal);
+        }else{
+            int first=panel_row/7*7;
+            for(int i=first;i<display_count&&i<first+7;i++){char label[100];display_label(&display_modes[i],label,sizeof(label));text_at(label,35,65+(i-first)*28,492,i==panel_row?selected:normal);}
+            text_at("A: Try mode | B: Back (no EEPROM changes)",35,264,492,normal);
+        }
     }else if(panel==5){
         char lines[5][150];snprintf(lines[0],150,"Server IPv4: %s",server_draft_host);
         snprintf(lines[1],150,"Port: %s",server_draft_port);snprintf(lines[2],150,"Password: %s",*server_draft_password?"********":"(empty)");
@@ -247,13 +258,17 @@ static void menu_render(void){
         snprintf(lines[6],100,"Peak hold: %s",spectrum_peak_hold?"On":"Off");
         for(int i=0;i<7;i++)text_at(lines[i],35,68+i*29,492,i==panel_row?selected:normal);
     }else if(panel==2){
-        char lines[12][140];snprintf(lines[0],140,"Autoplay next: %s",auto_next?"On":"Off");snprintf(lines[1],140,"Repeat current: %s",repeat_one?"On":"Off");
+        char lines[16][140];snprintf(lines[0],140,"Autoplay next: %s",auto_next?"On":"Off");snprintf(lines[1],140,"Repeat current: %s",repeat_one?"On":"Off");
         snprintf(lines[2],140,"Folder shuffle (music): %s",shuffle_music?"On":"Off");snprintf(lines[3],140,"Music spectrum: %s",show_spectrum?"On":"Off");
-        snprintf(lines[4],140,"Video quality: %s",quality?"640x360":"480x272");snprintf(lines[5],140,"Volume: %d%%",volume);
+        snprintf(lines[4],140,"Video quality: %s",quality_names[quality]);snprintf(lines[5],140,"Volume: %d%%",volume);
         snprintf(lines[6],140,"Audio: %s",language_names[prefer_audio]);snprintf(lines[7],140,"Subtitles: %s",prefer_subtitle?language_names[prefer_subtitle]:"Off");
         strcpy(lines[8],"Server connection >");strcpy(lines[9],"Spectrum settings >");
         snprintf(lines[10],140,"Debug logging: %s",diagnostics_enabled?"On":"Off");snprintf(lines[11],140,"Next episode countdown: %d seconds",next_delay);
-        int first=panel_row/8*8;for(int i=first;i<12&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
+        snprintf(lines[12],140,"Video codec: %s",video_codec?"MPEG-2":"MPEG-1");
+        snprintf(lines[13],140,"TV shape: %s",display_wide?"16:9 widescreen":"4:3 letterbox");
+        snprintf(lines[14],140,"Display output: %dx%d >",width,height);
+        snprintf(lines[15],140,"Audio downmix: %s",matrix_names[audio_matrix]);
+        int first=panel_row/8*8;for(int i=first;i<16&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
     }else if(panel==3){
         text_at(media_name,35,66,492,selected);char line[160];snprintf(line,sizeof(line),"%d:%02d | %d audio / %d subtitle tracks",(int)media_duration/60,(int)media_duration%60,audio_count,subtitle_count);text_at(line,35,96,492,normal);
         if(*media_artist)text_at(media_artist,35,123,492,normal);if(*media_album)text_at(media_album,35,150,492,normal);
@@ -267,7 +282,7 @@ static void menu_render(void){
         text_at(media_name,35,66,492,selected);
         char lines[4][180];snprintf(lines[0],180,start_position>0?"Resume at %d:%02d (X: from start)":"Play",(int)start_position/60,(int)start_position%60);snprintf(lines[1],180,"Audio: %s",audio_count?audio_labels[audio_track]:"No audio");
         snprintf(lines[2],180,"Subtitles: %s",subtitle_track<0?"Off":subtitle_labels[subtitle_track]);
-        snprintf(lines[3],180,"Video: %s",quality?"640 x 360 (higher load)":"480 x 272 (standard)");
+        snprintf(lines[3],180,"Video: %s / MPEG-%d",quality_names[quality],video_codec?2:1);
         for(int i=0;i<(media_audio?1:4);i++)text_at(lines[i],35,105+i*31,492,i==option_row?selected:normal);
     }else{
         int start=(entry_index/8)*8;
@@ -289,10 +304,23 @@ static void frame_draw(plm_frame_t *f){
     if(!video_texture){stream_error(SDL_GetError());return;}
     SDL_UpdateYUVTexture(video_texture,NULL,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width);
     if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);
-        double ratio=(double)f->width/f->height;int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}SDL_Rect dst={(width-w)/2,(height-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
-    }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(double)f->width/f->height;int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);controls_draw();SDL_RenderPresent(renderer);}
+        /* Server frames contain a complete 16:9 canvas, including pillarbox
+         * for 4:3 sources. SD output pixels are anamorphic on a wide TV. */
+        double ratio=(16.0/9.0)*((double)width/height)/(display_wide?16.0/9.0:4.0/3.0);int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}SDL_Rect dst={(width-w)/2,(height-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
+    }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(16.0/9.0)*1.5/(display_wide?16.0/9.0:4.0/3.0);int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);controls_draw();SDL_RenderPresent(renderer);}
 }
 static void button_down(int button){
+    if(panel==7){
+        if(display_confirm){
+            if(button==SDL_CONTROLLER_BUTTON_A){VIDEO_MODE m=XVideoGetMode();output_selected_w=m.width;output_selected_h=m.height;output_selected_hz=m.refresh;output_height=m.height;display_confirm=0;preferences(1);}
+            else if(button==SDL_CONTROLLER_BUTTON_B){display_confirm=0;if(!display_switch(display_previous)){quit=1;return;}}
+        }else if(button==SDL_CONTROLLER_BUTTON_B){panel=2;panel_row=14;}
+        else if(display_count){
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+display_count-1)%display_count;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%display_count;
+            if(button==SDL_CONTROLLER_BUTTON_A){display_previous=XVideoGetMode();if(!display_switch(display_modes[panel_row])){if(!display_switch(display_previous)){quit=1;return;}snprintf(status,sizeof(status),"Display allocation failed; mode restored");}else{display_confirm=1;display_deadline=SDL_GetTicks()+15000;}}
+        }return;
+    }
     /* Back must also work while a catalog request or playback is active. */
     if(button==SDL_CONTROLLER_BUTTON_BACK){quit=1;return;}
     if(next_pending){if(button==SDL_CONTROLLER_BUTTON_B){next_pending=0;snprintf(status,sizeof(status),"Autoplay cancelled");}else if(button==SDL_CONTROLLER_BUTTON_A){next_pending=0;next_media(0);}return;}
@@ -355,17 +383,20 @@ static void button_down(int button){
             }return;
         }
         if(panel==2){
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+11)%12;
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%12;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+15)%16;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%16;
             int d=button==SDL_CONTROLLER_BUTTON_DPAD_LEFT?-1:1;
             if(button==SDL_CONTROLLER_BUTTON_A||button==SDL_CONTROLLER_BUTTON_DPAD_LEFT||button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT){
                 switch(panel_row){case 0:auto_next=!auto_next;break;case 1:repeat_one=!repeat_one;break;case 2:shuffle_music=!shuffle_music;break;
-                case 3:show_spectrum=!show_spectrum;break;case 4:quality=!quality;break;
+                case 3:show_spectrum=!show_spectrum;break;case 4:quality=(quality+6+d)%6;break;
                 case 5:volume+=d*5;if(volume<0)volume=0;if(volume>100)volume=100;break;
                 case 6:prefer_audio=(prefer_audio+7+d)%7;break;case 7:prefer_subtitle=(prefer_subtitle+7+d)%7;break;
                 case 8:server_editor();break;case 9:panel=4;panel_row=0;break;
                 case 10:diagnostics_enabled=!diagnostics_enabled;if(!diagnostics_enabled)*player_diagnostic=0;break;
-                case 11:next_delay=(next_delay+31+d)%31;break;}
+                case 11:next_delay=(next_delay+31+d)%31;break;
+                case 12:video_codec=!video_codec;break;case 13:display_wide=!display_wide;break;
+                case 14:if(!playing){display_list();panel=7;panel_row=0;}break;
+                case 15:audio_matrix=(audio_matrix+3+d)%3;break;}
             }
         }return;
     }
@@ -395,7 +426,7 @@ static void button_down(int button){
             if(!option_row&&button==SDL_CONTROLLER_BUTTON_A){if(fetch.thread)fetch_stop();begin_playback(start_position);}
             else if(option_row==1&&audio_count)audio_track=(audio_track+audio_count+d)%audio_count;
             else if(option_row==2){subtitle_track=(subtitle_track+1+subtitle_count+1+d)%(subtitle_count+1)-1;}
-            else if(option_row==3)quality=!quality;
+            else if(option_row==3)quality=(quality+6+d)%6;
         }return;
     }
     if(button==SDL_CONTROLLER_BUTTON_B&&has_parent)browse(parent_path,0);
@@ -430,11 +461,17 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.3.2 shared PSP spectrum and server settings\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.0 libmpeg2 / runtime output / O3 LTO\n",boot);fclose(boot);}
     spectrum_analysis_mode=1;preferences(0);snprintf(report_client,sizeof(report_client),"xbox-%08lx-%08lx",(unsigned long)GetTickCount(),(unsigned long)KeQueryPerformanceCounter());
     startup_note("entry: before graphics/input initialization");
-    XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
-    if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}
+    int configured=config();display_list();
+    /* With 480p enabled nxdk exposes 720x480, not 640x480. Choose an actual
+     * enumerated default instead of continuing after a failed fixed mode. */
+    VIDEO_MODE boot_mode;void *boot_cursor=NULL;
+    if(!XVideoListModes(&boot_mode,32,0,&boot_cursor)){debugPrint("No supported video output\n");XReboot();return 1;}
+    if(output_selected_w){for(int i=0;i<display_count;i++){VIDEO_MODE m=display_modes[i];if(m.width==output_selected_w&&m.height==output_selected_h&&m.refresh==output_selected_hz){boot_mode=m;break;}}}
+    else if(output_height!=480){for(int i=0;i<display_count;i++){VIDEO_MODE m=display_modes[i];if(m.height==output_height){boot_mode=m;break;}}}
+    if(!XVideoSetMode(boot_mode.width,boot_mode.height,32,boot_mode.refresh)){debugPrint("Video output failed\n");XReboot();return 1;}
     VIDEO_MODE mode=XVideoGetMode();width=mode.width;height=mode.height;
     if(SDL_Init(SDL_INIT_GAMECONTROLLER)){debugPrint("Controller initialization failed\n");for(;;)Sleep(1000);}
     SDL_SetAssertionHandler(assertion_log,NULL);
@@ -452,6 +489,7 @@ int main(void){
     startup_note("main: entering event loop");
     SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1,first_loop=1,trigger_held[2]={0,0};
     while(!quit){
+        if(display_confirm&&(Sint32)(SDL_GetTicks()-display_deadline)>=0){display_confirm=0;if(!display_switch(display_previous)){quit=1;break;}}
         if(first_poll)startup_note("main: before first event poll");
         while(SDL_PollEvent(&event)){
             if(event.type==SDL_CONTROLLERDEVICEADDED){controller_open(event.cdevice.which);}
@@ -501,6 +539,7 @@ int main(void){
             if(!paused&&(audio_running||rendered)&&(!report_started||SDL_GetTicks()-report_time>=15000)){report_started=1;report_playback("playing");}
             if(result==1){frame_draw(next_frame);next_frame=NULL;}
             else if(result<0||result==2){
+                char end_note[230];snprintf(end_note,sizeof(end_note),"playback end result=%d clean=%d pictures=%u/%u codec=MPEG-%d size=%s error=%s",result,stream.ended,video.displayed,video.submitted,video_codec?2:1,quality_keys[quality],stream.error);startup_note(end_note);
                 report_playback("stopped");report_started=0;start_position=player_position();
                 int retry=result<0&&(strstr(stream.error,"network")||strstr(stream.error,"interrupted")||strstr(stream.error,"Truncated"));
                 snprintf(status,sizeof(status),"%s",result==2?"Playback finished":*stream.error?stream.error:"Stream failed");player_stop();
@@ -510,7 +549,7 @@ int main(void){
         }
         report_tick();
         if(next_pending){int left=(Sint32)(next_at-SDL_GetTicks());if(left<=0){next_pending=0;next_media(0);}else snprintf(status,sizeof(status),"Next episode in %d seconds | A: Now | B: Cancel",(left+999)/1000);}
-        if(connection_ready&&!network&&panel!=5&&panel!=6&&remote_poll())remote_execute();
+        if(connection_ready&&!network&&panel!=5&&panel!=6&&panel!=7&&remote_poll())remote_execute();
         if(first_loop)startup_note("main: before clock/redraw");
         if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=50){menu_draw();draw=SDL_GetTicks();}
         if(first_loop)startup_note("main: before yield");

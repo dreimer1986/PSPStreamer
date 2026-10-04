@@ -712,7 +712,14 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError("Unsupported stream option")
                 if (browser or xbox) and audio > 31:
                     raise ValueError('Unsupported audio track')
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox)
+                xbox_size = query.get('xbox_size', [None])[0] if xbox else None
+                xbox_codec = query.get('xbox_codec', ['mpeg1'])[0] if xbox else 'mpeg1'
+                xbox_matrix = query.get('xbox_matrix', ['none'])[0] if xbox else 'none'
+                if xbox:
+                    from .xbox_player import PROFILES
+                    if xbox_matrix not in ('none','dolby','dplii') or xbox_codec not in ('mpeg1', 'mpeg2') or xbox_size is not None and xbox_size not in PROFILES:
+                        raise ValueError('Unsupported Xbox video profile/codec')
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -1266,7 +1273,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
-                  tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False) -> None:
+                  tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False,
+                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none') -> None:
         live = token.startswith('radio.')
         managed = browser or xbox
         xbox_transport = None
@@ -1328,7 +1336,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 command = browser_command(command, container == 'mp3')
             if xbox:
                 from .xbox_player import command as xbox_command
-                command = xbox_command(command, container == 'mp3')
+                command = xbox_command(command, container == 'mp3', xbox_size, xbox_codec, xbox_matrix)
             if managed:
                 from .managed_subtitles import seek_timeline
                 command = seek_timeline(command, start_seconds)

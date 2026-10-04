@@ -4,16 +4,18 @@ Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and Configur
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
-Server **0.1.72** includes a [browser playback target](docs/BROWSER_PLAYER.md):
+Server **0.1.73** includes a [browser playback target](docs/BROWSER_PLAYER.md):
 choose **This browser** in a media item's playback target selector. Video/music,
 audio-track/subtitle selection, seek, automatic next episode and Plex/Jellyfin
 progress reporting run independently of PSP control. Sequential episodes can
 continue into the next season of the same series, also for PSP and Xbox.
 The experimental [native original Xbox player preview](xbox-client/README.md)
-adds the familiar receiver GUI, VU meters and timestamp-driven MPEG-1/MP2
-playback. Version **0.3.0 video/audio is hardware-confirmed**; **0.3.2 with server
-0.1.72** adds an on-screen transport/chapter menu, shared PSP spectrum code,
-in-app server settings, fullscreen progress and an independent Xbox web remote.
+adds the familiar receiver GUI, VU meters and timestamp-driven MPEG-1/2 + MP2
+playback. Version **0.3.0 video/audio is hardware-confirmed**; **0.4.0 with server
+0.1.73** adds libmpeg2, SD/HD encoding profiles, runtime output selection,
+anamorphic widescreen and optional matrix-surround downmix. It retains the
+transport/chapter menu, shared PSP spectrum code, in-app server settings,
+fullscreen progress and independent Xbox web remote.
 New features await console verification. PSP decoding is unchanged.
 
 [FuSa Fullscreen](psp-fusa-probe/FULLSCREEN.md) is the standalone game-TV

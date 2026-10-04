@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.4.0 / server 0.1.73: libmpeg2 with Pentium III MMX/MMXEXT, real
+  picture PTS and explicit final-frame drain for clean autoplay. MPEG-2 is
+  default; MPEG-1 remains selectable. Six encoding sizes through 1080p,
+  anamorphic SD, 16:9/4:3 TV shape, live cable-compatible output switching
+  with confirmation/rollback, optional Dolby Surround/Pro Logic II downmix.
+  Build with -O3/LTO; do not change console clocks, EEPROM or PSP playback.
+  HD performance and receiver matrix decoding still require hardware tests.
+
 - Xbox 0.3.2 / server 0.1.72: reuse the PSP FFT analyzer and spectrum painter
   unchanged, including band counts, dB gain, palettes, whole LEDs and peak hold.
   Add in-app server editing/testing with masked password and recovery backup,

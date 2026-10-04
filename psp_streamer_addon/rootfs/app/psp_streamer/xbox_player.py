@@ -1,7 +1,7 @@
 """Small Xbox transport: encoded access units and real MPEG-TS PTS (90 kHz).
 
 XSM1 + uint32 flags (video=1, audio=2); records <c3xIq> then payload.
-V = one MPEG-1 picture, A = one MPEG-1 Layer-II frame, E = clean end.
+V = one MPEG-1/2 picture, A = one MPEG-1 Layer-II frame, E = clean end.
 The client never uses pl_mpeg's frame-count clock. No B pictures are encoded.
 """
 import re
@@ -16,7 +16,14 @@ def record(kind, pts, data=b''):
     return struct.pack('<c3xIq', kind, len(data), pts) + data
 
 
-def command(base, audio_only=False):
+PROFILES = {'480p-low': (480,272,1500), '360p': (640,360,2000),
+            '480p': (720,480,4000), '576p': (720,576,5000),
+            '720p': (1280,720,9000), '1080p': (1920,1080,16000)}
+
+
+def command(base, audio_only=False, size=None, codec='mpeg1', matrix='none'):
+    if matrix not in ('none','dolby','dplii') or codec not in ('mpeg1', 'mpeg2') or size is not None and size not in PROFILES:
+        raise ValueError('Unsupported Xbox video profile/codec')
     cmd = list(base)
     for key in ('-profile:v', '-level:v', '-preset', '-tune', '-x264-params',
                 '-flvflags', '-write_xing', '-id3v2_version', '-q:a'):
@@ -24,21 +31,41 @@ def command(base, audio_only=False):
             at = cmd.index(key)
             del cmd[at:at+2]
     if not audio_only:
-        cmd[cmd.index('-c:v')+1] = 'mpeg1video'
-        for key, value in (('-b:v','1500k'),('-maxrate','2000k'),('-bufsize','2000k')):
+        cmd[cmd.index('-c:v')+1] = codec + 'video'
+        width,height,bitrate = PROFILES[size] if size else (640,360,1500)
+        for key, value in (('-b:v',f'{bitrate}k'),('-maxrate',f'{bitrate*2}k'),('-bufsize',f'{bitrate*2}k')):
             cmd[cmd.index(key)+1] = value
         for key in ('-vf', '-filter_complex'):
             if key in cmd:
                 at = cmd.index(key)+1
                 cmd[at] = re.sub(r'fps=[0-9/]+', 'fps=24000/1001', cmd[at])
-                cmd[at] = cmd[at].replace('720:480', '640:360')
+                if size:
+                    # Compose in square-pixel 16:9 space, including subtitles,
+                    # then store SD anamorphically. Preserve source aspect ratio.
+                    canvas_width = ((height*16//9+1)//2)*2
+                    cmd[at] = re.sub(r'(?:720:480|480:272)', f'{canvas_width}:{height}', cmd[at])
+                    cmd[at] = cmd[at].replace(
+                        f'scale={canvas_width}:{height}:force_original_aspect_ratio=decrease',
+                        f"scale=w='trunc(min({canvas_width},{height}*dar)/2)*2':h='trunc(min({height},{canvas_width}/dar)/2)*2',setsar=1")
+                    tail = f',scale={width}:{height},setsar={16*height}/{9*width}'
+                    if key == '-filter_complex':
+                        cmd[at] = cmd[at].replace('[v]',tail+'[v]')
+                    else:
+                        cmd[at] += tail
+                else:
+                    cmd[at] = cmd[at].replace('720:480', '640:360')
+        cmd[-3:-3] = ['-aspect', '16:9']
         cmd[-3:-3] = ['-bf', '0', '-g', '12', '-shortest']
     cmd[cmd.index('-c:a')+1] = 'mp2'
     cmd[cmd.index('-ar')+1] = '48000'
+    # Keep the master clock alive when a movie's audio track ends before
+    # its picture. -shortest bounds padding to video EOF, never infinity.
+    audio_filter = ('aresample=48000:first_pts=0:out_chlayout=stereo:matrix_encoding='
+                    + matrix + ':rematrix_maxval=1.0' + (',apad' if not audio_only else ''))
     if '-af' in cmd:
-        # Keep the master clock alive when a movie's audio track ends before
-        # its picture. -shortest above bounds padding to video EOF, never infinity.
-        cmd[cmd.index('-af')+1] = 'aresample=48000:first_pts=0' + (',apad' if not audio_only else '')
+        cmd[cmd.index('-af')+1] = audio_filter
+    else:
+        cmd[-3:-3] = ['-af', audio_filter]
     if '-b:a' in cmd:
         cmd[cmd.index('-b:a')+1] = '192k'
     else:

@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.3.2
+# Original Xbox — native player preview 0.4.0
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.3.2 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.0 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.72 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.73 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -112,7 +112,7 @@ three times, with B to cancel. Live radio reconnects at the live position.
 
 ### Still separate porting work
 
-libmpeg2/MPEG-2, accelerated rendering, MilkDrop/Monkey, native high-resolution
+Accelerated rendering, MilkDrop/Monkey, native high-resolution
 artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
 library search, translations and a distinct
 Xbox HA remote entity are **not implemented** in this build. No parity with
@@ -122,19 +122,38 @@ all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 - Target: ordinary **64 MB / stock-clock Xbox**. No overclock requirement or
   overclock changes. Actual performance is subject to the hardware test.
-- Default output: 640x480. `output_height=576`, `720` or `1080` selects a matching
-  mode only when nxdk lists it for the connected cable and console video
-  configuration; otherwise 480 remains. RGB is not forced into Component modes.
+- Default output: 640x480 (or the console's enabled 480p mode). Settings →
+  Display output lists the cable/region/EEPROM-compatible modes, including
+  enabled 720p and 1080i. A applies immediately; A again keeps it, B restores
+  the old mode. Without confirmation it reverts after 15 seconds. Selection
+  is saved in preferences.cfg; no region/EEPROM changes are performed.
+  The pinned nxdk has 480-line PAL framebuffers, not native 576i/576p modes.
+  Its 480p flag selects progressive instead of interlaced 480 output; the app
+  does not change that dashboard setting. RGB is never forced into HD modes.
 - The existing 720x480 PSP TV theme and needle/control coordinates share one
   scaling transform. Video is aspect-fitted. No AI repainting alters the artwork.
-- Video decoding choices: **480x272** and **640x360**. A 720p/1080i output mode does
-  not imply HD decoding. Software upscaling increases memory traffic; test 480
-  output first. RGB/Component combinations beyond the connection test are untested.
-- First decoder: MIT **pl_mpeg**, MPEG-1 video / MP2 stereo audio at 48 kHz,
-  192 kbit/s; video target 1.5 Mbit/s. Decoding and YUV conversion are software,
+- Video choices: **480x272, 640x360, 720x480, 720x576, 1280x720, 1920x1080**.
+  Both SD 720-wide profiles are anamorphic 16:9; 4:3 sources are pillarboxed.
+  Settings → TV shape selects 16:9 or 4:3 letterbox (set the TV accordingly).
+  Output and encoding resolution are independent; 1080i output does not
+  promise smooth HD decoding on a 64 MB console. HD profiles are experimental.
+- Decoder: **libmpeg2 0.5.1**, with Pentium III MMX/MMXEXT (not SSE2), shared
+  by selectable MPEG-2 (default) and MPEG-1. No B pictures; real packet PTS are
+  attached to the decoded pictures, including the final delayed reference
+  picture. Clean EOF drains every picture and the PCM queue before autoplay;
+  interrupted transport never counts as EOF. Decoder frame allocations fail
+  gracefully rather than relying on unchecked internal allocations.
+- MP2 stereo remains 48 kHz / 192 kbit/s. Audio downmix offers Stereo,
+  Dolby Surround and Dolby Pro Logic II, performed on the server. Select the
+  corresponding decoder on your receiver. Matrix stereo is not discrete
+  AC-3/DTS passthrough; passthrough remains deferred. Existing stereo sources
+  are not turned into genuine discrete surround channels.
+- Video target rates by size: 1.5 / 2 / 4 / 5 / 9 / 16 Mbit/s. The server
+  requires the new Xbox profile parameters; old clients retain MPEG-1 defaults.
+  Native build uses **-O3 and LTO**, without fast-math or clock changes.
+  Decoding and YUV conversion are software,
   not an unverified claim of Xbox MPEG-2 hardware acceleration.
-- **Next candidate: libmpeg2 / MPEG-2**, after this foundation works. No H.264
-  decoding or hardware codec acceleration is claimed for this preview.
+- No H.264 decoding or hardware codec acceleration is claimed for this preview.
 
 ## Synchronization and isolation
 
@@ -154,11 +173,11 @@ startup stages and assertions are now recorded in `xbox-player.log`.
 Separate `/api/xbox-stream/<id>` output encodes MPEG-TS, extracts actual 90 kHz
 PES timestamps and sends bounded access units in an `XSM1` stream. Header:
 `XSM1` plus little-endian flags (video=1, audio=2). Each record is `<c3xIq>` plus
-payload (type, length, signed PTS). `V` is one MPEG-1 picture, `A` one 1152-sample
+payload (type, length, signed PTS). `V` is one MPEG-1/2 picture, `A` one 1152-sample
 MP2 frame, `E` clean EOF. B pictures are disabled.
 
-The client uses only pl_mpeg's low-level decoders, **not its frame-count playback
-clock**. Audio is master: the AC97 DMA descriptor and remaining sample count
+The client uses libmpeg2 for video and pl_mpeg for MP2 audio, **not a frame-count
+playback clock**. Audio is master: the AC97 DMA descriptor and remaining sample count
 locate the actual playback position inside the packet's PTS. Video waits for
 its PTS; an excessively late image can be omitted without omitting predictive
 decoding. Audio is never repeated to catch up. There are no 20.1/20.2 correction

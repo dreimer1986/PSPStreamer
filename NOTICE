@@ -61,3 +61,11 @@ Source: https://github.com/mcidclan/psp-beyond-444mhz
 Revision: ce746451b724599332ba1b315952f003a20ada75.
 The standalone plugin is not linked into PSP Streamer; see its README for
 model restrictions, disabled defaults and hardware-validation requirements.
+
+Native Xbox video decoder
+-------------------------
+libmpeg2 0.5.1, GPL-2.0-or-later, Copyright Michel Lespinasse,
+Aaron Holtzman and contributors (individual notices retained in source).
+Source: https://libmpeg2.sourceforge.io/
+Vendored decoder subset, full license and provenance are in
+xbox-client/vendor/libmpeg2/. Included only in the Xbox client, not the PSP.

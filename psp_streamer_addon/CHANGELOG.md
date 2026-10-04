@@ -1,3 +1,11 @@
+# 0.1.73
+
+- Xbox 0.4.0: selectable MPEG-2/MPEG-1 and six video sizes through 1920x1080.
+- Anamorphic SD, aspect-correct pillarboxing and optional Dolby Surround /
+  Pro Logic II stereo downmix. Existing PSP and browser encoding is unchanged.
+- Keep legacy Xbox requests on MPEG-1; the new client explicitly requests
+  its codec, size and matrix mode. Update the server before testing HD profiles.
+
 # 0.1.72
 
 - Make the playback target selector available without a media selection.
