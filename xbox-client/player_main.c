@@ -20,6 +20,8 @@
 #include "player.h"
 #include "render_clip.h"
 
+static void menu_draw(void);
+
 static SDL_Window *window;static SDL_Renderer *renderer;static TTF_Font *font;static SDL_Texture *skin;
 static int width=640,height=480,options,fullscreen=1,quit;
 static char status[160]="Connecting...";static float meters[2];
@@ -37,16 +39,27 @@ typedef struct {SDL_Thread *thread;SDL_atomic_t cancel,done;char path[6000],erro
 static Fetch fetch;
 static int fetch_worker(void *unused){
     (void)unused;Http h;
+    startup_note("catalog: worker entered, opening HTTP");
     if(!http_open(&h,fetch.path,&fetch.cancel)){snprintf(fetch.error,sizeof(fetch.error),"HTTP %d / connection failed",h.status);goto done;}
+    startup_note("catalog: HTTP headers received");
     fetch.body=malloc(512*1024);if(!fetch.body){snprintf(fetch.error,sizeof(fetch.error),"Out of JSON memory");http_close(&h);goto done;}
     unsigned at=0;int n=0;
     while(at<512*1024-1&&(n=http_read(&h,fetch.body+at,512*1024-1-at))>0)at+=n;
     fetch.body[at]=0;http_close(&h);
     if(n<0||at==512*1024-1)snprintf(fetch.error,sizeof(fetch.error),"Incomplete/oversized library reply");
-done:SDL_AtomicSet(&fetch.done,1);return 0;
+done:startup_note(*fetch.error?fetch.error:"catalog: response complete");SDL_AtomicSet(&fetch.done,1);return 0;
 }
 static void fetch_stop(void){if(fetch.thread){SDL_AtomicSet(&fetch.cancel,1);SDL_WaitThread(fetch.thread,NULL);fetch.thread=NULL;}free(fetch.body);fetch.body=NULL;}
-static void fetch_start(const char *path,int type){fetch_stop();memset(&fetch,0,sizeof(fetch));fetch.type=type;snprintf(fetch.path,sizeof(fetch.path),"%s",path);fetch.thread=SDL_CreateThreadWithStackSize(fetch_worker,"catalog",65536,NULL);snprintf(status,sizeof(status),"Loading... B cancels");if(!fetch.thread)snprintf(status,sizeof(status),"Cannot start network worker");}
+static void fetch_start(const char *path,int type){
+    startup_note("catalog: request queued");
+    fetch_stop();memset(&fetch,0,sizeof(fetch));fetch.type=type;snprintf(fetch.path,sizeof(fetch.path),"%s",path);
+    snprintf(status,sizeof(status),"Loading... B cancels");
+    startup_note("catalog: drawing loading status");menu_draw();
+    startup_note("catalog: creating worker");
+    fetch.thread=SDL_CreateThreadWithStackSize(fetch_worker,"catalog",65536,NULL);
+    startup_note(fetch.thread?"catalog: worker created":"catalog: worker creation failed");
+    if(!fetch.thread)snprintf(status,sizeof(status),"Cannot start network worker");
+}
 static void browse(const char *path,int offset){char encoded[4700],request[6000];if(!url_encode(path,encoded,sizeof(encoded))){snprintf(status,sizeof(status),"Folder path too long");return;}snprintf(request,sizeof(request),"/api/xbox/library?root=%d&path=%s&offset=%d",root_index,encoded,offset);fetch_start(request,0);}
 static void select_media(Entry *e){snprintf(media_id,sizeof(media_id),"%s",e->target);snprintf(media_name,sizeof(media_name),"%s",e->name);media_audio=e->audio;char encoded[4700],request[6000];url_encode(media_id,encoded,sizeof(encoded));snprintf(request,sizeof(request),"/api/metadata/%s",encoded);fetch_start(request,1);}
 static void color(int r,int g,int b){SDL_SetRenderDrawColor(renderer,r,g,b,255);}
@@ -144,7 +157,7 @@ static void button_down(int button){
     else if(button==SDL_CONTROLLER_BUTTON_A&&entry_count){Entry *e=&entries[entry_index];if(e->folder)browse(e->target,0);else select_media(e);}
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.1 startup\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.2 startup diagnostics\n",boot);fclose(boot);}
     XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
     if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}
     VIDEO_MODE mode=XVideoGetMode();width=mode.width;height=mode.height;
@@ -156,21 +169,27 @@ int main(void){
     if(!renderer||!font||!skin){debugPrint("Missing font.ttf/theme.png or renderer: %s\n",SDL_GetError());for(;;)Sleep(1000);}
     FILE *log=fopen("D:\\xbox-player.log","a");if(log){MM_STATISTICS memory={0};memory.Length=sizeof(memory);MmQueryStatistics(&memory);fprintf(log,"RAM pages=%lu output=%dx%d\n",(unsigned long)memory.TotalPhysicalPages,width,height);fclose(log);}
     menu_draw();startup_note("network initialization");int network=nxNetInit(NULL);startup_note("network initialization returned");if(configured&&!network)browse("",0);else snprintf(status,sizeof(status),"Check server.cfg / Ethernet (network=%d)",network);
-    SDL_GameController *pads[4]={0};SDL_Event event;Uint32 draw=0,repeat=0;int held=-1;
+    startup_note("main: entering event loop");
+    SDL_GameController *pads[4]={0};SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1;
     while(!quit){
+        if(first_poll)startup_note("main: before first event poll");
         while(SDL_PollEvent(&event)){
-            if(event.type==SDL_CONTROLLERDEVICEADDED){for(int i=0;i<4;i++)if(!pads[i]){pads[i]=SDL_GameControllerOpen(event.cdevice.which);break;}}
+            if(event.type==SDL_CONTROLLERDEVICEADDED){startup_note("controller: opening device");for(int i=0;i<4;i++)if(!pads[i]){pads[i]=SDL_GameControllerOpen(event.cdevice.which);break;}startup_note("controller: open returned");}
             else if(event.type==SDL_CONTROLLERDEVICEREMOVED){held=-1;for(int i=0;i<4;i++)if(pads[i]&&SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i]))==event.cdevice.which){SDL_GameControllerClose(pads[i]);pads[i]=NULL;}}
             else if(event.type==SDL_CONTROLLERBUTTONDOWN){button_down(event.cbutton.button);if(event.cbutton.button==SDL_CONTROLLER_BUTTON_DPAD_UP||event.cbutton.button==SDL_CONTROLLER_BUTTON_DPAD_DOWN){held=event.cbutton.button;repeat=SDL_GetTicks()+400;}}
             else if(event.type==SDL_CONTROLLERBUTTONUP&&held==event.cbutton.button)held=-1;
         }
+        if(first_poll){startup_note("main: first event poll complete");first_poll=0;}
         if(held>=0&&(Sint32)(SDL_GetTicks()-repeat)>=0){button_down(held);repeat=SDL_GetTicks()+100;}
         if(fetch.thread&&SDL_AtomicGet(&fetch.done)){
+            startup_note("catalog: joining completed worker");
             SDL_WaitThread(fetch.thread,NULL);fetch.thread=NULL;
+            startup_note("catalog: parsing response");
             if(*fetch.error)snprintf(status,sizeof(status),"%s",fetch.error);
             else if(!(fetch.type?parse_metadata(fetch.body):parse_catalog(fetch.body)))snprintf(status,sizeof(status),"Invalid reply. Update server to 0.1.68.");
             else{options=fetch.type;option_row=0;snprintf(status,sizeof(status),options?"Choose tracks with Left/Right, then Play":"%d entries | Left/Right: page | A: Open",total_entries);}
             free(fetch.body);fetch.body=NULL;
+            startup_note(status);
         }
         if(playing){int result=player_tick();if(result==1){frame_draw(next_frame);next_frame=NULL;}else if(result<0||result==2){snprintf(status,sizeof(status),"%s",result==2?"Playback finished":*stream.error?stream.error:"Stream failed");player_stop();}}
         if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=66){menu_draw();draw=SDL_GetTicks();}

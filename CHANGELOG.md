@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Xbox preview 0.2.2: expose catalog loading before worker startup and add
+  stage diagnostics for the post-network-init stall; live catalog/parser
+  check passes on host, console diagnosis remains pending.
 - Fix Xbox black startup: explicitly enqueue viewport before clip changes in
   the pinned SDL backend after temporary text textures are freed. Initialize
   audio only on playback; log startup stages and rendering assertions.
