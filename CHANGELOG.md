@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.4.1: fix runtime output changes returning to the dashboard. Supply
+  the missing SDL Xbox window-destruction callback, retaining the pinned
+  upstream backend, and log each output transition/recovery stage. Build first;
+  a focused test reproduces the upstream failure and checks five recreations.
+
 - Xbox 0.4.0 / server 0.1.73: libmpeg2 with Pentium III MMX/MMXEXT, real
   picture PTS and explicit final-frame drain for clean autoplay. MPEG-2 is
   default; MPEG-1 remains selectable. Six encoding sizes through 1080p,

@@ -11,7 +11,7 @@ if not (out / 'default.xbe').is_file():
 for name in ('README.md', 'server.cfg.example'):
     shutil.copy2(root / name, out / name)
 (out / 'source').mkdir(exist_ok=True)
-for name in ('player_main.c', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'mpeg_video.h', 'display.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
+for name in ('player_main.c', 'video_backend.c', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'mpeg_video.h', 'display.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)
 shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True, ignore=shutil.ignore_patterns('*.obj','*.d'))
 (out / 'source/shared').mkdir(exist_ok=True)
@@ -56,5 +56,9 @@ for folder in ('hal', 'nxdk', 'xboxrt', 'winapi', 'usb', 'net'):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
 revision = subprocess.check_output(['git', '-C', str(sdk), 'rev-parse', 'HEAD'], text=True).strip()
+# The app's lifecycle adapter compiles this exact upstream SDL source.
+driver_notice = out / 'source/nxdk-notices/sdl'
+driver_notice.mkdir(parents=True, exist_ok=True)
+shutil.copy2(sdk / 'lib/sdl/SDL2/src/video/xbox/SDL_xbvideo.c', driver_notice / 'SDL_xbvideo.c')
 (out / 'SDK-REVISION.txt').write_text('https://github.com/XboxDev/nxdk\n' + revision + '\n', encoding='utf-8')
 print(out)

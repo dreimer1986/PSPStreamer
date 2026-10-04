@@ -17,19 +17,25 @@ static void display_label(const VIDEO_MODE *m,char *s,size_t n){
 }
 static int display_switch(VIDEO_MODE m){
     if(playing)return 0;
+    char note[160];snprintf(note,sizeof(note),"display: switch %dx%d -> %dx%d @ %d",width,height,m.width,m.height,m.refresh);startup_note(note);
     if(fetch.thread)fetch_stop();
     /* Renderer owns every texture, including spectrum and artwork. */
     spectrum_texture=NULL;
     if(renderer)SDL_DestroyRenderer(renderer);renderer=NULL;skin=cover=backdrop=video_texture=NULL;
     if(window)SDL_DestroyWindow(window);window=NULL;
+    startup_note("display: window and renderer released");
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     VIDEO_MODE old=XVideoGetMode();
     if(!XVideoSetMode(m.width,m.height,32,m.refresh))XVideoSetMode(old.width,old.height,32,old.refresh);
     m=XVideoGetMode();width=m.width;height=m.height;
-    if(SDL_InitSubSystem(SDL_INIT_VIDEO))return 0;
+    startup_note("display: hardware mode set");
+    if(SDL_InitSubSystem(SDL_INIT_VIDEO)){startup_note("display: SDL init failed");return 0;}
     window=SDL_CreateWindow("PSPStreamer Xbox",0,0,width,height,SDL_WINDOW_SHOWN);
+    if(!window){startup_note("display: window creation failed");return 0;}
     if(window)renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);
+    if(!renderer){startup_note("display: renderer creation failed");return 0;}
     SDL_Surface *s=IMG_Load("D:\\theme.png");
     if(s&&renderer)skin=SDL_CreateTextureFromSurface(renderer,s);if(s)SDL_FreeSurface(s);
+    startup_note(skin?"display: ready for confirmation":"display: theme reload failed");
     return renderer&&skin;
 }

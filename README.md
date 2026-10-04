@@ -11,7 +11,7 @@ progress reporting run independently of PSP control. Sequential episodes can
 continue into the next season of the same series, also for PSP and Xbox.
 The experimental [native original Xbox player preview](xbox-client/README.md)
 adds the familiar receiver GUI, VU meters and timestamp-driven MPEG-1/2 + MP2
-playback. Version **0.3.0 video/audio is hardware-confirmed**; **0.4.0 with server
+playback. Version **0.3.0 video/audio is hardware-confirmed**; **0.4.1 with server
 0.1.73** adds libmpeg2, SD/HD encoding profiles, runtime output selection,
 anamorphic widescreen and optional matrix-surround downmix. It retains the
 transport/chapter menu, shared PSP spectrum code, in-app server settings,

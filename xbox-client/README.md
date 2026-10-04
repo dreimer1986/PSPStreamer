@@ -1,7 +1,7 @@
-# Original Xbox — native player preview 0.4.0
+# Original Xbox — native player preview 0.4.1
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.0 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.1 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
@@ -119,6 +119,15 @@ Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
+
+0.4.1 fixes output changes returning to the dashboard: the pinned SDL Xbox
+driver retains its singleton window pointer after destruction. The app now
+compiles that same upstream driver with a narrow DestroyWindow adapter that
+clears the pointer. The SDK checkout is unchanged. The actual upstream failure
+and repeated recreation across five mode sizes are covered by
+`tests/xbox_video_lifecycle.c` (host hardware-boundary stubs; not a TV test).
+Logs now identify hardware switching, window/renderer creation and theme load.
+No server update beyond 0.1.73 is required for this client-only repair.
 
 - Target: ordinary **64 MB / stock-clock Xbox**. No overclock requirement or
   overclock changes. Actual performance is subject to the hardware test.
