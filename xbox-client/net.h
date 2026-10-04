@@ -1,6 +1,6 @@
 /* GPL-2.0-or-later. Bounded HTTP/1.0 transport for the trusted LAN preview. */
 #include "http_status.h"
-typedef struct { int fd, status; unsigned at, size; unsigned char data[8192]; SDL_atomic_t *cancel; } Http;
+typedef struct { int fd, status; unsigned at, size,timeout; unsigned char data[8192]; SDL_atomic_t *cancel; } Http;
 static char host[64], password[129];
 static unsigned port=8091;
 static int output_height=480;
@@ -44,7 +44,7 @@ static int net_ready(Http *h,int write,Uint32 started,unsigned timeout) {
 static void http_close(Http *h) {if(h->fd>=0){closesocket(h->fd);h->fd=-1;}}
 static int http_read(Http *h,void *dest,unsigned length) {
     if(h->at==h->size) {
-        if(!net_ready(h,0,SDL_GetTicks(),180000))return -1;
+        if(!net_ready(h,0,SDL_GetTicks(),h->timeout))return -1;
         int n=recv(h->fd,h->data,sizeof(h->data),0);
         if(n<=0)return n;h->at=0;h->size=n;
     }
@@ -54,12 +54,12 @@ static int http_read(Http *h,void *dest,unsigned length) {
 static int http_exact(Http *h,void *dest,unsigned length) {
     unsigned at=0;while(at<length){int n=http_read(h,(char*)dest+at,length-at);if(n<=0)return 0;at+=n;}return 1;
 }
-static int http_open(Http *h,const char *path,SDL_atomic_t *cancel) {
-    memset(h,0,sizeof(*h));h->fd=-1;h->cancel=cancel;
+static int http_request(Http *h,const char *path,SDL_atomic_t *cancel,const char *body,unsigned timeout) {
+    memset(h,0,sizeof(*h));h->fd=-1;h->cancel=cancel;h->timeout=timeout;
     char credentials[140],encoded[192],request[12500],header[8192];
     snprintf(credentials,sizeof(credentials),"psp:%s",password);
     base64((unsigned char*)credentials,strlen(credentials),encoded);
-    int size=snprintf(request,sizeof(request),"GET %s HTTP/1.0\r\nHost: %s:%u\r\nAuthorization: Basic %s\r\nConnection: close\r\n\r\n",path,host,port,encoded);
+    int size=snprintf(request,sizeof(request),"%s %s HTTP/1.0\r\nHost: %s:%u\r\nAuthorization: Basic %s\r\nX-PSP-Web: 1\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: %u\r\n\r\n%s",body?"POST":"GET",path,host,port,encoded,body?(unsigned)strlen(body):0,body?body:"");
     if(size<0||size>=(int)sizeof(request))return 0;
     h->fd=socket(AF_INET,SOCK_STREAM,0);if(h->fd<0)return 0;
     unsigned long nonblock=1;ioctl(h->fd,FIONBIO,&nonblock);
@@ -83,3 +83,4 @@ static int http_open(Http *h,const char *path,SDL_atomic_t *cancel) {
     return 1;
 fail:http_close(h);return 0;
 }
+static int http_open(Http *h,const char *path,SDL_atomic_t *cancel){return http_request(h,path,cancel,NULL,180000);}

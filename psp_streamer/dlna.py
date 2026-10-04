@@ -345,7 +345,11 @@ class Dlna:
             choices=[i for i in range(len(entries)) if i!=current]
             if not choices:return {}
             index=random.choice(choices)
-        return self.entry(device,entries[index]) if 0<=index<len(entries) else {}
+        if 0<=index<len(entries):return self.entry(device,entries[index])
+        if not audio and not shuffle:
+            from .season_next import dlna_next
+            return dlna_next(self,device,parent,previous)
+        return {}
 
     def close(self):
         if self.bridge:self.bridge.close()

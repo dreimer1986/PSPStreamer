@@ -79,7 +79,7 @@ static int safe_video(const Packet *p){
 static double player_position(void){if(paused)return paused_position;int64_t tick=stream_audio&&!audio_finished?audio_clock:silent_pts<0?0:silent_pts+(int64_t)(SDL_GetTicks()-silent_start)*90;return seek_base+(tick<0?0:(double)tick/90000);}
 /* Release the encoder on pause, so a long pause cannot time out a live socket.
  * Resume starts a fresh timestamped stream at the recorded audio position. */
-static void player_pause(void){if(paused){player_start(paused_position);}else{paused_position=player_position();player_stop();playing=paused=1;}}
+static void player_pause(void){if(paused){player_start(!strncmp(media_id,"radio.",6)?0:paused_position);}else{paused_position=player_position();player_stop();playing=paused=1;}}
 
 /* Return 1 for a newly due video frame, 2 for EOF, -1 for a hard error. */
 static int player_tick(void){

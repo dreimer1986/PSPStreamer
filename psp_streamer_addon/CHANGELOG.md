@@ -1,3 +1,12 @@
+# 0.1.70
+
+- Browser/Xbox playback progress, pause and stop report to Plex/Jellyfin and
+  shared history, isolated from the PSP remote queue and playback state.
+- Browser autoplay next/previous, retaining languages instead of track indices.
+- Same-series season continuation for providers and numbered local/DLNA folders.
+- Xbox 0.3.0 metadata/resume, shared favorites/history and radio support.
+- Docker and HA contain identical server and web code; PSP codec paths unchanged.
+
 # 0.1.69
 
 - Prepare Jellyfin text subtitles via its API for browser/Xbox burn-in instead

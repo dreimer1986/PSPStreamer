@@ -1,4 +1,4 @@
-# Browser playback (server 0.1.67)
+# Browser playback (server 0.1.70)
 
 **Server 0.1.69:** Jellyfin embedded text tracks are fetched as a small subtitle
 file before burn-in, retaining ASS styles. This avoids a second scan through
@@ -28,9 +28,24 @@ the rest of the web interface. Credentials are not placed in media URLs.
 Browser playback is local to the tab. It deliberately does **not** claim the
 PSP's remote-control queue, media-player status, HA entity or pause lease.
 The PSP can continue independently if server capacity permits. The existing
-playlist/folder-autoplay controls are still PSP controls: this initial browser
-target plays one selected item, does not automatically advance, and does not
-report watched/resume state to Plex/Jellyfin. Reloading the page ends playback.
+playlist controls are still PSP controls. The browser has its **own** automatic
+next checkbox (enabled by default) and Previous/Next buttons. Only clean EOF
+advances automatically; errors and closing the tab do not. Language/title
+preferences carry to the next file instead of blindly reusing track indices;
+saved series preferences take precedence. It does not consume the PSP queue.
+
+Playing progress (every 15 seconds), pause and stop now report to Plex/Jellyfin
+and shared history. Provider client/session keys are distinct from the PSP;
+ordered reports ignore stale late requests. Closing the tab sends a best-effort
+keepalive Stop (power loss/browser termination cannot guarantee delivery).
+Reloading the page ends playback.
+
+Sequential video may continue into the next season **of the same series**.
+Plex/Jellyfin use season metadata. Files/DLNA require numbered season folder
+names (`Season 1`, `Staffel 1`, `S01`, with optional suffix), and only inspect
+one level of siblings. Empty seasons are skipped within bounded traversal.
+Unrelated directories, music albums, shuffle and explicit provider playlists
+are not traversed. This shared resolver also benefits the PSP and Xbox.
 
 Both targets share `MAX_TRANSCODES`. With a limit of one, stop the previous
 target before starting the other, or increase capacity deliberately. Browser
@@ -43,7 +58,8 @@ the same code. The HACS integration continues to describe the PSP, not this tab.
 `tests/test_browser_player.py` verifies actual FFmpeg output, seek duration,
 codec selection, endpoint validation, disconnect cleanup and PSP-state isolation.
 With `PLAYWRIGHT_MODULE` set, it also plays actual video/audio in Chromium and
-checks pause, resume, seek, stop and switching back to PSP control.
+checks pause, resume, seek, stop, reporting, a real season transition and
+switching back to PSP control.
 
 ```sh
 PLAYWRIGHT_MODULE="$PWD/.toolchain/web-test/node_modules/playwright" \

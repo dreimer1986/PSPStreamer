@@ -67,7 +67,7 @@ class Plex:
                 'linked': bool(self.config['account']), 'selected': bool(self.config['token']),
                 'report_error': self.report_error}
 
-    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None, raw=False, timeout=8):
+    def request(self, path, *, cloud=False, method='GET', data=None, token=None, url=None, raw=False, timeout=8, playback_client=None):
         with self.lock:
             base = 'https://plex.tv' if cloud else (url or self.config['url'])
             credential = token if token is not None else self.config['account' if cloud else 'token']
@@ -78,6 +78,10 @@ class Plex:
                    'X-Plex-Version': '1.0', 'X-Plex-Client-Identifier': client,
                    'X-Plex-Device-Name': 'PSPStreamer', 'X-Plex-Platform': 'PSP',
                    'X-Plex-Provides': 'player', 'X-Plex-Token': credential}
+        if playback_client:
+            headers.update({'X-Plex-Client-Identifier':client+'-'+playback_client,
+                'X-Plex-Device-Name':'PSPStreamer '+playback_client.split('-')[0],
+                'X-Plex-Platform':playback_client.split('-')[0]})
         payload = urlencode(data).encode() if data is not None else None
         try:
             with build_opener(NoRedirect()).open(Request(base + path, data=payload,
@@ -346,9 +350,15 @@ class Plex:
             if wanted >= index:
                 wanted += 1
         if wanted < 0:
+            if kind=='m' and not shuffle:
+                from .season_next import provider_next
+                return provider_next(self,token,True,previous)
             return {}
         rows = self.listing(kind, key, wanted).get('Metadata', [])
         if not rows or rows[0].get('type') not in ('movie', 'episode', 'track'):
+            if not rows and kind=='m' and not shuffle:
+                from .season_next import provider_next
+                return provider_next(self,token,True,previous)
             return {}
         row = rows[0]
         return {'id': self.token(f"{row['ratingKey']}.{kind}{key}.{wanted}"),
@@ -372,8 +382,9 @@ class Plex:
     def art_headers(self):
         return {'X-Plex-Token': self.config['token'], 'Accept': 'image/jpeg,image/png,image/webp'}
 
-    def report(self, token, state, position, duration):
-        key = self.split(token)[0]
+    def report(self, token, state, position, duration, client=None):
+        rating = self.split(token)[0]
+        key = (client,rating) if client else rating
         if state not in ('playing', 'paused', 'stopped'):
             raise ValueError('Invalid Plex playback state')
         position, duration = int(position), int(duration)
@@ -391,9 +402,11 @@ class Plex:
             self.last_report[key] = state, now
             if len(self.pending) >= 16 and key not in self.pending:
                 self.pending.pop(next(iter(self.pending)))
-            self.pending[key] = dict(_server=self.namespace(), ratingKey=key, key='/library/metadata/' + key,
+            self.pending[key] = dict(_server=self.namespace(), ratingKey=rating, key='/library/metadata/' + rating,
                 state=state, time=position, duration=duration,
                 identifier='com.plexapp.plugins.library')
+            if client:
+                self.pending[key]['_client']=client
             if self.report_thread is None:
                 self.report_thread = threading.Thread(target=self._reports, name='PlexTimeline', daemon=True)
                 self.report_thread.start()
@@ -413,7 +426,9 @@ class Plex:
                     self.require()
                     if report.pop('_server') != self.namespace():
                         continue
-                    self.request('/:/timeline?' + urlencode(report))
+                    client=report.pop('_client',None)
+                    if client:self.request('/:/timeline?' + urlencode(report),playback_client=client)
+                    else:self.request('/:/timeline?' + urlencode(report))
                 self.report_error = ''
             except ValueError as exc:
                 self.report_error = str(exc)

@@ -3,9 +3,9 @@ const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {
-  const page=await browser.newPage();const errors=[],commands=[];
+  const page=await browser.newPage();const errors=[],commands=[],reports=[];
   page.on('pageerror',e=>errors.push(e.message));
-  page.on('request',r=>{if(r.url().includes('/api/remote/command'))commands.push(r);});
+  page.on('request',r=>{if(r.url().includes('/api/remote/command'))commands.push(r);if(r.url().includes('/api/client-playback'))reports.push(r.postDataJSON());});
   await page.goto(process.env.BROWSER_TEST_URL);
   await page.waitForFunction(()=>csrf!==undefined&&document.querySelector('#playbackTarget'));
   await page.evaluate(async id=>{await choose({id,name:'Browser fixture',kind:'video'});},process.env.BROWSER_TEST_TOKEN);
@@ -34,6 +34,16 @@ const assert=require('node:assert/strict');
   await page.waitForFunction(()=>browserVideo.currentTime>.1);
   assert.equal(await page.evaluate(()=>browserVideo.videoWidth),0);
   await page.locator('#browserPlayer').getByRole('button',{name:'Stop',exact:true}).click();
+  if(process.env.BROWSER_SEASON_TOKEN){
+    await page.evaluate(async id=>{await choose({id,name:'Season fixture',kind:'video'});},process.env.BROWSER_SEASON_TOKEN);
+    await page.click('#play');
+    await page.waitForFunction(id=>browserItem?.id===id&&browserVideo.currentTime>.1,process.env.BROWSER_NEXT_TOKEN);
+    console.log('Browser clean EOF continued into next season');
+    await page.locator('#browserPlayer').getByRole('button',{name:'Stop',exact:true}).click();
+  }
+  await page.evaluate(()=>browserReports);
+  assert(reports.some(r=>r.state==='playing'));assert(reports.some(r=>r.state==='paused'));assert(reports.some(r=>r.state==='stopped'));
+  assert(reports.every(r=>r.client.startsWith('browser-')&&r.sequence>0));
   await page.selectOption('#playbackTarget','psp');await page.click('#play');
   assert.equal(commands.length,1);
   assert.deepEqual(errors,[]);

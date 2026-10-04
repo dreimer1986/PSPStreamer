@@ -90,14 +90,14 @@ class LibraryTests(unittest.TestCase):
                 return library.encode(MediaItem(0, "Season 1/" + name))
             current = token("Episode 1.mkv")
             second = library.next_media(current, shuffle=True)  # video never shuffles
-            self.assertEqual(second, {"id": token("Episode 2.mp4"), "kind": "video"})
+            self.assertEqual(second, {"id": token("Episode 2.mp4"), "kind": "video", "name":"Episode 2.mp4"})
             third = library.next_media(second["id"])
             self.assertEqual(third["id"], token("Episode 10.mkv"))
             self.assertEqual(library.next_media(third["id"], previous=True)["id"],second["id"])
             self.assertEqual(library.next_media(current, previous=True),{})
-            self.assertEqual(library.next_media(third["id"]), {})
+            self.assertEqual(library.next_media(third["id"])["id"],library.encode(MediaItem(0,"Season 2/Episode 11.mkv")))
             self.assertEqual(library.next_media(token("Episode 3.mp3")),
-                             {"id": token("Episode 4.flac"), "kind": "audio"})
+                             {"id": token("Episode 4.flac"), "kind": "audio", "name":"Episode 4.flac"})
             self.assertEqual(library.next_media(token("Episode 4.flac")), {})
             self.assertEqual(library.next_media(token("Episode 4.flac"), shuffle=True)["id"],
                              token("Episode 3.mp3"))
@@ -137,7 +137,7 @@ class LibraryTests(unittest.TestCase):
                 connection.request("GET", "/api/media-next/" + first)
                 response = connection.getresponse()
                 self.assertEqual(response.status, 200)
-                self.assertEqual(json.loads(response.read()), {"id": second, "kind": "video"})
+                self.assertEqual(json.loads(response.read()), {"id": second, "kind": "video", "name":"E02.mkv"})
                 connection.request("GET", "/api/media-next/" + second)
                 response = connection.getresponse()
                 self.assertEqual(json.loads(response.read()), {})

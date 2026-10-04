@@ -77,6 +77,24 @@ class BrowserHttpTests(unittest.TestCase):
         self.assertEqual(self.server.remote_sequence, 0)
         self.assertEqual(self.server.stream_pauses.active, {})
 
+    def test_client_progress_http_keeps_psp_state_and_commands(self):
+        self.server.player_status.report({'media':[self.token],'state':['playing'],'position':['4000'],'duration':['6000']})
+        command=self.server.set_remote_command({'action':'pause'})
+        before=self.server.player_status.snapshot()
+        con=http.client.HTTPConnection(*self.server.server_address,timeout=10)
+        for sequence,state in enumerate(('playing','paused','stopped'),1):
+            body=json.dumps(dict(client='browser-fixture',sequence=sequence,id=self.token,
+                state=state,position=1500,duration=6000,name='Fixture'))
+            con.request('POST','/api/client-playback',body,{'Content-Type':'application/json'})
+            response=con.getresponse();self.assertEqual(response.status,200);response.read()
+        self.assertEqual(self.server.player_status.snapshot()['position'],before['position'])
+        self.assertEqual(self.server.remote_after(0),command)
+        self.assertEqual(self.server.comfort.snapshot()['records'][0]['seconds'],1)
+        con.request('GET','/api/xbox/metadata/'+self.token,headers={'X-PSP-Web':'1'})
+        response=con.getresponse();self.assertEqual(response.status,200)
+        self.assertEqual(json.loads(response.read())['resume'],1)
+        con.close()
+
     def test_stop_releases_encoder_slot(self):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=30)
         connection.request('GET', '/api/browser-stream/'+self.token)
@@ -126,9 +144,15 @@ class BrowserHttpTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get('PLAYWRIGHT_MODULE'), 'optional actual browser playback')
     def test_browser_controls(self):
+        import shutil
+        for season in (1,2):
+            target=self.root/f'Show/Season {season}/Episode.mkv';target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(self.root/'sample.mkv',target)
         subprocess.run(['node', 'tests/browser_player.cjs'], check=True, timeout=65,
                        env={**os.environ, 'BROWSER_TEST_URL': 'http://%s:%s' % self.server.server_address,
-                            'BROWSER_TEST_TOKEN': self.token})
+                            'BROWSER_TEST_TOKEN': self.token,
+                            'BROWSER_SEASON_TOKEN':self.server.library.encode(MediaItem(0,'Show/Season 1/Episode.mkv')),
+                            'BROWSER_NEXT_TOKEN':self.server.library.encode(MediaItem(0,'Show/Season 2/Episode.mkv'))})
 
 
 if __name__ == '__main__':

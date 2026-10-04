@@ -282,9 +282,15 @@ class Jellyfin(Plex):
             wanted = random.randrange(count-1)
             if wanted>=index: wanted+=1
         if wanted<0:
+            if kind=='m' and not shuffle:
+                from .season_next import provider_next
+                return provider_next(self,token,False,previous)
             return {}
         rows = self.listing(kind, parent, wanted).get('Items', [])
         if not rows or rows[0].get('Type') not in ('Movie', 'Episode', 'Audio', 'MusicVideo', 'Video'):
+            if not rows and kind=='m' and not shuffle:
+                from .season_next import provider_next
+                return provider_next(self,token,False,previous)
             return {}
         return dict(id=self.token(rows[0]['Id'], kind, parent, wanted),
                     kind='audio' if rows[0]['Type']=='Audio' else 'video',name=display_text(rows[0].get('Name')))
@@ -321,10 +327,11 @@ class Jellyfin(Plex):
         return {'Authorization': authorization(self.config['client'], self.config['token']),
                 'Accept': 'image/jpeg,image/png,image/webp'}
 
-    def report(self, token, state, position, duration):
+    def report(self, token, state, position, duration, client=None):
         from .media_versions import split_version
         version=split_version(token)[1]
-        key = self.split(token)[0]
+        item = self.split(token)[0]
+        key = (client,item) if client else item
         position, duration = int(position), int(duration)
         if state not in ('playing','paused','stopped') or not 0<=position<=604800000 or not 0<=duration<=604800000:
             raise ValueError('Invalid Jellyfin playback report')
@@ -352,12 +359,13 @@ class Jellyfin(Plex):
                     self.require()
                     if namespace!=self.namespace(): continue
                 from .media_versions import selected
+                item=self.split(token)[0]
                 source=selected(self, token)
-                source_id=source.get('Id',key)
+                source_id=source.get('Id',item)
                 if key in self.sessions and self.sessions[key]['MediaSourceId']!=source_id:
                     self.request('/Sessions/Playing/Stopped',method='POST',data=self.sessions.pop(key))
                 if key not in self.sessions:
-                    body=dict(ItemId=key, MediaSourceId=source.get('Id',key), PlaySessionId=uuid.uuid4().hex,
+                    body=dict(ItemId=item, MediaSourceId=source.get('Id',item), PlaySessionId=uuid.uuid4().hex,
                         CanSeek=True, PlayMethod='DirectStream', PositionTicks=position*10000, IsPaused=state=='paused')
                     self.request('/Sessions/Playing',method='POST',data=body)
                     if len(self.sessions)>16: self.sessions.clear()

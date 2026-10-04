@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.2.5
+# Original Xbox — native player preview 0.3.0
 
-The connection-only preview has been tested successfully on a real Xbox.
-This next preview adds the familiar receiver GUI, analog VU meters, library
-navigation, music and video playback. **Playback still needs a physical Xbox
-test.** It is a native nxdk XBE, not an XBMC skin or a PSP executable.
+GUI navigation and native video **with audio** were confirmed on a real Xbox
+with 0.2.5. Version 0.3.0 extends that working foundation; its new features
+still require console testing. It is a native nxdk XBE, not an XBMC skin or a
+PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.69 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.70 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -25,7 +25,8 @@ test.** It is a native nxdk XBE, not an XBMC skin or a PSP executable.
 
 | Context | Buttons |
 |---|---|
-| Library | D-pad up/down: entry; left/right: page; A: open; B: parent; X: reload |
+| Library | D-pad up/down: entry; left/right: page; A: open; B: parent; Start: reload |
+| Library | X: settings; Y: help |
 | Media options | Up/down: row; left/right: audio/subtitle/quality; A on Play: start |
 | Playback | A or Start: pause/resume; B: stop; left/right: -/+30 seconds |
 | Playback | Up/down: volume; Y: fullscreen/receiver view |
@@ -34,8 +35,47 @@ test.** It is a native nxdk XBE, not an XBMC skin or a PSP executable.
 
 A long pause releases the stream/encoder. Resume requests a fresh stream at
 the recorded audio position; it can therefore take a moment. Network failures
-remain visible errors, not automatic playlist advancement. No automatic next
-item, artwork, watched reporting, radio, visualizations or offline cache yet.
+never count as a clean end: interrupted streams retry the same position up to
+three times, with B to cancel. Live radio reconnects at the live position.
+
+## New in 0.3.0
+
+- Options X toggles source resume/from-start; Y shows duration, track counts,
+  artist/album and a compact synopsis. Music hides video/subtitle controls.
+- Playback LB/RB selects previous/next file; triggers select previous/next
+  chapter. Clean EOF can automatically advance; errors never skip a title.
+- Settings: autoplay next, repeat current, music folder shuffle, spectrum,
+  video quality, volume, preferred audio language and subtitle language/off.
+  Existing server series preferences take precedence over global languages.
+- `preferences.cfg` beside the XBE stores these settings, with a `.bak`
+  recovery copy. Updating the executable never replaces personal settings.
+- Provider resume points and shared direct-file history are available. Root
+  rows expose existing shared Favorites and Recently played (read-only).
+- Plex/Jellyfin/DLNA artwork reuses the bounded server RGB565 image service:
+  320x180 dimmed backdrop and 80x112 cover; it does not decode unbounded images
+  on the console. Artwork failure never prevents Play; Play cancels a pending
+  optional image request. This is not yet native-resolution Xbox artwork.
+- Music has a 24-band windowed frequency display plus the analog VU meters.
+  Y toggles its fullscreen display; frequency analysis is disabled for video.
+- Configured radio stations are playable; resume returns to live radio.
+  ICY title display on Xbox is still pending.
+- Playback progress (15 seconds), pause and stop go to Plex/Jellyfin and
+  shared history in a bounded background queue, not the render/audio thread.
+  Browser playback reports the same events. Client/session identities and
+  monotonic report sequence numbers prevent cross-client queue interference
+  and stale unload reports. These clients never consume PSP remote commands.
+- Sequential video playback crosses numbered season folders of the same
+  series. Plex/Jellyfin use their season metadata; files/DLNA recognize
+  `Season 1`, `Staffel 1`, `S01`, etc. No arbitrary recursive folder traversal,
+  music-album continuation, or modification of explicit provider playlists.
+
+### Still separate porting work
+
+libmpeg2/MPEG-2, accelerated rendering, MilkDrop/Monkey, native high-resolution
+artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
+search/text-entry UI, server configuration in-app, translations and a distinct
+Xbox web/HA remote target are **not implemented** in this build. No parity with
+all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
 
@@ -57,16 +97,12 @@ item, artwork, watched reporting, radio, visualizations or offline cache yet.
 
 ## Synchronization and isolation
 
-Preview 0.2.2's hardware log located the startup stall inside controller
-opening, after successful worker creation. Preview 0.2.3 opens existing
-controllers before graphical UI allocation and concurrent network work,
-deduplicates the queued connection events, and omits the unused SDL timer
-thread. Back now requests exit during loading and playback as well.
-SDK C assertions (separate from SDL assertions) are saved to the log when
-running at passive IRQL, then displayed before the fatal halt. This also
-covers failures previously missing from the log. The actual cause inside
-controller opening is not yet proven; the reordered startup requires a
-console test. Keep `xbox-player.log` if it stalls again.
+The early file log misleadingly ended around controller initialization.
+Serial KD subsequently proved the HTTP `sscanf` access violation (fixed in
+0.2.4); the screen then exposed nxdk's unimplemented `strtod` (fixed in 0.2.5).
+Do not treat the old controller hypothesis as a confirmed hardware fault.
+SDK C assertions are saved to disk, sent over serial KD and displayed before
+the fatal halt. Keep `xbox-player.log` if a new SDK assertion occurs.
 
 Preview 0.2.1 fixes the first-menu black screen caused by a clip command
 without a preceding viewport after SDL flushes temporary text textures.

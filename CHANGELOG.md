@@ -2,6 +2,19 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.3.0 / server 0.1.70: readable track languages, persisted playback
+  preferences, source resume, next/previous, chapters, same-title reconnect,
+  compact help/info, bounded provider artwork, shared favorites/history rows,
+  radio playback and a 24-band music spectrum. Native 0.2.5 video/audio is
+  confirmed on hardware; the new feature set awaits its combined console test.
+- Browser and Xbox report progress/pause/stop to Plex/Jellyfin and shared
+  history without consuming or replacing PSP remote commands. Separate client
+  keys and ordered reports protect concurrent clients and late unload messages.
+- Browser automatically advances at clean EOF (optional), with language-based
+  track carry-over. Sequential video can cross seasons of the same series on
+  all clients: provider season metadata, or numbered files/DLNA season folders.
+  Explicit provider playlists, folder shuffle and music album boundaries stay
+  unchanged. Browser season transition was verified in Chromium.
 - Xbox preview 0.2.5: avoid nxdk's assertion-only `strtod` stub when reading
   media duration; support decimal/exponent durations and report SDK assertions
   over serial as well as on screen and in the log.

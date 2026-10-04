@@ -15,6 +15,15 @@ A, B, P = 'a'*32, 'b'*32, 'c'*32
 
 
 class JellyfinTests(unittest.TestCase):
+    def test_separate_clients_do_not_coalesce_same_media_reports(self):
+        from unittest.mock import Mock
+        self.jf.report_thread=Mock()
+        token=self.jf.token(A)
+        self.jf.report(token,'playing',1000,10000)
+        self.jf.report(token,'playing',2000,10000,client='xbox-test')
+        self.jf.report(token,'paused',3000,10000,client='browser-test')
+        self.assertEqual(set(self.jf.pending),{A,('xbox-test',A),('browser-test',A)})
+
     def test_optional_web_segments_and_chapters(self):
         token=self.jf.token(B)
         with patch.object(self.jf,'request',return_value={'Items':[

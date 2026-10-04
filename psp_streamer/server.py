@@ -213,8 +213,11 @@ class Library:
             return {}
         if previous:
             if current == 0:
-                return {}
-            following = candidates[current - 1]
+                if is_audio or shuffle:return {}
+                from .season_next import local_next
+                following=local_next(directory,root,MEDIA_EXTENSIONS-AUDIO_EXTENSIONS,natural_name_key,True)
+                if following is None:return {}
+            else:following = candidates[current - 1]
         elif is_audio and shuffle:
             choices = candidates[:current] + candidates[current + 1:]
             if not choices:
@@ -223,7 +226,10 @@ class Library:
         elif current + 1 < len(candidates):
             following = candidates[current + 1]
         else:
-            return {}
+            if is_audio or shuffle:return {}
+            from .season_next import local_next
+            following=local_next(directory,root,MEDIA_EXTENSIONS-AUDIO_EXTENSIONS,natural_name_key)
+            if following is None:return {}
         return {"id": self.encode(MediaItem(item.root, following.relative_to(root).as_posix())),
                 "kind": "audio" if is_audio else "video", "name": display_text(following.name)}
 
@@ -503,14 +509,29 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == '/api/session':
                 return self.send_json({'csrf': self.web_csrf or '', 'protected': self.server.settings.protected})
             if parsed.path == '/api/xbox/library':
-                listing = browse_catalogue(self.server, int(query.get('root', ['0'])[0]), query.get('path', [''])[0])
+                path=query.get('path',[''])[0]
+                listing = (dict(root=0,path=path,parent='',folders=[],videos=[]) if path in (':xbox:favorites:',':xbox:recent:')
+                    else browse_catalogue(self.server, int(query.get('root', ['0'])[0]), path))
+                if path in (':xbox:favorites:',':xbox:recent:'):
+                    for row in self.server.comfort.snapshot()['records']:
+                        if row.get('folder') or not row.get('favorite' if path==':xbox:favorites:' else 'used'):continue
+                        listing['videos'].append(dict(id=row['id'],name=row['name'],kind='audio' if row.get('audio') else 'video'))
+                elif not path:
+                    listing=dict(listing,folders=[dict(name='Favorites',path=':xbox:favorites:'),dict(name='Recently played',path=':xbox:recent:')]+listing['folders'])
                 offset = int(query.get('offset', ['0'])[0])
                 if offset < 0:
                     raise ValueError('Invalid page')
-                entries = [dict(name=x['name'], path=x['path'], kind='folder') for x in listing['folders'] if x['path'] != ':radio:']
-                entries += [dict(name=x['name'], id=x['id'], kind=x.get('kind','video')) for x in listing['videos'] if not x.get('live') and not x['id'].startswith('radio.')]
+                entries = [dict(name=x['name'], path=x['path'], kind='folder') for x in listing['folders']]
+                entries += [dict(name=x['name'], id=x['id'], kind=x.get('kind','video')) for x in listing['videos']]
                 return self.send_json(dict(root=listing['root'], path=listing['path'], parent=listing['parent'],
                                            total=len(entries), offset=offset, entries=entries[offset:offset+64]))
+            if parsed.path.startswith('/api/xbox/metadata/'):
+                token=parsed.path.rsplit('/',1)[-1]
+                payload=dict(self.metadata(token))
+                record=next((r for r in self.server.comfort.snapshot()['records'] if r['id']==token),{})
+                if 'resume' not in payload:payload['resume']=record.get('seconds',0)
+                payload['favorite']=record.get('favorite',0)
+                return self.send_json(payload)
             if parsed.path == '/api/library/files':
                 return self.send_json({'files': folder_media(self.server,
                     int(query.get('root', ['0'])[0]), query.get('path', [''])[0],
@@ -745,6 +766,13 @@ class AppHandler(BaseHTTPRequestHandler):
                     return self.send_error_json(HTTPStatus.BAD_REQUEST,'Invalid comfort request size')
                 data=json.loads(self.rfile.read(length))
                 return self.send_json(self.server.comfort.sync(data) if parsed.path.endswith('/sync') else self.server.comfort.change(data))
+            if parsed.path == '/api/client-playback':
+                from .client_playback import report
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=8192:
+                    self.close_connection=True
+                    raise ValueError('Invalid playback report size')
+                return self.send_json(report(self.server,json.loads(self.rfile.read(length))))
             if parsed.path == '/api/series-preferences':
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=4096:
@@ -1230,15 +1258,13 @@ class AppHandler(BaseHTTPRequestHandler):
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False) -> None:
         live = token.startswith('radio.')
-        if xbox and live:
-            raise ValueError('Radio is not implemented in the Xbox preview')
         managed = browser or xbox
         xbox_transport = None
         xbox_flags = 0
         if xbox:
             from .xbox_player import Transport
             xbox_transport = Transport()
-            xbox_flags = (1 if container != 'mp3' else 0) | (2 if self.metadata(token)['a'] else 0)
+            xbox_flags = (1 if container != 'mp3' else 0) | (2 if live or self.metadata(token)['a'] else 0)
         if live and (container != 'mp3' or start_seconds or subtitle_track != -1):
             raise ValueError('Radio supports live MP3 playback only (no seek or subtitles)')
         source = self.server.radio.get(token)['url'] if live else self.server.library.decode(token)[1]
@@ -1423,6 +1449,8 @@ class AppServer(ThreadingHTTPServer):
         state_root = state_directory()
         from .comfort import Comfort
         self.comfort = Comfort(state_root)
+        from .client_playback import PlaybackReports
+        self.client_reports=PlaybackReports()
         from .search import Search
         self.search = Search(self)
         self.settings = PasswordSettings()

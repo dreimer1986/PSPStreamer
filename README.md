@@ -4,13 +4,16 @@ Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and Configur
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
-Server **0.1.67** adds a [browser playback target](docs/BROWSER_PLAYER.md):
+Server **0.1.70** includes a [browser playback target](docs/BROWSER_PLAYER.md):
 choose **This browser** in a media item's playback target selector. Video/music,
-audio-track/subtitle selection and seek run independently of PSP control.
+audio-track/subtitle selection, seek, automatic next episode and Plex/Jellyfin
+progress reporting run independently of PSP control. Sequential episodes can
+continue into the next season of the same series, also for PSP and Xbox.
 The experimental [native original Xbox player preview](xbox-client/README.md)
 adds the familiar receiver GUI, VU meters and timestamp-driven MPEG-1/MP2
-playback with **server 0.1.68**. The connection preview is hardware-confirmed;
-the new playback build is ready for its first console test. PSP playback is unchanged.
+playback. Version **0.2.5 video/audio is hardware-confirmed**; **0.3.0 with server
+0.1.70** adds resume, next/previous, chapters, settings, artwork, spectrum and
+provider progress reporting for the next hardware test. PSP decoding is unchanged.
 
 [FuSa Fullscreen](psp-fusa-probe/FULLSCREEN.md) is the standalone game-TV
 scaler, with Sony HOME, CustomHOME and OC/Consolizer overlay support. Install

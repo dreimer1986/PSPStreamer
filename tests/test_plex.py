@@ -12,6 +12,17 @@ from psp_streamer.server import Library, MediaItem, AppServer
 
 
 class PlexTests(unittest.TestCase):
+    def test_separate_clients_do_not_coalesce_same_media_reports(self):
+        from unittest.mock import Mock
+        self.plex.report_thread=Mock()
+        token=self.plex.token('42')
+        self.plex.report(token,'playing',1000,10000)
+        self.plex.report(token,'playing',2000,10000,client='xbox-test')
+        self.plex.report(token,'paused',3000,10000,client='browser-test')
+        self.assertEqual(set(self.plex.pending),{'42',('xbox-test','42'),('browser-test','42')})
+        self.assertEqual(self.plex.pending[('xbox-test','42')]['ratingKey'],'42')
+        self.assertNotIn('_client',self.plex.pending['42'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
