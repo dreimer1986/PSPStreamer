@@ -1,4 +1,4 @@
-# Original Xbox — native player preview 0.2.3
+# Original Xbox — native player preview 0.2.4
 
 The connection-only preview has been tested successfully on a real Xbox.
 This next preview adds the familiar receiver GUI, analog VU meters, library
@@ -101,6 +101,27 @@ subtitles are server-burned, including supported bitmap tracks. The paged
 library exposes Files/Plex/Jellyfin/DLNA, 64 entries per page.
 
 ## Build and licenses
+
+Preview 0.2.4 fixes a hardware-confirmed startup access violation in the pinned
+SDK's `sscanf`: suppressed `%*s` still consumed/wrote an argument. HTTP status
+parsing now uses a bounded, explicit parser. This affects only the Xbox client.
+
+### Serial diagnostics (optional)
+
+With a compatible Xbox serial debug port and kernel debugger enabled, run
+`python3 xbox-client/tools/kd_serial.py /dev/serial/by-id/YOUR_ADAPTER` with
+permission to access that port. The transport is 115200 baud, 8N1. Startup
+messages include the thread address and stage; `bin/player.map` maps this
+specific build's addresses to functions. Do not use a map from another build.
+
+The small KD client acknowledges debug output and continues module-load
+notifications, but **does not automatically continue exceptions**. Commands:
+`break`, `context`, `read HEX_ADDRESS BYTE_COUNT`, `version`, `continue`,
+`resume-break`, `reboot`, `quit`. `resume-break` advances EIP only over a verified
+INT3 breakpoint; never use it to bypass an application fault. `reboot` requests
+a console reset and may require a manual restart. Keep the client connected
+while debugging: a stopped kernel can otherwise wait for its debugger.
+Protocol layouts follow the [ReactOS KD definitions](https://github.com/reactos/reactos/blob/master/sdk/include/reactos/windbgkd.h).
 
 Requirements: Git, make, Clang/LLD, flex, bison, CMake; no proprietary XDK.
 

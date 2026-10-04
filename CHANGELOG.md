@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Xbox preview 0.2.4: fix the serial-debugger-confirmed startup access violation
+  in nxdk PDCLib's suppressed string scan; parse HTTP status lines explicitly.
+  Add optional Linux serial KD diagnostics and build-specific symbol maps.
+  PSP playback and server transcoding are unchanged.
 - Xbox preview 0.2.3: initialize controllers before GUI/network workers,
   deduplicate connection events, restore Back-to-dashboard during loading
   and playback, and capture SDK assertions. Hardware startup retest pending.

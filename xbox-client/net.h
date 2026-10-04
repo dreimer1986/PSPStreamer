@@ -1,4 +1,5 @@
 /* GPL-2.0-or-later. Bounded HTTP/1.0 transport for the trusted LAN preview. */
+#include "http_status.h"
 typedef struct { int fd, status; unsigned at, size; unsigned char data[8192]; SDL_atomic_t *cancel; } Http;
 static char host[64], password[129];
 static unsigned port=8091;
@@ -76,7 +77,8 @@ static int http_open(Http *h,const char *path,SDL_atomic_t *cancel) {
         if(!http_exact(h,header+n,1))goto fail;n++;header[n]=0;
         if(n>=4&&!memcmp(header+n-4,"\r\n\r\n",4))break;
     }
-    if(n==sizeof(header)-1||sscanf(header,"HTTP/%*s %d",&h->status)!=1)goto fail;
+    if(n==sizeof(header)-1)goto fail;
+    h->status=xbox_http_status(header,n);
     if(h->status!=200)goto fail;
     return 1;
 fail:http_close(h);return 0;

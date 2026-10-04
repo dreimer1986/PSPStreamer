@@ -11,9 +11,10 @@ if not (out / 'default.xbe').is_file():
 for name in ('README.md', 'server.cfg.example'):
     shutil.copy2(root / name, out / name)
 (out / 'source').mkdir(exist_ok=True)
-for name in ('player_main.c', 'net.h', 'catalog.h', 'audio.h', 'player.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
+for name in ('player_main.c', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)
 shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True)
+shutil.copytree(root / 'tools', out / 'source/tools', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
 shutil.copy2(root.parent / 'psp-client/assets/menu_skin_tv.png', out / 'theme.png')
 shutil.copy2('/usr/share/fonts/TTF/DejaVuSans.ttf', out / 'font.ttf')
 # Replace the obsolete connection-only source in this generated package.

@@ -27,7 +27,10 @@ static SDL_GameController *pads[4];
 static int width=640,height=480,options,fullscreen=1,quit;
 static char status[160]="Connecting...";static float meters[2];
 static int first_frame=1;
-static void startup_note(const char *stage){FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"startup: %s | SDL: %s\n",stage,SDL_GetError());fclose(f);}}
+static void startup_note(const char *stage){
+    if(KdDebuggerEnabled)DbgPrint("PSPX thread=%p tick=%lu: %s\n",KeGetCurrentThread(),(unsigned long)GetTickCount(),stage);
+    FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"startup: %s | SDL: %s\n",stage,SDL_GetError());fclose(f);}
+}
 static SDL_AssertState assertion_log(const SDL_AssertData *data,void *unused){
     (void)unused;FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"SDL assertion: %s at %s:%d (%s)\n",data->condition,data->filename,data->linenum,data->function);fclose(f);}return SDL_ASSERTION_ABORT;
 }
@@ -180,7 +183,8 @@ static void button_down(int button){
     else if(button==SDL_CONTROLLER_BUTTON_A&&entry_count){Entry *e=&entries[entry_index];if(e->folder)browse(e->target,0);else select_media(e);}
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.3 controller startup\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.4 serial diagnostics\n",boot);fclose(boot);}
+    startup_note("entry: before graphics/input initialization");
     XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
     if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}
     VIDEO_MODE mode=XVideoGetMode();width=mode.width;height=mode.height;
@@ -198,7 +202,7 @@ int main(void){
     FILE *log=fopen("D:\\xbox-player.log","a");if(log){MM_STATISTICS memory={0};memory.Length=sizeof(memory);MmQueryStatistics(&memory);fprintf(log,"RAM pages=%lu output=%dx%d\n",(unsigned long)memory.TotalPhysicalPages,width,height);fclose(log);}
     menu_draw();startup_note("network initialization");int network=nxNetInit(NULL);startup_note("network initialization returned");if(configured&&!network)browse("",0);else snprintf(status,sizeof(status),"Check server.cfg / Ethernet (network=%d)",network);
     startup_note("main: entering event loop");
-    SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1;
+    SDL_Event event;Uint32 draw=0,repeat=0;int held=-1,first_poll=1,first_loop=1;
     while(!quit){
         if(first_poll)startup_note("main: before first event poll");
         while(SDL_PollEvent(&event)){
@@ -209,6 +213,7 @@ int main(void){
         }
         if(first_poll){startup_note("main: first event poll complete");first_poll=0;}
         if(held>=0&&(Sint32)(SDL_GetTicks()-repeat)>=0){button_down(held);repeat=SDL_GetTicks()+100;}
+        if(first_loop)startup_note("main: before worker done check");
         if(fetch.thread&&SDL_AtomicGet(&fetch.done)){
             startup_note("catalog: joining completed worker");
             SDL_WaitThread(fetch.thread,NULL);fetch.thread=NULL;
@@ -219,9 +224,13 @@ int main(void){
             free(fetch.body);fetch.body=NULL;
             startup_note(status);
         }
+        if(first_loop)startup_note("main: worker done check returned");
         if(playing){int result=player_tick();if(result==1){frame_draw(next_frame);next_frame=NULL;}else if(result<0||result==2){snprintf(status,sizeof(status),"%s",result==2?"Playback finished":*stream.error?stream.error:"Stream failed");player_stop();}}
+        if(first_loop)startup_note("main: before clock/redraw");
         if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=66){menu_draw();draw=SDL_GetTicks();}
+        if(first_loop)startup_note("main: before yield");
         SDL_Delay(1);
+        if(first_loop){startup_note("main: first loop complete");first_loop=0;}
     }
     fetch_stop();player_stop();if(audio_initialized)XAudioPause();if(pcm)MmFreeContiguousMemory(pcm);
     for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerClose(pads[i]);nxNetShutdown();TTF_CloseFont(font);SDL_DestroyTexture(skin);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();XReboot();return 0;
