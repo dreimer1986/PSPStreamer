@@ -38,6 +38,7 @@ static SDL_AssertState assertion_log(const SDL_AssertData *data,void *unused){
  * diagnostic. SDL's assertion handler does not cover these USB/libc asserts.
  * Preserve the failure on disk before retaining the SDK's fatal-stop policy. */
 void _xbox_assert(const char *expression,const char *file,const char *function,unsigned long line){
+    if(KdDebuggerEnabled)DbgPrint("SDK assertion: %s at %s:%lu (%s)\n",expression,file,line,function);
     if(KeGetCurrentIrql()==0){
         FILE *f=fopen("D:\\xbox-player.log","a");
         if(f){fprintf(f,"SDK assertion: %s at %s:%lu (%s)\n",expression,file,line,function);fclose(f);}
@@ -183,7 +184,7 @@ static void button_down(int button){
     else if(button==SDL_CONTROLLER_BUTTON_A&&entry_count){Entry *e=&entries[entry_index];if(e->folder)browse(e->target,0);else select_media(e);}
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.4 serial diagnostics\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.5 metadata parser\n",boot);fclose(boot);}
     startup_note("entry: before graphics/input initialization");
     XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
     if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}

@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- Xbox preview 0.2.5: avoid nxdk's assertion-only `strtod` stub when reading
+  media duration; support decimal/exponent durations and report SDK assertions
+  over serial as well as on screen and in the log.
 - Xbox preview 0.2.4: fix the serial-debugger-confirmed startup access violation
   in nxdk PDCLib's suppressed string scan; parse HTTP status lines explicitly.
   Add optional Linux serial KD diagnostics and build-specific symbol maps.

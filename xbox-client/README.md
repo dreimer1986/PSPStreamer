@@ -1,4 +1,4 @@
-# Original Xbox — native player preview 0.2.4
+# Original Xbox — native player preview 0.2.5
 
 The connection-only preview has been tested successfully on a real Xbox.
 This next preview adds the familiar receiver GUI, analog VU meters, library
@@ -102,6 +102,8 @@ library exposes Files/Plex/Jellyfin/DLNA, 64 entries per page.
 
 ## Build and licenses
 
+Preview 0.2.5 also replaces the SDK's unimplemented `strtod` duration conversion
+with a JSON decimal/exponent parser and sends SDK assertions over serial KD.
 Preview 0.2.4 fixes a hardware-confirmed startup access violation in the pinned
 SDK's `sscanf`: suppressed `%*s` still consumed/wrote an argument. HTTP status
 parsing now uses a bounded, explicit parser. This affects only the Xbox client.

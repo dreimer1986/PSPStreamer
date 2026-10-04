@@ -5,6 +5,27 @@ static Entry entries[64];static int entry_count,entry_index,page_offset,total_en
 static char folder_path[1536],parent_path[1536];static int has_parent;
 static char media_id[1536],media_name[256];static int media_audio,audio_track,subtitle_track=-1,quality,option_row;
 static double media_duration;
+/* JSON duration only: nxdk's strtod/strtof are assertion-only stubs.
+ * Reject malformed/unreasonable values rather than preventing playback when
+ * a provider has no duration. Includes JSON exponent notation. */
+static double parse_duration(const char *s){
+    double value=0,scale=1;int exponent=0,negative=0;
+    if(*s<'0'||*s>'9')return 0;
+    if(*s=='0'&&s[1]>='0'&&s[1]<='9')return 0;
+    while(*s>='0'&&*s<='9'){value=value*10+(*s++-'0');}
+    if(*s=='.'){
+        s++;if(*s<'0'||*s>'9')return 0;
+        while(*s>='0'&&*s<='9'){scale*=.1;value+=(*s++-'0')*scale;}
+    }
+    if(*s=='e'||*s=='E'){
+        s++;if(*s=='-'||*s=='+'){negative=*s=='-';s++;}
+        if(*s<'0'||*s>'9')return 0;
+        while(*s>='0'&&*s<='9'){exponent=exponent*10+(*s++-'0');if(exponent>308)return 0;}
+    }
+    if(*s)return 0;
+    while(exponent--)value*=negative?.1:10;
+    return value>=0&&value<=1e12?value:0;
+}
 static char audio_labels[32][120],subtitle_labels[32][120];static int audio_count,subtitle_count;
 static jsmntok_t tokens[8192];static char *json;
 static int tok_count;
@@ -51,7 +72,7 @@ static int parse_catalog(char *data){
     }return 1;
 }
 static int parse_metadata(char *data){
-    if(!parse_json(data))return 0;char duration[40];text_tok(field(0,"d"),duration,sizeof(duration));media_duration=strtod(duration,NULL);
+    if(!parse_json(data))return 0;char duration[40];media_duration=text_tok(field(0,"d"),duration,sizeof(duration))?parse_duration(duration):0;
     audio_count=subtitle_count=0;audio_track=0;subtitle_track=-1;
     for(int type=0;type<2;type++){int a=field(0,type?"s":"a");if(a<0||tokens[a].type!=JSMN_ARRAY)continue;
         int count=0;for(int i=a+1;i<tok_count&&tokens[i].start<tokens[a].end&&count<32;i=next_tok(i)) {
