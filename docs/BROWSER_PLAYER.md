@@ -1,5 +1,10 @@
 # Browser playback (server 0.1.67)
 
+**Server 0.1.69:** Jellyfin embedded text tracks are fetched as a small subtitle
+file before burn-in, retaining ASS styles. This avoids a second scan through
+the remote episode before playback starts. Seek/resume restores original
+subtitle timestamps during filtering. The PSP overlay path is unchanged.
+
 Open a library item, choose **Playback target → This browser**, then **Play in
 browser**. No PSP or browser extension is needed. Use the same server login as
 the rest of the web interface. Credentials are not placed in media URLs.

@@ -1269,12 +1269,15 @@ class AppHandler(BaseHTTPRequestHandler):
             if source is not None and container in {"h264", "flv"} and subtitle_track >= 0:
                 from .external_subtitles import payload as external_payload
                 external = external_payload(self.server.library,token,subtitle_track,source)
+                if managed and not external and token.startswith('jellyfin.'):
+                    from .managed_subtitles import jellyfin_burnin
+                    external = jellyfin_burnin(self.server.jellyfin, token, subtitle_track)
                 if not external:
                     probe = cached_probe(source, ["-select_streams", f"s:{subtitle_track}", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
                     bitmap_subtitle = probe.stdout.strip() in BITMAP_SUBTITLE_CODECS
                 if external:
                     external_folder=tempfile.TemporaryDirectory(prefix='psp-external-')
-                    subtitle_source=Path(external_folder.name)/('subtitle.sup' if external[0]=='hdmv_pgs_subtitle' else 'subtitle.srt')
+                    subtitle_source=Path(external_folder.name)/('subtitle.sup' if external[0]=='hdmv_pgs_subtitle' else 'subtitle.ass' if managed and external[0]=='ass' else 'subtitle.srt')
                     subtitle_source.write_bytes(external[1])
                     bitmap_subtitle=external[0]=='hdmv_pgs_subtitle'
                 elif not isinstance(source, RemoteSource):
@@ -1290,6 +1293,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if xbox:
                 from .xbox_player import command as xbox_command
                 command = xbox_command(command, container == 'mp3')
+            if managed:
+                from .managed_subtitles import seek_timeline
+                command = seek_timeline(command, start_seconds)
             if live:
                 radio_lease = self.server.radio.begin(token)
             process = subprocess.Popen(

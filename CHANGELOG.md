@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- Fix Xbox black startup: explicitly enqueue viewport before clip changes in
+  the pinned SDL backend after temporary text textures are freed. Initialize
+  audio only on playback; log startup stages and rendering assertions.
+- Server 0.1.69: prepare Jellyfin text subtitles via its API for browser/Xbox
+  burn-in, preserving ASS styles; restore source subtitle time when seeking.
+  Aharen-san S01E01 with German ASS starts in the browser test in ~2.3 s.
+  PSP encoding and subtitle overlay delivery remain unchanged.
 - Extend the confirmed Xbox connection preview into a player test build:
   receiver theme, analog VU meters, library, track/subtitle selection, music,
   video, pause/resume, seek and fullscreen. Separate MPEG-1/MP2 output carries

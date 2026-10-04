@@ -5,7 +5,7 @@ extern AC97_DEVICE ac97Device;
 static unsigned char *pcm;
 static int volume=100;static unsigned audio_peaks[32][2];
 static int64_t audio_pts[32];static unsigned audio_serial[32],audio_sent;
-static int audio_running,audio_failed;static int64_t audio_clock;
+static int audio_running,audio_failed,audio_initialized;static int64_t audio_clock;
 static volatile unsigned char *const ac97=(volatile unsigned char *)0xfec00000;
 
 static int audio_reset(void){
@@ -21,6 +21,13 @@ static int audio_reset(void){
     memset((void*)ac97Device.pcmSpdifDescriptor,0,sizeof(ac97Device.pcmSpdifDescriptor));
     memset(audio_serial,0,sizeof(audio_serial));memset(audio_peaks,0,sizeof(audio_peaks));audio_sent=0;audio_clock=-1;audio_running=0;
     return 1;
+}
+static int audio_init(void){
+    if(audio_initialized)return !audio_failed;
+    XAudioInit(16,2,NULL,NULL);audio_initialized=1;
+    pcm=MmAllocateContiguousMemoryEx(32*4608,0,0xffffffff,0,PAGE_READWRITE|PAGE_WRITECOMBINE);
+    if(!pcm||!audio_reset())audio_failed=1;
+    return !audio_failed;
 }
 static unsigned audio_cursor(unsigned base,int64_t *pts){
     unsigned first=0,second=0,remaining=0;

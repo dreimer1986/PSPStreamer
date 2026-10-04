@@ -1,4 +1,4 @@
-# Original Xbox — native player preview 0.2
+# Original Xbox — native player preview 0.2.1
 
 The connection-only preview has been tested successfully on a real Xbox.
 This next preview adds the familiar receiver GUI, analog VU meters, library
@@ -7,7 +7,7 @@ test.** It is a native nxdk XBE, not an XBMC skin or a PSP executable.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.68 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.69 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -56,6 +56,12 @@ item, artwork, watched reporting, radio, visualizations or offline cache yet.
   decoding or hardware codec acceleration is claimed for this preview.
 
 ## Synchronization and isolation
+
+Preview 0.2.1 fixes the first-menu black screen caused by a clip command
+without a preceding viewport after SDL flushes temporary text textures.
+`tests/xbox_clip.c` reproduces the crash with the pinned SDL source on a host
+and verifies the corrected command order. Audio initializes only on Play;
+startup stages and assertions are now recorded in `xbox-player.log`.
 
 Separate `/api/xbox-stream/<id>` output encodes MPEG-TS, extracts actual 90 kHz
 PES timestamps and sends bounded access units in an `XSM1` stream. Header:

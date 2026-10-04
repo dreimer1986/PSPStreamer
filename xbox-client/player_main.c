@@ -18,10 +18,21 @@
 #include "net.h"
 #include "catalog.h"
 #include "player.h"
+#include "render_clip.h"
 
 static SDL_Window *window;static SDL_Renderer *renderer;static TTF_Font *font;static SDL_Texture *skin;
 static int width=640,height=480,options,fullscreen=1,quit;
 static char status[160]="Connecting...";static float meters[2];
+static int first_frame=1;
+static void startup_note(const char *stage){FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"startup: %s | SDL: %s\n",stage,SDL_GetError());fclose(f);}}
+static SDL_AssertState assertion_log(const SDL_AssertData *data,void *unused){
+    (void)unused;FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"SDL assertion: %s at %s:%d (%s)\n",data->condition,data->filename,data->linenum,data->function);fclose(f);}return SDL_ASSERTION_ABORT;
+}
+/* nxdk's pinned SDL software backend requires SETVIEWPORT before SETCLIPRECT
+ * in EACH command batch. Destroying a temporary text texture flushes a batch;
+ * plain RenderSetClipRect then queues the clip BEFORE the next draw's viewport
+ * and triggers an invisible assertion dialog before the first Present. */
+static void clip(const SDL_Rect *rect){xbox_render_clip(renderer,rect);}
 typedef struct {SDL_Thread *thread;SDL_atomic_t cancel,done;char path[6000],error[100];char *body;int type;} Fetch;
 static Fetch fetch;
 static int fetch_worker(void *unused){
@@ -64,7 +75,8 @@ static void menu_render(void){
     SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);
     color(0,0,0);SDL_RenderClear(renderer);SDL_Rect all={0,0,720,480};SDL_RenderCopy(renderer,skin,NULL,&all);
     SDL_Color normal={225,234,237,255},selected={255,207,80,255};
-    SDL_Rect left={27,60,506,232};SDL_RenderSetClipRect(renderer,&left);
+    if(first_frame)startup_note("theme queued");
+    SDL_Rect left={27,60,506,232};clip(&left);
     if(playing){
         text_at(media_name,35,70,492,selected);char line[120];double p=player_position();
         snprintf(line,sizeof(line),"%s  %02d:%02d / %02d:%02d",paused?"Paused":"Playing",(int)p/60,(int)p%60,(int)media_duration/60,(int)media_duration%60);text_at(line,35,105,492,normal);
@@ -81,14 +93,15 @@ static void menu_render(void){
         for(int i=start;i<entry_count&&i<start+8;i++){char line[290];snprintf(line,sizeof(line),"%s %s",entries[i].folder?">":entries[i].audio?"~":"*",entries[i].name);text_at(line,35,64+(i-start)*28,492,i==entry_index?selected:normal);}
         if(!entry_count)text_at("No entries",35,90,492,normal);
     }
-    SDL_RenderSetClipRect(renderer,NULL);
+    if(first_frame)startup_note("left text rendered");
+    clip(NULL);
     side(playing?(paused?"PAUSED":"PLAYING"):options?"OPTIONS":"LIBRARY",0);
     if(fetch.thread){side("Loading...",2);side("B: Cancel",4);}
     else{side("A: Select",2);side("B: Back",3);side("X: Refresh",4);side("Y: Fullscreen",5);side("Back: Exit",7);}
-    SDL_Rect footer={27,303,666,38};SDL_RenderSetClipRect(renderer,&footer);text_at(status,32,308,650,normal);SDL_RenderSetClipRect(renderer,NULL);
+    SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,308,650,normal);clip(NULL);
     receiver();
 }
-static void menu_draw(void){menu_render();SDL_RenderPresent(renderer);}
+static void menu_draw(void){menu_render();if(first_frame)startup_note("before first present");SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}}
 static void frame_draw(plm_frame_t *f){
     if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
     if(!video_texture){stream_error(SDL_GetError());return;}
@@ -131,16 +144,18 @@ static void button_down(int button){
     else if(button==SDL_CONTROLLER_BUTTON_A&&entry_count){Entry *e=&entries[entry_index];if(e->folder)browse(e->target,0);else select_media(e);}
 }
 int main(void){
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.2.1 startup\n",boot);fclose(boot);}
     XVideoSetMode(640,480,32,REFRESH_DEFAULT);int configured=config();
     if(output_height!=480){void *p=NULL;VIDEO_MODE mode;while(XVideoListModes(&mode,32,0,&p)){if(mode.height==output_height&&mode.width==(output_height==720?1280:output_height==1080?1920:720)){XVideoSetMode(mode.width,mode.height,32,mode.refresh);break;}}}
     VIDEO_MODE mode=XVideoGetMode();width=mode.width;height=mode.height;
     if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_GAMECONTROLLER|SDL_INIT_TIMER)||TTF_Init()){debugPrint("SDL/TTF startup failed\n");for(;;)Sleep(1000);}
+    SDL_SetAssertionHandler(assertion_log,NULL);
+    SDL_SetHint(SDL_HINT_RENDER_BATCHING,"1");
     window=SDL_CreateWindow("PSPStreamer Xbox",0,0,width,height,SDL_WINDOW_SHOWN);renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_SOFTWARE);
     font=TTF_OpenFont("D:\\font.ttf",18);SDL_Surface *image=IMG_Load("D:\\theme.png");if(image){skin=SDL_CreateTextureFromSurface(renderer,image);SDL_FreeSurface(image);}
     if(!renderer||!font||!skin){debugPrint("Missing font.ttf/theme.png or renderer: %s\n",SDL_GetError());for(;;)Sleep(1000);}
-    XAudioInit(16,2,NULL,NULL);pcm=MmAllocateContiguousMemoryEx(32*4608,0,0xffffffff,0,PAGE_READWRITE|PAGE_WRITECOMBINE);if(!pcm||!audio_reset()){audio_failed=1;snprintf(status,sizeof(status),"Audio initialization failed");}
-    FILE *log=fopen("D:\\xbox-player.log","w");if(log){MM_STATISTICS memory={0};memory.Length=sizeof(memory);MmQueryStatistics(&memory);fprintf(log,"Xbox player 0.2: RAM pages=%lu output=%dx%d audio_failed=%d\n",(unsigned long)memory.TotalPhysicalPages,width,height,audio_failed);fclose(log);}
-    menu_draw();int network=nxNetInit(NULL);if(configured&&!network)browse("",0);else snprintf(status,sizeof(status),"Check server.cfg / Ethernet (network=%d)",network);
+    FILE *log=fopen("D:\\xbox-player.log","a");if(log){MM_STATISTICS memory={0};memory.Length=sizeof(memory);MmQueryStatistics(&memory);fprintf(log,"RAM pages=%lu output=%dx%d\n",(unsigned long)memory.TotalPhysicalPages,width,height);fclose(log);}
+    menu_draw();startup_note("network initialization");int network=nxNetInit(NULL);startup_note("network initialization returned");if(configured&&!network)browse("",0);else snprintf(status,sizeof(status),"Check server.cfg / Ethernet (network=%d)",network);
     SDL_GameController *pads[4]={0};SDL_Event event;Uint32 draw=0,repeat=0;int held=-1;
     while(!quit){
         while(SDL_PollEvent(&event)){
@@ -161,6 +176,6 @@ int main(void){
         if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=66){menu_draw();draw=SDL_GetTicks();}
         SDL_Delay(1);
     }
-    fetch_stop();player_stop();XAudioPause();if(pcm)MmFreeContiguousMemory(pcm);
+    fetch_stop();player_stop();if(audio_initialized)XAudioPause();if(pcm)MmFreeContiguousMemory(pcm);
     for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerClose(pads[i]);nxNetShutdown();TTF_CloseFont(font);SDL_DestroyTexture(skin);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();XReboot();return 0;
 }

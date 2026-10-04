@@ -60,7 +60,7 @@ static void player_stop(void){
     playing=paused=0;next_frame=NULL;pts_read=pts_count=0;decoder_ended=0;
 }
 static int player_start(double seconds){
-    player_stop();if(audio_failed)return 0;
+    player_stop();if(!audio_init())return 0;
     memset(&stream,0,sizeof(stream));stream.lock=SDL_CreateMutex();if(!stream.lock)return 0;
     char token[4700];if(!url_encode(media_id,token,sizeof(token))){player_stop();return 0;}
     snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=%s&start=%.3f",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality?"tv":"normal",seconds);

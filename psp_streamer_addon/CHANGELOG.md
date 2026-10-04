@@ -1,3 +1,10 @@
+# 0.1.69
+
+- Prepare Jellyfin text subtitles via its API for browser/Xbox burn-in instead
+  of scanning the remote original twice; preserve ASS formatting.
+- Keep text-subtitle timing correct after browser/Xbox seek or resume.
+- PSP encoding and overlays are unchanged. Docker/HA code is identical.
+
 # 0.1.68
 
 - Add an independent original Xbox preview transport: MPEG-1 video and MP2
