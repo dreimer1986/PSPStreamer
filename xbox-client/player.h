@@ -17,6 +17,7 @@ static SDL_Texture *video_texture;static int texture_w,texture_h,playing,paused,
 static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
 static char player_diagnostic[320];
+static int diagnostics_enabled=1;
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static int queue_packet(Packets *q,Packet p){
@@ -120,7 +121,7 @@ static int player_tick(void){
         if(now-frame_pts>9000){dropped++;next_frame=NULL;return 0;}
         rendered++;return 1;
     }
-    if(SDL_GetTicks()-log_time>5000){
+    if(diagnostics_enabled&&SDL_GetTicks()-log_time>5000){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
         snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes);log_time=SDL_GetTicks();
     }

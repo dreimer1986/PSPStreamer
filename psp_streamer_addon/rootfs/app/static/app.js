@@ -170,9 +170,15 @@ async function openCurrentPlayback(){
   await choose({id:p.id,name:p.title||p.id,kind:p.kind||(p.live?'audio':'video'),live:p.live,artwork:p.artwork},true);
 }
 async function refreshPlayer(adopt=false){
+  const target=document.getElementById('playbackTarget')?.value||'psp';
   // Share an in-flight status request, never turn a status refresh into Play.
   if(!playerRefresh)playerRefresh=api('/api/player').finally(()=>{playerRefresh=null;});
-  const p=await playerRefresh,previous=playerSample;
+  const status=await playerRefresh;
+  if(target!==(document.getElementById('playbackTarget')?.value||'psp'))return;
+  return applyPlayerStatus(status,adopt);
+}
+async function applyPlayerStatus(p,adopt=false){
+  const previous=playerSample;
   playerSample={...p,received:performance.now()};
   const active=activePlayer(p);nowPlaying.hidden=!active;
   nowPlayingText.textContent=active?`${t('Now playing')}: ${p.title||p.id} — ${t(p.state)}`:'';

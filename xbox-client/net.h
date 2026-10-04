@@ -7,6 +7,7 @@ static int output_height=480;
 
 static int config(void) {
     FILE *f=fopen("D:\\server.cfg","r"); char line[256];
+    if(!f)f=fopen("D:\\server.bak","r");
     if (!f) return 0;
     while (fgets(line,sizeof(line),f)) {
         line[strcspn(line,"\r\n")]=0;

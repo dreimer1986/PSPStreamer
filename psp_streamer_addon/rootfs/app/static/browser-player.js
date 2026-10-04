@@ -3,7 +3,7 @@ const browserTarget=document.createElement('select');
 browserTarget.id='playbackTarget';browserTarget.setAttribute('aria-label',t('Playback target'));
 option(browserTarget,'psp','PSP');option(browserTarget,'browser',t('This browser'));option(browserTarget,'xbox','Xbox');
 const targetLabel=document.createElement('label');targetLabel.append(t('Playback target'),browserTarget);
-$('#play').before(targetLabel);
+$('nav').after(targetLabel);
 const browserPanel=document.createElement('section');browserPanel.className='panel';browserPanel.hidden=true;
 browserPanel.id='browserPlayer';
 const browserTitle=document.createElement('h2'),browserVideo=document.createElement('video');
@@ -72,11 +72,27 @@ browserVideo.onpause=()=>{
 const browserResume=button(t('Resume'),()=>{if(browserItem)return startBrowser(browserItem,browserOffset);});
 browserStop.before(browserResume);
 browserSeek.onchange=()=>{if(browserItem)startBrowser(browserItem,+browserSeek.value).catch(fail);};
-browserTarget.onchange=()=>{$('#play').textContent=t(browserTarget.value==='browser'?'Play in browser':browserTarget.value==='xbox'?'Play on Xbox':'Play on PSP');xboxPanel.hidden=browserTarget.value!=='xbox';};
+browserTarget.onchange=()=>{
+  $('#play').textContent=t(browserTarget.value==='browser'?'Play in browser':browserTarget.value==='xbox'?'Play on Xbox':'Play on PSP');
+  xboxPanel.hidden=browserTarget.value!=='xbox';$('#pspController').hidden=browserTarget.value!=='psp';
+  if(!selected)$('#title').textContent=browserTarget.value==='xbox'?'Xbox':t('PSP controls');
+  playerSample=null;followPlayer=false;pendingSeek=null;remotePlaying=false;
+  try{localStorage.setItem('playbackTarget',browserTarget.value);}catch(e){}
+  refreshPlayer(true).catch(fail);
+};
 // Following a PSP that changes episodes must not replace this tab's selection.
 const pspRefreshPlayer=refreshPlayer;
-refreshPlayer=async function(adopt=false){return pspRefreshPlayer(browserTarget.value!=='psp'?false:adopt);};
-nowPlayingOpen.onclick=()=>{browserTarget.value='psp';browserTarget.onchange();openCurrentPlayback().catch(fail);};
+let xboxRefresh=null;
+refreshPlayer=async function(adopt=false){
+  if(browserTarget.value!=='xbox')return pspRefreshPlayer(browserTarget.value==='browser'?false:adopt);
+  if(!xboxRefresh)xboxRefresh=api('/api/xbox/status').finally(()=>{xboxRefresh=null;});
+  const state=await xboxRefresh;if(browserTarget.value!=='xbox')return;
+  xboxTitle.textContent=state.title||'Xbox';xboxStatus.textContent=(state.online?t(state.state||'Ready'):t('Offline'))+' | '+timeLabel((state.position||0)/1000)+' / '+timeLabel((state.duration||0)/1000);
+  xboxSeek.max=(state.duration||0)/1000;xboxSeek.disabled=!state.online||!state.duration;
+  if(document.activeElement!==xboxSeek)xboxSeek.value=(state.position||0)/1000;
+  return applyPlayerStatus({...state,position:(state.position||0)/1000,duration:(state.duration||0)/1000},adopt);
+};
+nowPlayingOpen.onclick=()=>openCurrentPlayback().catch(fail);
 const pspCommand=command;
 command=async function(action,extra={}){
   if(browserTarget.value==='xbox'){
@@ -102,13 +118,13 @@ command=async function(action,extra={}){
 };
 const pspSeekTo=seekTo;
 seekTo=async function(seconds){
-  if(browserTarget.value==='xbox'){await command('seek',{seconds});return;}
+  if(browserTarget.value==='xbox')return pspSeekTo(seconds);
   if(browserTarget.value!=='browser')return pspSeekTo(seconds);
   $('#seek').value=seconds;$('#seekLabel').textContent=timeLabel(seconds);
   if(browserItem&&selected?.id===browserItem.id)return startBrowser(browserItem,seconds);
 };
 const pspRenderPosition=renderPosition;
-renderPosition=function(){if(browserTarget.value==='psp')pspRenderPosition();};
+renderPosition=function(){if(browserTarget.value!=='browser')pspRenderPosition();};
 window.addEventListener('pagehide',()=>stopBrowser(true));
 // Dedicated Xbox status/transport remains available without a selected library
 // entry. It never adopts or changes the PSP's current item or command queue.
@@ -120,16 +136,8 @@ xboxPanel.append(xboxTitle,xboxStatus,xboxSeek);
 for(const [label,action] of [['Previous','previous'],['Pause','pause'],['Resume','resume'],['Stop','stop'],['Next','next']])
   xboxPanel.append(button(t(label),()=>post('/api/xbox/command',{action}).catch(fail)));
 $('nav').after(xboxPanel);
-async function refreshXbox(){
-  if(browserTarget.value==='xbox'&&!document.hidden)try{
-    const state=await api('/api/xbox/status');
-    xboxTitle.textContent=state.title||'Xbox';xboxStatus.textContent=(state.online?t(state.state||'Ready'):t('Offline'))+' | '+timeLabel((state.position||0)/1000)+' / '+timeLabel((state.duration||0)/1000);
-    xboxSeek.max=(state.duration||0)/1000;xboxSeek.disabled=!state.online||!state.duration;
-    if(document.activeElement!==xboxSeek)xboxSeek.value=(state.position||0)/1000;
-  }catch(e){xboxStatus.textContent=t('Xbox status unavailable');}
-  setTimeout(refreshXbox,3000);
-}
-refreshXbox();
+try{const saved=localStorage.getItem('playbackTarget');if(['psp','browser','xbox'].includes(saved))browserTarget.value=saved;}catch(e){}
+browserTarget.onchange();
 async function browserAdjacent(previous){
   if(!browserItem||browserItem.live)return;
   const item=browserItem,generation=browserGeneration;

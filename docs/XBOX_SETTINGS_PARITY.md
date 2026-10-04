@@ -1,4 +1,4 @@
-# Xbox settings audit — 0.3.1
+# Xbox settings audit — 0.3.2
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,
@@ -10,32 +10,26 @@ not a claim that every new setting has passed a console test.
 - Preferred audio/subtitle language, per-file track selection and provider
   series preferences; source resume and chapter navigation.
 - Two video encoding sizes. These are independent of physical output mode.
-- Spectrum enabled/disabled; music X opens 12/24 bands, sensitivity 1–8,
-  classic/gradient/whole-LED rendering and 8–32 LED segments.
-- Server IPv4 address, port, password and output height are read from
-  `server.cfg`, but **cannot yet be edited inside the Xbox app**.
+- Spectrum enabled/disabled; music X opens the shared PSP analyzer/painter
+  options: legacy/desktop FFT, 12/24/32/48/64 bands, dB gain, all five palettes,
+  separate LED toggle, 8–32 LED segments and peak hold. PSP implementation
+  headers are compiled unchanged; Xbox only adapts PCM/clock/texture delivery.
+- Server IPv4/port/password editor with masked controller keyboard, connection
+  test, save/cancel and backup. HTTP workers are quiesced before editing.
+  Output height remains a `server.cfg` setting.
+- Debug logging toggle, 0–30 second next-episode countdown with immediate
+  advance/cancel, and real-position fullscreen progress bar.
 
 ## Useful missing settings, in suggested order
 
-1. **Server configuration in-app:** address, port, masked password, connection
-   test, save/cancel and rollback. Reuse the PSP keyboard/editor behavior with
-   Xbox input/render adapters. Quiesce all HTTP workers before replacing their
-   shared credentials; never replace an existing config during updates.
-   DNS hostnames and HTTPS are separate transport work, not working toggles.
-2. **General preferences:** English/German language selection using existing
-   translation keys where appropriate, debug logging on/off, and optional
-   next-episode countdown/cancel. Keep diagnostic errors available independently
-   of frequent performance logging.
-3. **Spectrum parity:** share the portable PSP signal analysis and visual
-   option definitions instead of growing a divergent Xbox implementation.
-   Still missing: 32/48/64 bands, legacy versus desktop-FFT analysis, dB gain,
-   all five color styles, independent segment toggle and peak hold. Xbox does
-   not need PSP LCD/TV settings; any separate profiles should follow Xbox
-   output modes. Current Goertzel analysis is not desktop-FFT parity.
-4. **Output settings:** expose supported RGB/Component modes, aspect handling
+1. **Language:** English/German selection using existing translation keys;
+   Xbox controller help needs platform-specific labels. Still English-only.
+2. **Server transport:** DNS hostnames and HTTPS are separate work, not
+   working toggles. Current editor supports trusted-LAN HTTP with IPv4.
+3. **Output settings:** expose supported RGB/Component modes, aspect handling
    and fullscreen preference. Start with apply-on-restart; runtime mode changes
    need renderer/texture lifecycle validation and 64 MB memory accounting.
-5. **Encoding preferences:** expose appropriate Xbox audio codec/quality and
+4. **Encoding preferences:** expose appropriate Xbox audio codec/quality and
    cadence choices only once the separate Xbox encoder supports them. Do not
    copy PSP MP3/VBR or 20 fps labels onto the current MP2/MPEG-1 stream.
 

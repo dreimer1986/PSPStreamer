@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 static int auto_next=1,repeat_one,shuffle_music,show_spectrum=1,prefer_audio,prefer_subtitle;
-static int spectrum_bands=24,spectrum_gain=2,spectrum_style,spectrum_segments=16;
+static int next_delay;
 static const char *language_codes[]={"", "en", "de", "ja", "fr", "es", "it"};
 static const char *language_names[]={"Source default", "English", "German", "Japanese", "French", "Spanish", "Italian"};
 static void preferences(int save){
@@ -8,7 +8,8 @@ static void preferences(int save){
     if(!f&&!save)f=fopen("D:\\preferences.bak","r");if(!f)return;
     if(save){
         int ok=fprintf(f,"auto_next=%d\nrepeat_one=%d\nshuffle_music=%d\nspectrum=%d\nquality=%d\nvolume=%d\naudio_language=%d\nsubtitle_language=%d\n",auto_next,repeat_one,shuffle_music,show_spectrum,quality,volume,prefer_audio,prefer_subtitle)>0;
-        if(fprintf(f,"spectrum_bands=%d\nspectrum_gain=%d\nspectrum_style=%d\nspectrum_segments=%d\n",spectrum_bands,spectrum_gain,spectrum_style,spectrum_segments)<0)ok=0;
+        if(fprintf(f,"spectrum_analysis=%d\nspectrum_band_count=%d\nspectrum_gain_db=%d\nspectrum_style_v2=%d\nspectrum_segments_v2=%d\nspectrum_led_count=%d\nspectrum_peak_hold=%d\n",spectrum_analysis_mode,spectrum_band_count,spectrum_gain_db,spectrum_style,spectrum_segments,spectrum_led_count,spectrum_peak_hold)<0)ok=0;
+        if(fprintf(f,"debug=%d\nnext_delay=%d\n",diagnostics_enabled,next_delay)<0)ok=0;
         if(fclose(f))ok=0;
         if(ok){
             remove("D:\\preferences.bak");
@@ -22,10 +23,15 @@ static void preferences(int save){
             else if(!strcmp(line,"quality"))quality=!!n;else if(!strcmp(line,"volume")&&n>=0&&n<=100)volume=n;
             else if(!strcmp(line,"audio_language")&&n>=0&&n<7)prefer_audio=n;
             else if(!strcmp(line,"subtitle_language")&&n>=0&&n<7)prefer_subtitle=n;
-            else if(!strcmp(line,"spectrum_bands")&&(n==12||n==24))spectrum_bands=n;
-            else if(!strcmp(line,"spectrum_gain")&&n>=1&&n<=8)spectrum_gain=n;
-            else if(!strcmp(line,"spectrum_style")&&n>=0&&n<=2)spectrum_style=n;
-            else if(!strcmp(line,"spectrum_segments")&&n>=8&&n<=32)spectrum_segments=n;
+            else if((!strcmp(line,"spectrum_bands")||!strcmp(line,"spectrum_band_count"))&&spectrum_band_valid(n))spectrum_band_count=n;
+            else if(!strcmp(line,"spectrum_analysis"))spectrum_analysis_mode=!!n;
+            else if(!strcmp(line,"spectrum_gain_db")&&n>=-24&&n<=24)spectrum_gain_db=n;
+            else if(!strcmp(line,"spectrum_style_v2")&&n>=0&&n<=4)spectrum_style=n;
+            else if(!strcmp(line,"spectrum_segments_v2"))spectrum_segments=!!n;
+            else if(!strcmp(line,"spectrum_led_count")&&n>=8&&n<=32)spectrum_led_count=n;
+            else if(!strcmp(line,"spectrum_peak_hold"))spectrum_peak_hold=!!n;
+            else if(!strcmp(line,"debug"))diagnostics_enabled=!!n;
+            else if(!strcmp(line,"next_delay")&&n>=0&&n<=30)next_delay=n;
         }fclose(f);
     }
 }

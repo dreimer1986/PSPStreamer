@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.3.2 / server 0.1.72: reuse the PSP FFT analyzer and spectrum painter
+  unchanged, including band counts, dB gain, palettes, whole LEDs and peak hold.
+  Add in-app server editing/testing with masked password and recovery backup,
+  debug toggle, next-episode countdown and fullscreen progress bar. Make the
+  web target selector global and connect Xbox to the main remote/status view.
+
 - Xbox 0.3.1 / server 0.1.71: on-screen transport/chapter menu, persistent
   spectrum settings, separate Xbox web remote with expiring commands and
   current playback status. Fix seek/log number formatting; increase DMA audio

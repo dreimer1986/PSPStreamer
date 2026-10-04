@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.3.1
+# Original Xbox — native player preview 0.3.2
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.3.1 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.3.2 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.71 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.72 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -30,7 +30,7 @@ PSP executable. The proven PTS/sample-position clock is unchanged.
 | Media options | Up/down: row; left/right: audio/subtitle/quality; A on Play: start |
 | Playback | A: pause/resume; Start: controls menu; B: stop; left/right: -/+30 seconds |
 | Video | X also opens the controls menu: pause, seek, chapters, previous/next file, stop |
-| Music | X: spectrum settings (12/24 bands, sensitivity, classic/gradient/LED, segment count) |
+| Music | X: shared PSP spectrum settings (legacy/FFT, bands, gain, palette, LEDs, peaks) |
 | Playback | Up/down: volume; Y: fullscreen/receiver view |
 | Network request | B: cancel, including stalled requests |
 | Menu | Back: return to dashboard |
@@ -87,11 +87,34 @@ three times, with B to cancel. Live radio reconnects at the live position.
   Old `pos=` log columns were shifted and cannot be read as underrun counts.
   New diagnostics use `pos_ms=` and integer formatting.
 
+## New in 0.3.2
+
+- Reuse **unmodified** PSP `spectrum_analysis_impl.h` and `spectrum_paint.h`:
+  desktop FFT (default) or original 12-bin legacy analysis; 12/24/32/48/64 FFT
+  bands, -24..+24 dB display gain, Original/Rainbow/VU/Ice/Fire colors, separate
+  LED toggle, 8–32 whole segments and peak hold. An Xbox adapter supplies the
+  DMA-current PCM snapshot and an SDL texture. Analysis runs in the UI at up
+  to 20 Hz, not during audio submission. The old 24-bin approximation is gone.
+  One Xbox band-count preference replaces PSP-specific LCD/TV preferences.
+- Main menu **X → Server connection**: edit IPv4/port/password, test without
+  saving, then Save and connect; B cancels. The controller keyboard follows
+  the PSP editor: A types, X deletes, Y clears, Start accepts, B cancels.
+  Passwords remain masked. All HTTP workers are quiesced before credentials
+  change. `server.cfg` is atomically replaced via a `.bak` recovery copy.
+  HTTP/trusted LAN only; DNS and HTTPS are not silently emulated.
+- Settings include debug logging and a 0–30 second next-episode countdown
+  (0 keeps immediate continuation). A advances now; B cancels the countdown.
+  Error/assertion diagnostics remain available when routine logging is off.
+- A thin real-position progress bar returns at the bottom of fullscreen video.
+- Web target selector is visible even without selecting a media file and is
+  remembered per browser. Current playback, position and Remote control use
+  the selected Xbox/PSP; PSP-only controller buttons hide for other targets.
+
 ### Still separate porting work
 
 libmpeg2/MPEG-2, accelerated rendering, MilkDrop/Monkey, native high-resolution
 artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
-search/text-entry UI, server configuration in-app, translations and a distinct
+library search, translations and a distinct
 Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 

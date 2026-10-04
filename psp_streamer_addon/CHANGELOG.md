@@ -1,3 +1,10 @@
+# 0.1.72
+
+- Make the playback target selector available without a media selection.
+- Use Xbox status in the main remote/current-playback view when Xbox is selected;
+  retain the target across browser sessions and hide PSP-specific controller input.
+- Keep the existing PSP remote behavior and command mailbox independent.
+
 # 0.1.71
 
 - Add an independent Xbox playback target and remote status/controls to the

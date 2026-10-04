@@ -52,6 +52,15 @@ const assert=require('node:assert/strict');
   const xboxSeek=await page.evaluate(()=>api('/api/xbox/remote?after=0'));
   assert.equal(xboxSeek.action,'seek');assert.equal(xboxSeek.seconds,3);
   assert.deepEqual(await page.evaluate(seq=>api('/api/xbox/remote?after='+seq),xboxSeek.sequence),{});
+  await page.evaluate(async token=>{
+    await post('/api/client-playback',{client:'xbox-webtest',sequence:1,id:token,name:'Xbox active item',kind:'video',state:'playing',position:2000,duration:6000});
+    await api('/api/xbox/remote?after=0');clearMedia();setView('remote');await refreshPlayer(true);
+  },process.env.BROWSER_TEST_TOKEN);
+  assert.equal(await page.locator('#playbackTarget').isVisible(),true);
+  assert.equal(await page.evaluate(()=>selected?.id),process.env.BROWSER_TEST_TOKEN);
+  assert.equal(await page.evaluate(()=>playerSample.position),2);
+  assert.equal(await page.locator('#pspController').isVisible(),false);
+  assert.equal(commands.length,0);
   await page.selectOption('#playbackTarget','psp');await page.click('#play');
   assert.equal(commands.length,1);
   assert.deepEqual(errors,[]);

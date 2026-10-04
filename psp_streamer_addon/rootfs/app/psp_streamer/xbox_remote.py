@@ -11,6 +11,7 @@ class XboxRemote:
         self.expires = 0
         self.seen = 0
         self.playback = {}
+        self.reported = 0
 
     def send(self, server, data):
         if not isinstance(data, dict):
@@ -47,7 +48,10 @@ class XboxRemote:
         with self.lock:
             self.playback = {key: data.get(key) for key in ('state', 'position', 'duration', 'kind')}
             self.playback.update(id=token, title=name)
+            self.playback['live']=token.startswith('radio.')
+            self.reported=time.monotonic()
 
     def snapshot(self):
         with self.lock:
-            return dict(self.playback, online=bool(self.seen and time.monotonic()-self.seen < 12))
+            return dict(self.playback, online=bool(self.seen and time.monotonic()-self.seen < 12),
+                        age=max(0,time.monotonic()-self.reported) if self.reported else 0)
