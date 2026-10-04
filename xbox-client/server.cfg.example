@@ -1,0 +1,5 @@
+# Native connection preview: trusted LAN, IPv4, HTTP only.
+# Copy to server.cfg alongside default.xbe. No scheme or path in host.
+host=192.168.181.216
+port=8091
+password=

@@ -658,13 +658,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not 0 <= track <= 31 or cue < 0:
                     raise ValueError("Unsupported bitmap subtitle")
                 return self.bitmap_sprite(parsed.path.rsplit("/", 1)[-1], track, cue, query.get('lcd',['0'])[0]=='1')
-            if parsed.path.startswith("/api/transcode/"):
+            if parsed.path.startswith(("/api/transcode/", "/api/browser-stream/")):
+                browser = parsed.path.startswith('/api/browser-stream/')
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
                 audio_bitrate = query.get("audio_quality", ["160k"])[0]
                 video_fps = query.get("video_fps", ["20"])[0]
                 start_seconds = float(query.get("start", ["0"])[0])
                 container = query.get("container", ["mp4"])[0]
+                if browser:
+                    container = 'mp3' if query.get('kind') == ['audio'] else 'flv'
                 profile = query.get("profile", ["normal"])[0]
                 if container not in {"mp4", "mpegts", "mjpeg", "h264", "mp3", "flv"}:
                     raise ValueError("Unsupported stream container")
@@ -672,7 +675,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError("Unsupported stream profile")
                 if subtitle < -1 or subtitle > 31 or audio_bitrate not in {"96k", "128k", "160k", "v6", "v5", "v4", "v3"} or video_fps not in {"20", "24000/1001"} or not 0 <= start_seconds <= 86400:
                     raise ValueError("Unsupported stream option")
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps)
+                if browser and audio > 31:
+                    raise ValueError('Unsupported audio track')
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -1213,12 +1218,15 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
-                  tv_output: bool = False, video_fps: str = "20") -> None:
+                  tv_output: bool = False, video_fps: str = "20", browser: bool = False) -> None:
         live = token.startswith('radio.')
         if live and (container != 'mp3' or start_seconds or subtitle_track != -1):
             raise ValueError('Radio supports live MP3 playback only (no seek or subtitles)')
         source = self.server.radio.get(token)['url'] if live else self.server.library.decode(token)[1]
-        if not self.server.transcode_slots.acquire(blocking=False):
+        # Browser seek/pause closes the previous request first. Allow its bounded
+        # encoder cleanup to finish before declaring the shared capacity busy.
+        acquired = self.server.transcode_slots.acquire(timeout=4) if browser else self.server.transcode_slots.acquire(blocking=False)
+        if not acquired:
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
         radio_lease = None
@@ -1232,9 +1240,10 @@ class AppHandler(BaseHTTPRequestHandler):
             # suspend that allowance. Lost clients still expire; font setup
             # is before body writes and retains its existing behavior.
             timeout_default = "180" if container in {"mp3", "flv"} else "5"
-            write_timeout = float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default))
+            write_timeout = 15.0 if browser else float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default))
             self.connection.settimeout(write_timeout)
-            pause_lease = self.server.stream_pauses.begin(self.client_address[0], token)
+            if not browser:
+                pause_lease = self.server.stream_pauses.begin(self.client_address[0], token)
             subtitle_source = None
             bitmap_subtitle = False
             external = None
@@ -1256,6 +1265,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     if not subtitle_source.exists():
                         os.symlink(source, subtitle_source)
             command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps, external_subtitle=external is not None)
+            if browser:
+                from .browser_player import browser_command
+                command = browser_command(command, container == 'mp3')
             if live:
                 radio_lease = self.server.radio.begin(token)
             process = subprocess.Popen(
@@ -1271,9 +1283,12 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             self.send_response(HTTPStatus.OK)
             content_type = {"flv": "video/x-flv", "mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
+            if browser and container != 'mp3':
+                content_type = 'video/mp4'
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
+            self.close_connection = True
             self.end_headers()
             assert process.stdout is not None
             if live:
@@ -1314,19 +1329,26 @@ class AppHandler(BaseHTTPRequestHandler):
             # allows a bounded-rate heartbeat while FFmpeg supplies no bytes.
             trace = StreamTrace(process.pid, super().log_message)
             trace.report('begin', force=True)
+            last_browser_data = time.monotonic()
+            browser_cancelled = False
             while True:
-                ready, _, _ = select.select([process.stdout], [], [], 1)
+                ready, _, _ = select.select([process.stdout, self.connection] if browser else [process.stdout], [], [], 1)
+                if browser and (self.connection in ready or time.monotonic() - last_browser_data > 180):
+                    browser_cancelled = True
+                    break
                 if not ready:
                     trace.report('waiting for ffmpeg')
                     continue
                 chunk = process.stdout.read1(chunk_size)
                 if not chunk:
                     break
+                last_browser_data = time.monotonic()
                 trace.received(len(chunk))
                 write_stream(self.connection, chunk, write_timeout,
-                             lambda: self.server.stream_pauses.paused(pause_lease), trace.delivered)
-            process.wait(timeout=15)
-            transport_outcome = f'ffmpeg exit {process.returncode}'
+                             lambda: False if browser else self.server.stream_pauses.paused(pause_lease), trace.delivered)
+            if not browser_cancelled:
+                process.wait(timeout=15)
+                transport_outcome = f'ffmpeg exit {process.returncode}'
         except (BrokenPipeError, ConnectionResetError, TimeoutError) as error:
             transport_outcome = type(error).__name__
         finally:
@@ -1338,7 +1360,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if process and process.poll() is None:
                 process.send_signal(signal.SIGTERM)
                 try:
-                    process.wait(timeout=3)
+                    process.wait(timeout=0.5 if browser else 3)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()

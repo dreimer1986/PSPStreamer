@@ -1,5 +1,10 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Playback target':'Abspielziel',
+ 'This browser':'Dieser Browser',
+ 'Play in browser':'Im Browser abspielen',
+ 'Seek with this slider. Browser playback is independent of the PSP; playlists and watched status stay unchanged.':'Mit diesem Regler springen. Die Browser-Wiedergabe ist unabhängig von der PSP; Playlists und Gesehen-Status bleiben unverändert.',
+ 'Browser playback failed. Check available transcode slots and the server log.':'Browser-Wiedergabe fehlgeschlagen. Freie Transcoding-Plätze und Serverprotokoll prüfen.',
  'Save':'Speichern',
  'Episode reserve':'Folgenvorrat',
  'Automatically prepare unwatched episodes':'Ungesehene Folgen automatisch vorbereiten',

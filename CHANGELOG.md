@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Add a separate browser playback target with fragmented H.264/AAC video,
+  MP3 audio/radio, selected tracks/subtitles, seek and pause/resume; isolate
+  browser controls and encoder cleanup from PSP status/commands. Same code
+  in Docker and Home Assistant server 0.1.67.
+- Add a buildable native nxdk original Xbox connection preview (controller,
+  RAM report, authenticated server health/library diagnostics), plus porting
+  requirements. Hardware-untested; not yet an Xbox media player.
+
 - Consolidate release packaging: one current folder/ZIP per app or plugin,
   one StreamMaster package with current 0.3.17 Onju/S3/S2 hardware variants,
   verified embedded versions and file hashes. Archive historical test copies

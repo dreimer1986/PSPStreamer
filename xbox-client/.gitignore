@@ -1,0 +1,6 @@
+bin/
+*.obj
+*.d
+*.exe
+*.lib
+server.cfg

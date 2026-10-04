@@ -1,3 +1,13 @@
+# 0.1.67
+
+- Add This browser as a playback target for selected video, music and radio.
+- H.264/AAC fragmented MP4, MP3 audio, selected audio/subtitles and explicit
+  seek/pause/resume controls. Release encoder resources on Stop/disconnect.
+- Keep PSP commands/status and browser playback independent. Browser playback
+  is single-item/tab-local; PSP playlists and watched-state reporting unchanged.
+- Docker and Home Assistant ship the same implementation. No PSP or firmware
+  update required; the HACS media_player still represents the PSP.
+
 # 0.1.66
 
 - Optional automatic server-side reserve of the next N unwatched episodes,
