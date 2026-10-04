@@ -11,8 +11,15 @@ if not (out / 'default.xbe').is_file():
 for name in ('README.md', 'server.cfg.example'):
     shutil.copy2(root / name, out / name)
 (out / 'source').mkdir(exist_ok=True)
-for name in ('main.c', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
+for name in ('player_main.c', 'net.h', 'catalog.h', 'audio.h', 'player.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)
+shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True)
+shutil.copy2(root.parent / 'psp-client/assets/menu_skin_tv.png', out / 'theme.png')
+shutil.copy2('/usr/share/fonts/TTF/DejaVuSans.ttf', out / 'font.ttf')
+# Replace the obsolete connection-only source in this generated package.
+old_source = out / 'source/main.c'
+if old_source.exists():
+    old_source.unlink()
 licenses = out / 'licenses'
 licenses.mkdir(exist_ok=True)
 for source, name in (
@@ -24,6 +31,13 @@ for source, name in (
     (sdk / 'lib/pdclib/COPYING.CC0', 'PDCLib-CC0.txt'),
     (sdk / 'lib/net/lwip/COPYING', 'lwIP.txt'),
     (sdk / 'lib/sdl/SDL2/COPYING.txt', 'SDL2.txt'),
+    (sdk / 'lib/sdl/SDL_ttf/COPYING.txt', 'SDL_ttf.txt'),
+    (sdk / 'lib/sdl/SDL2_image/COPYING.txt', 'SDL_image.txt'),
+    (sdk / 'lib/sdl/SDL_ttf/external/freetype-2.4.12/docs/FTL.TXT', 'FreeType.txt'),
+    (sdk / 'lib/libpng/libpng/LICENSE', 'libpng.txt'),
+    (sdk / 'lib/zlib/zlib/LICENSE', 'zlib.txt'),
+    (Path('/usr/share/licenses/ttf-dejavu/LICENSE'), 'DejaVu.txt'),
+    (Path('/usr/share/licenses/spdx/GPL-3.0-only.txt'), 'GPL-3.0.txt'),
     (sdk / 'lib/usb/libusbohci/LICENSE.txt', 'USB-Apache-2.0.txt'),
     (sdk / 'lib/usb/libusbohci/DISCLAIMER.md', 'USB-DISCLAIMER.md'),
 ):

@@ -2,13 +2,18 @@
 
 ## Additional unreleased changes
 
+- Extend the confirmed Xbox connection preview into a player test build:
+  receiver theme, analog VU meters, library, track/subtitle selection, music,
+  video, pause/resume, seek and fullscreen. Separate MPEG-1/MP2 output carries
+  real PTS; video follows the AC97 sample cursor. Server 0.1.68 required;
+  console playback verification pending. PSP paths unchanged.
 - Add a separate browser playback target with fragmented H.264/AAC video,
   MP3 audio/radio, selected tracks/subtitles, seek and pause/resume; isolate
   browser controls and encoder cleanup from PSP status/commands. Same code
   in Docker and Home Assistant server 0.1.67.
 - Add a buildable native nxdk original Xbox connection preview (controller,
   RAM report, authenticated server health/library diagnostics), plus porting
-  requirements. Hardware-untested; not yet an Xbox media player.
+  requirements. Connection preview confirmed on hardware; playback added above.
 
 - Consolidate release packaging: one current folder/ZIP per app or plugin,
   one StreamMaster package with current 0.3.17 Onju/S3/S2 hardware variants,

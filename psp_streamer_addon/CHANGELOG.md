@@ -1,3 +1,12 @@
+# 0.1.68
+
+- Add an independent original Xbox preview transport: MPEG-1 video and MP2
+  audio with actual container timestamps, plus bounded library pages.
+- Reuse source/track/subtitle selection without changing PSP stream encoding
+  or PSP remote control. Same server code in Docker and Home Assistant.
+- Native Xbox GUI/playback preview is separate from the PSP release packages;
+  it requires this server version. Hardware playback verification pending.
+
 # 0.1.67
 
 - Add This browser as a playback target for selected video, music and radio.

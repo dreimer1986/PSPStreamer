@@ -502,6 +502,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == '/api/session':
                 return self.send_json({'csrf': self.web_csrf or '', 'protected': self.server.settings.protected})
+            if parsed.path == '/api/xbox/library':
+                listing = browse_catalogue(self.server, int(query.get('root', ['0'])[0]), query.get('path', [''])[0])
+                offset = int(query.get('offset', ['0'])[0])
+                if offset < 0:
+                    raise ValueError('Invalid page')
+                entries = [dict(name=x['name'], path=x['path'], kind='folder') for x in listing['folders'] if x['path'] != ':radio:']
+                entries += [dict(name=x['name'], id=x['id'], kind=x.get('kind','video')) for x in listing['videos'] if not x.get('live') and not x['id'].startswith('radio.')]
+                return self.send_json(dict(root=listing['root'], path=listing['path'], parent=listing['parent'],
+                                           total=len(entries), offset=offset, entries=entries[offset:offset+64]))
             if parsed.path == '/api/library/files':
                 return self.send_json({'files': folder_media(self.server,
                     int(query.get('root', ['0'])[0]), query.get('path', [''])[0],
@@ -658,15 +667,16 @@ class AppHandler(BaseHTTPRequestHandler):
                 if not 0 <= track <= 31 or cue < 0:
                     raise ValueError("Unsupported bitmap subtitle")
                 return self.bitmap_sprite(parsed.path.rsplit("/", 1)[-1], track, cue, query.get('lcd',['0'])[0]=='1')
-            if parsed.path.startswith(("/api/transcode/", "/api/browser-stream/")):
+            if parsed.path.startswith(("/api/transcode/", "/api/browser-stream/", '/api/xbox-stream/')):
                 browser = parsed.path.startswith('/api/browser-stream/')
+                xbox = parsed.path.startswith('/api/xbox-stream/')
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
                 audio_bitrate = query.get("audio_quality", ["160k"])[0]
                 video_fps = query.get("video_fps", ["20"])[0]
                 start_seconds = float(query.get("start", ["0"])[0])
                 container = query.get("container", ["mp4"])[0]
-                if browser:
+                if browser or xbox:
                     container = 'mp3' if query.get('kind') == ['audio'] else 'flv'
                 profile = query.get("profile", ["normal"])[0]
                 if container not in {"mp4", "mpegts", "mjpeg", "h264", "mp3", "flv"}:
@@ -675,9 +685,9 @@ class AppHandler(BaseHTTPRequestHandler):
                     raise ValueError("Unsupported stream profile")
                 if subtitle < -1 or subtitle > 31 or audio_bitrate not in {"96k", "128k", "160k", "v6", "v5", "v4", "v3"} or video_fps not in {"20", "24000/1001"} or not 0 <= start_seconds <= 86400:
                     raise ValueError("Unsupported stream option")
-                if browser and audio > 31:
+                if (browser or xbox) and audio > 31:
                     raise ValueError('Unsupported audio track')
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser)
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -1218,14 +1228,23 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
-                  tv_output: bool = False, video_fps: str = "20", browser: bool = False) -> None:
+                  tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False) -> None:
         live = token.startswith('radio.')
+        if xbox and live:
+            raise ValueError('Radio is not implemented in the Xbox preview')
+        managed = browser or xbox
+        xbox_transport = None
+        xbox_flags = 0
+        if xbox:
+            from .xbox_player import Transport
+            xbox_transport = Transport()
+            xbox_flags = (1 if container != 'mp3' else 0) | (2 if self.metadata(token)['a'] else 0)
         if live and (container != 'mp3' or start_seconds or subtitle_track != -1):
             raise ValueError('Radio supports live MP3 playback only (no seek or subtitles)')
         source = self.server.radio.get(token)['url'] if live else self.server.library.decode(token)[1]
         # Browser seek/pause closes the previous request first. Allow its bounded
         # encoder cleanup to finish before declaring the shared capacity busy.
-        acquired = self.server.transcode_slots.acquire(timeout=4) if browser else self.server.transcode_slots.acquire(blocking=False)
+        acquired = self.server.transcode_slots.acquire(timeout=4) if managed else self.server.transcode_slots.acquire(blocking=False)
         if not acquired:
             return self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "A transcode is already running")
         process = None
@@ -1240,9 +1259,9 @@ class AppHandler(BaseHTTPRequestHandler):
             # suspend that allowance. Lost clients still expire; font setup
             # is before body writes and retains its existing behavior.
             timeout_default = "180" if container in {"mp3", "flv"} else "5"
-            write_timeout = 15.0 if browser else float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default))
+            write_timeout = 15.0 if managed else float(os.environ.get("CLIENT_WRITE_TIMEOUT", timeout_default))
             self.connection.settimeout(write_timeout)
-            if not browser:
+            if not managed:
                 pause_lease = self.server.stream_pauses.begin(self.client_address[0], token)
             subtitle_source = None
             bitmap_subtitle = False
@@ -1268,6 +1287,9 @@ class AppHandler(BaseHTTPRequestHandler):
             if browser:
                 from .browser_player import browser_command
                 command = browser_command(command, container == 'mp3')
+            if xbox:
+                from .xbox_player import command as xbox_command
+                command = xbox_command(command, container == 'mp3')
             if live:
                 radio_lease = self.server.radio.begin(token)
             process = subprocess.Popen(
@@ -1285,12 +1307,16 @@ class AppHandler(BaseHTTPRequestHandler):
             content_type = {"flv": "video/x-flv", "mpegts": "video/mp2t", "mjpeg": "image/jpeg", "h264": "video/h264", "mp3": "audio/mpeg", "mp4": "video/mp4"}[container]
             if browser and container != 'mp3':
                 content_type = 'video/mp4'
+            if xbox:
+                content_type = 'application/x-pspstreamer-xbox'
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
             self.close_connection = True
             self.end_headers()
             assert process.stdout is not None
+            if xbox:
+                self.wfile.write(b'XSM1' + xbox_flags.to_bytes(4, 'little'))
             if live:
                 # Poll the client as well: Stop during an upstream stall must
                 # release this transcode slot without waiting for more audio.
@@ -1332,8 +1358,8 @@ class AppHandler(BaseHTTPRequestHandler):
             last_browser_data = time.monotonic()
             browser_cancelled = False
             while True:
-                ready, _, _ = select.select([process.stdout, self.connection] if browser else [process.stdout], [], [], 1)
-                if browser and (self.connection in ready or time.monotonic() - last_browser_data > 180):
+                ready, _, _ = select.select([process.stdout, self.connection] if managed else [process.stdout], [], [], 1)
+                if managed and (self.connection in ready or time.monotonic() - last_browser_data > 180):
                     browser_cancelled = True
                     break
                 if not ready:
@@ -1344,13 +1370,24 @@ class AppHandler(BaseHTTPRequestHandler):
                     break
                 last_browser_data = time.monotonic()
                 trace.received(len(chunk))
-                write_stream(self.connection, chunk, write_timeout,
-                             lambda: False if browser else self.server.stream_pauses.paused(pause_lease), trace.delivered)
+                for output in xbox_transport.feed(chunk) if xbox_transport else (chunk,):
+                    write_stream(self.connection, output, write_timeout,
+                                 lambda: False if managed else self.server.stream_pauses.paused(pause_lease), trace.delivered)
             if not browser_cancelled:
                 process.wait(timeout=15)
                 transport_outcome = f'ffmpeg exit {process.returncode}'
+                if xbox_transport and process.returncode == 0:
+                    for output in xbox_transport.finish():
+                        write_stream(self.connection, output, write_timeout, lambda: False, trace.delivered)
         except (BrokenPipeError, ConnectionResetError, TimeoutError) as error:
             transport_outcome = type(error).__name__
+        except ValueError as error:
+            # A framing error after XSM1 headers is an interrupted binary stream,
+            # not a second HTTP/JSON response. Preserve existing PSP exceptions.
+            if not xbox_transport or process is None:
+                raise
+            transport_outcome = f'Xbox framing: {error}'
+            self.log_message('%s', transport_outcome)
         finally:
             if trace:
                 trace.report(transport_outcome, force=True)
@@ -1360,7 +1397,7 @@ class AppHandler(BaseHTTPRequestHandler):
             if process and process.poll() is None:
                 process.send_signal(signal.SIGTERM)
                 try:
-                    process.wait(timeout=0.5 if browser else 3)
+                    process.wait(timeout=0.5 if managed else 3)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()

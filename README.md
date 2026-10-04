@@ -7,9 +7,10 @@ See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 Server **0.1.67** adds a [browser playback target](docs/BROWSER_PLAYER.md):
 choose **This browser** in a media item's playback target selector. Video/music,
 audio-track/subtitle selection and seek run independently of PSP control.
-An experimental [native original Xbox connection preview](xbox-client/README.md)
-and the requirements for a future playback port are also available; this XBE
-does not play media yet.
+The experimental [native original Xbox player preview](xbox-client/README.md)
+adds the familiar receiver GUI, VU meters and timestamp-driven MPEG-1/MP2
+playback with **server 0.1.68**. The connection preview is hardware-confirmed;
+the new playback build is ready for its first console test. PSP playback is unchanged.
 
 [FuSa Fullscreen](psp-fusa-probe/FULLSCREEN.md) is the standalone game-TV
 scaler, with Sony HOME, CustomHOME and OC/Consolizer overlay support. Install
