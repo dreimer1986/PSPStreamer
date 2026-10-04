@@ -88,6 +88,9 @@ static int parse_catalog(char *data){
 }
 static int parse_metadata(char *data){
     if(!parse_json(data))return 0;char duration[40];media_duration=text_tok(field(0,"d"),duration,sizeof(duration))?parse_duration(duration):0;
+    char kind[16],name[256];if(text_tok(field(0,"kind"),kind,sizeof(kind)))media_audio=!strcmp(kind,"audio");
+    if(!strncmp(media_id,"radio.",6))media_audio=1;
+    if(text_tok(field(0,"name"),name,sizeof(name))&&*name)snprintf(media_name,sizeof(media_name),"%s",name);
     audio_count=subtitle_count=0;audio_track=0;subtitle_track=-1;
     char resume[40];media_resume=text_tok(field(0,"resume"),resume,sizeof(resume))?parse_duration(resume):0;
     if(media_resume>=media_duration)media_resume=0;

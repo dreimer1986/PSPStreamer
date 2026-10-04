@@ -6,13 +6,17 @@ static unsigned report_read,report_count;
 static unsigned report_sequence;
 static SDL_Thread *report_thread;static SDL_atomic_t report_cancel,report_done;
 static char report_client[48];static Uint32 report_time;static int report_started;
+static char active_diagnostic[320];
 static int report_worker(void *unused){
-    (void)unused;Http h;http_request(&h,"/api/client-playback",&report_cancel,active_report.body,5000);http_close(&h);SDL_AtomicSet(&report_done,1);return 0;
+    (void)unused;
+    if(*active_diagnostic){FILE *f=fopen("D:\\xbox-player.log","a");if(f){fputs(active_diagnostic,f);fclose(f);}}
+    Http h;http_request(&h,"/api/client-playback",&report_cancel,active_report.body,5000);http_close(&h);SDL_AtomicSet(&report_done,1);return 0;
 }
 static void report_tick(void){
     if(report_thread&&SDL_AtomicGet(&report_done)){SDL_WaitThread(report_thread,NULL);report_thread=NULL;}
     if(!report_thread&&report_count){
         active_report=reports[report_read];report_read=(report_read+1)%8;report_count--;
+        snprintf(active_diagnostic,sizeof(active_diagnostic),"%s",player_diagnostic);*player_diagnostic=0;
         SDL_AtomicSet(&report_done,0);report_thread=SDL_CreateThreadWithStackSize(report_worker,"telemetry",65536,NULL);
     }
 }

@@ -54,6 +54,8 @@ def report(server, data):
     # or remote_after: those belong to the PSP and may be in use concurrently.
     with server.client_reports.lock:
         if not server.client_reports.accept(client,sequence):return {'ok':True,'stale':True}
+        if client.startswith('xbox-') and hasattr(server, 'xbox_remote'):
+            server.xbox_remote.report(data,token,str(name)[:256])
         if provider:provider.report(token, state, position, duration, client=client)
         server.comfort.report({'media':[token], 'state':[state], 'position':[str(position)],
             'duration':[str(duration)]}, {'title':str(name)[:128],

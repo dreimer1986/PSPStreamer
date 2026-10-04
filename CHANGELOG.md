@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.3.1 / server 0.1.71: on-screen transport/chapter menu, persistent
+  spectrum settings, separate Xbox web remote with expiring commands and
+  current playback status. Fix seek/log number formatting; increase DMA audio
+  reserve and move routine log writes out of the playback thread. Console
+  verification of the reported rare audio stalls remains pending.
+
 - Xbox 0.3.0 / server 0.1.70: readable track languages, persisted playback
   preferences, source resume, next/previous, chapters, same-title reconnect,
   compact help/info, bounded provider artwork, shared favorites/history rows,

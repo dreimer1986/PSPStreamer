@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.3.0
+# Original Xbox — native player preview 0.3.1
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5. Version 0.3.0 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.3.1 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.70 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.71 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -28,7 +28,9 @@ PSP executable. The proven PTS/sample-position clock is unchanged.
 | Library | D-pad up/down: entry; left/right: page; A: open; B: parent; Start: reload |
 | Library | X: settings; Y: help |
 | Media options | Up/down: row; left/right: audio/subtitle/quality; A on Play: start |
-| Playback | A or Start: pause/resume; B: stop; left/right: -/+30 seconds |
+| Playback | A: pause/resume; Start: controls menu; B: stop; left/right: -/+30 seconds |
+| Video | X also opens the controls menu: pause, seek, chapters, previous/next file, stop |
+| Music | X: spectrum settings (12/24 bands, sensitivity, classic/gradient/LED, segment count) |
 | Playback | Up/down: volume; Y: fullscreen/receiver view |
 | Network request | B: cancel, including stalled requests |
 | Menu | Back: return to dashboard |
@@ -69,12 +71,28 @@ three times, with B to cancel. Live radio reconnects at the live position.
   `Season 1`, `Staffel 1`, `S01`, etc. No arbitrary recursive folder traversal,
   music-album continuation, or modification of explicit provider playlists.
 
+## New in 0.3.1
+
+- Visible playback menu (Start/X) with chapter and file navigation. Music X
+  opens persistent spectrum settings; LED segments light only as whole units.
+- Web playback target **Xbox**, with its own current-title/status/seek and
+  previous/pause/resume/stop/next controls. One Xbox mailbox, three-second
+  asynchronous polls, one outstanding request, commands expire after 15 seconds.
+  PSP command/state storage remains independent; this is not an Xbox HACS entity.
+- Audio reserve increased from 10 to 24 existing DMA slots (576 ms), starting
+  after 16 slots (384 ms). Hardware sample-position/PTS sync is unchanged.
+  Routine log writes now run in the reporting worker rather than the playback
+  thread. The rare audible stalls still need hardware verification.
+- Fixed unsupported floating-point printf formatting in seek URLs and logs.
+  Old `pos=` log columns were shifted and cannot be read as underrun counts.
+  New diagnostics use `pos_ms=` and integer formatting.
+
 ### Still separate porting work
 
 libmpeg2/MPEG-2, accelerated rendering, MilkDrop/Monkey, native high-resolution
 artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
 search/text-entry UI, server configuration in-app, translations and a distinct
-Xbox web/HA remote target are **not implemented** in this build. No parity with
+Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance

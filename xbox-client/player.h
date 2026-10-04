@@ -16,6 +16,7 @@ static plm_frame_t *next_frame;static int64_t frame_pts,video_pts[64];static uns
 static SDL_Texture *video_texture;static int texture_w,texture_h,playing,paused,decoder_ended,stream_video,stream_audio;
 static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
+static char player_diagnostic[320];
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static int queue_packet(Packets *q,Packet p){
@@ -63,7 +64,8 @@ static int player_start(double seconds){
     player_stop();if(!audio_init())return 0;
     memset(&stream,0,sizeof(stream));stream.lock=SDL_CreateMutex();if(!stream.lock)return 0;
     char token[4700];if(!url_encode(media_id,token,sizeof(token))){player_stop();return 0;}
-    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=%s&start=%.3f",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality?"tv":"normal",seconds);
+    unsigned start_ms=(unsigned)(seconds*1000);
+    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality?"tv":"normal",start_ms/1000,start_ms%1000);
     video_buffer=plm_buffer_create_with_capacity(PACKET_LIMIT*2);video_decoder=plm_video_create_with_buffer(video_buffer,1);plm_video_set_no_delay(video_decoder,1);
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}
@@ -88,13 +90,13 @@ static int player_tick(void){
     stream_video=stream.flags&1;stream_audio=stream.flags&2;
     if(paused)return 0;
     Packet p;unsigned queued=audio_queued();
-    while(stream_audio&&queued<10&&pop_packet(&stream.audio,&p)){
+    while(stream_audio&&queued<24&&pop_packet(&stream.audio,&p)){
         plm_buffer_write(audio_buffer,p.data,p.size);free(p.data);
         plm_samples_t *s=plm_audio_decode(audio_decoder);
         if(!s||plm_audio_get_samplerate(audio_decoder)!=48000){stream_error("MP2 decode failed");return -1;}
         audio_submit(s,p.pts);queued++;
     }
-    if(stream_audio&&!audio_running&&queued&&(queued>=6||SDL_AtomicGet(&stream.done))){audio_clock=audio_pts[0];audio_running=1;XAudioPlay();}
+    if(stream_audio&&!audio_running&&queued&&(queued>=16||SDL_AtomicGet(&stream.done))){audio_clock=audio_pts[0];audio_running=1;XAudioPlay();}
     if(audio_running){queued=audio_queued();if(!queued&&!SDL_AtomicGet(&stream.done)){if(!underrun)underflows++;underrun=1;}else underrun=0;}
     /* A genuinely shorter audio track must not freeze the last video frames.
      * Only hand off after network EOF and every audio sample has drained. */
@@ -120,7 +122,7 @@ static int player_tick(void){
     }
     if(SDL_GetTicks()-log_time>5000){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
-        FILE *f=fopen("D:\\xbox-player.log","a");if(f){fprintf(f,"pos=%.3f vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u\n",player_position(),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes);fclose(f);}log_time=SDL_GetTicks();
+        snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes);log_time=SDL_GetTicks();
     }
     if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&!pts_count&&!next_frame&&!queued)return stream.ended?2:-1;
     return 0;

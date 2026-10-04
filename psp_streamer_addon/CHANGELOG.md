@@ -1,3 +1,9 @@
+# 0.1.71
+
+- Add an independent Xbox playback target and remote status/controls to the
+  web interface. Commands expire after 15 seconds and do not consume PSP commands.
+- Requires Xbox client 0.3.1 for remote playback, seek and transport controls.
+
 # 0.1.70
 
 - Browser/Xbox playback progress, pause and stop report to Plex/Jellyfin and

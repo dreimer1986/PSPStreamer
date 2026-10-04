@@ -579,6 +579,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "roots": len(self.server.library.roots)})
             if parsed.path == '/api/player':
                 return self.send_json(self.server.player_status.snapshot())
+            if parsed.path == '/api/xbox/status':
+                return self.send_json(self.server.xbox_remote.snapshot())
+            if parsed.path == '/api/xbox/remote':
+                return self.send_json(self.server.xbox_remote.poll(int(query.get('after', ['0'])[0])))
             if parsed.path == '/api/comfort':
                 return self.send_json(self.server.comfort.snapshot())
             if parsed.path == '/api/search':
@@ -773,6 +777,12 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.close_connection=True
                     raise ValueError('Invalid playback report size')
                 return self.send_json(report(self.server,json.loads(self.rfile.read(length))))
+            if parsed.path == '/api/xbox/command':
+                length=int(self.headers.get('Content-Length','0'))
+                if not 2<=length<=8192:
+                    self.close_connection=True
+                    raise ValueError('Invalid Xbox command size')
+                return self.send_json(self.server.xbox_remote.send(self.server,json.loads(self.rfile.read(length))))
             if parsed.path == '/api/series-preferences':
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=4096:
@@ -1451,6 +1461,8 @@ class AppServer(ThreadingHTTPServer):
         self.comfort = Comfort(state_root)
         from .client_playback import PlaybackReports
         self.client_reports=PlaybackReports()
+        from .xbox_remote import XboxRemote
+        self.xbox_remote= XboxRemote()
         from .search import Search
         self.search = Search(self)
         self.settings = PasswordSettings()
