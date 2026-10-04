@@ -258,7 +258,7 @@ static void menu_render(void){
         snprintf(lines[6],100,"Peak hold: %s",spectrum_peak_hold?"On":"Off");
         for(int i=0;i<7;i++)text_at(lines[i],35,68+i*29,492,i==panel_row?selected:normal);
     }else if(panel==2){
-        char lines[16][140];snprintf(lines[0],140,"Autoplay next: %s",auto_next?"On":"Off");snprintf(lines[1],140,"Repeat current: %s",repeat_one?"On":"Off");
+        char lines[17][140];snprintf(lines[0],140,"Autoplay next: %s",auto_next?"On":"Off");snprintf(lines[1],140,"Repeat current: %s",repeat_one?"On":"Off");
         snprintf(lines[2],140,"Folder shuffle (music): %s",shuffle_music?"On":"Off");snprintf(lines[3],140,"Music spectrum: %s",show_spectrum?"On":"Off");
         snprintf(lines[4],140,"Video quality: %s",quality_names[quality]);snprintf(lines[5],140,"Volume: %d%%",volume);
         snprintf(lines[6],140,"Audio: %s",language_names[prefer_audio]);snprintf(lines[7],140,"Subtitles: %s",prefer_subtitle?language_names[prefer_subtitle]:"Off");
@@ -268,7 +268,8 @@ static void menu_render(void){
         snprintf(lines[13],140,"TV shape: %s",display_wide?"16:9 widescreen":"4:3 letterbox");
         snprintf(lines[14],140,"Display output: %dx%d >",width,height);
         snprintf(lines[15],140,"Audio downmix: %s",matrix_names[audio_matrix]);
-        int first=panel_row/8*8;for(int i=first;i<16&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
+        snprintf(lines[16],140,"Video renderer: %s",video_hardware?"NV2A overlay (auto)":"Software");
+        int first=panel_row/8*8;for(int i=first;i<17&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
     }else if(panel==3){
         text_at(media_name,35,66,492,selected);char line[160];snprintf(line,sizeof(line),"%d:%02d | %d audio / %d subtitle tracks",(int)media_duration/60,(int)media_duration%60,audio_count,subtitle_count);text_at(line,35,96,492,normal);
         if(*media_artist)text_at(media_artist,35,123,492,normal);if(*media_album)text_at(media_album,35,150,492,normal);
@@ -299,7 +300,7 @@ static void menu_render(void){
     receiver();
 }
 static void menu_draw(void){menu_render();if(playing&&media_audio&&fullscreen&&!panel){color(0,0,0);SDL_RenderClear(renderer);spectrum_draw(1);text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});}controls_draw();if(first_frame)startup_note("before first present");SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}}
-static void frame_draw(plm_frame_t *f){
+static void frame_draw_software(plm_frame_t *f){
     if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
     if(!video_texture){stream_error(SDL_GetError());return;}
     SDL_UpdateYUVTexture(video_texture,NULL,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width);
@@ -308,6 +309,36 @@ static void frame_draw(plm_frame_t *f){
          * for 4:3 sources. SD output pixels are anamorphic on a wide TV. */
         double ratio=(16.0/9.0)*((double)width/height)/(display_wide?16.0/9.0:4.0/3.0);int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}SDL_Rect dst={(width-w)/2,(height-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
     }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(16.0/9.0)*1.5/(display_wide?16.0/9.0:4.0/3.0);int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);controls_draw();SDL_RenderPresent(renderer);}
+}
+static void frame_draw(plm_frame_t *f){
+    static Uint32 gui_at;static int old_full=-1,old_controls=-1,old_row=-1;
+    if(overlay_prepare(f->width,f->height)){
+        SDL_Rect dst;
+        if(fullscreen){
+            double ratio=(16.0/9.0)*((double)width/height)/(display_wide?16.0/9.0:4.0/3.0);
+            int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}
+            dst=(SDL_Rect){(width-w)/2,(height-h)/2,w,h};
+        }else{
+            double ratio=(16.0/9.0)*1.5/(display_wide?16.0/9.0:4.0/3.0);
+            int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}
+            dst=(SDL_Rect){(27+(506-w)/2)*width/720,(60+(232-h)/2)*height/480,w*width/720,h*height/480};
+        }
+        /* GUI scanout is independent of video. Update the progress bar at 4 Hz
+         * and buttons immediately; don't copy a full RGB screen per frame. */
+        Uint32 now=SDL_GetTicks();
+        if(!overlay.active||old_full!=fullscreen||old_controls!=controls||old_row!=control_row||now-gui_at>=250){
+            Uint32 start=now;
+            if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);}
+            else{menu_render();color(0,0,0);SDL_Rect r={27,60,506,232};SDL_RenderFillRect(renderer,&r);}
+            SDL_RenderSetScale(renderer,1,1);color(1,2,3);SDL_RenderFillRect(renderer,&dst);
+            video_progress();controls_draw();SDL_RenderPresent(renderer);
+            overlay.gui_ms+=SDL_GetTicks()-start;gui_at=now;
+            old_full=fullscreen;old_controls=controls;old_row=control_row;
+        }
+        if(overlay_present(f,dst)>=0)return;
+        startup_note("video: NV2A busy timeout; using software for this stream");
+    }
+    frame_draw_software(f);
 }
 static void button_down(int button){
     if(panel==7){
@@ -383,8 +414,8 @@ static void button_down(int button){
             }return;
         }
         if(panel==2){
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+15)%16;
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%16;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+16)%17;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%17;
             int d=button==SDL_CONTROLLER_BUTTON_DPAD_LEFT?-1:1;
             if(button==SDL_CONTROLLER_BUTTON_A||button==SDL_CONTROLLER_BUTTON_DPAD_LEFT||button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT){
                 switch(panel_row){case 0:auto_next=!auto_next;break;case 1:repeat_one=!repeat_one;break;case 2:shuffle_music=!shuffle_music;break;
@@ -396,7 +427,8 @@ static void button_down(int button){
                 case 11:next_delay=(next_delay+31+d)%31;break;
                 case 12:video_codec=!video_codec;break;case 13:display_wide=!display_wide;break;
                 case 14:if(!playing){display_list();panel=7;panel_row=0;}break;
-                case 15:audio_matrix=(audio_matrix+3+d)%3;break;}
+                case 15:audio_matrix=(audio_matrix+3+d)%3;break;
+                case 16:video_hardware=!video_hardware;break;}
             }
         }return;
     }
@@ -461,7 +493,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.1 SDL output lifecycle fix / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.2 NV2A YUY2 video overlay / O3 LTO\n",boot);fclose(boot);}
     spectrum_analysis_mode=1;preferences(0);snprintf(report_client,sizeof(report_client),"xbox-%08lx-%08lx",(unsigned long)GetTickCount(),(unsigned long)KeQueryPerformanceCounter());
     startup_note("entry: before graphics/input initialization");
     int configured=config();display_list();

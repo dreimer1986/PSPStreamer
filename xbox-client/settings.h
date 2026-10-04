@@ -13,6 +13,7 @@ static void preferences(int save){
         if(fprintf(f,"debug=%d\nnext_delay=%d\n",diagnostics_enabled,next_delay)<0)ok=0;
         if(fprintf(f,"video_codec=%d\ndisplay_wide=%d\noutput_width=%d\noutput_height=%d\noutput_hz=%d\n",video_codec,display_wide,output_selected_w,output_selected_h,output_selected_hz)<0)ok=0;
         if(fprintf(f,"audio_matrix=%d\n",audio_matrix)<0)ok=0;
+        if(fprintf(f,"video_hardware=%d\n",video_hardware)<0)ok=0;
         if(fclose(f))ok=0;
         if(ok){
             remove("D:\\preferences.bak");
@@ -25,6 +26,7 @@ static void preferences(int save){
             else if(!strcmp(line,"shuffle_music"))shuffle_music=!!n;else if(!strcmp(line,"spectrum"))show_spectrum=!!n;
             else if(!strcmp(line,"quality")&&n>=0&&n<6)quality=n;else if(!strcmp(line,"volume")&&n>=0&&n<=100)volume=n;
             else if(!strcmp(line,"video_codec"))video_codec=!!n;
+            else if(!strcmp(line,"video_hardware"))video_hardware=!!n;
             else if(!strcmp(line,"audio_matrix")&&n>=0&&n<3)audio_matrix=n;
             else if(!strcmp(line,"display_wide"))display_wide=!!n;
             else if(!strcmp(line,"output_width"))output_selected_w=n;

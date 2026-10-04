@@ -1,8 +1,10 @@
 # Xbox visualization port assessment (after 0.4.0)
 
 The resolution/codec test XBE is deliberately independent of this work.
-Current Xbox rendering uses SDL's software backend. Scaling a rendered image
-to 720p or 1080i does not provide hardware-accelerated 3D or feedback textures.
+GUI/visualization rendering uses SDL's software backend. Version 0.4.2 adds an
+independent NV2A PVIDEO overlay for video conversion/scaling. That saves memory
+compared with initializing a multi-backbuffer 3D renderer, but does not provide
+hardware-accelerated 3D or feedback textures for Monkey/MilkDrop.
 
 0.4.0 verification: native -O3/LTO build, eight focused host tests (both codecs,
 all six sizes, exact PTS/final-picture drain, truncated transport, real 5.1

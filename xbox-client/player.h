@@ -3,6 +3,7 @@
 #include "vendor/pl_mpeg.h"
 #include "audio.h"
 #include "mpeg_video.h"
+#include "video_overlay.h"
 #define PACKET_LIMIT (256*1024)
 #define QUEUE_BYTES (1536*1024)
 typedef struct {unsigned char *data;unsigned size;int64_t pts;} Packet;
@@ -27,6 +28,7 @@ static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
 static char player_diagnostic[320];
 static int diagnostics_enabled=1;
+static unsigned video_decode_ms;
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static int queue_packet(Packets *q,Packet p){
@@ -62,6 +64,7 @@ close:http_close(&h);
 done:SDL_AtomicSet(&stream.done,1);return 0;
 }
 static void player_stop(void){
+    overlay_close();
     if(stream.thread){SDL_AtomicSet(&stream.cancel,1);SDL_WaitThread(stream.thread,NULL);stream.thread=NULL;}
     if(stream.lock){Packet p;while(pop_packet(&stream.video,&p))free(p.data);while(pop_packet(&stream.audio,&p))free(p.data);SDL_DestroyMutex(stream.lock);stream.lock=NULL;}
     if(pcm&&!audio_reset())audio_failed=1;
@@ -79,7 +82,7 @@ static int player_start(double seconds){
     if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}
-    playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;underrun=0;log_time=SDL_GetTicks();return 1;
+    playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;video_decode_ms=0;underrun=0;log_time=SDL_GetTicks();return 1;
 }
 static int safe_video(const Packet *p){
     for(unsigned i=0;i+7<p->size;i++)if(!memcmp(p->data+i,"\0\0\1\xb3",4)){
@@ -125,7 +128,7 @@ static int player_tick(void){
                 else{decoder_ended=1;if(video.displayed!=video.submitted){stream_error("Incomplete MPEG stream at EOF");return -1;}break;}
             }else break;
         }
-        int result=xbox_video_step(&video);
+        Uint32 decode_start=SDL_GetTicks();int result=xbox_video_step(&video);video_decode_ms+=SDL_GetTicks()-decode_start;
         if(result<0){stream_error("MPEG decode: invalid data or insufficient RAM");return -1;}
         if(result>0){
             const mpeg2_sequence_t *s=video.info->sequence;const mpeg2_fbuf_t *f=video.info->display_fbuf;
@@ -144,7 +147,7 @@ static int player_tick(void){
     }
     if(diagnostics_enabled&&SDL_GetTicks()-log_time>5000){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
-        snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes);log_time=SDL_GetTicks();
+        snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u renderer=%s gpu_frames=%u gpu_busy=%u decode_ms=%u pack_ms=%u gui_ms=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes,overlay.active&&!overlay.disabled?"nv2a":"software",overlay.shown,overlay.busy,video_decode_ms,overlay.pack_ms,overlay.gui_ms);log_time=SDL_GetTicks();
     }
     if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&(!stream_video||decoder_ended)&&!next_frame&&!queued)return stream.ended?2:-1;
     return 0;

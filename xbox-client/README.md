@@ -1,7 +1,7 @@
-# Original Xbox — native player preview 0.4.1
+# Original Xbox — native player preview 0.4.2
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.1 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.2 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
@@ -112,13 +112,36 @@ three times, with B to cancel. Live radio reconnects at the live position.
 
 ### Still separate porting work
 
-Accelerated rendering, MilkDrop/Monkey, native high-resolution
+Accelerated 3D rendering, MilkDrop/Monkey, native high-resolution
 artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
 library search, translations and a distinct
 Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
+
+0.4.2 adds **NV2A PVIDEO hardware video presentation** as the default. The CPU
+still decodes MPEG-1/2 with libmpeg2, but packs YUV420 into YUY2 with Pentium III
+MMX/SSE1; the video unit performs YUV-to-RGB conversion and scaling. Two packed
+buffers replace per-frame RGB conversion/scaling/copying. This is not MPEG
+hardware decoding, nor a GPU renderer for the GUI or visualizations.
+
+Settings → **Video renderer** selects **NV2A overlay (auto)** or **Software**;
+`video_hardware=1` / `0` in `preferences.cfg` stores that choice. Allocation or
+persistent buffer-busy failures fall back to software for the stream. The
+color-keyed GUI keeps playback controls and the progress bar visible, including
+when video fills the screen. Progress/receiver updates run at 4 Hz while video
+retains its timestamp cadence; control selection and fullscreen changes redraw
+on the next video frame. Pause/seek/stop disable and release the overlay.
+No server update beyond 0.1.73 is needed, and PSP code is unchanged.
+
+Test a familiar episode at 720x480 first, then 720p if desired. Check color,
+aspect, fullscreen/windowed, controls, pause/seek, stop and next episode. Compare
+Software with NV2A at the **same video and display sizes**. Debug logs include
+`renderer`, `gpu_frames`, `gpu_busy`, cumulative `decode_ms`, `pack_ms` and
+`gui_ms`, alongside audio underruns and dropped frames. Console scanout and
+performance remain unverified until this hardware test. Implementation and
+focused test details: [GPU video notes](../docs/XBOX_GPU_VIDEO.md).
 
 0.4.1 fixes output changes returning to the dashboard: the pinned SDL Xbox
 driver retains its singleton window pointer after destruction. The app now
@@ -160,8 +183,7 @@ No server update beyond 0.1.73 is required for this client-only repair.
 - Video target rates by size: 1.5 / 2 / 4 / 5 / 9 / 16 Mbit/s. The server
   requires the new Xbox profile parameters; old clients retain MPEG-1 defaults.
   Native build uses **-O3 and LTO**, without fast-math or clock changes.
-  Decoding and YUV conversion are software,
-  not an unverified claim of Xbox MPEG-2 hardware acceleration.
+  Decoding stays on the CPU; NV2A accelerates presentation, not MPEG decoding.
 - No H.264 decoding or hardware codec acceleration is claimed for this preview.
 
 ## Synchronization and isolation

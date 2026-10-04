@@ -1,4 +1,4 @@
-# Xbox settings audit — 0.4.0
+# Xbox settings audit — 0.4.2
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,
@@ -6,6 +6,9 @@ not a claim that every new setting has passed a console test.
 
 ## Present
 
+- Saved NV2A hardware-overlay / software video renderer choice; automatic
+  software fallback on allocation or persistent GPU-buffer availability failure.
+  Hardware validation pending; this is presentation, not MPEG hardware decode.
 - Saved volume, autoplay next, repeat current, music folder shuffle.
 - Preferred audio/subtitle language, per-file track selection and provider
   series preferences; source resume and chapter navigation.
