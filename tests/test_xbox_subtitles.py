@@ -8,6 +8,12 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 
 class XboxSubtitleTests(unittest.TestCase):
+    def test_bitmap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'bitmap'
+            subprocess.run(['cc','-std=c11','-O1','-g','-fsanitize=address,undefined',
+                '-fno-sanitize-recover=all',str(ROOT/'tests/xbox_subtitle_bitmap.c'),'-o',str(binary)],check=True)
+            subprocess.run([str(binary)],env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0'),check=True,timeout=10)
     def test_worker(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'subtitles'

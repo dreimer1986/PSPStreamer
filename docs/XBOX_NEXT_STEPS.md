@@ -1,9 +1,13 @@
-# Xbox: optimization and parity checkpoint — 0.7.1
+# Xbox: optimization and parity checkpoint — 0.7.2
+
+0.7.2 adds bounded native PGS composition into the presentation YUY2 buffer,
+including software fallback, palette alpha, canvas scaling and SD/HD matrices.
+Non-PGS/oversized/unsupported tracks retain burn-in. Host checks cover boundaries,
+transparency, cue expiry, worker cancellation and restart; hardware test pending.
 
 0.7.1 adds bounded client text subtitles using the existing PSP parser, PTS
 timing, two-page prefetch, seek/stop cancellation and a burn-in preference.
-Bitmap subtitles still use server burn-in. Native bitmap overlays, offline
-storage and HTTPS are not complete. Status footer is lower by eight logical
+Offline storage and HTTPS are not complete. Status footer is lower by eight logical
 pixels; console verification is pending.
 
 0.7.0 checkpoint: direct GPU effect presentation, SSE1 matrix transforms and
@@ -75,9 +79,8 @@ composition/presentation counters retain separate timing boundaries.
   transfer/cancel/progress and disk-space handling, local seek/resume and metadata.
   Reuse server job semantics, not PSP's incompatible FLV payload. FATX filename
   and file-size limits need explicit handling, not a renamed extension.
-- **Client bitmap subtitles:** text paging and Xbox render adapters are now
-  implemented. Bitmap transport/composition remains; retain server burn-in for
-  bitmap tracks and unsupported/error responses until native support is ready.
+- **Client subtitles:** text and bounded PGS paths are implemented and require
+  console verification. Other bitmap formats and oversized tracks retain burn-in.
 - **HTTPS:** maintained TLS library with Xbox entropy/time/socket adaptation,
   certificate validation/trust UI and cancellation. Do not send Basic credentials
   over a pretend TLS connection or silently disable authentication verification.

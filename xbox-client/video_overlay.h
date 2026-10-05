@@ -100,6 +100,9 @@ static int overlay_present(const plm_frame_t *f,SDL_Rect dst,int output_height){
     overlay.busy_since=0;
     uint8_t *out=overlay.memory+slot*overlay.size;Uint32 start=SDL_GetTicks();
     xbox_pack_yuy2(out,overlay.pitch,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width,f->width,f->height);
+#ifdef XBOX_VIDEO_COMPOSITE
+    XBOX_VIDEO_COMPOSITE(out,overlay.pitch,f->width,f->height);
+#endif
     overlay.pack_ms+=SDL_GetTicks()-start;
     overlay_write(0x920+reg,(uint32_t)MmGetPhysicalAddress(out));
     overlay_write(0x928+reg,(f->height<<16)|f->width);overlay_write(0x930+reg,0);

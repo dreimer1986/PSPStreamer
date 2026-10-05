@@ -1,13 +1,26 @@
-# Original Xbox — native player preview 0.7.1
+# Original Xbox — native player preview 0.7.2
+
+0.7.2 adds native **PGS bitmap subtitles** under the same Subtitle overlay
+setting. Sprites are fetched independently, then alpha-blended into the YUY2
+presentation buffer, never the decoder's reference pictures. Coordinates follow
+the source canvas at every video/output size; BT.601/709 follows the video path.
+Hardware output uses its existing buffer; software fallback uses one reusable
+packed buffer. Seek, reconnect and stop cancel/free the subtitle worker/cache.
+
+Bounded PGS support: up to 8192 cues, four simultaneous objects, 262144 indexed
+pixels per sprite (plus its 1024-byte palette), four cached sprites. Tracks
+outside these limits, non-PGS bitmap codecs, empty/invalid metadata or initial
+fetch failures retain server burn-in rather than losing subtitles. A later
+prefetch failure is reported while media playback continues. Console testing
+is still required. This is not completion of offline storage or HTTPS.
 
 0.7.1 adds **Text subtitle overlay** in Settings (default on, changes apply to
 the next playback start). It shares the PSP's millisecond cue-page parser and
 stripped-text/UTF-8 transport, with two bounded pages and cancellable prefetch.
 Text is shown against the displayed video PTS, including after seek/reconnect.
 Both PVIDEO color-key and software presentation draw the text on the client;
-bitmaps/unsupported responses retain server burn-in. Turn the option off to
-use server rendering for complex ASS styling. Native bitmap overlays remain
-open work. The library/status footer is eight logical pixels lower to clear
+unsupported responses retain server burn-in. Turn the option off to
+use server rendering for complex ASS styling. The library/status footer is eight logical pixels lower to clear
 the theme border. Hardware verification of this build is still required.
 
 External Monkey textures go in `monkey/` beside `default.xbe`:
@@ -56,8 +69,8 @@ New portable features (console acceptance pending):
   erased. Setup of the initial connection still needs the controller/config.
 - ICY station/title updates piggyback on that mailbox; Xbox radio framing fixed.
 
-Offline downloads/local playback, client-side subtitles and TLS remain open
-implementation work; server subtitle burn-in remains available. Full remaining
+Offline downloads/local playback and TLS remain open implementation work;
+client text/PGS subtitles need console verification, and server burn-in remains available. Full remaining
 scope and optimization costs: `docs/XBOX_NEXT_STEPS.md`.
 
 0.6.8 also prevents an interrupted network stream from waiting indefinitely

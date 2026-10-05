@@ -3,8 +3,9 @@
 #include "vendor/pl_mpeg.h"
 #include "audio.h"
 #include "mpeg_video.h"
-#include "video_overlay.h"
 #include "subtitle_client.h"
+#define XBOX_VIDEO_COMPOSITE(out,pitch,w,h) subtitle_bitmap_present(out,pitch,w,h)
+#include "video_overlay.h"
 #define PACKET_LIMIT (1024*1024)
 #define QUEUE_BYTES (1536*1024)
 typedef struct {unsigned char *data;unsigned size;int64_t pts;} Packet;
@@ -27,6 +28,7 @@ static const char *quality_names[]={"480x272","640x360","720x480 (16:9)","720x57
 static const char *quality_keys[]={"480p-low","360p","480p","576p","720p","1080p"};
 static int display_wide=1;
 static SDL_Texture *video_texture;static int texture_w,texture_h,playing,paused,decoder_ended,stream_video,stream_audio;
+static unsigned char *bitmap_packed;static unsigned bitmap_packed_size;static int texture_bitmap;
 static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
 extern Uint64 xbox_fb_copy_bytes;
@@ -90,6 +92,7 @@ static void player_stop(void){
     xbox_video_close(&video);free(video_input);video_input=NULL;
     if(audio_decoder)plm_audio_destroy(audio_decoder);audio_decoder=NULL;audio_buffer=NULL;
     if(video_texture)SDL_DestroyTexture(video_texture);video_texture=NULL;texture_w=texture_h=0;
+    free(bitmap_packed);bitmap_packed=NULL;bitmap_packed_size=0;texture_bitmap=0;
     playing=paused=0;next_frame=NULL;decoder_ended=0;
 }
 static int player_start(double seconds){

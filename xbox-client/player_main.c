@@ -315,7 +315,7 @@ static void menu_render(void){
         snprintf(lines[17],140,XL(LANGUAGE),ui_language_name());
         snprintf(lines[18],140,XL(AUDIO_QUALITY),audio_quality_keys[audio_quality]);
         snprintf(lines[19],140,XL(STOP_TIMER),stop_minutes);
-        snprintf(lines[20],140,"%s: %s",visual_text("Text subtitle overlay","Text-Untertitel-Overlay"),subtitle_overlay?XL(ON):XL(OFF));
+        snprintf(lines[20],140,"%s: %s",visual_text("Subtitle overlay","Untertitel-Overlay"),subtitle_overlay?XL(ON):XL(OFF));
         int first=panel_row/8*8;for(int i=first;i<21&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
     }else if(panel==3){
         text_at(media_name,35,66,492,selected);char line[160];snprintf(line,sizeof(line),XL(TRACK_INFO),(int)media_duration/60,(int)media_duration%60,audio_count,subtitle_count);text_at(line,35,96,492,normal);
@@ -383,9 +383,17 @@ static void menu_draw(void){
     }else frames=compose_ms=present_ms=worst=0;
 }
 static void frame_draw_software(plm_frame_t *f){
-    if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
+    int bitmap=SDL_AtomicGet(&subtitles.ready)&&subtitles.client==2;
+    if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height||texture_bitmap!=bitmap){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;texture_bitmap=bitmap;video_texture=SDL_CreateTexture(renderer,bitmap?SDL_PIXELFORMAT_YUY2:SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
     if(!video_texture){stream_error(SDL_GetError());return;}
-    SDL_UpdateYUVTexture(video_texture,NULL,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width);
+    if(bitmap){
+        unsigned size=f->width*f->height*2;
+        if(bitmap_packed_size<size){free(bitmap_packed);bitmap_packed=malloc(size);bitmap_packed_size=bitmap_packed?size:0;}
+        if(!bitmap_packed){stream_error("Not enough memory for subtitle presentation");return;}
+        xbox_pack_yuy2(bitmap_packed,f->width*2,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width,f->width,f->height);
+        subtitle_bitmap_present(bitmap_packed,f->width*2,f->width,f->height);
+        SDL_UpdateTexture(video_texture,NULL,bitmap_packed,f->width*2);
+    }else SDL_UpdateYUVTexture(video_texture,NULL,f->y.data,f->y.width,f->cb.data,f->cb.width,f->cr.data,f->cr.width);
     if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);
         /* Server frames contain a complete 16:9 canvas, including pillarbox
          * for 4:3 sources. SD output pixels are anamorphic on a wide TV. */
@@ -652,7 +660,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.7.1 text subtitles / NV2A scanout / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.7.2 text + PGS subtitles / NV2A scanout / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
