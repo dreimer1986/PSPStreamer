@@ -23,6 +23,16 @@ an existing Bluetooth stack or generic USB Wi-Fi driver.
    can be reused, but the current ESP-IDF stack is not a drop-in nxdk driver.
    A second controller/board plus an inter-board link is another hardware option.
 
+There is also an interesting hybrid to prototype: plug both the S3 device and
+the Bluetooth dongle into the Xbox. The Xbox relays HCI command/event/ACL packets
+between the dongle and the S3 over our bulk protocol, while pairing/HID/rumble
+remain on the ESP. `streammaster/main/gamepad.c` already attaches an external
+HCI transport to Bluedroid via `esp_bluedroid_attach_hci_driver`. This could avoid
+porting the whole Bluetooth stack to nxdk. It still requires Xbox USB-HCI I/O,
+new bidirectional multiplexing/flow control and disconnect handling; latency,
+USB contention and licensing/build boundaries need validation. It is a design
+option, not an already supported mode.
+
 Do not start by porting arbitrary USB Wi-Fi dongle drivers: support would depend
 on the particular chipset, firmware, security stack and network integration.
 Nor does changing a cable make the S3's Full-Speed USB into High-Speed. Native
