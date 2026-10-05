@@ -385,3 +385,8 @@
 - Add selected-version external text and single-file PGS subtitles to metadata,
   streaming and offline overlays/burn-in. Unsupported sidecars fail explicitly.
 - No PSP executable or A/V synchronization changes. Docker/HA sources remain equal.
+# 0.1.77
+
+- Separate Xbox menu-button and text-entry commands with acknowledgements and expiry.
+- Xbox radio now packetizes MPEG-TS into the client transport; forwards changing ICY titles.
+- Matching Docker/Home Assistant server and web assets. PSP playback/input unchanged.

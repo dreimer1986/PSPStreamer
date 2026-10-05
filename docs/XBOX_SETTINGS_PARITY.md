@@ -1,4 +1,10 @@
-# Xbox settings audit — 0.6.0
+# Xbox settings audit — 0.6.9
+
+Update: DNS, session stop timer, ICY updates, separate web menu/text control,
+series/folder preference editing and illustrated contextual help are now
+implemented (console acceptance pending). See `XBOX_NEXT_STEPS.md` for the
+current checklist; the historical gap table below records the 0.6.0 baseline.
+Downloads, client-side subtitle overlays and HTTPS are still open work.
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,

@@ -584,7 +584,15 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_json(dict(data, metadata=metadata,
                     server_id=self.server.player_status.identity, api=1))
             if parsed.path == '/api/xbox/remote':
-                return self.send_json(self.server.xbox_remote.poll(int(query.get('after', ['0'])[0])))
+                reply = self.server.xbox_remote.poll(int(query.get('after', ['0'])[0]),
+                    int(query.get('dialog', ['0'])[0]), query.get('secret', ['0'])[0] == '1')
+                if query.get('radio'):
+                    try:
+                        reply.update(self.server.radio.status(query['radio'][0]))
+                        reply['radio_id'] = query['radio'][0]
+                    except ValueError:
+                        pass
+                return self.send_json(reply)
             if parsed.path == '/api/comfort':
                 return self.send_json(self.server.comfort.snapshot())
             if parsed.path == '/api/search':
@@ -1399,7 +1407,11 @@ class AppHandler(BaseHTTPRequestHandler):
                         chunk = os.read(process.stdout.fileno(), 4096)
                         if not chunk:
                             break
-                        self.wfile.write(chunk)
+                        if xbox:
+                            for packet in xbox_transport.feed(chunk):
+                                self.wfile.write(packet)
+                        else:
+                            self.wfile.write(chunk)
                         self.wfile.flush()
                         last_data = time.monotonic()
                 return

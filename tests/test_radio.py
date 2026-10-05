@@ -78,6 +78,32 @@ class RadioTests(unittest.TestCase):
 
 
 class RadioIntegrationTests(unittest.TestCase):
+    def test_xbox_radio_packets_and_icy_poll(self):
+        import struct
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,{
+            'PSP_STREAMER_RADIO_DIR':directory,'PSP_STREAMER_SETTINGS_DIR':directory,
+            'PSP_STREAMER_DOWNLOAD_DIR':directory+'/downloads','PSP_STREAMER_PASSWORD':''}):
+            with AppServer(('127.0.0.1',0),Library([Path(directory)])) as server:
+                key=server.radio.change({'name':'Xbox station','url':self.base+'/icy'})['id']
+                thread=threading.Thread(target=server.serve_forever);thread.start()
+                connection=http.client.HTTPConnection(*server.server_address,timeout=10)
+                try:
+                    connection.request('GET','/api/xbox-stream/'+key+'?kind=audio')
+                    response=connection.getresponse();self.assertEqual(response.status,200)
+                    self.assertEqual(response.read(8),b'XSM1\x02\0\0\0')
+                    for _ in range(3):
+                        kind,size,pts=struct.unpack('<c3xIq',response.read(16))
+                        self.assertEqual(kind,b'A');self.assertGreater(size,4)
+                        packet=response.read(size);self.assertEqual(packet[0],255)
+                        self.assertEqual(packet[1]&0xfe,0xfc)
+                    poll=http.client.HTTPConnection(*server.server_address,timeout=5)
+                    poll.request('GET','/api/xbox/remote?after=0&dialog=123&secret=1&radio='+key)
+                    info=json.loads(poll.getresponse().read());poll.close()
+                    self.assertTrue(info['radio_active']);self.assertIn('radio_title',info)
+                    self.assertEqual(server.xbox_remote.snapshot()['dialog'],123)
+                finally:
+                    connection.close();server.shutdown();thread.join()
+
     @classmethod
     def setUpClass(cls):
         cls.mp3 = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',

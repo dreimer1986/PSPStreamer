@@ -1,6 +1,7 @@
 /* PSP analyzer and pixel painter reused unchanged. Xbox only supplies current
  * PCM, a clock and an SDL texture. No changes to the PSP compilation unit. */
 #include "spectrum_paint.h"
+#include "visual_envelope.h"
 static SDL_Texture *spectrum_texture;
 static uint32_t spectrum_pixels[660*385];
 static SpectrumPaint spectrum_painter;
@@ -24,13 +25,16 @@ static void spectrum_draw(int full){
     if(active)spectrum_pcm_publish(audio_waveform[idx],576);
     spectrum_analysis_step(now,1,active);
     int x=full?30:37,y=full?40:147,w=full?660:488,h=full?385:135;
-    static int old_h,old_count,old_style=-1;
+    static int old_h,old_count,old_style=-1;static unsigned envelope_at;
     int count=spectrum_bar_count(),style=spectrum_style_key();
-    if(h!=old_h||count!=old_count||style!=old_style){memset(&spectrum_painter,0,sizeof(spectrum_painter));memset(spectrum_shown,0,sizeof(spectrum_shown));old_h=h;old_count=count;old_style=style;}
-    memset(spectrum_pixels,0,sizeof(spectrum_pixels));
+    int reset=h!=old_h||count!=old_count||style!=old_style;
+    if(reset){memset(&spectrum_painter,0,sizeof(spectrum_painter));memset(spectrum_shown,0,sizeof(spectrum_shown));old_h=h;old_count=count;old_style=style;}
+    unsigned steps=xbox_envelope_steps((unsigned)(now/1000),&envelope_at,reset);
+    /* Windowed mode only touches 135 of the 385 backing rows. */
+    memset(spectrum_pixels,0,660*h*sizeof(*spectrum_pixels));
     for(int i=0;i<count;i++){
         int target=active?spectrum_bar_level(i,spectrum_analysis_mode?0:legacy_level(audio_waveform[idx],i)):0;
-        int prev=spectrum_shown[i];spectrum_shown[i]=target>prev?prev+(target-prev+1)/2:prev>3?prev-3:0;
+        spectrum_shown[i]=xbox_envelope(spectrum_shown[i],target,steps);
         int dirty;spectrum_paint_bar(&spectrum_painter,spectrum_pixels,660,i*w/count,h,w/count-2,h,i,count,spectrum_shown[i]*h/100,now,1,spectrum_clear,NULL,&dirty);
     }
     if(visual_present_pixels(spectrum_pixels,660,w,h,(SDL_Rect){x,y,w,h},1))return;

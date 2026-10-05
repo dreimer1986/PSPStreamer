@@ -1,4 +1,32 @@
-# Original Xbox — native player preview 0.6.8
+# Original Xbox — native player preview 0.6.9
+
+0.6.9 preserves static music GUI pixels and updates only the effect/instrument
+rectangles. Spectrum decay follows the PSP's 50 ms envelope independently of
+redraw speed. Windowed spectrum clears only its active backing rows.
+
+New portable features (console acceptance pending):
+
+- Server hostnames using DHCP-provided DNS, cancellable within the network
+  worker with an 8-second lookup deadline and at most four outstanding requests.
+  Enter just the hostname in `host=`, not `http://`. **HTTPS is not implemented.**
+- Settings: session stop timer, off or 15–180 minutes. Runs across file changes
+  and pauses, stops playback/retries/autoplay, does not power off or rearm on boot.
+- Video options: save/remove audio and subtitle choices for the series or file
+  folder. Uses the existing durable server API, matches language/title rather
+  than blindly carrying stream indices. Not offered for music/radio/DLNA.
+- Right-stick click: contextual, paged help with controller diagram; left/right
+  selects topics, B returns. Active video pauses while help is open and resumes
+  afterwards. Library Y still opens help.
+- Server **0.1.77**: separate Xbox one-shot menu buttons and text form under
+  Remote control. Polling remains three seconds, no held/repeating network keys.
+  Open a keyboard field first, send replacement text, confirm using START.
+  Text is accepted only for the same field token; accepted/expired commands are
+  erased. Setup of the initial connection still needs the controller/config.
+- ICY station/title updates piggyback on that mailbox; Xbox radio framing fixed.
+
+Offline downloads/local playback, client-side subtitles and TLS remain open
+implementation work; server subtitle burn-in remains available. Full remaining
+scope and optimization costs: `docs/XBOX_NEXT_STEPS.md`.
 
 0.6.8 also prevents an interrupted network stream from waiting indefinitely
 for a stale final DMA slot after its encoded queues are empty. It enters the

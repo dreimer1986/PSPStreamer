@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 static int auto_next=1,repeat_one,shuffle_music,show_spectrum=1,prefer_audio,prefer_subtitle;
 static int next_delay;
+/* Session timer, intentionally not rearmed by loading preferences or next track. */
+static int stop_minutes;static Uint32 stop_deadline;
 static int output_selected_w,output_selected_h,output_selected_hz;
 static const char *language_codes[]={"", "en", "de", "ja", "fr", "es", "it"};
 static void preferences(int save){

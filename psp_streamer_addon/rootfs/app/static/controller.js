@@ -67,3 +67,33 @@
   };
   paint();poll();
 })();
+
+/* Separate, one-shot Xbox menu commands. Never inject into the PSP mailbox,
+ * never hold a direction, and never send a stored field value back to the web. */
+(() => {
+  const panel=document.createElement('details');
+  panel.innerHTML=`<summary>Xbox: ${t('Remote control')}</summary><p>Xbox menu control · single presses · 3 s polling</p><div class="controls" id="xboxPadKeys"></div><p id="xboxPadStatus" role="status"></p><form id="xboxPadForm"><label>Xbox text<input id="xboxPadText" autocomplete="off" maxlength="128" disabled></label><button id="xboxPadSend" disabled>${t('Send text')}</button></form>`;
+  $('#view-remote').append(panel);
+  const state=$('#xboxPadStatus'),field=$('#xboxPadText');let dialog=0,online=false,pending=0,sent=0;
+  async function send(body){
+    if(!online||pending)return;
+    pending=-1;sent=Date.now();paint();
+    try{const result=await api('/api/xbox/command',{method:'POST',body:JSON.stringify(body)});pending=result.sequence;state.textContent='Xbox: …';}
+    catch(e){pending=0;state.textContent=t(e.message);}paint();
+  }
+  const keys=[['up','↑'],['down','↓'],['left','←'],['right','→'],['a','A'],['b','B'],['x','X'],['y','Y'],['l','L'],['r','R'],['start','START'],['help','?'],['back','BACK / Exit']];
+  for(const [button,label] of keys){const key=document.createElement('button');key.type='button';key.textContent=label;key.onclick=()=>send({action:'button',button});$('#xboxPadKeys').append(key);}
+  function paint(){for(const b of $('#xboxPadKeys').children)b.disabled=!online||!!pending;field.disabled=$('#xboxPadSend').disabled=!online||!dialog||!!pending;}
+  $('#xboxPadForm').onsubmit=e=>{e.preventDefault();if(!dialog)return;const text=field.value;field.value='';send({action:'text',text,dialog});};
+  async function poll(){
+    if(panel.open&&view==='remote'&&!document.hidden)try{
+      const s=await api('/api/xbox/status');online=s.online;
+      if(dialog!==s.dialog){field.value='';dialog=s.dialog||0;}
+      field.type=s.secret?'password':'text';
+      if(pending>0&&(s.acknowledged>=pending||Date.now()-sent>16000))pending=0;
+      state.textContent=online?(pending?'Xbox: …':dialog?'Xbox: text → START':'Xbox: connected'):'Xbox: offline';paint();
+    }catch(e){online=false;paint();state.textContent=t(e.message);}
+    setTimeout(poll,1500);
+  }
+  paint();poll();
+})();

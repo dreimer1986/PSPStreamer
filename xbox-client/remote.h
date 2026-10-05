@@ -2,7 +2,7 @@
  * Parsing and execution are main-thread-only; no shared catalog JSON parser. */
 static SDL_Thread *remote_thread;
 static SDL_atomic_t remote_cancel,remote_done;
-static char remote_body[8192],remote_path[120];
+static char remote_body[8192],remote_path[1800];
 static unsigned remote_sequence;static Uint32 remote_at;
 static int remote_worker(void *unused){
     (void)unused;Http h;unsigned at=0;int n=0;
@@ -12,10 +12,13 @@ static int remote_worker(void *unused){
     }
     remote_body[at]=0;http_close(&h);SDL_AtomicSet(&remote_done,1);return 0;
 }
-static int remote_poll(void){
+static int remote_poll(unsigned dialog,int secret){
     if(remote_thread&&SDL_AtomicGet(&remote_done)){SDL_WaitThread(remote_thread,NULL);remote_thread=NULL;return *remote_body!=0;}
     if(!remote_thread&&(Sint32)(SDL_GetTicks()-remote_at)>=0){
-        remote_at=SDL_GetTicks()+3000;snprintf(remote_path,sizeof(remote_path),"/api/xbox/remote?after=%u",remote_sequence);
+        remote_at=SDL_GetTicks()+3000;snprintf(remote_path,sizeof(remote_path),"/api/xbox/remote?after=%u&dialog=%u&secret=%d",remote_sequence,dialog,secret);
+        if(playing&&!strncmp(media_id,"radio.",6)){
+            char encoded[1600];if(url_encode(media_id,encoded,sizeof(encoded)))snprintf(remote_path,sizeof(remote_path),"/api/xbox/remote?after=%u&dialog=%u&secret=%d&radio=%s",remote_sequence,dialog,secret,encoded);
+        }
         SDL_AtomicSet(&remote_done,0);remote_thread=SDL_CreateThreadWithStackSize(remote_worker,"remote",65536,NULL);
     }return 0;
 }

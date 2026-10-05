@@ -7,6 +7,22 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 
 class XboxVisualTests(unittest.TestCase):
+    def test_spectrum_elapsed_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'envelope'
+            subprocess.run(['cc','-O2','-fsanitize=undefined',str(ROOT/'tests/xbox_visual_envelope.c'),'-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=5)
+
+    def test_music_damage_is_conditional(self):
+        main=(ROOT/'xbox-client/player_main.c').read_text()
+        self.assertIn('show_spectrum&&!panel&&!controls&&!fetch.thread',main)
+        self.assertIn('if(partial){ready=music_damage_draw();}',main)
+        self.assertIn('if(!partial){ready=SDL_GetTicks();SDL_RenderPresent(renderer);}',main)
+        damage=(ROOT/'xbox-client/visual_damage.h').read_text()
+        self.assertIn('SDL_UpdateWindowSurfaceRects',damage)
+        self.assertNotIn('SDL_RenderClear',damage)
+        self.assertNotIn('malloc',damage)
+
     def test_sse_copy_bounds(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'copy'

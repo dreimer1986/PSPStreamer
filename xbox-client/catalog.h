@@ -12,6 +12,7 @@ static double media_resume,chapter_starts[128];static int chapter_count;
 static char media_summary[512],media_artist[128],media_album[128];
 static char audio_languages[32][16],subtitle_languages[32][16];
 static int suggested_audio,suggested_subtitle;
+static int series_available,series_saved;
 static const char *language_code(const char *s){
     if(!strcmp(s,"eng"))return "en";if(!strcmp(s,"ger")||!strcmp(s,"deu"))return "de";
     if(!strcmp(s,"jpn"))return "ja";if(!strcmp(s,"fra")||!strcmp(s,"fre"))return "fr";
@@ -105,6 +106,8 @@ static int parse_metadata(char *data){
     text_tok(field(0,"artist"),media_artist,sizeof(media_artist));text_tok(field(0,"album"),media_album,sizeof(media_album));
     suggested_audio=field(0,"preferred_audio")>=0?number(0,"preferred_audio"):-1;
     suggested_subtitle=field(0,"preferred_subtitle")>=0?number(0,"preferred_subtitle"):-2;
+    char scope[16];series_available=text_tok(field(0,"series_scope"),scope,sizeof(scope))&&*scope;
+    series_saved=number(0,"series_saved");
     chapter_count=0;int chapters=field(0,"chapters");
     if(chapters>=0&&tokens[chapters].type==JSMN_ARRAY)for(int i=chapters+1;i<tok_count&&tokens[i].start<tokens[chapters].end&&chapter_count<128;i=next_tok(i)){
         char at[40];if(text_tok(field(i,"start"),at,sizeof(at)))chapter_starts[chapter_count++]=parse_duration(at);

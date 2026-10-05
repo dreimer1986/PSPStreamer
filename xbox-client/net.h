@@ -1,5 +1,8 @@
 /* GPL-2.0-or-later. Bounded HTTP/1.0 transport for the trusted LAN preview. */
 #include "http_status.h"
+#include "hostname.h"
+#include "dns_resolver.h"
+#include "visual_copy.h"
 typedef struct { int fd, status; unsigned at, size,timeout; unsigned char data[8192]; SDL_atomic_t *cancel; } Http;
 static char host[64], password[129];
 static unsigned port=8091;
@@ -16,8 +19,8 @@ static int config(void) {
         else if (!strncmp(line,"port=",5)) port=(unsigned)strtoul(line+5,NULL,10);
         else if (!strncmp(line,"output_height=",14)) output_height=atoi(line+14);
     }
-    fclose(f); struct in_addr a;
-    return port && port<=65535 && inet_aton(host,&a);
+    fclose(f);
+    return port && port<=65535 && xbox_hostname_valid(host);
 }
 static void base64(const unsigned char *p,size_t n,char *o) {
     static const char alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -50,7 +53,9 @@ static int http_read(Http *h,void *dest,unsigned length) {
         if(n<=0)return n;h->at=0;h->size=n;
     }
     unsigned n=h->size-h->at;if(n>length)n=length;
-    memcpy(dest,h->data+h->at,n);h->at+=n;return n;
+    if(n>=64)xbox_visual_copy(dest,h->data+h->at,n);
+    else memcpy(dest,h->data+h->at,n);
+    h->at+=n;return n;
 }
 static int http_exact(Http *h,void *dest,unsigned length) {
     unsigned at=0;while(at<length){int n=http_read(h,(char*)dest+at,length-at);if(n<=0)return 0;at+=n;}return 1;
@@ -62,9 +67,10 @@ static int http_request(Http *h,const char *path,SDL_atomic_t *cancel,const char
     base64((unsigned char*)credentials,strlen(credentials),encoded);
     int size=snprintf(request,sizeof(request),"%s %s HTTP/1.0\r\nHost: %s:%u\r\nAuthorization: Basic %s\r\nX-PSP-Web: 1\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: %u\r\n\r\n%s",body?"POST":"GET",path,host,port,encoded,body?(unsigned)strlen(body):0,body?body:"");
     if(size<0||size>=(int)sizeof(request))return 0;
+    struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(port);
+    if(!xbox_resolve(host,&a.sin_addr,cancel))return 0;
     h->fd=socket(AF_INET,SOCK_STREAM,0);if(h->fd<0)return 0;
     unsigned long nonblock=1;ioctl(h->fd,FIONBIO,&nonblock);
-    struct sockaddr_in a={0};a.sin_family=AF_INET;a.sin_port=htons(port);inet_aton(host,&a.sin_addr);
     Uint32 start=SDL_GetTicks();
     if(connect(h->fd,(struct sockaddr*)&a,sizeof(a))<0&&errno!=EINPROGRESS)goto fail;
     if(!net_ready(h,1,start,10000))goto fail;

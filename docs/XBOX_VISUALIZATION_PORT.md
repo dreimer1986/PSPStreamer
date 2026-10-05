@@ -1,4 +1,9 @@
-# Xbox visualization port — 0.6.8
+# Xbox visualization port — 0.6.9
+
+User confirmed 0.6.8: all effects now run cleanly and substantially faster.
+0.6.9 adds static music-GUI retention/partial presentation, active-row-only
+spectrum clearing and time-based PSP envelope steps. Real-console comparison
+is pending; remaining larger options are listed in `XBOX_NEXT_STEPS.md`.
 
 0.6.8 also handles a secondary error exposed in the saved 0.6.6 log: after the
 debugger-induced network interruption, `net_done=1 clean=0 net_bytes=0` persisted

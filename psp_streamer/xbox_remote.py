@@ -13,14 +13,29 @@ class XboxRemote:
         self.seen = 0
         self.playback = {}
         self.reported = 0
+        self.dialog = 0
+        self.secret = False
+        self.acknowledged = 0
 
     def send(self, server, data):
         if not isinstance(data, dict):
             raise ValueError('Invalid Xbox command')
         action = data.get('action')
-        if action not in ('play', 'pause', 'resume', 'stop', 'seek', 'next', 'previous'):
+        if action not in ('play', 'pause', 'resume', 'stop', 'seek', 'next', 'previous', 'button', 'text'):
             raise ValueError('Unsupported Xbox action')
         clean = {'action': action}
+        if action == 'button':
+            if data.get('button') not in ('up','down','left','right','a','b','x','y','start','back','l','r','help'):
+                raise ValueError('Invalid Xbox button')
+            clean['button'] = data['button']
+        if action == 'text':
+            value = data.get('text')
+            if not isinstance(value,str) or len(value.encode('utf-8')) > 128 or any(ord(c)<32 for c in value):
+                raise ValueError('Invalid Xbox text')
+            dialog = data.get('dialog')
+            if type(dialog) is not int or not 0 < dialog <= 0xffffffff:
+                raise ValueError('No Xbox text field')
+            clean.update(text=value, dialog=dialog)
         if action == 'play':
             size = data.get('xbox_size')
             if size is not None and (not isinstance(size, str) or size not in PROFILES):
@@ -50,9 +65,14 @@ class XboxRemote:
             self.expires = time.monotonic() + 15
             return {'ok': True, 'sequence': self.sequence}
 
-    def poll(self, after):
+    def poll(self, after, dialog=0, secret=False):
         with self.lock:
             self.seen = time.monotonic()
+            self.dialog = max(0,min(0xffffffff,int(dialog)))
+            self.secret = bool(secret)
+            self.acknowledged = max(self.acknowledged, min(self.sequence, after))
+            if after >= self.sequence or self.seen >= self.expires:
+                self.command = {}  # Do not retain accepted/expired text fields.
             return dict(self.command) if after < self.sequence and self.seen < self.expires else {}
 
     def report(self, data, token, name):
@@ -64,5 +84,6 @@ class XboxRemote:
 
     def snapshot(self):
         with self.lock:
-            return dict(self.playback, online=bool(self.seen and time.monotonic()-self.seen < 12),
+            return dict(self.playback, dialog=self.dialog, secret=self.secret, acknowledged=self.acknowledged,
+                        online=bool(self.seen and time.monotonic()-self.seen < 12),
                         age=max(0,time.monotonic()-self.reported) if self.reported else 0)

@@ -2,6 +2,7 @@
  * controller keyboard. Network workers are stopped before editing credentials. */
 static char server_draft_host[64],server_draft_port[8],server_draft_password[129];
 static char keyboard_draft[129];static int keyboard_field,keyboard_key;
+static unsigned keyboard_dialog;
 static int config_testing,connection_ready;
 static char config_old_host[64],config_old_password[129];static unsigned config_old_port;
 static void config_restore_test(void){
@@ -9,8 +10,8 @@ static void config_restore_test(void){
     strcpy(host,config_old_host);strcpy(password,config_old_password);port=config_old_port;config_testing=0;
 }
 static int server_draft_valid(void){
-    struct in_addr ip;char *end;unsigned long p=strtoul(server_draft_port,&end,10);
-    return *server_draft_port&&!*end&&p>0&&p<=65535&&inet_aton(server_draft_host,&ip);
+    char *end;unsigned long p=strtoul(server_draft_port,&end,10);
+    return *server_draft_port&&!*end&&p>0&&p<=65535&&xbox_hostname_valid(server_draft_host);
 }
 static int server_save(void){
     if(!server_draft_valid())return 0;
@@ -24,6 +25,7 @@ static int server_save(void){
 }
 static void keyboard_begin(int field){
     keyboard_field=field;keyboard_key=0;
+    keyboard_dialog=SDL_GetTicks();if(!keyboard_dialog)keyboard_dialog=1;
     snprintf(keyboard_draft,sizeof(keyboard_draft),"%s",field==3?search_query:field==0?server_draft_host:field==1?server_draft_port:server_draft_password);
 }
 static void keyboard_accept(void){

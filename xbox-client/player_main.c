@@ -106,6 +106,12 @@ static void fetch_request(const char *path,int type,const char *post){
     if(!fetch.thread)snprintf(status,sizeof(status),XL(WORKER_FAILED));
 }
 static void fetch_start(const char *path,int type){fetch_request(path,type,NULL);}
+static void series_save(int remove){
+    char hex[3073],body[3200];static const char digits[]="0123456789abcdef";
+    unsigned i=0;for(;media_id[i]&&i<1536;i++){unsigned c=(unsigned char)media_id[i];hex[i*2]=digits[c>>4];hex[i*2+1]=digits[c&15];}hex[i*2]=0;
+    snprintf(body,sizeof(body),"{\"id_hex\":\"%s\",\"audio\":%d,\"subtitle\":%d,\"remove\":%s}",hex,audio_track,subtitle_track,remove?"true":"false");
+    fetch_request("/api/series-preferences",6,body);
+}
 static void browse(const char *path,int offset){char encoded[4700],request[6000],query[400];if(!url_encode(path,encoded,sizeof(encoded))){snprintf(status,sizeof(status),XL(PATH_LONG));return;}url_encode(search_query,query,sizeof(query));snprintf(request,sizeof(request),"/api/xbox/library?root=%d&path=%s&offset=%d&q=%s",root_index,encoded,offset,query);fetch_start(request,0);}
 static int in_queue(void){return !strcmp(folder_path,":xbox:queue:");}
 static void library_action(int row){
@@ -238,6 +244,7 @@ static void receiver(void){
     for(int dy=-2;dy<=2;dy++)SDL_RenderDrawLine(renderer,x-(abs(dy)==2?1:2),y+dy,x+(abs(dy)==2?1:2),y+dy);
     for(int i=0;i<5;i++){color(70+(i*33)%130,170,220);SDL_Rect r={331+i*47,387,25,2};SDL_RenderFillRect(renderer,&r);}
 }
+#include "help_ui.h"
 static void menu_render(void){
     SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);
     color(0,0,0);SDL_RenderClear(renderer);SDL_Rect all={0,0,720,480};SDL_RenderCopy(renderer,skin,NULL,&all);
@@ -247,8 +254,7 @@ static void menu_render(void){
     if(backdrop&&(options||playing||panel==3)){SDL_Rect r={27,60,506,232};SDL_RenderCopy(renderer,backdrop,NULL,&r);}
     if(panel>=PANEL_VISUAL&&panel<=PANEL_PRESETS){visual_panel_draw(normal,selected);
     }else if(panel==1){
-        const char *help[]={XL(HELP_PLAY), XL(HELP_CONTROLS), XL(HELP_VOLUME), XL(HELP_SKIP), XL(HELP_SPECTRUM), XL(HELP_MENU), XL(HELP_RESUME), XL(HELP_ACTIONS)};
-        for(int i=0;i<8;i++)text_at(help[i],35,64+i*28,492,normal);
+        help_draw(normal,selected);
     }else if(panel==8){
         Entry *e=entry_count?&entries[entry_index]:NULL;
         char lines[8][140];snprintf(lines[0],140,"%s",e&&e->favorite?XL(FAVORITE_REMOVE):XL(FAVORITE_ADD));
@@ -294,7 +300,7 @@ static void menu_render(void){
         snprintf(lines[6],100,XL(PEAK),spectrum_peak_hold?XL(ON):XL(OFF));
         for(int i=0;i<7;i++)text_at(lines[i],35,68+i*29,492,i==panel_row?selected:normal);
     }else if(panel==2){
-        char lines[19][140];snprintf(lines[0],140,XL(AUTOPLAY),auto_next?XL(ON):XL(OFF));snprintf(lines[1],140,XL(REPEAT_CURRENT),repeat_one?XL(ON):XL(OFF));
+        char lines[20][140];snprintf(lines[0],140,XL(AUTOPLAY),auto_next?XL(ON):XL(OFF));snprintf(lines[1],140,XL(REPEAT_CURRENT),repeat_one?XL(ON):XL(OFF));
         snprintf(lines[2],140,XL(FOLDER_SHUFFLE),shuffle_music?XL(ON):XL(OFF));snprintf(lines[3],140,XL(SPECTRUM),show_spectrum?XL(ON):XL(OFF));
         snprintf(lines[4],140,XL(VIDEO_QUALITY),quality_names[quality]);snprintf(lines[5],140,XL(VOLUME),volume);
         snprintf(lines[6],140,XL(AUDIO),prefer_audio?language_label(language_codes[prefer_audio]):XL(SOURCE_DEFAULT));snprintf(lines[7],140,XL(SUBTITLES),prefer_subtitle?language_label(language_codes[prefer_subtitle]):XL(OFF));
@@ -307,7 +313,8 @@ static void menu_render(void){
         snprintf(lines[16],140,XL(RENDERER),video_hardware?"NV2A overlay (auto)":"Software");
         snprintf(lines[17],140,XL(LANGUAGE),ui_language_name());
         snprintf(lines[18],140,XL(AUDIO_QUALITY),audio_quality_keys[audio_quality]);
-        int first=panel_row/8*8;for(int i=first;i<19&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
+        snprintf(lines[19],140,XL(STOP_TIMER),stop_minutes);
+        int first=panel_row/8*8;for(int i=first;i<20&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
     }else if(panel==3){
         text_at(media_name,35,66,492,selected);char line[160];snprintf(line,sizeof(line),XL(TRACK_INFO),(int)media_duration/60,(int)media_duration%60,audio_count,subtitle_count);text_at(line,35,96,492,normal);
         if(*media_artist)text_at(media_artist,35,123,492,normal);if(*media_album)text_at(media_album,35,150,492,normal);
@@ -319,10 +326,11 @@ static void menu_render(void){
         else{text_at(XL(PLAYBACK_HELP),35,160,492,normal);text_at(XL(SEEK_HELP),35,190,492,normal);}
     }else if(options){
         text_at(media_name,35,66,492,selected);
-        char lines[4][180];snprintf(lines[0],180,start_position>0?XL(RESUME_AT):XL(PLAY),(int)start_position/60,(int)start_position%60);snprintf(lines[1],180,XL(AUDIO),audio_count?audio_labels[audio_track]:XL(NO_AUDIO));
+        char lines[6][180];snprintf(lines[0],180,start_position>0?XL(RESUME_AT):XL(PLAY),(int)start_position/60,(int)start_position%60);snprintf(lines[1],180,XL(AUDIO),audio_count?audio_labels[audio_track]:XL(NO_AUDIO));
         snprintf(lines[2],180,XL(SUBTITLES),subtitle_track<0?XL(OFF):subtitle_labels[subtitle_track]);
         snprintf(lines[3],180,XL(VIDEO),quality_names[quality],video_codec?2:1);
-        for(int i=0;i<(media_audio?1:4);i++)text_at(lines[i],35,105+i*31,492,i==option_row?selected:normal);
+        snprintf(lines[4],180,"%s",XL(SERIES_SAVE));snprintf(lines[5],180,"%s",XL(SERIES_REMOVE));
+        for(int i=0;i<(media_audio?1:series_available?6:4);i++)text_at(lines[i],35,105+i*30,492,i==option_row?selected:normal);
     }else{
         int start=(entry_index/8)*8;
         for(int i=start;i<entry_count&&i<start+8;i++){char line[290];Entry *e=&entries[i];const char *name=e->name;
@@ -339,16 +347,24 @@ static void menu_render(void){
     SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,308,650,normal);clip(NULL);
     receiver();
 }
+#include "visual_damage.h"
 static void menu_draw(void){
     Uint32 began=SDL_GetTicks();
-    if(playing&&media_audio&&fullscreen&&!panel){
+    static unsigned music_key;static int music_valid;
+    int music=playing&&media_audio&&show_spectrum&&!panel&&!controls&&!fetch.thread;
+    unsigned key=music?music_scene_key():0;
+    int partial=music&&music_valid&&key==music_key;
+    Uint32 ready=began;
+    if(partial){ready=music_damage_draw();}
+    else if(playing&&media_audio&&fullscreen&&!panel){
         /* No hidden theme/text/receiver pass underneath a fullscreen effect. */
         SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);clip(NULL);
         color(0,0,0);SDL_RenderClear(renderer);visual_draw(1);
         if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});
     }else menu_render();
-    controls_draw();if(first_frame)startup_note("before first present");
-    Uint32 ready=SDL_GetTicks();SDL_RenderPresent(renderer);Uint32 presented=SDL_GetTicks();
+    if(!partial)controls_draw();if(first_frame)startup_note("before first present");
+    if(!partial){ready=SDL_GetTicks();SDL_RenderPresent(renderer);}Uint32 presented=SDL_GetTicks();
+    music_valid=music&&!visual_fault;music_key=key;
     if(first_frame){startup_note("first present complete");first_frame=0;}
     /* Non-stopping timing: the serial debugger must not halt playback to
      * determine whether formulas, presentation or GUI copies are expensive. */
@@ -429,6 +445,18 @@ static void frame_draw(plm_frame_t *f){
     frame_draw_software(f);
 }
 static void button_down(int button){
+    if(panel==1){
+        if(button==SDL_CONTROLLER_BUTTON_B||button==SDL_CONTROLLER_BUTTON_RIGHTSTICK){panel=help_return;if(help_resume){help_resume=0;player_pause();report_time=0;}}
+        else if(button==SDL_CONTROLLER_BUTTON_DPAD_LEFT)help_page=(help_page+3)%4;
+        else if(button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT)help_page=(help_page+1)%4;
+        else if(button==SDL_CONTROLLER_BUTTON_BACK)quit=1;
+        return;
+    }
+    if(button==SDL_CONTROLLER_BUTTON_RIGHTSTICK&&panel!=7){
+        help_return=panel;help_page=panel?3:playing?(media_audio?2:1):0;
+        help_resume=playing&&!media_audio&&!paused;
+        if(help_resume){report_playback("paused");player_pause();}controls=0;panel=1;return;
+    }
     if(panel==7){
         if(display_confirm){
             if(button==SDL_CONTROLLER_BUTTON_A){VIDEO_MODE m=XVideoGetMode();output_selected_w=m.width;output_selected_h=m.height;output_selected_hz=m.refresh;output_height=m.height;display_confirm=0;preferences(1);}
@@ -484,13 +512,14 @@ static void button_down(int button){
                 if(panel_row<3){keyboard_begin(panel_row);panel=6;snprintf(status,sizeof(status),XL(KEYBOARD_HELP));}
                 else if(!server_draft_valid())snprintf(status,sizeof(status),XL(INVALID_SERVER));
                 else if(panel_row==3){
+                    remote_shutdown();SDL_AtomicSet(&remote_cancel,0);
                     strcpy(config_old_host,host);strcpy(config_old_password,password);config_old_port=port;
                     strcpy(host,server_draft_host);strcpy(password,server_draft_password);port=(unsigned)strtoul(server_draft_port,NULL,10);
                     fetch_start("/api/health",4);config_testing=1;
-                }else if(server_save()){
+                }else{remote_shutdown();SDL_AtomicSet(&remote_cancel,0);if(server_save()){
                     panel=0;remote_sequence=0;report_started=0;*media_id=0;options=0;root_index=0;*folder_path=0;entry_count=0;
                     memset(server_draft_password,0,sizeof(server_draft_password));browse("",0);
-                }else snprintf(status,sizeof(status),XL(SAVE_FAILED));
+                }else snprintf(status,sizeof(status),XL(SAVE_FAILED));}
             }return;
         }
         if(button==SDL_CONTROLLER_BUTTON_B||button==SDL_CONTROLLER_BUTTON_Y){if(panel==2||panel==4)preferences(1);panel=0;return;}
@@ -509,8 +538,8 @@ static void button_down(int button){
             }return;
         }
         if(panel==2){
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+18)%19;
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%19;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+19)%20;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%20;
             int d=button==SDL_CONTROLLER_BUTTON_DPAD_LEFT?-1:1;
             if(button==SDL_CONTROLLER_BUTTON_A||button==SDL_CONTROLLER_BUTTON_DPAD_LEFT||button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT){
                 switch(panel_row){case 0:auto_next=!auto_next;break;case 1:repeat_one=!repeat_one;break;case 2:shuffle_music=!shuffle_music;break;
@@ -525,7 +554,8 @@ static void button_down(int button){
                 case 15:audio_matrix=(audio_matrix+3+d)%3;break;
                 case 16:video_hardware=!video_hardware;break;
                 case 17:ui_language=(ui_language+3+d)%3;text_cache_clear();preferences(1);break;
-                case 18:audio_quality=(audio_quality+5+d)%5;break;}
+                case 18:audio_quality=(audio_quality+5+d)%5;break;
+                case 19:stop_minutes=(stop_minutes+195+d*15)%195;stop_deadline=SDL_GetTicks()+stop_minutes*60000u;break;}
             }
         }return;
     }
@@ -544,7 +574,7 @@ static void button_down(int button){
         return;
     }
     if(options){
-        int rows=media_audio?1:4;
+        int rows=media_audio?1:series_available?6:4;
         if(button==SDL_CONTROLLER_BUTTON_B){options=0;return;}
         if(button==SDL_CONTROLLER_BUTTON_Y){panel=3;return;}
         if(button==SDL_CONTROLLER_BUTTON_X){start_position=start_position>0?0:media_resume;return;}
@@ -556,13 +586,14 @@ static void button_down(int button){
             else if(option_row==1&&audio_count)audio_track=(audio_track+audio_count+d)%audio_count;
             else if(option_row==2){subtitle_track=(subtitle_track+1+subtitle_count+1+d)%(subtitle_count+1)-1;}
             else if(option_row==3)quality=(quality+6+d)%6;
+            else if(option_row>=4&&button==SDL_CONTROLLER_BUTTON_A)series_save(option_row==5);
         }return;
     }
     if(button==SDL_CONTROLLER_BUTTON_LEFTSHOULDER){panel=8;panel_row=0;snprintf(status,sizeof(status),XL(ACTIONS_HELP));}
     else if(button==SDL_CONTROLLER_BUTTON_RIGHTSHOULDER){keyboard_begin(3);panel=6;snprintf(status,sizeof(status),XL(KEYBOARD_HELP));}
     else if(button==SDL_CONTROLLER_BUTTON_B&&has_parent)browse(parent_path,0);
     else if(button==SDL_CONTROLLER_BUTTON_X){panel=2;panel_row=0;}
-    else if(button==SDL_CONTROLLER_BUTTON_Y)panel=1;
+    else if(button==SDL_CONTROLLER_BUTTON_Y){help_page=help_return=help_resume=0;panel=1;}
     else if(button==SDL_CONTROLLER_BUTTON_START)browse(folder_path,page_offset);
     else if(button==SDL_CONTROLLER_BUTTON_DPAD_LEFT&&page_offset>=64)browse(folder_path,page_offset-64);
     else if(button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT&&page_offset+64<total_entries)browse(folder_path,page_offset+64);
@@ -572,9 +603,25 @@ static void button_down(int button){
 }
 static void remote_execute(void){
     if(!parse_json(remote_body))return;
+    char radio_id[1536];text_tok(field(0,"radio_id"),radio_id,sizeof(radio_id));
+    if(playing&&media_live&&!strcmp(radio_id,media_id)){
+        char title[256],station[128];
+        if(text_tok(field(0,"radio_station"),station,sizeof(station)))snprintf(media_artist,sizeof(media_artist),"%s",station);
+        if(text_tok(field(0,"radio_title"),title,sizeof(title)))snprintf(media_name,sizeof(media_name),"%s",*title?title:media_artist);
+    }
     unsigned sequence=number(0,"sequence");if(!sequence||sequence<=remote_sequence)return;
     remote_sequence=sequence;char action[24];text_tok(field(0,"action"),action,sizeof(action));
-    if(!strcmp(action,"play")){
+    if(!strcmp(action,"button")){
+        char name[16];text_tok(field(0,"button"),name,sizeof(name));
+        const char *names[]={"up","down","left","right","a","b","x","y","start","back","l","r","help"};
+        const int buttons[]={SDL_CONTROLLER_BUTTON_DPAD_UP,SDL_CONTROLLER_BUTTON_DPAD_DOWN,SDL_CONTROLLER_BUTTON_DPAD_LEFT,SDL_CONTROLLER_BUTTON_DPAD_RIGHT,SDL_CONTROLLER_BUTTON_A,SDL_CONTROLLER_BUTTON_B,SDL_CONTROLLER_BUTTON_X,SDL_CONTROLLER_BUTTON_Y,SDL_CONTROLLER_BUTTON_START,SDL_CONTROLLER_BUTTON_BACK,SDL_CONTROLLER_BUTTON_LEFTSHOULDER,SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,SDL_CONTROLLER_BUTTON_RIGHTSTICK};
+        for(unsigned i=0;i<sizeof(buttons)/sizeof(*buttons);i++)if(!strcmp(name,names[i])){button_down(buttons[i]);break;}
+    }else if(!strcmp(action,"text")){
+        if(panel==6&&(unsigned)number(0,"dialog")==keyboard_dialog){
+            char value[129];unsigned cap=keyboard_field==0?sizeof(server_draft_host):keyboard_field==1?sizeof(server_draft_port):sizeof(keyboard_draft);
+            if(text_tok(field(0,"text"),value,sizeof(value))&&strlen(value)<cap)snprintf(keyboard_draft,sizeof(keyboard_draft),"%s",value);
+        }
+    }else if(!strcmp(action,"play")){
         next_pending=0;
         Entry item={0};if(!text_tok(field(0,"id"),item.target,sizeof(item.target))||!*item.target)return;
         remote_audio=number(0,"audio");remote_subtitle=number(0,"subtitle");remote_start=number(0,"start");
@@ -595,7 +642,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.8 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.9 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
@@ -651,6 +698,7 @@ int main(void){
             else if(type==3){fetch.body=body;if(!*fetch.error)artwork_read();fetch.body=NULL;snprintf(status,sizeof(status),XL(OPTIONS_HINT));}
             else if(*fetch.error){autoplay_pending=remote_play_pending=0;snprintf(status,sizeof(status),"%s",fetch.error);}
             else if(type==5){panel=0;options=0;browse(folder_path,page_offset);}
+            else if(type==6){if(parse_json(body)){series_saved=number(0,"series_saved");snprintf(status,sizeof(status),"%s",XL(SERIES_UPDATED));}else snprintf(status,sizeof(status),"%s",XL(INVALID_REPLY));}
             else if(type==2){
                 if(parse_json(body)){text_tok(field(0,"id"),following.target,sizeof(following.target));text_tok(field(0,"name"),following.name,sizeof(following.name));char kind[16];text_tok(field(0,"kind"),kind,sizeof(kind));following.audio=!strcmp(kind,"audio");queued_audio=field(0,"audio")>=0?number(0,"audio"):-1;queued_subtitle=field(0,"subtitle")>=0?number(0,"subtitle"):-2;}
                 if(!*following.target)snprintf(status,sizeof(status),XL(FOLDER_END));
@@ -687,9 +735,14 @@ int main(void){
             }
         }
         report_tick();
+        if(stop_minutes&&(Sint32)(SDL_GetTicks()-stop_deadline)>=0){
+            stop_minutes=0;next_pending=retry_pending=autoplay_pending=remote_play_pending=0;
+            fetch_stop();report_playback("stopped");report_started=0;player_stop();controls=0;
+            snprintf(status,sizeof(status),"%s",XL(TIMER_STOPPED));
+        }
         if(search_running&&!playing&&!options&&!panel&&!fetch.thread&&!strcmp(folder_path,":xbox:search:")&&(Sint32)(SDL_GetTicks()-search_refresh_at)>=0)browse(folder_path,page_offset);
         if(next_pending){int left=(Sint32)(next_at-SDL_GetTicks());if(left<=0){next_pending=0;next_media(0);}else snprintf(status,sizeof(status),XL(NEXT_COUNTDOWN),(left+999)/1000);}
-        if(connection_ready&&!network&&panel!=5&&panel!=6&&panel!=7&&remote_poll())remote_execute();
+        if(connection_ready&&!network&&!config_testing&&panel!=7&&remote_poll(panel==6?keyboard_dialog:0,keyboard_field==2))remote_execute();
         if(first_loop)startup_note("main: before clock/redraw");
         /* 20 Hz is a start-to-start cap, not an extra 50 ms sleep after all
          * rendering/copying has already consumed the frame budget. */

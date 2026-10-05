@@ -5,6 +5,23 @@ from psp_streamer.xbox_remote import XboxRemote
 
 
 class XboxRemoteTests(unittest.TestCase):
+    def test_menu_buttons_text_ack_and_psp_isolation(self):
+        remote=XboxRemote();server=SimpleNamespace(remote_sequence=91)
+        for key in ('a','up','help','back'):
+            reply=remote.send(server,dict(action='button',button=key))
+            command=remote.poll(0,dialog=123,secret=True)
+            self.assertEqual(command['button'],key)
+            self.assertEqual(remote.poll(reply['sequence'],123,True),{})
+            self.assertEqual(remote.snapshot()['acknowledged'],reply['sequence'])
+        self.assertTrue(remote.snapshot()['secret'])
+        self.assertEqual(remote.snapshot()['dialog'],123)
+        remote.send(server,dict(action='text',text='Grüße',dialog=123))
+        self.assertEqual(remote.poll(0)['text'],'Grüße')
+        self.assertNotIn('text',remote.snapshot())
+        for data in (dict(action='button',button='shell'),dict(action='text',text='x',dialog=0),dict(action='text',text='ü'*65,dialog=1),dict(action='text',text='x\ny',dialog=1)):
+            with self.assertRaises(ValueError):remote.send(server,data)
+        self.assertEqual(server.remote_sequence,91)
+
     def test_video_sizes_optional_validated_and_forwarded(self):
         remote=XboxRemote();server=SimpleNamespace(library=Mock(),radio=Mock())
         for size in ('480p-low','360p','480p','576p','720p','1080p'):
