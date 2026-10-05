@@ -103,11 +103,11 @@ PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.76 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.77 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
-3. Use the direct LAN HTTP port. `host` is an IPv4 address without a scheme/path;
+3. Use the direct LAN HTTP port. `host` is a hostname or IPv4 address without a scheme/path;
    `port` defaults to 8091, `password` is the existing server password. HTTP/Basic
    authentication is appropriate only on a trusted LAN. No TLS implementation yet.
 4. Begin with `output_height=480` and standard video quality. Play one music
@@ -158,7 +158,7 @@ three times, with B to cancel. Live radio reconnects at the live position.
 - Music has a 24-band windowed frequency display plus the analog VU meters.
   Y toggles its fullscreen display; frequency analysis is disabled for video.
 - Configured radio stations are playable; resume returns to live radio.
-  ICY title display on Xbox is still pending.
+  ICY station/title display requires server 0.1.77 or newer.
 - Playback progress (15 seconds), pause and stop go to Plex/Jellyfin and
   shared history in a bounded background queue, not the render/audio thread.
   Browser playback reports the same events. Client/session identities and
@@ -194,12 +194,12 @@ three times, with B to cancel. Live radio reconnects at the live position.
   DMA-current PCM snapshot and an SDL texture. Analysis runs in the UI at up
   to 20 Hz, not during audio submission. The old 24-bin approximation is gone.
   One Xbox band-count preference replaces PSP-specific LCD/TV preferences.
-- Main menu **X → Server connection**: edit IPv4/port/password, test without
+- Main menu **X → Server connection**: edit hostname/port/password, test without
   saving, then Save and connect; B cancels. The controller keyboard follows
   the PSP editor: A types, X deletes, Y clears, Start accepts, B cancels.
   Passwords remain masked. All HTTP workers are quiesced before credentials
   change. `server.cfg` is atomically replaced via a `.bak` recovery copy.
-  HTTP/trusted LAN only; DNS and HTTPS are not silently emulated.
+  HTTP/trusted LAN only; DNS is supported, HTTPS is not implemented yet.
 - Settings include debug logging and a 0–30 second next-episode countdown
   (0 keeps immediate continuation). A advances now; B cancels the countdown.
   Error/assertion diagnostics remain available when routine logging is off.
@@ -210,7 +210,7 @@ three times, with B to cancel. Live radio reconnects at the live position.
 
 ### Still separate porting work
 
-Xbox offline storage, DNS/HTTPS, ICY track titles and local subtitle overlays
+Xbox offline storage, HTTPS and local subtitle overlays
 remain separate work. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
