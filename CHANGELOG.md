@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.5.0 / server 0.1.76: dashboard-default EN/DE UI; shared favorites,
+  cross-provider search, editable playlist with repeat/shuffle; MP2 bitrate
+  settings and higher-resolution artwork. Unify Xbox/PSP web playback controls
+  without mixing their mailboxes. Separate HACS 0.2.0 Xbox entity with artwork,
+  position and controls; retain the existing PSP entity identity. PSP playback
+  and timing are unchanged. Local subtitle rendering remains deferred.
+
 - Xbox 0.4.6 / server 0.1.75: web video-resolution selection for all six sizes,
   optional client default, browser persistence and music/PSP isolation. Prevent
   audio completion counters/sample clock from regressing after a DMA stall.

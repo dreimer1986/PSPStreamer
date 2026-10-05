@@ -24,7 +24,7 @@ static int server_save(void){
 }
 static void keyboard_begin(int field){
     keyboard_field=field;keyboard_key=0;
-    snprintf(keyboard_draft,sizeof(keyboard_draft),"%s",field==0?server_draft_host:field==1?server_draft_port:server_draft_password);
+    snprintf(keyboard_draft,sizeof(keyboard_draft),"%s",field==3?search_query:field==0?server_draft_host:field==1?server_draft_port:server_draft_password);
 }
 static void keyboard_accept(void){
     char *dest=keyboard_field==0?server_draft_host:keyboard_field==1?server_draft_port:server_draft_password;

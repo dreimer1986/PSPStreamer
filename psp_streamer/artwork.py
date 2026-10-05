@@ -105,6 +105,20 @@ class Artwork:
         # Do not give partial failures a reusable identity.
         return b'PSPI'+(tag if complete else '0'*64).encode('ascii')+packet
 
+    def xbox(self, token):
+        """Bounded HD planes, independent of the PSP's low-memory wire format."""
+        token, scope, paths, tag = self.psp_identity(token)
+        planes = []
+        for kind, width, height in [('backdrop',1280,720), ('cover',240,336)]:
+            try:
+                plane = self._psp_plane(token,scope,kind,paths[kind],width,height) if paths.get(kind) else b''
+            except (ValueError, OSError, subprocess.TimeoutExpired):
+                plane = b''
+            planes.append(plane)
+        if self._psp_scope(token) != scope:
+            raise ValueError('Artwork source changed; retry')
+        return struct.pack('<4sHHHHII',b'XART',1280,720,240,336,len(planes[0]),len(planes[1]))+b''.join(planes)
+
     def paths(self, row):
         if self.provider.art_provider == 'plex':
             def path(*fields):

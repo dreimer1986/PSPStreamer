@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.4.6
+# Original Xbox — native player preview 0.5.0
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.6 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.5.0 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.75 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.76 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -26,7 +26,9 @@ PSP executable. The proven PTS/sample-position clock is unchanged.
 | Context | Buttons |
 |---|---|
 | Library | D-pad up/down: entry; left/right: page; A: open; B: parent; Start: reload |
-| Library | X: settings; Y: help |
+| Library | X: settings; Y: help; LB: selected-file/playlist actions; RB: search |
+| Search keyboard | A: character; X: delete; Y: clear; Start: search; B: cancel |
+| Playlist actions | Add/remove, move up/down, enable queue, repeat off/one/all, queue shuffle |
 | Media options | Up/down: row; left/right: audio/subtitle/quality; A on Play: start |
 | Playback | A: pause/resume; Start: controls menu; B: stop; left/right: -/+30 seconds |
 | Video | X also opens the controls menu: pause, seek, chapters, previous/next file, stop |
@@ -52,11 +54,11 @@ three times, with B to cancel. Live radio reconnects at the live position.
 - `preferences.cfg` beside the XBE stores these settings, with a `.bak`
   recovery copy. Updating the executable never replaces personal settings.
 - Provider resume points and shared direct-file history are available. Root
-  rows expose existing shared Favorites and Recently played (read-only).
+  rows expose shared Favorites, Recently played, Playlist and Search.
 - Plex/Jellyfin/DLNA artwork reuses the bounded server RGB565 image service:
-  320x180 dimmed backdrop and 80x112 cover; it does not decode unbounded images
+  1280x720 dimmed backdrop and 240x336 cover; it does not decode unbounded images
   on the console. Artwork failure never prevents Play; Play cancels a pending
-  optional image request. This is not yet native-resolution Xbox artwork.
+  optional image request. Artwork size is bounded, not an arbitrary source image.
 - Music has a 24-band windowed frequency display plus the analog VU meters.
   Y toggles its fullscreen display; frequency analysis is disabled for video.
 - Configured radio stations are playable; resume returns to live radio.
@@ -112,11 +114,50 @@ three times, with B to cancel. Live radio reconnects at the live position.
 
 ### Still separate porting work
 
-Accelerated 3D rendering, MilkDrop/Monkey, native high-resolution
-artwork, Xbox offline storage, editable Xbox playlists, favorites editing,
-library search, translations and a distinct
-Xbox HA remote entity are **not implemented** in this build. No parity with
+Accelerated 3D rendering, MilkDrop/Monkey, Xbox offline storage, DNS/HTTPS,
+ICY track titles and local subtitle overlays remain separate work. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
+
+### Languages, library conveniences and artwork (0.5.0)
+
+- Settings → **UI language** selects Dashboard (Auto), English or Deutsch.
+  Auto reads `XC_LANGUAGE` without writing the EEPROM; unsupported dashboard
+  languages fall back to English. The choice applies immediately and persists
+  in `preferences.cfg`: `ui_language=0` (auto), `1` (English), `2` (German).
+  Named UTF-8 strings live in `language_strings.h`; keep formatting placeholders
+  identical in both columns. Technical decoder/network diagnostics remain English.
+- Favorites, Recently played, Playlist and Search appear at the library root.
+  Search covers films, series and music across enabled sources. It progressively
+  refreshes results and shows running/limited/error counts; RB edits the query.
+- **LB** on a media row opens favorite and playlist actions. In Playlist,
+  remove/reorder the selected row and choose repeat off/one/all or queue shuffle.
+  Queue shuffle is separate from music-folder shuffle. Enable the playlist to
+  use its order at track end or with Previous/Next. The existing global autoplay
+  switch still controls automatic advancement. Queue track/subtitle selections
+  are reused; Xbox encoding settings are independent of PSP queue quality.
+  Shared favorites/queue stay in the server's persistent state directory and
+  are also visible in the web UI/PSP. Concurrent queue edits require a refresh
+  rather than silently overwriting another client's changes. Live radio has no
+  natural playlist end and is not added to the queue.
+- **MP2 quality (48 kHz)** selects 128/192/256/320/384 kbit/s (default 192).
+  `audio_quality=0..4` stores the corresponding choice. The codec/sample clock
+  remain MP2/48 kHz; no unsupported AAC, MP3-VBR or passthrough choices appear.
+  It applies on the next stream start and can also be selected in the web remote.
+- Xbox artwork uses a separate bounded endpoint: **1280×720 background** and
+  **240×336 cover**, instead of PSP 320×180/80×112. Preserve aspect ratio, crop
+  backdrops and pad covers; missing images never block playing a file.
+- The web remote now uses the **same playback panel as PSP**, including current
+  item adoption in a fresh browser session, chapters, seek and transport buttons.
+  Only the selected target's status/mailbox is used; the duplicate Xbox panel
+  is removed. PSP download-quality settings remain separate.
+- HACS integration **0.2.0** adds a separate Xbox media player with stable ID
+  `<server-id>-xbox`, authenticated artwork and Xbox-only commands. The existing
+  PSP entity ID is unchanged. Update the separate PSPStreamerHA repository.
+
+Console checks: switch EN/DE/Auto and restart; add/remove a favorite; search,
+reorder a two-item playlist and check repeat/shuffle; select an MP2 bitrate;
+open a Plex/Jellyfin title to inspect artwork; check web/HA Xbox controls do
+not control a concurrently connected PSP. Host checks do not replace these.
 
 ## Display and performance
 

@@ -18,6 +18,8 @@ static XboxVideo video;static unsigned char *video_input;
 static plm_frame_t video_frame,*next_frame;static int64_t frame_pts;
 static int video_codec=1; /* 0=MPEG-1, 1=MPEG-2 */
 static int audio_matrix;
+static int audio_quality=1;
+static const char *audio_quality_keys[]={"128k","192k","256k","320k","384k"};
 static const char *matrix_keys[]={"none","dolby","dplii"};
 static const char *matrix_names[]={"Stereo","Dolby Surround","Dolby Pro Logic II"};
 static const char *quality_names[]={"480x272","640x360","720x480 (16:9)","720x576 (16:9)","1280x720 (HD)","1920x1080 (HD)"};
@@ -82,7 +84,7 @@ static int player_start(double seconds){
     memset(&stream,0,sizeof(stream));stream.lock=SDL_CreateMutex();if(!stream.lock)return 0;
     char token[4700];if(!url_encode(media_id,token,sizeof(token))){player_stop();return 0;}
     unsigned start_ms=(unsigned)(seconds*1000);
-    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=tv&xbox_size=%s&xbox_codec=%s&xbox_matrix=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality_keys[quality],video_codec?"mpeg2":"mpeg1",matrix_keys[audio_matrix],start_ms/1000,start_ms%1000);
+    snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=tv&xbox_size=%s&xbox_codec=%s&xbox_matrix=%s&xbox_audio=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality_keys[quality],video_codec?"mpeg2":"mpeg1",matrix_keys[audio_matrix],audio_quality_keys[audio_quality],start_ms/1000,start_ms%1000);
     if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}

@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 static char host[64]="192.168.1.1",password[129]="old";
 static unsigned port=8091;static int output_height=480;
+static char search_query[129];
 static int MoveFileA(const char *a,const char *b){return rename(a,b)==0;}
 #include "../xbox-client/server_settings.h"
 int main(void){

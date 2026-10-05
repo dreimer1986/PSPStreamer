@@ -37,6 +37,11 @@ class XboxRemote:
                          start=max(0, min(604800, int(data.get('start', 0)))))
             if size is not None:
                 clean['xbox_size'] = size
+            bitrate = data.get('xbox_audio')
+            if bitrate is not None:
+                if bitrate not in ('128k','192k','256k','320k','384k'):
+                    raise ValueError('Invalid Xbox MP2 bitrate')
+                clean['xbox_audio'] = bitrate
         if action == 'seek':
             clean['seconds'] = max(0, min(604800, int(data.get('seconds', 0))))
         with self.lock:

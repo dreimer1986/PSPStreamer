@@ -1,6 +1,9 @@
 /* Bounded jsmn adapter; UTF-8 labels, including escaped JSON Unicode. */
 #include "vendor/jsmn.h"
-typedef struct {char name[256],target[1536];int folder,audio;} Entry;
+#include "language.h"
+typedef struct {char name[256],target[1536];int folder,audio,favorite,root,position;} Entry;
+static int queue_revision,queue_enabled,queue_repeat,queue_shuffle,search_running,search_limited,search_errors;
+static char search_query[129];
 static Entry entries[64];static int entry_count,entry_index,page_offset,total_entries,root_index;
 static char folder_path[1536],parent_path[1536];static int has_parent;
 static char media_id[1536],media_name[256];static int media_audio,audio_track,subtitle_track=-1,quality,option_row;
@@ -15,10 +18,10 @@ static const char *language_code(const char *s){
     if(!strcmp(s,"spa"))return "es";if(!strcmp(s,"ita"))return "it";return s;
 }
 static const char *language_label(const char *s){
-    s=language_code(s);if(!*s||!strcmp(s,"und"))return "Language unspecified";
-    if(!strcmp(s,"en"))return "English";if(!strcmp(s,"de"))return "German";
-    if(!strcmp(s,"ja"))return "Japanese";if(!strcmp(s,"fr"))return "French";
-    if(!strcmp(s,"es"))return "Spanish";if(!strcmp(s,"it"))return "Italian";return s;
+    s=language_code(s);if(!*s||!strcmp(s,"und"))return XL(UNKNOWN_LANGUAGE);
+    if(!strcmp(s,"en"))return XL(ENGLISH);if(!strcmp(s,"de"))return XL(GERMAN);
+    if(!strcmp(s,"ja"))return XL(JAPANESE);if(!strcmp(s,"fr"))return XL(FRENCH);
+    if(!strcmp(s,"es"))return XL(SPANISH);if(!strcmp(s,"it"))return XL(ITALIAN);return s;
 }
 /* JSON duration only: nxdk's strtod/strtof are assertion-only stubs.
  * Reject malformed/unreasonable values rather than preventing playback when
@@ -74,17 +77,21 @@ static int text_tok(int i,char *out,size_t cap){
 static int number(int obj,const char *key){char s[32];text_tok(field(obj,key),s,sizeof(s));return atoi(s);}
 static int parse_json(char *data){json=data;jsmn_parser p;jsmn_init(&p);tok_count=jsmn_parse(&p,json,strlen(json),tokens,8192);return tok_count>0&&tokens[0].type==JSMN_OBJECT;}
 static int parse_catalog(char *data){
+    char previous[1536];snprintf(previous,sizeof(previous),"%s",entry_count?entries[entry_index].target:"");
     if(!parse_json(data))return 0;int list=field(0,"entries");if(list<0||tokens[list].type!=JSMN_ARRAY||tokens[list].size>64)return 0;
     if(!text_tok(field(0,"path"),folder_path,sizeof(folder_path)))return 0;
     int p=field(0,"parent");has_parent=p>=0&&tokens[p].type==JSMN_STRING;
     if(has_parent&&!text_tok(p,parent_path,sizeof(parent_path)))return 0;
     root_index=number(0,"root");total_entries=number(0,"total");page_offset=number(0,"offset");entry_count=0;entry_index=0;
+    queue_revision=number(0,"revision");queue_enabled=number(0,"enabled");queue_repeat=number(0,"repeat");queue_shuffle=number(0,"shuffle");
+    search_running=number(0,"running");search_limited=number(0,"limited");search_errors=number(0,"errors");
     for(int i=list+1;i<tok_count&&tokens[i].start<tokens[list].end;i=next_tok(i)) {
         Entry *e=&entries[entry_count++];char kind[16];text_tok(field(i,"kind"),kind,sizeof(kind));
         e->folder=!strcmp(kind,"folder");e->audio=!strcmp(kind,"audio");
+        e->favorite=number(i,"favorite");e->root=field(i,"root")>=0?number(i,"root"):root_index;e->position=number(i,"position");
         text_tok(field(i,"name"),e->name,sizeof(e->name));
         if(!text_tok(field(i,e->folder?"path":"id"),e->target,sizeof(e->target)))return 0;
-    }return 1;
+    }for(int i=0;i<entry_count;i++)if(!strcmp(entries[i].target,previous)){entry_index=i;break;}return 1;
 }
 static int parse_metadata(char *data){
     if(!parse_json(data))return 0;char duration[40];media_duration=text_tok(field(0,"d"),duration,sizeof(duration))?parse_duration(duration):0;

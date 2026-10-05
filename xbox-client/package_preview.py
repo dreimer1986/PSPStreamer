@@ -11,7 +11,7 @@ if not (out / 'default.xbe').is_file():
 for name in ('README.md', 'server.cfg.example'):
     shutil.copy2(root / name, out / name)
 (out / 'source').mkdir(exist_ok=True)
-for name in ('framebuffer_copy.h', 'text_cache.h', 'audio_dma_cursor.h'):
+for name in ('framebuffer_copy.h', 'text_cache.h', 'audio_dma_cursor.h', 'language.h', 'language_strings.h'):
     shutil.copy2(root / name, out / 'source' / name)
 for name in ('player_main.c', 'video_backend.c', 'video_overlay.h', 'yuy2_pack.h', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'mpeg_video.h', 'display.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)

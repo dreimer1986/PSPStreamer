@@ -1,3 +1,11 @@
+# 0.1.76
+
+- Xbox 0.5.0 library adapters for shared favorites, search and editable queue.
+- Xbox MP2 bitrate selection and bounded HD artwork; PSP routes unchanged.
+- One common PSP/Xbox web playback panel, including current-item adoption.
+- Xbox metadata/status for the separate HACS 0.2.0 media-player entity.
+- Docker and Home Assistant app use identical server code.
+
 # 0.1.75
 
 - Add all six Xbox video resolutions to the web remote, plus "Use Xbox setting".

@@ -452,14 +452,16 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
-            if parsed.path == '/api/psp-artwork':
+            if parsed.path in ('/api/psp-artwork', '/api/xbox/artwork'):
                 selector = query.get('item', [''])[0]
                 provider = self.server.dlna if selector.startswith(('dlna.', ':dlna:')) else self.server.plex if selector.startswith(('plex.', ':plex:')) else self.server.jellyfin
                 folder = re.fullmatch(r':(plex|jellyfin):m([0-9a-f]+)', selector)
                 token = provider.token(folder[2]) if folder else selector
                 if provider is self.server.dlna:token=provider.artwork_token(selector)
                 try:
-                    if query.get('v') == ['2']:
+                    if parsed.path == '/api/xbox/artwork':
+                        data = provider.artwork.xbox(token)
+                    elif query.get('v') == ['2']:
                         known = query.get('known', [''])[0]
                         if known and not re.fullmatch('[0-9a-f]{64}', known):
                             return self.send_error_json(400, 'Invalid artwork identity')
@@ -509,29 +511,25 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == '/api/session':
                 return self.send_json({'csrf': self.web_csrf or '', 'protected': self.server.settings.protected})
             if parsed.path == '/api/xbox/library':
-                path=query.get('path',[''])[0]
-                listing = (dict(root=0,path=path,parent='',folders=[],videos=[]) if path in (':xbox:favorites:',':xbox:recent:')
-                    else browse_catalogue(self.server, int(query.get('root', ['0'])[0]), path))
-                if path in (':xbox:favorites:',':xbox:recent:'):
-                    for row in self.server.comfort.snapshot()['records']:
-                        if row.get('folder') or not row.get('favorite' if path==':xbox:favorites:' else 'used'):continue
-                        listing['videos'].append(dict(id=row['id'],name=row['name'],kind='audio' if row.get('audio') else 'video'))
-                elif not path:
-                    listing=dict(listing,folders=[dict(name='Favorites',path=':xbox:favorites:'),dict(name='Recently played',path=':xbox:recent:')]+listing['folders'])
-                offset = int(query.get('offset', ['0'])[0])
-                if offset < 0:
-                    raise ValueError('Invalid page')
-                entries = [dict(name=x['name'], path=x['path'], kind='folder') for x in listing['folders']]
-                entries += [dict(name=x['name'], id=x['id'], kind=x.get('kind','video')) for x in listing['videos']]
-                return self.send_json(dict(root=listing['root'], path=listing['path'], parent=listing['parent'],
-                                           total=len(entries), offset=offset, entries=entries[offset:offset+64]))
+                from .xbox_library import listing as xbox_listing
+                return self.send_json(xbox_listing(self.server, int(query.get('root', ['0'])[0]),
+                    query.get('path', [''])[0], int(query.get('offset', ['0'])[0]), query.get('q', [''])[0]))
             if parsed.path.startswith('/api/xbox/metadata/'):
                 token=parsed.path.rsplit('/',1)[-1]
                 payload=dict(self.metadata(token))
                 record=next((r for r in self.server.comfort.snapshot()['records'] if r['id']==token),{})
                 if 'resume' not in payload:payload['resume']=record.get('seconds',0)
                 payload['favorite']=record.get('favorite',0)
+                if query.get('queue') == ['1']:
+                    row = next((r for r in self.server.playlist.snapshot()['items'] if r['id']==token), {})
+                    if row:
+                        payload.update(preferred_audio=row.get('audio',0), preferred_subtitle=row.get('subtitle',-1))
                 return self.send_json(payload)
+            if parsed.path.startswith('/api/xbox/next/'):
+                from .xbox_library import next_media as xbox_next
+                return self.send_json(xbox_next(self.server, parsed.path.rsplit('/',1)[-1],
+                    query.get('direction')==['previous'], query.get('manual')==['1'],
+                    query.get('shuffle')==['1'], query.get('repeat_one')==['1']))
             if parsed.path == '/api/library/files':
                 return self.send_json({'files': folder_media(self.server,
                     int(query.get('root', ['0'])[0]), query.get('path', [''])[0],
@@ -580,7 +578,11 @@ class AppHandler(BaseHTTPRequestHandler):
             if parsed.path == '/api/player':
                 return self.send_json(self.server.player_status.snapshot())
             if parsed.path == '/api/xbox/status':
-                return self.send_json(self.server.xbox_remote.snapshot())
+                data = self.server.xbox_remote.snapshot()
+                with self.server.player_status.lock:
+                    metadata = dict(self.server.player_status.metadata.get(data.get('id'), {}))
+                return self.send_json(dict(data, metadata=metadata,
+                    server_id=self.server.player_status.identity, api=1))
             if parsed.path == '/api/xbox/remote':
                 return self.send_json(self.server.xbox_remote.poll(int(query.get('after', ['0'])[0])))
             if parsed.path == '/api/comfort':
@@ -715,11 +717,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 xbox_size = query.get('xbox_size', [None])[0] if xbox else None
                 xbox_codec = query.get('xbox_codec', ['mpeg1'])[0] if xbox else 'mpeg1'
                 xbox_matrix = query.get('xbox_matrix', ['none'])[0] if xbox else 'none'
+                xbox_audio = query.get('xbox_audio', ['192k'])[0] if xbox else '192k'
                 if xbox:
                     from .xbox_player import PROFILES
-                    if xbox_matrix not in ('none','dolby','dplii') or xbox_codec not in ('mpeg1', 'mpeg2') or xbox_size is not None and xbox_size not in PROFILES:
+                    if xbox_audio not in ('128k','192k','256k','320k','384k') or xbox_matrix not in ('none','dolby','dplii') or xbox_codec not in ('mpeg1', 'mpeg2') or xbox_size is not None and xbox_size not in PROFILES:
                         raise ValueError('Unsupported Xbox video profile/codec')
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix)
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix, xbox_audio=xbox_audio)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -790,6 +793,13 @@ class AppHandler(BaseHTTPRequestHandler):
                     self.close_connection=True
                     raise ValueError('Invalid Xbox command size')
                 return self.send_json(self.server.xbox_remote.send(self.server,json.loads(self.rfile.read(length))))
+            if parsed.path == '/api/xbox/library-action':
+                from .xbox_library import change
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 2 <= length <= 8192:
+                    self.close_connection = True
+                    raise ValueError('Invalid Xbox library action size')
+                return self.send_json(change(self.server, json.loads(self.rfile.read(length))))
             if parsed.path == '/api/series-preferences':
                 length=int(self.headers.get('Content-Length','0'))
                 if not 2<=length<=4096:
@@ -1274,7 +1284,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False,
-                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none') -> None:
+                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none', xbox_audio: str = '192k') -> None:
         live = token.startswith('radio.')
         managed = browser or xbox
         xbox_transport = None
@@ -1336,7 +1346,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 command = browser_command(command, container == 'mp3')
             if xbox:
                 from .xbox_player import command as xbox_command
-                command = xbox_command(command, container == 'mp3', xbox_size, xbox_codec, xbox_matrix)
+                command = xbox_command(command, container == 'mp3', xbox_size, xbox_codec, xbox_matrix, xbox_audio)
             if managed:
                 from .managed_subtitles import seek_timeline
                 command = seek_timeline(command, start_seconds)

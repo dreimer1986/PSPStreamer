@@ -24,7 +24,9 @@ PROFILES = {'480p-low': (480,272,1500), '360p': (640,360,2000),
             '720p': (1280,720,9000), '1080p': (1920,1080,16000)}
 
 
-def command(base, audio_only=False, size=None, codec='mpeg1', matrix='none'):
+def command(base, audio_only=False, size=None, codec='mpeg1', matrix='none', audio_quality='192k'):
+    if audio_quality not in ('128k','192k','256k','320k','384k'):
+        raise ValueError('Unsupported Xbox MP2 bitrate')
     if matrix not in ('none','dolby','dplii') or codec not in ('mpeg1', 'mpeg2') or size is not None and size not in PROFILES:
         raise ValueError('Unsupported Xbox video profile/codec')
     cmd = list(base)
@@ -70,9 +72,9 @@ def command(base, audio_only=False, size=None, codec='mpeg1', matrix='none'):
     else:
         cmd[-3:-3] = ['-af', audio_filter]
     if '-b:a' in cmd:
-        cmd[cmd.index('-b:a')+1] = '192k'
+        cmd[cmd.index('-b:a')+1] = audio_quality
     else:
-        cmd[-3:-3] = ['-b:a','192k']
+        cmd[-3:-3] = ['-b:a',audio_quality]
     cmd[-3:] = ['-mpegts_flags', '+resend_headers', '-pes_payload_size', '0',
                  '-muxdelay', '0', '-f', 'mpegts', 'pipe:1']
     return cmd

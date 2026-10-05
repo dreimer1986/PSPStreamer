@@ -1,4 +1,4 @@
-# Xbox settings audit — 0.4.3
+# Xbox settings audit — 0.5.0
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,
@@ -8,7 +8,7 @@ not a claim that every new setting has passed a console test.
 
 - Saved NV2A hardware-overlay / software video renderer choice; automatic
   software fallback on allocation or persistent GPU-buffer availability failure.
-  Hardware validation pending; this is presentation, not MPEG hardware decode.
+  Hardware presentation confirmed; this is not MPEG hardware decode.
 - Saved volume, autoplay next, repeat current, music folder shuffle.
 - Preferred audio/subtitle language, per-file track selection and provider
   series preferences; source resume and chapter navigation.
@@ -27,17 +27,18 @@ not a claim that every new setting has passed a console test.
   selections in preferences.cfg take precedence.
 - Debug logging toggle, 0–30 second next-episode countdown with immediate
   advance/cancel, and real-position fullscreen progress bar.
+- Dashboard-default English/German UI with saved manual override and Xbox help.
+- MP2/48-kHz bitrate selection: 128/192/256/320/384 kbit/s, also via web remote.
+- Shared favorites editing, provider-wide progressive search, editable playlist,
+  queue repeat off/one/all and queue shuffle independent of folder shuffle.
+- Bounded HD artwork (1280x720 backdrop, 240x336 cover); no PSP changes.
+- Separate stable Xbox media-player entity in HACS 0.2.0; shared web control panel.
 
 ## Useful missing settings, in suggested order
 
-1. **Language:** read Xbox dashboard language as initial default, allow manual
-   selection, reuse existing translations. Controller help needs Xbox labels.
-   Still English-only; explicitly queued after MPEG-2/output work.
-2. **Server transport:** DNS hostnames and HTTPS are separate work, not
+1. **Server transport:** DNS hostnames and HTTPS are separate work, not
    working toggles. Current editor supports trusted-LAN HTTP with IPv4.
-3. **Output tests:** verify runtime mode changes/rollback, anamorphic aspect
-   and SD/HD performance on the console. Do not claim tested HD decoding yet.
-4. **Encoding preferences:** expose appropriate Xbox audio codec/quality and
+2. **Encoding preferences:** expose additional Xbox audio codecs and
    cadence choices only once the separate Xbox encoder supports them. Do not
    copy PSP MP3/VBR or 20 fps labels onto the current MP2/MPEG-1/2 stream.
    AC-3/DTS passthrough is deferred until an S/PDIF receiver is available.
@@ -47,10 +48,9 @@ not a claim that every new setting has passed a console test.
 - MilkDrop preset selection, automatic changes, timing, live transitions,
   resolution and hard cuts; Monkey options, flight controls and rumble.
   Reuse existing portable engine/parser code; replace PSP GU/input bindings.
-- Offline download/cache controls, editable queue and repeat-all, favorites
-  editing and search/text entry. These are not enabled by settings alone.
-- Xbox-specific HA entity; the web Xbox remote is present, the HACS entity
-  still represents the PSP.
+- Offline download/cache controls, ICY titles and local text/bitmap subtitles.
+  Subtitle overlays require PTS paging, seek/cancellation and both NV2A color-key
+  and software rendering paths; server burn-in remains the working fallback.
 
 ## Do not copy PSP-specific controls
 
