@@ -5,6 +5,13 @@
 #include <string.h>
 #include "../xbox-client/mpeg_video.h"
 static int64_t timestamps[10000];static unsigned seen;
+static unsigned slices;
+static void service(void *opaque){
+    unsigned *count=opaque;(*count)++;
+    /* Audio uses floating point: MMX state must be restored at this boundary. */
+    volatile long double input=1.25L;
+    if(input*2!=2.5L)abort();
+}
 static int drain(XboxVideo *v){
     int result;
     while((result=xbox_video_step(v))>0){
@@ -15,6 +22,7 @@ static int drain(XboxVideo *v){
 int main(int argc,char **argv){
     if(argc!=2)return 1;FILE *f=fopen(argv[1],"rb");if(!f)return 2;
     XboxVideo v;if(!xbox_video_init(&v))return 3;
+    mpeg2_set_slice_service(v.decoder,service,&slices);
     unsigned char header[16];int ended=0;
     while(fread(header,1,16,f)==16){
         unsigned size;int64_t pts;memcpy(&size,header+4,4);memcpy(&pts,header+8,8);
@@ -26,5 +34,6 @@ int main(int argc,char **argv){
     }
     if(!ended)return 7;
     xbox_video_end(&v);if(drain(&v)<0||v.displayed!=v.submitted)return 8;
+    if(!slices)return 9;
     printf("%u\n",v.displayed);xbox_video_close(&v);fclose(f);return 0;
 }

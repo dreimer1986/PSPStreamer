@@ -5,6 +5,9 @@ needle-only dirty rectangles are implemented; nine focused host checks pass.
 Hardware verification remains necessary. Monkey exit timing display is fixed
 and the visible tunnel extends from 16 to 20 sections with matching cache size.
 The earlier spectrum and MilkDrop improvements are user-confirmed.
+Video now offers an audio refill point after completed MPEG slices, rate-limited
+to 20 ms, with no decoder reentry or timing/quality changes. EOF/PTS checks cover
+both codecs and all six profiles. This improves scheduling, not IDCT speed.
 
 ## Implemented without changing PSP paths or preset semantics
 

@@ -7,6 +7,11 @@ transforms preserve operation order; static receiver updates touch only the
 needle region. Monkey looks four tunnel sections farther ahead (20 instead of
 16, with matching path-cache capacity). Its exit hold now displays integer
 seconds/tenths correctly on nxdk, whose printf lacks floating-point formatting.
+MPEG-1/2 now services queued audio between completed slices (at most every
+20 ms), so a costly HD picture need not block audio refill until the entire
+picture finishes. This does not change decoding, quality or PTS synchronization
+and is not a claim of higher decode throughput. Decoder chunk allocation also
+fails cleanly instead of continuing with a NULL buffer under memory pressure.
 
 The user confirmed the previous spectrum and MilkDrop improvements. This build
 does not claim completion of downloads, client subtitles or HTTPS below.

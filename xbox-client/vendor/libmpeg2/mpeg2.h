@@ -168,6 +168,8 @@ void mpeg2_custom_fbuf (mpeg2dec_t * mpeg2dec, int custom_fbuf);
 
 uint32_t mpeg2_accel (uint32_t accel);
 mpeg2dec_t * mpeg2_init (void);
+/* Callback must not call the decoder, alter input, or destroy decoder state. */
+void mpeg2_set_slice_service (mpeg2dec_t *, void (* service)(void *), void *);
 const mpeg2_info_t * mpeg2_info (mpeg2dec_t * mpeg2dec);
 void mpeg2_close (mpeg2dec_t * mpeg2dec);
 

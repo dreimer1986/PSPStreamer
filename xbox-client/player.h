@@ -135,6 +135,15 @@ static void player_visual_audio_service(void){
     last=now;stream_audio=stream.flags&2;
     if(player_audio_pump()<0)visual_audio_error=1;
 }
+/* The decoder invokes this only between slices, after restoring MMX state.
+ * No GUI/network requests, teardown, video decode or additional worker here. */
+static void player_video_audio_service(void *unused){
+    (void)unused;static Uint32 last;
+    Uint32 now=SDL_GetTicks();
+    if(now-last<20||!playing||paused||visual_audio_error||!stream_audio)return;
+    last=now;
+    if(player_audio_pump()<0)visual_audio_error=1;
+}
 /* Return 1 for a newly due video frame, 2 for EOF, -1 for a hard error. */
 static int player_tick(void){
     if(paused)return 0;
@@ -160,7 +169,9 @@ static int player_tick(void){
                 else{decoder_ended=1;if(video.displayed!=video.submitted){stream_error("Incomplete MPEG stream at EOF");return -1;}break;}
             }else break;
         }
+        mpeg2_set_slice_service(video.decoder,player_video_audio_service,NULL);
         Uint32 decode_start=SDL_GetTicks();int result=xbox_video_step(&video);video_decode_ms+=SDL_GetTicks()-decode_start;
+        if(visual_audio_error)return -1;
         if(result<0){stream_error("MPEG decode: invalid data or insufficient RAM");return -1;}
         if(result>0){
             const mpeg2_sequence_t *s=video.info->sequence;const mpeg2_fbuf_t *f=video.info->display_fbuf;

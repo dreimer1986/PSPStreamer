@@ -33,6 +33,13 @@
 
 static int mpeg2_accels = 0;
 
+void mpeg2_set_slice_service (mpeg2dec_t * decoder,
+                             void (* service)(void *), void * opaque)
+{
+    decoder->slice_service = service;
+    decoder->slice_service_opaque = opaque;
+}
+
 #define BUFFER_SIZE (1194 * 1024)
 
 const mpeg2_info_t * mpeg2_info (mpeg2dec_t * mpeg2dec)
@@ -189,6 +196,11 @@ mpeg2_state_t mpeg2_parse (mpeg2dec_t * mpeg2dec)
 			 mpeg2dec->chunk_start);
 	    mpeg2dec->code = mpeg2dec->buf_start[-1];
 	    mpeg2dec->chunk_ptr = mpeg2dec->chunk_start;
+
+            /* mpeg2_slice has restored CPU/MMX state here. Keep long HD
+             * pictures from starving audio without changing picture/PTS order. */
+            if (mpeg2dec->slice_service)
+                mpeg2dec->slice_service (mpeg2dec->slice_service_opaque);
 	}
 	if ((unsigned) (mpeg2dec->code - 1) >= 0xb0 - 1)
 	    break;
@@ -420,10 +432,16 @@ mpeg2dec_t * mpeg2_init (void)
 	return NULL;
 
     memset (mpeg2dec->decoder.DCTblock, 0, 64 * sizeof (int16_t));
+    mpeg2dec->slice_service = NULL;
+    mpeg2dec->slice_service_opaque = NULL;
     memset (mpeg2dec->quantizer_matrix, 0, 4 * 64 * sizeof (uint8_t));
 
     mpeg2dec->chunk_buffer = (uint8_t *) mpeg2_malloc (BUFFER_SIZE + 4,
 						       MPEG2_ALLOC_CHUNK);
+    if (mpeg2dec->chunk_buffer == NULL) {
+        mpeg2_free (mpeg2dec);
+        return NULL;
+    }
 
     mpeg2dec->sequence.width = (unsigned)-1;
     mpeg2_reset (mpeg2dec, 1);

@@ -159,6 +159,9 @@ typedef struct {
 } fbuf_alloc_t;
 
 struct mpeg2dec_s {
+    /* Xbox integration: optional, non-reentrant service after completed slices. */
+    void (* slice_service) (void * opaque);
+    void * slice_service_opaque;
     mpeg2_decoder_t decoder;
 
     mpeg2_info_t info;
