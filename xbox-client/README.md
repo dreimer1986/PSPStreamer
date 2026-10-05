@@ -1,4 +1,10 @@
-# Original Xbox — native player preview 0.6.7
+# Original Xbox — native player preview 0.6.8
+
+0.6.8 also prevents an interrupted network stream from waiting indefinitely
+for a stale final DMA slot after its encoded queues are empty. It enters the
+existing error/reconnect path; clean EOF draining and sample PTS are unchanged.
+GUI and effect cadence now use a 20 Hz start-to-start ceiling, not extra waits
+after expensive frames. Preset equations are unchanged.
 
 0.6.7 replaces SDK byte-loop memcpy in the hot framebuffer, effect scaler and
 texture staging/readback paths with bounded SSE1 block copies. Serial sampling

@@ -595,7 +595,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.7 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.8 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
@@ -691,7 +691,9 @@ int main(void){
         if(next_pending){int left=(Sint32)(next_at-SDL_GetTicks());if(left<=0){next_pending=0;next_media(0);}else snprintf(status,sizeof(status),XL(NEXT_COUNTDOWN),(left+999)/1000);}
         if(connection_ready&&!network&&panel!=5&&panel!=6&&panel!=7&&remote_poll())remote_execute();
         if(first_loop)startup_note("main: before clock/redraw");
-        if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=50){menu_draw();draw=SDL_GetTicks();}
+        /* 20 Hz is a start-to-start cap, not an extra 50 ms sleep after all
+         * rendering/copying has already consumed the frame budget. */
+        if((!playing||media_audio||paused)&&SDL_GetTicks()-draw>=50){draw=SDL_GetTicks();menu_draw();}
         if(first_loop)startup_note("main: before yield");
         SDL_Delay(1);
         if(first_loop){startup_note("main: first loop complete");first_loop=0;}

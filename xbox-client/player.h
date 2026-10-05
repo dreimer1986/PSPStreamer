@@ -140,6 +140,12 @@ static int player_tick(void){
     if(paused)return 0;
     if(!SDL_AtomicGet(&stream.ready))return SDL_AtomicGet(&stream.done)?-1:0;
     stream_video=stream.flags&1;stream_audio=stream.flags&2;
+    /* An interrupted stream has no terminal DMA descriptor. Once encoded
+     * packets drain, do not wait forever for a stale/replaying final DMA slot.
+     * The normal error path pauses DMA and reconnects at the measured PTS. */
+    if(SDL_AtomicGet(&stream.done)&&!stream.ended&&!queue_count(&stream.audio)&&!queue_count(&stream.video)){
+        stream_error_if_empty("Stream interrupted (no clean EOF)");return -1;
+    }
     if(visual_audio_error||player_audio_pump()<0)return -1;
     Packet p;unsigned queued=audio_queued();
     for(int work=0;stream_video&&!next_frame&&work<4;work++){

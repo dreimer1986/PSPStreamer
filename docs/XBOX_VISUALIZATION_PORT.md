@@ -1,4 +1,17 @@
-# Xbox visualization port — 0.6.7
+# Xbox visualization port — 0.6.8
+
+0.6.8 also handles a secondary error exposed in the saved 0.6.6 log: after the
+debugger-induced network interruption, `net_done=1 clean=0 net_bytes=0` persisted
+with `audio_queue=1` and frozen `pos_ms=63815`. Once both encoded queues are
+empty, failed network EOF now immediately enters the existing stop/reconnect
+path instead of waiting indefinitely for that DMA slot. Clean EOF is unchanged.
+0.6.7 live telemetry on 1920x1080 output showed about 7–8 UI updates/s, no audio
+underruns in the observed windows, and roughly 28–82 ms per present (including
+SDL's deferred software commands). MilkDrop's first GPU-submission phases fell
+from roughly 105–114 to 35–41 ms, though first-frame tracing itself adds overhead.
+0.6.8 additionally removes additive end-of-frame waits: both GUI and effect use
+a 50 ms start-to-start ceiling, without sleeping another frame's processing time.
+Remaining CPU/HD composition cost is real; these samples are not a full benchmark.
 
 ## Shared performance bottleneck (0.6.7)
 

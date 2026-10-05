@@ -22,6 +22,10 @@ class XboxVisualTests(unittest.TestCase):
         ui=(ROOT/'xbox-client/visual_ui.h').read_text()
         self.assertIn('xv_service_hook=player_visual_audio_service',ui)
         self.assertLess(ui.index('xv_service_hook=NULL'),ui.index('md_stop();'))
+        tick=player.split('static int player_tick(void){',1)[1]
+        failed=tick.index('!stream.ended&&!queue_count(&stream.audio)&&!queue_count(&stream.video)')
+        self.assertLess(failed,tick.index('player_audio_pump()'))
+        self.assertIn('stream_error_if_empty("Stream interrupted (no clean EOF)");return -1;',tick)
 
     def test_opaque_scaler(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -75,10 +79,12 @@ class XboxVisualTests(unittest.TestCase):
         self.assertNotIn('<pspgu.h>',source)
         self.assertIn('md_live_evaluate',source)
         self.assertIn('cave_draw_combat()',source)
+        self.assertIn('md_next=now+50000ULL;',source)
         ui=(ROOT/'xbox-client/visual_ui.h').read_text()
         self.assertIn('PANEL_VISUAL=9,PANEL_EFFECT=10,PANEL_PRESETS=11',ui)
         main=(ROOT/'xbox-client/player_main.c').read_text()
         self.assertIn('else if(panel==8)',main) # Existing library actions.
+        self.assertIn('draw=SDL_GetTicks();menu_draw();',main)
         self.assertIn('xbox_visual_stop()', (ROOT/'xbox-client/player.h').read_text())
 
 if __name__=='__main__':unittest.main()
