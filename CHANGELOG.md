@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.1: implement missing SDK `exp2*` / `expm1*` math functions used by
+  Monkey and audio smoothing. Fix the photographed startup assertion without
+  disabling assertions or changing shared formulas. Add numerical regression
+  checks and a link-map audit for unimplemented SDK math objects.
+
 - Xbox 0.6.0 test build: reuse the PSP Monkey/MilkDrop engines through an NV2A
   adapter, including presets, live transitions, persistent options, flight,
   combat, scores and native controller rumble. Bounded offscreen targets avoid

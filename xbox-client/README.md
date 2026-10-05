@@ -1,4 +1,9 @@
-# Original Xbox — native player preview 0.6.0
+# Original Xbox — native player preview 0.6.1
+
+0.6.1 fixes the SDK assertion on starting Monkey: the Xbox port now supplies
+`exp2*` and `expm1*`, which are placeholders in the pinned SDK. A focused link-map
+check rejects remaining linked SDK math assertion objects. PSP formulas and
+sources are unchanged; real-console rendering verification remains necessary.
 
 ## Monkey and MilkDrop test build (0.6.0)
 

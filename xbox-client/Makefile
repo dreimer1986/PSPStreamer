@@ -5,7 +5,7 @@ NXDK_SDL = y
 VISUAL_ROOT := $(if $(wildcard $(CURDIR)/../psp-client/milkdrop_gu.c),$(CURDIR)/../psp-client,$(CURDIR)/shared)
 SRCS = $(CURDIR)/player_main.c $(CURDIR)/video_backend.c
 SRCS += $(wildcard $(CURDIR)/vendor/libmpeg2/*.c)
-SRCS += $(CURDIR)/visual_gpu.c $(CURDIR)/visual_pbkit.c
+SRCS += $(CURDIR)/visual_gpu.c $(CURDIR)/visual_pbkit.c $(CURDIR)/visual_math.c
 SRCS += $(CURDIR)/generated/visual_effects.c $(CURDIR)/generated/visual_logo.c
 VISUAL_SHARED = milkdrop_warp milkdrop_preset preset_math milkdrop_signal milkdrop_wave milkdrop_wave_extra milkdrop_decor milkdrop_texture cave_visual cave_paths
 # Separate Xbox object files: never overwrite PSP SDK objects in psp-client/.
