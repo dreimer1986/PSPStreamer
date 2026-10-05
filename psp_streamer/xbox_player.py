@@ -7,7 +7,10 @@ The client never uses pl_mpeg's frame-count clock. No B pictures are encoded.
 import re
 import struct
 
-MAX_PACKET = 256 * 1024
+# Full-HD MPEG-2 I pictures can exceed 256 KiB despite the average bitrate.
+# Allocation remains per actual packet; the client has a separate 1.5 MiB queue.
+MAX_PACKET = 1024 * 1024
+MAX_PES = MAX_PACKET + 264  # fixed + maximum optional PES header
 
 
 def record(kind, pts, data=b''):
@@ -138,7 +141,7 @@ class Transport:
                 continue
             pes = self.pes[pid]
             pes.extend(part)
-            if len(pes) > MAX_PACKET:
+            if len(pes) > MAX_PES:
                 raise ValueError('Xbox PES too large')
             if len(pes) >= 6:
                 size = int.from_bytes(pes[4:6], 'big')

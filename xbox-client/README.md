@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.4.4
+# Original Xbox — native player preview 0.4.5
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.4 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.5 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.73 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.74 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -120,12 +120,26 @@ all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
 
+0.4.5 increases the Xbox packet limit to 1 MiB together with server 0.1.74.
+Complex 1080p MPEG-2 I pictures exceeded the former 256 KiB limit and could
+terminate streams. The 1.5 MiB queue budget remains unchanged; packets allocate
+only their actual length. Both client and server need updating for this repair.
+Original network/allocation errors are retained instead of being overwritten
+by a generic MPEG interruption. PSP and browser transport are unchanged.
+
+At clean audio EOF, one zero-filled DMA descriptor is appended to the existing
+ring. Once both output channels reach this marker, all real samples have played;
+the media clock ends at the exact final sample PTS. This avoids relying solely
+on the controller's terminal cursor/PICB behavior. No timeout skips the episode,
+and no marker is inserted for network errors. Autoplay still waits for video
+decoder drain as well. Real-console episode-end confirmation remains pending.
+
 0.4.4 corrects vertically stretched video in 1080i output: the PVIDEO destination
 uses 540 field lines, while the RGB GUI/color-key rectangle remains in 1080
 framebuffer lines. Both fullscreen and embedded video use the correction,
 following XBMC4Xbox ComboRenderer's 1080i handling. Source quality, SD, 720p,
 software presentation and timestamp synchronization are unchanged. The 0.4.3
-speedup was confirmed by the user; this geometry correction needs a console test.
+speedup and the 0.4.4 geometry correction were confirmed by the user.
 
 At track end, AC97's halted-at-last-valid-descriptor status now takes precedence
 over a residual sample count (only while RUN is set and current equals last).

@@ -12,6 +12,7 @@ static short audio_waveform[32][1152];
 static int audio_analysis;
 static int64_t audio_pts[32];static unsigned audio_serial[32],audio_sent;
 static int audio_running,audio_failed,audio_initialized;static int64_t audio_clock;
+static unsigned audio_tail;static int64_t audio_end_pts;static int audio_dma_ran[2];
 static volatile unsigned char *const ac97=(volatile unsigned char *)0xfec00000;
 
 static int audio_reset(void){
@@ -27,6 +28,7 @@ static int audio_reset(void){
     memset((void*)ac97Device.pcmSpdifDescriptor,0,sizeof(ac97Device.pcmSpdifDescriptor));
     memset(audio_serial,0,sizeof(audio_serial));memset(audio_peaks,0,sizeof(audio_peaks));audio_sent=0;audio_clock=-1;audio_running=0;
     memset(audio_waveform,0,sizeof(audio_waveform));spectrum_analysis_reset();
+    audio_tail=0;audio_end_pts=0;memset(audio_dma_ran,0,sizeof(audio_dma_ran));
     return 1;
 }
 static int audio_init(void){
@@ -46,7 +48,13 @@ static unsigned audio_cursor(unsigned base,int64_t *pts){
         if(first==second)break;
     }
     unsigned serial=audio_serial[second];
-    if(!serial||first!=second||remaining>2304){*pts=-1;return 0;}
+    if(first!=second){*pts=-1;return 0;}
+    int channel=base==0x170;
+    if((control&1)&&(!(status&1)||(remaining>0&&remaining<2304)))audio_dma_ran[channel]=1;
+    if(xbox_dma_tail_reached(serial,audio_serial[last],audio_tail,status,control,audio_dma_ran[channel])){
+        *pts=audio_end_pts;return audio_tail;
+    }
+    if(!serial||remaining>2304){*pts=-1;return 0;}
     remaining=xbox_dma_remaining(remaining,status,control,second,last);
     *pts=audio_pts[second]+(int64_t)(2304-remaining)*90000/96000;
     return serial-(remaining?1:0);
@@ -72,4 +80,15 @@ static void audio_submit(plm_samples_t *samples,int64_t pts){
     /* Drain write-combining stores before publishing the DMA descriptor. */
     __asm__ volatile("sfence" ::: "memory");
     XAudioProvideSamples((unsigned char*)out,4608,FALSE);
+}
+static void audio_submit_tail(void){
+    if(audio_tail||!audio_sent)return;
+    unsigned index=ac97Device.nextDescriptor,previous=(index+31)&31;
+    int16_t *out=(int16_t*)(pcm+index*4608);
+    memset(out,0,4608);memset(audio_waveform[index],0,sizeof(audio_waveform[index]));
+    audio_peaks[index][0]=audio_peaks[index][1]=0;
+    audio_end_pts=audio_pts[previous]+2160; /* 1152 real samples at 48 kHz, 90 kHz PTS */
+    audio_pts[index]=audio_end_pts;audio_serial[index]=++audio_sent;audio_tail=audio_sent;
+    __asm__ volatile("sfence" ::: "memory");
+    XAudioProvideSamples((unsigned char*)out,4608,TRUE);
 }

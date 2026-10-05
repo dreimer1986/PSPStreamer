@@ -12,6 +12,15 @@ int main(void){
         assert(xbox_dma_remaining(2304,3,0x1d,i,i)==0);
         assert(xbox_dma_remaining(0,3,0x1d,i,i)==0);
         assert(xbox_dma_remaining(700,3,0x1d,(i+1)%32,i)==700);
+        unsigned tail=64+i;
+        assert(!xbox_dma_tail_reached(tail-1,tail,tail,0,1,1));
+        assert(xbox_dma_tail_reached(tail,tail,tail,0,1,1));
+        assert(xbox_dma_tail_reached(tail-31,tail,tail,1,1,1));
+        assert(xbox_dma_tail_reached(0,tail,tail,1,1,1));
+        assert(!xbox_dma_tail_reached(tail-31,tail,tail,1,1,0));
+        assert(!xbox_dma_tail_reached(tail-31,tail,tail,1,0,1));
+        assert(!xbox_dma_tail_reached(tail-1,tail-1,tail,1,1,1));
+        assert(!xbox_dma_tail_reached(0,0,0,3,1,1));
     }
-    puts("PASS: AC97 end-of-list drain versus running/paused/reset/wrapped descriptors");
+    puts("PASS: AC97 drain and silent tail; running, pause, reset, wrap and prefetch cases");
 }

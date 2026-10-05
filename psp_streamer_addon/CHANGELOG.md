@@ -1,3 +1,10 @@
+# 0.1.74
+
+- Raise only the Xbox MPEG packet bound from 256 KiB to 1 MiB, including PES
+  header allowance. Complex 1080p I pictures could otherwise abort the stream.
+- Use Xbox client 0.4.5 for the matching bound and DMA end-marker fix.
+- PSP and browser encoding/transport remain unchanged; Docker and HA match.
+
 # 0.1.73
 
 - Xbox 0.4.0: selectable MPEG-2/MPEG-1 and six video sizes through 1920x1080.

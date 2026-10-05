@@ -4,7 +4,7 @@ Latest release draft: [2.3 — PSP Consolizer, Fullscreen TV Gaming and Configur
 
 See the [changelog](CHANGELOG.md) for the release summary since tag 1.8.
 
-Server **0.1.73** includes a [browser playback target](docs/BROWSER_PLAYER.md):
+Server **0.1.74** includes a [browser playback target](docs/BROWSER_PLAYER.md):
 choose **This browser** in a media item's playback target selector. Video/music,
 audio-track/subtitle selection, seek, automatic next episode and Plex/Jellyfin
 progress reporting run independently of PSP control. Sequential episodes can

@@ -1,4 +1,29 @@
-# Xbox 0.4.4: NV2A video presentation
+# Xbox 0.4.5: NV2A video presentation and stream completion
+
+## 0.4.5 follow-up
+
+1080i geometry is confirmed correct with 720p and 1080p sources. In the supplied
+0.4.4 log, the failed 1080p stream closes without clean EOF, while its generic
+MPEG error overwrote the original cause. A local 1080p MPEG-2 encoding regression
+reproduces the transport limit failure with I pictures over 256 KiB (approximately
+679 KiB in the diagnostic sample). Client and server 0.1.74 now allow 1 MiB access
+units, with a separate maximum PES header allowance. Queue budget remains 1.5 MiB.
+This is a concrete defect consistent with the observed failures, not proof that
+every connection failure shares this cause. Original errors are now retained.
+
+The later episode-end log proves `net_done=1 clean=1 decoder_end=1 pending_frame=0`,
+with only audio still awaiting completion. The app remains responsive. 0.4.5
+appends one silent descriptor after all real audio at clean EOF. Both DMA channels
+must reach it before audio is considered drained; no wall-clock duration guess.
+The final clock is the last real packet PTS + 1152 samples at 48 kHz. Controller
+prefetch after halt is handled only after observing DMA running. The existing
+ring has room (at most 24 real descriptors + one marker out of 32). Marker and
+channel history reset on each stop/start. Error streams do not receive a marker
+or advance automatically. Console autoplay validation is still required.
+
+Targeted regressions: `tests/xbox_audio_dma.c` (marker/cursor cases),
+`tests/test_xbox_packet_bounds.py` (reproduces old failure with real FFmpeg MPEG-2,
+accepts the larger frame, preserves a hard upper bound). Build preceded tests.
 
 ## 1080i geometry
 

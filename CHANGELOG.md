@@ -2,6 +2,15 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.4.5 / server 0.1.74: allow bounded 1 MiB MPEG packets for complex
+  1080p I pictures (formerly 256 KiB); preserve original stream errors. Docker
+  and HA use the same transport. End-of-track audio uses a silent DMA completion
+  marker, preserving real sample PTS and clean-EOF-only autoplay.
+- Xbox 0.4.2–0.4.4: NV2A YUY2 presentation with repaired startup ownership,
+  two-row MMX packing, partial GUI copies and bounded text caching; substantial
+  speedup confirmed on console. Correct 1080i field geometry, also confirmed.
+  PSP rendering and synchronization remain unchanged.
+
 - Xbox 0.4.1: fix runtime output changes returning to the dashboard. Supply
   the missing SDL Xbox window-destruction callback, retaining the pinned
   upstream backend, and log each output transition/recovery stage. Build first;

@@ -19,7 +19,7 @@ int main(int argc,char **argv){
     while(fread(header,1,16,f)==16){
         unsigned size;int64_t pts;memcpy(&size,header+4,4);memcpy(&pts,header+8,8);
         if(header[0]=='E'){ended=1;break;}
-        if(size>262144||v.submitted>=10000)return 4;
+        if(size>1024*1024||v.submitted>=10000)return 4;
         unsigned char *data=malloc(size);if(fread(data,1,size,f)!=size)return 5;
         if(header[0]=='V'){timestamps[v.submitted]=pts;xbox_video_feed(&v,data,size,pts);if(drain(&v)<0)return 6;}
         free(data);

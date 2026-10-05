@@ -4,7 +4,7 @@
 #include "audio.h"
 #include "mpeg_video.h"
 #include "video_overlay.h"
-#define PACKET_LIMIT (256*1024)
+#define PACKET_LIMIT (1024*1024)
 #define QUEUE_BYTES (1536*1024)
 typedef struct {unsigned char *data;unsigned size;int64_t pts;} Packet;
 typedef struct {Packet p[64];unsigned read,count;} Packets;
@@ -33,6 +33,7 @@ static int diagnostics_enabled=1;
 static unsigned video_decode_ms;
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
+static void stream_error_if_empty(const char *s){SDL_LockMutex(stream.lock);if(!*stream.error)snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static int queue_packet(Packets *q,Packet p){
     while(!SDL_AtomicGet(&stream.cancel)){
         SDL_LockMutex(stream.lock);
@@ -57,7 +58,7 @@ static int network_stream(void *unused){
         if(!http_exact(&h,header,16)){stream_error("Stream interrupted (no clean EOF)");break;}
         Packet p={0};memcpy(&p.size,header+4,4);memcpy(&p.pts,header+8,8);
         if(header[0]=='E'&&!p.size){stream.ended=1;break;}
-        if((header[0]!='V'&&header[0]!='A')||!p.size||p.size>PACKET_LIMIT||p.pts<0){stream_error("Invalid media packet");break;}
+        if((header[0]!='V'&&header[0]!='A')||!p.size||p.size>PACKET_LIMIT||p.pts<0){char e[120];snprintf(e,sizeof(e),"Invalid media packet kind=%u bytes=%u limit=%u",header[0],p.size,PACKET_LIMIT);stream_error(e);break;}
         p.data=malloc(p.size);if(!p.data){stream_error("Out of packet memory");break;}
         if(!http_exact(&h,p.data,p.size)){free(p.data);stream_error("Truncated media packet");break;}
         if(!queue_packet(header[0]=='V'?&stream.video:&stream.audio,p)){free(p.data);break;}
@@ -112,6 +113,9 @@ static int player_tick(void){
         if(!s||plm_audio_get_samplerate(audio_decoder)!=48000){stream_error("MP2 decode failed");return -1;}
         audio_submit(s,p.pts);queued++;
     }
+    if(stream_audio&&SDL_AtomicGet(&stream.done)&&stream.ended&&!queue_count(&stream.audio)&&!audio_tail&&audio_sent){
+        audio_submit_tail();queued++;
+    }
     if(stream_audio&&!audio_running&&queued&&(queued>=16||SDL_AtomicGet(&stream.done))){audio_clock=audio_pts[0];audio_running=1;XAudioPlay();}
     if(audio_running){queued=audio_queued();if(!queued&&!SDL_AtomicGet(&stream.done)){if(!underrun)underflows++;underrun=1;}else underrun=0;}
     /* A genuinely shorter audio track must not freeze the last video frames.
@@ -126,7 +130,7 @@ static int player_tick(void){
                 if(!safe_video(&p)){free(p.data);stream_error("Unsupported MPEG dimensions");return -1;}
                 video_input=p.data;xbox_video_feed(&video,p.data,p.size,p.pts);
             }else if(SDL_AtomicGet(&stream.done)){
-                if(!stream.ended){stream_error("Stream interrupted (MPEG)");return -1;}
+                if(!stream.ended){stream_error_if_empty("Stream interrupted (MPEG)");return -1;}
                 if(!video.finished)xbox_video_end(&video);
                 else{decoder_ended=1;if(video.displayed!=video.submitted){stream_error("Incomplete MPEG stream at EOF");return -1;}break;}
             }else break;
