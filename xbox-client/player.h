@@ -69,6 +69,8 @@ close:http_close(&h);
 done:SDL_AtomicSet(&stream.done,1);return 0;
 }
 static void player_stop(void){
+    /* Release the visual GPU owner before reopening the PVIDEO path. */
+    extern void xbox_visual_stop(void);xbox_visual_stop();
     overlay_close();
     if(stream.thread){SDL_AtomicSet(&stream.cancel,1);SDL_WaitThread(stream.thread,NULL);stream.thread=NULL;}
     if(stream.lock){Packet p;while(pop_packet(&stream.video,&p))free(p.data);while(pop_packet(&stream.audio,&p))free(p.data);SDL_DestroyMutex(stream.lock);stream.lock=NULL;}

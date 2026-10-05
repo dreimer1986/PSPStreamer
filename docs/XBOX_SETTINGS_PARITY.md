@@ -1,4 +1,4 @@
-# Xbox settings audit — 0.5.0
+# Xbox settings audit — 0.6.0
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,
@@ -33,6 +33,8 @@ not a claim that every new setting has passed a console test.
   queue repeat off/one/all and queue shuffle independent of folder shuffle.
 - Bounded HD artwork (1280x720 backdrop, 240x336 cover); no PSP changes.
 - Separate stable Xbox media-player entity in HACS 0.2.0; shared web control panel.
+- Monkey/MilkDrop shared engines, presets, settings, live transitions and flight
+  game through the NV2A adapter. Build/host checks pass; Xbox hardware test pending.
 
 ## Useful missing settings, in suggested order
 
@@ -43,14 +45,25 @@ not a claim that every new setting has passed a console test.
    copy PSP MP3/VBR or 20 fps labels onto the current MP2/MPEG-1/2 stream.
    AC-3/DTS passthrough is deferred until an S/PDIF receiver is available.
 
-## Dependent on later ports
+## Remaining portable feature gaps and alternatives
 
-- MilkDrop preset selection, automatic changes, timing, live transitions,
-  resolution and hard cuts; Monkey options, flight controls and rumble.
-  Reuse existing portable engine/parser code; replace PSP GU/input bindings.
-- Offline download/cache controls, ICY titles and local text/bitmap subtitles.
-  Subtitle overlays require PTS paging, seek/cancellation and both NV2A color-key
-  and software rendering paths; server burn-in remains the working fallback.
+| Feature | Xbox gap | Available alternative / implementation direction |
+|---|---|---|
+| Offline storage | No download manager, local library, cache/reserve or local resume UI | Stream over LAN now; later server-generated Xbox-compatible files copied by FTP, then local playback. PSP FLV is not a drop-in Xbox format. |
+| Client subtitles | Text/bitmap overlays, paging, seek lifecycle and styling absent | Working server burn-in; later share subtitle transport/layout with an Xbox presentation adapter. |
+| Server addressing/security | IPv4 + trusted-LAN HTTP only; no DNS/HTTPS | Local server/reverse-proxy HTTP endpoint now; add DNS/TLS separately, not an insecure pretend-HTTPS toggle. |
+| Live radio metadata | Radio playback exists, changing ICY song title display absent | Station name now; relay current title through a bounded server metadata request. |
+| Browser input | Playback remote works, arbitrary menu buttons/text injection absent | Native Xbox controller now; add a separate Xbox input mailbox instead of reusing PSP commands. |
+| Playback limits | No PSP-style stop-after-N-files or timed session stop | Manual stop/web/HA stop now; reuse portable timer/count policy later. |
+| Help | Compact Xbox help rather than PSP's illustrated topic/subpage guide | Build an Xbox-controller diagram and contextual topics; do not display PSP button instructions. |
+| Series preferences | Reads server recommendations but has no series-specific editor | Edit on the web; later reuse server save API from Xbox options. |
+| Encoding controls | MP2/48 kHz and MPEG-1/2; not PSP MP3/CBR/VBR/frame-rate options | Existing bitrate/size/downmix choices; add codecs/cadence only with an actual Xbox decoder/transport path. |
+| Diagnostics | Current startup log is overwritten, unlike PSP retained/rotated logs | Copy log before restart; later bounded rotation and equivalent stall reporting. |
+
+These are implementation gaps, not claims that the hardware cannot support
+them. S/PDIF passthrough remains a separately deferred Xbox feature, not an
+already working PSP feature to copy. Native high-resolution effects rendering
+would likewise be an Xbox enhancement, not required PSP parity.
 
 ## Do not copy PSP-specific controls
 

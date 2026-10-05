@@ -14,6 +14,7 @@ static void preferences(int save){
         if(fprintf(f,"audio_matrix=%d\n",audio_matrix)<0)ok=0;
         if(fprintf(f,"ui_language=%d\naudio_quality=%d\n",ui_language,audio_quality)<0)ok=0;
         if(fprintf(f,"video_hardware=%d\n",video_hardware)<0)ok=0;
+        if(!visual_preferences_write(f))ok=0;
         if(fclose(f))ok=0;
         if(ok){
             remove("D:\\preferences.bak");
@@ -45,6 +46,7 @@ static void preferences(int save){
             else if(!strcmp(line,"spectrum_peak_hold"))spectrum_peak_hold=!!n;
             else if(!strcmp(line,"debug"))diagnostics_enabled=!!n;
             else if(!strcmp(line,"next_delay")&&n>=0&&n<=30)next_delay=n;
+            else visual_preferences_read(line,eq);
         }fclose(f);
     }
 }

@@ -1,4 +1,33 @@
-# Xbox visualization port assessment (after 0.4.0)
+# Xbox visualization port — 0.6.0
+
+## Implemented test build
+
+The existing PSP engines now compile through an Xbox NV2A adapter, with no
+changes to PSP sources. Included: Monkey materials/audio response/textures,
+flight/combat/ships/scores/rumble; MilkDrop parser, formulas, waves/shapes,
+textures, preset browser, automatic changes and live transitions. Options persist.
+
+GPU effects render to bounded offscreen targets: Monkey 512x256, MilkDrop
+512x256 or 512x512. SDL scales/composes the final 720x480 surface to the display.
+This is not native 1080i effects rendering or zero-copy presentation. Projection
+and shared geometry/formulas remain CPU work. Video PVIDEO/PTS is independent.
+Desktop HLSL is not added; the shared engine's compatibility limits remain.
+
+The O3/LTO XBE builds. Focused ASan/UBSan host checks cover GPU command recording,
+resource lifecycle, shared Monkey frames/flight, presets and live transitions;
+combat and scores also pass. These do not emulate NV2A: rendering, performance
+and actual 64 MB headroom still require console tests. Try 480p/720p first,
+then 1080i and music → video → music. PSP hardware paths remain unchanged.
+
+Music X opens visualizations/options, Y toggles fullscreen. Monkey LT+RT opens
+the flight intro; hold both five seconds to leave. Left stick steers, A fires,
+D-pad up/down changes speed, LT/RT roll (double tap: barrel roll). Intro
+left/right selects the ship. Rumble strengths default to zero.
+
+Install `visual-font.raw`, `presets/` and `monkey/` beside the XBE/theme/font.
+Preserve personal config, scores and textures. FATX filename limits apply.
+
+## Historical assessment (before this implementation)
 
 The resolution/codec test XBE is deliberately independent of this work.
 GUI/visualization rendering uses SDL's software backend. Version 0.4.2 adds an

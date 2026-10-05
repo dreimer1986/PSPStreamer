@@ -2,6 +2,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import re
 
 root = Path(__file__).resolve().parent
 sdk = root.parent / '.toolchain/nxdk'
@@ -20,6 +21,30 @@ shutil.copytree(root / 'vendor', out / 'source/vendor', dirs_exist_ok=True, igno
 for name in ('spectrum_analysis.h','spectrum_analysis_impl.h','spectrum_paint.h','monkey_audio.h'):
     shutil.copy2(root.parent / 'psp-client' / name, out / 'source/shared' / name)
 shutil.copytree(root / 'tools', out / 'source/tools', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
+for pattern in ('visual*.c','visual*.h','visual*.cg'):
+    for path in root.glob(pattern):shutil.copy2(path,out/'source'/path.name)
+shutil.copytree(root/'shared',out/'source/shared',dirs_exist_ok=True)
+# Include the exact shared implementation and its recursive local headers,
+# rather than a second independently maintained copy of Monkey/MilkDrop.
+psp=root.parent/'psp-client'
+pending=['milkdrop_gu.c','milkdrop_warp.c','milkdrop_preset.c','preset_math.c',
+         'milkdrop_signal.c','milkdrop_wave.c','milkdrop_wave_extra.c',
+         'milkdrop_decor.c','milkdrop_texture.c','cave_visual.c','cave_paths.c',
+         'preset_sequence.h','spectrum_paint.h']
+copied=set()
+while pending:
+    name=pending.pop()
+    if name in copied:continue
+    path=psp/name
+    if not path.is_file():continue
+    copied.add(name);shutil.copy2(path,out/'source/shared'/name)
+    pending.extend(re.findall(r'#include\s+"([^"]+)"',path.read_text()))
+(out/'source/shared/assets').mkdir(exist_ok=True)
+for name in ('monkey-flight-logo.raw','monkey-flight-logo.md','cave_ship.CREDITS.md'):
+    shutil.copy2(psp/'assets'/name,out/'source/shared/assets'/name)
+shutil.copy2(psp/'assets/subtitle_font.raw',out/'visual-font.raw')
+shutil.copytree(psp/'presets',out/'presets',dirs_exist_ok=True)
+shutil.copytree(psp/'monkey',out/'monkey',dirs_exist_ok=True)
 shutil.copy2(root.parent / 'psp-client/assets/menu_skin_tv.png', out / 'theme.png')
 shutil.copy2('/usr/share/fonts/TTF/DejaVuSans.ttf', out / 'font.ttf')
 # Replace the obsolete connection-only source in this generated package.
@@ -50,7 +75,7 @@ for source, name in (
 ):
     shutil.copy2(source, licenses / name)
 # Preserve SPDX copyright/license notices with the small nxdk glue sources.
-for folder in ('hal', 'nxdk', 'xboxrt', 'winapi', 'usb', 'net'):
+for folder in ('hal', 'nxdk', 'xboxrt', 'winapi', 'usb', 'net', 'pbkit'):
     for source in (sdk / 'lib' / folder).rglob('*'):
         if source.is_file() and source.suffix in ('.c', '.cpp', '.h', '.S') and not any(
                 excluded in source.relative_to(sdk / 'lib').parts for excluded in ('lwip', 'libusbohci')):

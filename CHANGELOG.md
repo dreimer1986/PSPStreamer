@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.0 test build: reuse the PSP Monkey/MilkDrop engines through an NV2A
+  adapter, including presets, live transitions, persistent options, flight,
+  combat, scores and native controller rumble. Bounded offscreen targets avoid
+  full-HD feedback buffers. Console rendering/performance need verification;
+  PSP source and playback timing remain unchanged.
+
 - Xbox 0.5.0 / server 0.1.76: dashboard-default EN/DE UI; shared favorites,
   cross-provider search, editable playlist with repeat/shuffle; MP2 bitrate
   settings and higher-resolution artwork. Unify Xbox/PSP web playback controls

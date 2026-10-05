@@ -1,14 +1,14 @@
 /* GPL-2.0-or-later. Sample-position clock from the nxdk AC97 DMA descriptors.
  * No callback-count clock and no guessed SDL/hardware queue latency. */
 #include <hal/audio.h>
-#include "spectrum_analysis_impl.h"
+#include "spectrum_analysis.h"
 #include "audio_dma_cursor.h"
 extern AC97_DEVICE ac97Device;
 static unsigned char *pcm;
 static int volume=100;static unsigned audio_peaks[32][2];
 /* Cached normal-RAM copies of the DMA-current waveform. Do not read back
  * write-combined DMA memory and do not transform audio ahead of playback. */
-static short audio_waveform[32][1152];
+static short audio_waveform[32][2304];
 static int audio_analysis;
 static int64_t audio_pts[32];static unsigned audio_serial[32],audio_sent;
 static int audio_running,audio_failed,audio_initialized;static int64_t audio_clock;
@@ -79,7 +79,7 @@ static void audio_submit(plm_samples_t *samples,int64_t pts){
     for(int i=0;i<2304;i++){float f=samples->interleaved[i]*(32767.0f*volume/100.0f);if(f>32767)f=32767;if(f<-32768)f=-32768;out[i]=(int16_t)f;
         unsigned peak=out[i]<0?-out[i]:out[i];if(peak>audio_peaks[index][i&1])audio_peaks[index][i&1]=peak;}
     audio_pts[index]=pts;audio_serial[index]=++audio_sent;
-    if(audio_analysis)for(int i=0;i<1152;i++){
+    if(audio_analysis)for(int i=0;i<2304;i++){
         float value=samples->interleaved[i]*(32767.f*volume/100.f);
         audio_waveform[index][i]=(short)fminf(32767,fmaxf(-32768,value));
     }

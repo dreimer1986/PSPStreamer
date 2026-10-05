@@ -19,6 +19,7 @@
 #include "net.h"
 #include "catalog.h"
 #include "player.h"
+#include "visual_settings.h"
 #include "settings.h"
 #include "report.h"
 #include "remote.h"
@@ -194,6 +195,7 @@ static void wrapped(const char *s,int y,int lines){
     }
 }
 #include "spectrum.h"
+#include "visual_ui.h"
 #include "display.h"
 static void seek_playback(double seconds){
     if(!playing||media_live)return;if(seconds<0)seconds=0;if(media_duration>1&&seconds>=media_duration)seconds=media_duration-1;
@@ -242,7 +244,8 @@ static void menu_render(void){
     if(first_frame)startup_note("theme queued");
     SDL_Rect left={27,60,506,232};clip(&left);
     if(backdrop&&(options||playing||panel==3)){SDL_Rect r={27,60,506,232};SDL_RenderCopy(renderer,backdrop,NULL,&r);}
-    if(panel==1){
+    if(panel>=PANEL_VISUAL&&panel<=PANEL_PRESETS){visual_panel_draw(normal,selected);
+    }else if(panel==1){
         const char *help[]={XL(HELP_PLAY), XL(HELP_CONTROLS), XL(HELP_VOLUME), XL(HELP_SKIP), XL(HELP_SPECTRUM), XL(HELP_MENU), XL(HELP_RESUME), XL(HELP_ACTIONS)};
         for(int i=0;i<8;i++)text_at(help[i],35,64+i*28,492,normal);
     }else if(panel==8){
@@ -294,7 +297,7 @@ static void menu_render(void){
         snprintf(lines[2],140,XL(FOLDER_SHUFFLE),shuffle_music?XL(ON):XL(OFF));snprintf(lines[3],140,XL(SPECTRUM),show_spectrum?XL(ON):XL(OFF));
         snprintf(lines[4],140,XL(VIDEO_QUALITY),quality_names[quality]);snprintf(lines[5],140,XL(VOLUME),volume);
         snprintf(lines[6],140,XL(AUDIO),prefer_audio?language_label(language_codes[prefer_audio]):XL(SOURCE_DEFAULT));snprintf(lines[7],140,XL(SUBTITLES),prefer_subtitle?language_label(language_codes[prefer_subtitle]):XL(OFF));
-        strcpy(lines[8],XL(SERVER_CONNECTION));strcpy(lines[9],XL(SPECTRUM_SETTINGS));
+        strcpy(lines[8],XL(SERVER_CONNECTION));strcpy(lines[9],XL(VISUAL_SETTINGS));
         snprintf(lines[10],140,XL(DEBUG),diagnostics_enabled?XL(ON):XL(OFF));snprintf(lines[11],140,XL(NEXT_DELAY),next_delay);
         snprintf(lines[12],140,XL(VIDEO_CODEC),video_codec?"MPEG-2":"MPEG-1");
         snprintf(lines[13],140,XL(TV_SHAPE),display_wide?"16:9 widescreen":"4:3 letterbox");
@@ -311,7 +314,7 @@ static void menu_render(void){
     }else if(playing){
         text_at(media_name,35,70,492,selected);char line[120];double p=player_position();
         snprintf(line,sizeof(line),"%s  %02d:%02d / %02d:%02d",paused?XL(PAUSED):XL(PLAYING),(int)p/60,(int)p%60,(int)media_duration/60,(int)media_duration%60);text_at(line,35,105,492,normal);
-        if(media_audio&&show_spectrum)spectrum_draw(0);
+        if(media_audio&&show_spectrum&&!(fullscreen&&!panel))visual_draw(0);
         else{text_at(XL(PLAYBACK_HELP),35,160,492,normal);text_at(XL(SEEK_HELP),35,190,492,normal);}
     }else if(options){
         text_at(media_name,35,66,492,selected);
@@ -335,7 +338,7 @@ static void menu_render(void){
     SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,308,650,normal);clip(NULL);
     receiver();
 }
-static void menu_draw(void){menu_render();if(playing&&media_audio&&fullscreen&&!panel){color(0,0,0);SDL_RenderClear(renderer);spectrum_draw(1);text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});}controls_draw();if(first_frame)startup_note("before first present");SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}}
+static void menu_draw(void){menu_render();if(playing&&media_audio&&fullscreen&&!panel){color(0,0,0);SDL_RenderClear(renderer);visual_draw(1);if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});}controls_draw();if(first_frame)startup_note("before first present");SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}}
 static void frame_draw_software(plm_frame_t *f){
     if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
     if(!video_texture){stream_error(SDL_GetError());return;}
@@ -415,6 +418,7 @@ static void button_down(int button){
     }
     /* Back must also work while a catalog request or playback is active. */
     if(button==SDL_CONTROLLER_BUTTON_BACK){quit=1;return;}
+    if(visual_panel_input(button)||visual_input(button))return;
     if(next_pending){if(button==SDL_CONTROLLER_BUTTON_B){next_pending=0;snprintf(status,sizeof(status),XL(AUTOPLAY_CANCELLED));}else if(button==SDL_CONTROLLER_BUTTON_A){next_pending=0;next_media(0);}return;}
     if(retry_pending){if(button==SDL_CONTROLLER_BUTTON_B){retry_pending=0;snprintf(status,sizeof(status),XL(RETRY_CANCELLED));}return;}
     if(fetch.thread&&fetch.type!=3){if(button==SDL_CONTROLLER_BUTTON_B){fetch_stop();autoplay_pending=remote_play_pending=0;snprintf(status,sizeof(status),XL(CANCELLED));}return;}
@@ -489,7 +493,7 @@ static void button_down(int button){
                 case 3:show_spectrum=!show_spectrum;break;case 4:quality=(quality+6+d)%6;break;
                 case 5:volume+=d*5;if(volume<0)volume=0;if(volume>100)volume=100;break;
                 case 6:prefer_audio=(prefer_audio+7+d)%7;break;case 7:prefer_subtitle=(prefer_subtitle+7+d)%7;break;
-                case 8:server_editor();break;case 9:panel=4;panel_row=0;break;
+                case 8:server_editor();break;case 9:panel=PANEL_VISUAL;panel_row=0;break;
                 case 10:diagnostics_enabled=!diagnostics_enabled;if(!diagnostics_enabled)*player_diagnostic=0;break;
                 case 11:next_delay=(next_delay+31+d)%31;break;
                 case 12:video_codec=!video_codec;break;case 13:display_wide=!display_wide;break;
@@ -504,7 +508,7 @@ static void button_down(int button){
     if(playing){
         if(button==SDL_CONTROLLER_BUTTON_B){report_playback("stopped");report_started=0;start_position=player_position();player_stop();preferences(1);snprintf(status,sizeof(status),XL(STOPPED));}
         else if(button==SDL_CONTROLLER_BUTTON_START||button==SDL_CONTROLLER_BUTTON_X){
-            if(button==SDL_CONTROLLER_BUTTON_X&&media_audio){panel=4;panel_row=0;}else{controls=1;control_row=0;}
+            if(button==SDL_CONTROLLER_BUTTON_X&&media_audio){panel=PANEL_VISUAL;panel_row=0;}else{controls=1;control_row=0;}
         }
         else if(button==SDL_CONTROLLER_BUTTON_A){if(!paused)report_playback("paused");player_pause();report_time=0;}
         else if(button==SDL_CONTROLLER_BUTTON_LEFTSHOULDER)next_media(1);
@@ -567,7 +571,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.5.0 languages / library / HD artwork / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.0 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
@@ -607,7 +611,7 @@ int main(void){
             else if(event.type==SDL_CONTROLLERBUTTONUP&&held==event.cbutton.button)held=-1;
             else if(event.type==SDL_CONTROLLERAXISMOTION&&(event.caxis.axis==SDL_CONTROLLER_AXIS_TRIGGERLEFT||event.caxis.axis==SDL_CONTROLLER_AXIS_TRIGGERRIGHT)){
                 int dir=event.caxis.axis==SDL_CONTROLLER_AXIS_TRIGGERRIGHT,down=event.caxis.value>16000;
-                if(down&&!trigger_held[dir]&&playing&&!media_live)chapter_jump(dir);
+                if(down&&!trigger_held[dir]&&playing&&!media_live&&!(media_audio&&visual_mode==1))chapter_jump(dir);
                 trigger_held[dir]=down;
             }
         }

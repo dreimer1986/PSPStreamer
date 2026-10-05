@@ -17,6 +17,7 @@ static void display_label(const VIDEO_MODE *m,char *s,size_t n){
 }
 static int display_switch(VIDEO_MODE m){
     if(playing)return 0;
+    xbox_visual_stop();
     char note[160];snprintf(note,sizeof(note),"display: switch %dx%d -> %dx%d @ %d",width,height,m.width,m.height,m.refresh);startup_note(note);
     if(fetch.thread)fetch_stop();
     /* Renderer owns every texture, including spectrum and artwork. */

@@ -1,4 +1,21 @@
-# Original Xbox — native player preview 0.5.0
+# Original Xbox — native player preview 0.6.0
+
+## Monkey and MilkDrop test build (0.6.0)
+
+Copy `visual-font.raw`, `presets/` and `monkey/` beside the updated XBE and
+existing theme/font. Preserve personal config, scores and external textures.
+Music **X** now opens visualization selection, options and presets; **Y** toggles
+fullscreen. The shared PSP engines include live transitions and Monkey flight,
+combat, ships, scores and optional rumble (strengths default to zero).
+Monkey LT+RT opens the intro; hold both five seconds to leave. Left stick steers,
+A fires/confirms, D-pad up/down changes speed; LT/RT roll, double tap for a barrel
+roll. Intro left/right selects the ship. Settings persist across restarts.
+
+NV2A renders bounded offscreen effects (512x256, optionally 512x512 MilkDrop),
+then SDL composes/scales to the selected output. This is not full-HD feedback
+rendering. HLSL remains unsupported. Build and focused host checks pass; console
+appearance/performance and music → video → music still need testing. PSP sources
+and video PTS synchronization are unchanged.
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
 with 0.2.5 and 0.3.0. Version 0.5.0 extends that working foundation; its new features
@@ -32,7 +49,7 @@ PSP executable. The proven PTS/sample-position clock is unchanged.
 | Media options | Up/down: row; left/right: audio/subtitle/quality; A on Play: start |
 | Playback | A: pause/resume; Start: controls menu; B: stop; left/right: -/+30 seconds |
 | Video | X also opens the controls menu: pause, seek, chapters, previous/next file, stop |
-| Music | X: shared PSP spectrum settings (legacy/FFT, bands, gain, palette, LEDs, peaks) |
+| Music | X: visualization selection, spectrum/Monkey/MilkDrop options and presets |
 | Playback | Up/down: volume; Y: fullscreen/receiver view |
 | Network request | B: cancel, including stalled requests |
 | Menu | Back: return to dashboard |
@@ -114,8 +131,8 @@ three times, with B to cancel. Live radio reconnects at the live position.
 
 ### Still separate porting work
 
-Accelerated 3D rendering, MilkDrop/Monkey, Xbox offline storage, DNS/HTTPS,
-ICY track titles and local subtitle overlays remain separate work. No parity with
+Xbox offline storage, DNS/HTTPS, ICY track titles and local subtitle overlays
+remain separate work. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ### Languages, library conveniences and artwork (0.5.0)
