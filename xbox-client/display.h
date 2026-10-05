@@ -21,6 +21,7 @@ static int display_switch(VIDEO_MODE m){
     if(fetch.thread)fetch_stop();
     /* Renderer owns every texture, including spectrum and artwork. */
     spectrum_texture=NULL;
+    text_cache_clear();
     if(renderer)SDL_DestroyRenderer(renderer);renderer=NULL;skin=cover=backdrop=video_texture=NULL;
     if(window)SDL_DestroyWindow(window);window=NULL;
     startup_note("display: window and renderer released");

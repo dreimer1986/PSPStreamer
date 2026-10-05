@@ -1,4 +1,4 @@
-# Xbox settings audit — 0.4.2
+# Xbox settings audit — 0.4.3
 
 Compared against `psp-client/app_settings.h`, `visual_options.h` and the
 Xbox `settings.h`, `net.h` and playback UI. This is an implementation audit,

@@ -23,6 +23,7 @@
 #include "remote.h"
 #include "server_settings.h"
 #include "render_clip.h"
+#include "text_cache.h"
 
 static void menu_draw(void);
 
@@ -153,10 +154,7 @@ static void artwork_read(void){
 }
 static void color(int r,int g,int b){SDL_SetRenderDrawColor(renderer,r,g,b,255);}
 static void text_at(const char *s,int x,int y,int max_width,SDL_Color color){
-    if(!*s)return;SDL_Surface *surface=TTF_RenderUTF8_Blended(font,s,color);if(!surface)return;
-    SDL_Texture *texture=SDL_CreateTextureFromSurface(renderer,surface);
-    SDL_Rect src={0,0,surface->w>max_width?max_width:surface->w,surface->h},dst={x,y,src.w,src.h};
-    if(texture){SDL_RenderCopy(renderer,texture,&src,&dst);SDL_DestroyTexture(texture);}SDL_FreeSurface(surface);
+    text_cached_draw(renderer,font,s,x,y,max_width,color);
 }
 static void side(const char *s,int row){SDL_Color c={220,226,227,255};text_at(s,565,68+row*24,120,c);}
 static void wrapped(const char *s,int y,int lines){
@@ -328,15 +326,40 @@ static void frame_draw(plm_frame_t *f){
         Uint32 now=SDL_GetTicks();
         if(!overlay.active||old_full!=fullscreen||old_controls!=controls||old_row!=control_row||now-gui_at>=250){
             Uint32 start=now;
-            if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);}
-            else{menu_render();color(0,0,0);SDL_Rect r={27,60,506,232};SDL_RenderFillRect(renderer,&r);}
-            SDL_RenderSetScale(renderer,1,1);color(1,2,3);SDL_RenderFillRect(renderer,&dst);
-            video_progress();controls_draw();SDL_RenderPresent(renderer);
+            int full=!overlay.active||old_full!=fullscreen||old_controls!=controls;
+            if(full){
+                if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);}
+                else{menu_render();color(0,0,0);SDL_Rect r={27,60,506,232};SDL_RenderFillRect(renderer,&r);}
+                SDL_RenderSetScale(renderer,1,1);color(1,2,3);SDL_RenderFillRect(renderer,&dst);
+                video_progress();controls_draw();SDL_RenderPresent(renderer);
+            }else{
+                /* Preserve static pixels in SDL's existing software surface.
+                 * Flush commands without SDL_RenderPresent's full-screen copy. */
+                SDL_Rect damage[3];int count=0;
+                if(fullscreen&&!media_live&&media_duration>0){
+                    video_progress();damage[count++]=(SDL_Rect){width/30,height-10,width-2*(width/30),3};
+                }
+                if(controls){
+                    controls_draw();
+                    damage[count++]=(SDL_Rect){74*width/720,64*height/480,572*width/720+2,352*height/480+2};
+                }else if(!fullscreen){
+                    SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);
+                    SDL_Rect footer={27,303,666,38},instruments={27,360,666,110},all={0,0,720,480};
+                    clip(&footer);SDL_RenderCopy(renderer,skin,NULL,&all);
+                    text_at(status,32,308,650,(SDL_Color){225,234,237,255});clip(NULL);
+                    clip(&instruments);SDL_RenderCopy(renderer,skin,NULL,&all);receiver();clip(NULL);
+                    damage[count++]=(SDL_Rect){26*width/720,302*height/480,668*width/720+2,40*height/480+2};
+                    damage[count++]=(SDL_Rect){26*width/720,359*height/480,668*width/720+2,112*height/480+2};
+                }
+                SDL_RenderFlush(renderer);
+                if(count)SDL_UpdateWindowSurfaceRects(window,damage,count);
+            }
             overlay.gui_ms+=SDL_GetTicks()-start;gui_at=now;
             old_full=fullscreen;old_controls=controls;old_row=control_row;
         }
+        if(!overlay.shown&&!overlay.busy){char line[180];snprintf(line,sizeof(line),"PVIDEO init enable=%08x inherited=%08x reset=%08x",overlay.initial_enable,overlay.initial_buffer,overlay.reset_buffer);startup_note(line);}
         if(overlay_present(f,dst)>=0)return;
-        startup_note("video: NV2A busy timeout; using software for this stream");
+        {char line[180];snprintf(line,sizeof(line),"video: NV2A busy timeout buffer=%08x shown=%u; using software",overlay.last_buffer,overlay.shown);startup_note(line);}
     }
     frame_draw_software(f);
 }
@@ -493,7 +516,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.2 NV2A YUY2 video overlay / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.3 PVIDEO reset / partial GUI / O3 LTO\n",boot);fclose(boot);}
     spectrum_analysis_mode=1;preferences(0);snprintf(report_client,sizeof(report_client),"xbox-%08lx-%08lx",(unsigned long)GetTickCount(),(unsigned long)KeQueryPerformanceCounter());
     startup_note("entry: before graphics/input initialization");
     int configured=config();display_list();
@@ -590,5 +613,5 @@ int main(void){
     }
     report_playback("stopped");remote_shutdown();fetch_stop();player_stop();report_shutdown();preferences(1);if(cover)SDL_DestroyTexture(cover);if(backdrop)SDL_DestroyTexture(backdrop);if(audio_initialized)XAudioPause();if(pcm)MmFreeContiguousMemory(pcm);
     if(spectrum_texture)SDL_DestroyTexture(spectrum_texture);
-    for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerClose(pads[i]);nxNetShutdown();TTF_CloseFont(font);SDL_DestroyTexture(skin);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();XReboot();return 0;
+    for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerClose(pads[i]);nxNetShutdown();text_cache_clear();TTF_CloseFont(font);SDL_DestroyTexture(skin);SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);TTF_Quit();SDL_Quit();XReboot();return 0;
 }

@@ -13,17 +13,32 @@ static struct {
     int initialized,disabled,active;
     Uint32 busy_since;
     unsigned shown,busy,pack_ms,gui_ms;
+    uint32_t initial_enable,initial_buffer,reset_buffer,last_buffer;
 } overlay;
 #ifndef XBOX_VIDEO_REGISTER
 #define XBOX_VIDEO_REGISTER(offset) ((volatile uint32_t *)(uintptr_t)(0xfd008000u+(offset)))
 #endif
 static volatile uint32_t *overlay_reg(unsigned offset){return XBOX_VIDEO_REGISTER(offset);}
 static void overlay_write(unsigned offset,uint32_t value){*overlay_reg(offset)=value;}
+#ifndef XBOX_PMC_REGISTER
+#define XBOX_PMC_REGISTER ((volatile uint32_t *)(uintptr_t)0xfd000200u)
+#define XBOX_PMC_WRITE(value) (*XBOX_PMC_REGISTER=(value))
+#endif
+#define XBOX_PVIDEO_ENABLE (1u<<28)
+/* STOP is not a reset of the two submission latches. Retiring an inherited
+ * pending buffer while the engine is stopped can deadlock first submission.
+ * Reset ONLY PVIDEO (PMC bit 28), never PGRAPH/PCRTC/the complete GPU. */
+static void overlay_engine_reset(int enable){
+    uint32_t engines=*XBOX_PMC_REGISTER;
+    XBOX_PMC_WRITE(engines&~XBOX_PVIDEO_ENABLE);
+    (void)*XBOX_PMC_REGISTER; /* drain posted MMIO writes */
+    if(enable){XBOX_PMC_WRITE(engines|XBOX_PVIDEO_ENABLE);(void)*XBOX_PMC_REGISTER;}
+}
 static int overlay_hide(void){
     if(!overlay.initialized)return 1;
     overlay_write(0x704,1); /* immediate stop, not a queued frame */
-    Uint32 start=SDL_GetTicks();
-    while(*overlay_reg(0x700)&0x11){if(SDL_GetTicks()-start>=50)return 0;SDL_Delay(1);}
+    overlay_engine_reset(0);
+    if(*XBOX_PMC_REGISTER&XBOX_PVIDEO_ENABLE)return 0;
     overlay.active=0;return 1;
 }
 static void overlay_close(void){
@@ -31,6 +46,9 @@ static void overlay_close(void){
      * which may still be scanned. Software fallback remains available. */
     if(!overlay_hide()){overlay.disabled=1;return;}
     if(overlay.memory)MmFreeContiguousMemory(overlay.memory);
+    if(overlay.initialized&&(overlay.initial_enable&XBOX_PVIDEO_ENABLE)){
+        overlay_engine_reset(1);overlay_write(0x704,1);
+    }
     memset(&overlay,0,sizeof(overlay));
 }
 static int overlay_prepare(unsigned w,unsigned h){
@@ -43,19 +61,28 @@ static int overlay_prepare(unsigned w,unsigned h){
     if(!overlay.memory){overlay.disabled=1;return 0;}
     memset(overlay.memory,0,overlay.size*2);__asm__ __volatile__("sfence" : : : "memory");
     overlay.width=w;overlay.height=h;overlay.initialized=1;
-    overlay_write(0x704,1);overlay_write(0x140,0);overlay_write(0x100,0x11);
+    overlay.initial_enable=*XBOX_PMC_REGISTER;overlay.initial_buffer=*overlay_reg(0x700);
+    overlay_engine_reset(1);
+    overlay.reset_buffer=*overlay_reg(0x700);
+    overlay_write(0x140,0);overlay_write(0x100,0x11);
+    /* Same burst/watermark initialization as pinned nxdk pbkit, without
+     * initializing its 3D engine or allocating RGB/depth backbuffers. */
+    overlay_write(0x088,(*overlay_reg(0x088)&0xf43ff43fu)|0x04000400u);
+    overlay_write(0x08c,(*overlay_reg(0x08c)&0xf40ff40fu)|0x04000400u);
     overlay_write(0xb00,XBOX_VIDEO_KEY);
     for(unsigned i=0;i<2;i++){
         overlay_write(0x900+i*4,0);overlay_write(0x908+i*4,0x03ffffff);
         overlay_write(0x910+i*4,0x1000);overlay_write(0x918+i*4,0x1000);
     }
+    overlay_write(0x704,0);
     return 1;
 }
 /* Return -1 for persistent hardware trouble, 0 for a busy slot, 1 submitted.
  * Slots still owned by PVIDEO are never overwritten or waited on. */
 static int overlay_present(const plm_frame_t *f,SDL_Rect dst){
     unsigned slot=overlay.slot,bit=1u<<(slot*4),reg=slot*4;
-    if(*overlay_reg(0x700)&bit){
+    overlay.last_buffer=*overlay_reg(0x700);
+    if(overlay.last_buffer&bit){
         overlay.busy++;
         if(!overlay.busy_since)overlay.busy_since=SDL_GetTicks();
         if(SDL_GetTicks()-overlay.busy_since>250){overlay_hide();overlay.disabled=1;return -1;}

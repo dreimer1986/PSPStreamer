@@ -5,10 +5,16 @@
 #include <string.h>
 #include <stdarg.h>
 #define SDL_VIDEO_DRIVER_XBOX 1
+#define SDL_SetMouseFocus test_SetMouseFocus
+#define SDL_SetKeyboardFocus test_SetKeyboardFocus
+#define SDL_AddBasicVideoDisplay test_AddBasicVideoDisplay
+#define SDL_AddDisplayMode test_AddDisplayMode
 #include "../xbox-client/video_backend.c"
 
 static VIDEO_MODE mode={640,480,32,60};
 VIDEO_MODE XVideoGetMode(void){return mode;}
+void *XVideoGetFB(void){return NULL;}
+void XVideoFlushFB(void){}
 void SDL_SetMouseFocus(SDL_Window *w){(void)w;}
 void SDL_SetKeyboardFocus(SDL_Window *w){(void)w;}
 int SDL_AddBasicVideoDisplay(const SDL_DisplayMode *m){(void)m;return 0;}

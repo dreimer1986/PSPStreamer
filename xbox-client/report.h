@@ -6,7 +6,7 @@ static unsigned report_read,report_count;
 static unsigned report_sequence;
 static SDL_Thread *report_thread;static SDL_atomic_t report_cancel,report_done;
 static char report_client[48];static Uint32 report_time;static int report_started;
-static char active_diagnostic[320];
+static char active_diagnostic[sizeof(player_diagnostic)];
 static int report_worker(void *unused){
     (void)unused;
     if(*active_diagnostic){FILE *f=fopen("D:\\xbox-player.log","a");if(f){fputs(active_diagnostic,f);fclose(f);}}

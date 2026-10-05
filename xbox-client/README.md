@@ -1,7 +1,7 @@
-# Original Xbox — native player preview 0.4.2
+# Original Xbox — native player preview 0.4.3
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.2 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.3 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
@@ -120,7 +120,21 @@ all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
 
-0.4.2 adds **NV2A PVIDEO hardware video presentation** as the default. The CPU
+0.4.3 repairs the PVIDEO startup handoff: reset only the overlay engine, clear
+the inherited pending-buffer state and release STOP before first submission.
+The 0.4.2 console log showed **zero GPU submissions and software fallback**;
+it was not evidence of successful GPU playback. The new hardware behavior
+requires another console test. Ongoing buffer ownership checks remain active.
+
+GUI updates now copy damaged rectangles only; static screen content remains
+in SDL's existing backing surface. Textures for text use a bounded 96-entry /
+2 MiB LRU cache, cleared on output changes and shutdown. The YUY2 packer handles
+two luma rows per chroma load. PTS/audio synchronization and the decoder are
+unchanged. `gui_kib` and `gui_copies` quantify actual framebuffer copies.
+If playback sticks at Buffering after a dashboard/warm restart, cold boot first:
+the previously observed audio-DMA startup issue is separate and remains open.
+
+0.4.2 introduced **NV2A PVIDEO hardware video presentation** as the default. The CPU
 still decodes MPEG-1/2 with libmpeg2, but packs YUV420 into YUY2 with Pentium III
 MMX/SSE1; the video unit performs YUV-to-RGB conversion and scaling. Two packed
 buffers replace per-frame RGB conversion/scaling/copying. This is not MPEG

@@ -13,7 +13,10 @@ static uint32_t registers[0xc00/4];
 static unsigned ticks=1,allocations,frees;
 static int allocation_fail,stop_stuck;
 static Uint32 SDL_GetTicks(void){return ticks;}
-static void SDL_Delay(unsigned ms){ticks+=ms;if(!stop_stuck&&registers[0x704/4]==1)registers[0x700/4]=0;}
+static uint32_t pmc=0x03111113;
+static void pmc_write(uint32_t value){if(stop_stuck)return;pmc=value;if(!(value&(1u<<28)))registers[0x700/4]=0;}
+#define XBOX_PMC_REGISTER (&pmc)
+#define XBOX_PMC_WRITE(value) pmc_write(value)
 #define PAGE_READWRITE 1
 #define PAGE_WRITECOMBINE 2
 #define XBOX_VIDEO_REGISTER(offset) (&registers[(offset)/4])
@@ -51,7 +54,10 @@ int main(void){
     const unsigned sizes[][2]={{2,2},{10,6},{480,272},{640,360},{720,480},{720,576},{1280,720},{1920,1080}};
     for(unsigned i=0;i<sizeof(sizes)/sizeof(*sizes);i++)packing(sizes[i][0],sizes[i][1]);
     uint8_t y[64]={0},u[16]={0},v[16]={0};plm_frame_t f={8,8,{8,y},{4,u},{4,v}};SDL_Rect dst={12,20,640,360};
+    registers[0x700/4]=0x11; /* inherited busy slots must not block first frame */
     assert(overlay_prepare(8,8));assert(allocations==1);
+    assert(overlay.initial_buffer==0x11&&overlay.reset_buffer==0);
+    assert(pmc==0x13111113&&registers[0x704/4]==0);
     assert(overlay_present(&f,dst)==1);assert(overlay.slot==1&&overlay.shown==1);
     assert(registers[0x958/4]==(64|(1u<<16)|(1u<<20)));
     assert(registers[0x948/4]==(20u<<16|12));
@@ -59,10 +65,11 @@ int main(void){
     assert(overlay_present(&f,dst)==1);assert(overlay.slot==0);
     registers[0x700/4]=1;assert(overlay_present(&f,dst)==0);assert(overlay.slot==0);
     ticks+=251;assert(overlay_present(&f,dst)==-1);assert(overlay.disabled);
-    overlay_close();assert(frees==1&&!overlay.memory);
+    overlay_close();assert(frees==1&&!overlay.memory&&pmc==0x03111113);
+    pmc|=1u<<28;
     assert(overlay_prepare(8,8));assert(allocations==2);
     registers[0x700/4]=1;stop_stuck=1;overlay_close();assert(overlay.disabled&&overlay.memory&&frees==1);
-    stop_stuck=0;overlay_close();assert(!overlay.memory&&frees==2);
+    stop_stuck=0;overlay_close();assert(!overlay.memory&&frees==2&&pmc==0x13111113);
     allocation_fail=1;assert(!overlay_prepare(8,8));assert(overlay.disabled);overlay_close();allocation_fail=0;
     assert(!overlay_prepare(7,8));overlay_close();assert(!overlay_prepare(1922,1080));overlay_close();
     video_hardware=0;assert(!overlay_prepare(8,8));assert(allocations==frees);
