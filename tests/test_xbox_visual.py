@@ -7,6 +7,15 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 
 class XboxVisualTests(unittest.TestCase):
+    def test_audio_service_is_not_renderer_reentry(self):
+        player=(ROOT/'xbox-client/player.h').read_text()
+        service=player.split('static int player_audio_pump(void){',1)[1].split('/* Return 1 for',1)[0]
+        for forbidden in ('player_tick(', 'player_stop(', 'SDL_CreateThread', 'visual_draw(', 'SDL_Render'):
+            self.assertNotIn(forbidden,service)
+        ui=(ROOT/'xbox-client/visual_ui.h').read_text()
+        self.assertIn('xv_service_hook=player_visual_audio_service',ui)
+        self.assertLess(ui.index('xv_service_hook=NULL'),ui.index('md_stop();'))
+
     def test_opaque_scaler(self):
         with tempfile.TemporaryDirectory() as directory:
             binary=Path(directory)/'scale'

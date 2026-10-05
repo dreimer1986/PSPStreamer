@@ -7,6 +7,7 @@ int main(int argc,char **argv){
     assert(md_start());
     for(int i=0;i<22;i++){test_clock+=150;assert(md_frame(1,1,bands,70,sceKernelGetSystemTimeWide(),5)==1);assert(!xv_failed());}
     assert(cave_scene&&cave_scene->next>0);assert(vertices>100);
+    assert((uintptr_t)cave_scene%64==0);
     md_cave_control(1,128,128,0,0,0,sceKernelGetSystemTimeWide());
     assert(xbox_cave_phase()==CAVE_GAME_INTRO);
     md_cave_game_menu(0,1,1,0);assert(xbox_cave_phase()==CAVE_GAME_ALIVE);

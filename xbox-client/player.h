@@ -33,6 +33,7 @@ extern unsigned xbox_fb_copy_calls;
 static char player_diagnostic[640];
 static int diagnostics_enabled=1;
 static unsigned video_decode_ms;
+static int visual_audio_error;
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static void stream_error_if_empty(const char *s){SDL_LockMutex(stream.lock);if(!*stream.error)snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
@@ -92,7 +93,7 @@ static int player_start(double seconds){
     if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}
-    playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;video_decode_ms=0;underrun=0;log_time=SDL_GetTicks();return 1;
+    playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;video_decode_ms=0;visual_audio_error=0;underrun=0;log_time=SDL_GetTicks();return 1;
 }
 static int safe_video(const Packet *p){
     for(unsigned i=0;i+7<p->size;i++)if(!memcmp(p->data+i,"\0\0\1\xb3",4)){
@@ -106,12 +107,8 @@ static double player_position(void){if(paused)return paused_position;int64_t tic
  * Resume starts a fresh timestamped stream at the recorded audio position. */
 static void player_pause(void){if(paused){player_start(!strncmp(media_id,"radio.",6)?0:paused_position);}else{paused_position=player_position();player_stop();playing=paused=1;}}
 
-/* Return 1 for a newly due video frame, 2 for EOF, -1 for a hard error. */
-static int player_tick(void){
-    if(paused)return 0;
-    if(!SDL_AtomicGet(&stream.ready))return SDL_AtomicGet(&stream.done)?-1:0;
-    stream_video=stream.flags&1;stream_audio=stream.flags&2;
-    if(paused)return 0;
+/* Audio-only, main-thread service: no teardown, input or renderer reentry. */
+static int player_audio_pump(void){
     Packet p;unsigned queued=audio_queued();
     while(stream_audio&&queued<24&&pop_packet(&stream.audio,&p)){
         plm_buffer_write(audio_buffer,p.data,p.size);free(p.data);
@@ -129,6 +126,22 @@ static int player_tick(void){
     if(stream_audio&&!audio_finished&&SDL_AtomicGet(&stream.done)&&!queue_count(&stream.audio)&&!queued){
         audio_finished=1;silent_start=SDL_GetTicks();silent_pts=audio_clock<0?0:audio_clock;
     }
+    return 0;
+}
+static void player_visual_audio_service(void){
+    static Uint32 last;
+    Uint32 now=SDL_GetTicks();
+    if(now-last<20||!playing||paused||!media_audio||visual_audio_error||!stream.lock||!SDL_AtomicGet(&stream.ready))return;
+    last=now;stream_audio=stream.flags&2;
+    if(player_audio_pump()<0)visual_audio_error=1;
+}
+/* Return 1 for a newly due video frame, 2 for EOF, -1 for a hard error. */
+static int player_tick(void){
+    if(paused)return 0;
+    if(!SDL_AtomicGet(&stream.ready))return SDL_AtomicGet(&stream.done)?-1:0;
+    stream_video=stream.flags&1;stream_audio=stream.flags&2;
+    if(visual_audio_error||player_audio_pump()<0)return -1;
+    Packet p;unsigned queued=audio_queued();
     for(int work=0;stream_video&&!next_frame&&work<4;work++){
         if(video.needs_input){
             free(video_input);video_input=NULL;

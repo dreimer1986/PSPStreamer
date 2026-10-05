@@ -20,7 +20,12 @@ static inline FILE *xbox_visual_fopen(const char *path,const char *mode){
     for(char *p=native_path;*p;p++)if(*p=='/')*p='\\';return fopen(native_path,mode);
 }
 #define fopen xbox_visual_fopen
-#define memalign(alignment,size) malloc(size)
+/* The shared structs themselves have alignment contracts, even without DMA.
+ * Replacing memalign with malloc lets LLVM emit MOVAPS to an 8-byte-aligned
+ * CaveScene and faults when starting flight. nxdk's dlmalloc aligned_alloc
+ * is implemented, free-compatible, and must retain the requested alignment. */
+#include "visual_alloc.h"
+#define memalign(alignment,size) xbox_visual_memalign(alignment,size)
 /* nxdk has no complete fenv implementation. Keep the shared evaluator's scoped
  * non-trapping policy, using Pentium III x87 + SSE1 controls (not SSE2). */
 #define PSPSTREAMER_PRESET_FPU_H

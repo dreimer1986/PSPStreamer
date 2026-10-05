@@ -14,8 +14,9 @@ static unsigned long long visual_next;
 static MdSignalState visual_cut_signal;
 static float visual_cut_threshold;
 static unsigned long long visual_cut_tick;
-static void visual_trace(const char *message,int persist){if(persist)startup_note(message);}
+static void visual_trace(const char *message,int persist){xv_service();if(persist)startup_note(message);}
 void xbox_visual_stop(void){
+    xv_service_hook=NULL;
     int was_started=visual_started;
     if(was_started)startup_note("Visualization stop: begin");
     if(visual_started&&diagnostics_enabled){
@@ -43,7 +44,7 @@ static int visual_load(const char *name,int transition){
 }
 static int visual_begin(void){
     if(visual_started&&visual_started_mode==visual_mode)return 1;
-    visual_reset();md_trace_hook=visual_trace;
+    visual_reset();md_trace_hook=visual_trace;xv_service_hook=player_visual_audio_service;
     startup_note(visual_mode==1?"Monkey: GPU initialize":"MilkDrop: GPU initialize");
     if(!md_start()){snprintf(status,sizeof(status),"%s",xv_error());visual_fault=1;return 0;}
     visual_started=1;visual_started_mode=visual_mode;

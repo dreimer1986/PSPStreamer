@@ -1,4 +1,15 @@
-# Original Xbox — native player preview 0.6.5
+# Original Xbox — native player preview 0.6.6
+
+0.6.6 fixes the serially captured flight-start access violation: preserve the
+shared CaveScene's 64-byte allocation alignment (required by generated SSE
+instructions), instead of substituting ordinary malloc. Texture conversion now
+uses cached staging/row reads and sequential GPU uploads; command packets are
+batched before GPU publication. Audio-only cooperative refill runs between
+rendering phases/batches without another decoder thread or renderer reentry.
+Audio peak collection no longer reads samples back from write-combined DMA RAM.
+The linked-build audit checks references to assertion-only nxdk C placeholders,
+not just math objects. Real-console speed and flight-start validation remain
+required; this does not claim complete SDK or Xbox feature coverage.
 
 0.6.5 replaces the SDK's unimplemented strtof/strtod/strtold calls in application
 code with musl v1.2.5 floating-point conversion and a string-only Xbox adapter.

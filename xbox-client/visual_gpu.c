@@ -14,6 +14,10 @@ static int running,failed,enabled[10],target_stride=768,target_w=720,target_h=48
 static int tex_format,tex_swizzled,tex_w,tex_h,tex_stride,tex_repeat,tex_linear=1,tex_alpha=1;
 static const void *tex_source;
 static unsigned char *scratch;static size_t scratch_used;
+static unsigned *texture_stage;
+static size_t texture_stage_bytes;
+void (*xv_service_hook)(void);
+void xv_service(void){if(xv_service_hook)xv_service_hook();}
 static unsigned char *depth;
 static int clearing,depth_mask=1;
 static float matrices[3][16],fog_start,fog_end;
@@ -26,12 +30,22 @@ typedef struct {const void *source;void *pixels;int w,h,format,swizzled,dirty;un
 static Texture textures[20];static unsigned texture_bytes,age;
 /* Reserve a complete pbkit packet before wrapping. Command-stream jumps keep
  * the active NV097 primitive and triangle-strip continuity intact. */
-static size_t push_used;static uint32_t *push_start;
-static uint32_t *visual_push_begin(void){
-    if(push_used+129>=512*1024/4){pb_reset();push_used=0;}
-    push_start=pb_begin();return push_start;
+static size_t push_used;static uint32_t *push_start,*push_pending,*push_end;
+static void visual_push_flush(void){
+    if(push_pending){pb_end(push_end);push_pending=push_end=NULL;}
 }
-static void visual_push_end(uint32_t *end){push_used+=end-push_start;pb_end(end);}
+static uint32_t *visual_push_begin(void){
+    if(push_used+129>=512*1024/4){visual_push_flush();pb_reset();push_used=0;}
+    if(!push_pending)push_pending=push_end=pb_begin();
+    push_start=push_end;return push_start;
+}
+static void visual_push_end(uint32_t *end){
+    push_used+=end-push_start;push_end=end;
+    /* pb_end flushes the GPU WC cache and writes MMIO. Do that per batch,
+     * not for every register and every ten vertices. Method packets remain
+     * bounded and contiguous; flush before every sync/readback/ring wrap. */
+    if(push_end-push_pending>=1024)visual_push_flush();
+}
 #define pb_begin visual_push_begin
 #define pb_end visual_push_end
 #define SCRATCH_BYTES (1572864+65536)
@@ -42,8 +56,8 @@ int xv_failed(void){return failed;}
 const char *xv_error(void){return failure;}
 static void reg(unsigned method,unsigned value){if(!running||failed)return;uint32_t *p=pb_begin();p=pb_push1(p,method,value);pb_end(p);}
 static int wait_gpu(void){
-    if(!running)return 1;unsigned start=GetTickCount();
-    while(pb_busy()){if(GetTickCount()-start>500){fail("NV2A command timeout");return 0;}Sleep(0);}
+    if(!running)return 1;visual_push_flush();unsigned start=GetTickCount();
+    while(pb_busy()){if(GetTickCount()-start>500){fail("NV2A command timeout");return 0;}xv_service();Sleep(0);}
     return !failed;
 }
 unsigned long long sceKernelGetSystemTimeWide(void){return (unsigned long long)GetTickCount()*1000;}
@@ -99,6 +113,7 @@ void sceGuTerm(void){
     if(running){wait_gpu();pb_show_debug_screen();pb_kill();running=0;}
     for(unsigned i=0;i<20;i++){if(textures[i].pixels)MmFreeContiguousMemory(textures[i].pixels);memset(&textures[i],0,sizeof(textures[i]));}
     texture_bytes=0;if(xv_ram)MmFreeContiguousMemory(xv_ram);xv_ram=NULL;
+    free(texture_stage);texture_stage=NULL;texture_stage_bytes=0;
     if(depth)MmFreeContiguousMemory(depth);depth=NULL;free(scratch);scratch=NULL;
 }
 int sceGuStart(int mode,void *list){(void)mode;(void)list;if(!running||!wait_gpu())return -1;pb_reset();push_used=0;scratch_used=0;return 0;}
@@ -181,16 +196,34 @@ static Texture *upload(void){
      * swizzled sampler for repeated shape passes until that surface changes. */
     if(t->dirty){
         if(!wait_gpu())return NULL;
+        size_t bytes=(size_t)tex_w*tex_h*4;
+        if(bytes>texture_stage_bytes){
+            void *grown=realloc(texture_stage,bytes);
+            if(!grown){fail("Texture staging allocation failed");return NULL;}
+            texture_stage=grown;texture_stage_bytes=bytes;
+        }
+        /* GPU memory is write-combined, not CPU cached. Read whole rows and
+         * swizzle in cached RAM, then upload linearly. Random per-pixel reads
+         * AND writes across WC memory previously dominated MilkDrop frames. */
+        unsigned xoffset[1024],yoffset[1024],row[1024];
+        for(int x=0;x<tex_w;x++)xoffset[x]=morton(x,0,tex_w,tex_h);
+        for(int y=0;y<tex_h;y++)yoffset[y]=morton(0,y,tex_w,tex_h);
+        int native_color=is_native(tex_source);
         int bpp=tex_format==GU_PSM_8888?4:2;
-        for(int y=0;y<tex_h;y++)for(int x=0;x<tex_w;x++){
+        for(int y=0;y<tex_h;y++){
+          if((y&15)==0)xv_service();
+          if(bpp==4&&!tex_swizzled)memcpy(row,(const unsigned*)tex_source+y*tex_stride,tex_w*4);
+          for(int x=0;x<tex_w;x++){
             unsigned at=(y*tex_stride+x)*bpp;
             if(tex_swizzled)at=((y/8)*(tex_stride*bpp/16)+(x*bpp/16))*128+(y%8)*16+x*bpp%16;
             const unsigned char *s=(const unsigned char*)tex_source+at;unsigned c;
-            if(bpp==4){memcpy(&c,s,4);if(!is_native(tex_source))c=(c&0xff00ff00)|((c&255)<<16)|((c>>16)&255);}
+            if(bpp==4){if(!tex_swizzled)c=row[x];else memcpy(&c,s,4);if(!native_color)c=(c&0xff00ff00)|((c&255)<<16)|((c>>16)&255);}
             else{unsigned a=s[0]|s[1]<<8;if(tex_format==GU_PSM_5650)c=0xff000000|((a&31)*255/31<<16)|(((a>>5)&63)*255/63<<8)|((a>>11)*255/31);
                 else c=((a>>12)*17<<24)|((a&15)*17<<16)|(((a>>4)&15)*17<<8)|(((a>>8)&15)*17);}
-            ((unsigned*)t->pixels)[morton(x,y,tex_w,tex_h)]=c;
+            texture_stage[xoffset[x]|yoffset[y]]=c;
+          }
         }
+        memcpy(t->pixels,texture_stage,bytes);
         __asm__ volatile("sfence":::"memory");t->dirty=0;
     }return t;
 }
@@ -234,12 +267,13 @@ static MdVertex read_vertex(const void *data,int index,int format){
 static void submit(int primitive,const MdVertex *v,int count,int format){
     static const unsigned modes[]={0,1,2,4,5,6,7,8};
     reg(NV097_SET_BEGIN_END,modes[primitive]);
-    for(int i=0;i<count;){unsigned n=count-i;if(n>10)n=10;uint32_t *p=pb_begin();pb_push(p++,0x40000000|NV097_INLINE_ARRAY,n*12);
+    for(int i=0;i<count;){if(i%160==0)xv_service();unsigned n=count-i;if(n>10)n=10;uint32_t *p=pb_begin();pb_push(p++,0x40000000|NV097_INLINE_ARRAY,n*12);
         for(unsigned j=0;j<n;j++){Vertex vertex=convert(v[i++],format);memcpy(p,&vertex,sizeof(vertex));p+=12;}pb_end(p);}
     reg(NV097_SET_BEGIN_END,0);
 }
 void sceGuDrawArray(int primitive,int format,int count,const void *indices,const void *data){
     (void)indices;if(failed||!running||count<=0)return;
+    xv_service();
     sceKernelDcacheWritebackRange(target,(size_t)target_stride*target_h*4);
     if(clearing){MdVertex a=read_vertex(data,0,format),b=read_vertex(data,count-1,format);unsigned c=a.color;
         c=(c&0xff00ff00)|((c&255)<<16)|((c>>16)&255);

@@ -5,11 +5,19 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import importlib.util
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class XboxMathTests(unittest.TestCase):
+    def test_no_references_to_sdk_c_stubs(self):
+        spec=importlib.util.spec_from_file_location('sdk_audit',ROOT/'xbox-client/tools/audit_sdk_stubs.py')
+        audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
+        found,linked,references=audit.audit()
+        self.assertGreater(found,100)
+        self.assertFalse(references,'\n'.join(references))
+
     def test_string_conversion(self):
         with tempfile.TemporaryDirectory() as tmp:
             binary=Path(tmp)/'strto'

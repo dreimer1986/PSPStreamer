@@ -1,4 +1,34 @@
-# Xbox visualization port — 0.6.0
+# Xbox visualization port — 0.6.6
+
+## Console fixes and current verification
+
+- 0.6.1–0.6.5: SDK exp2/expm1 and numeric-conversion placeholders replaced;
+  NV2A DMA contexts/depth pitch and scanout teardown corrected. Fullscreen
+  skips the hidden menu and uses an opaque row-cached presentation scaler.
+- 0.6.5 serial evidence: flight-start access violation at `0x001b53c2`,
+  `MOVAPS [ESI+0x3ccc10]` with `ESI=0x7ec00008`. The Xbox malloc substitution
+  violated CaveScene's alignment. 0.6.6 retains 64-byte aligned allocation.
+- 0.6.5 first MilkDrop frames spent about 265–274 ms in GPU submission, versus
+  about 1 ms in the final GPU wait. This includes CPU adapter work, not just
+  GPU execution. 0.6.6 stages texture swizzling in cached RAM, reads GPU rows
+  sequentially and batches command publication instead of flushing per register
+  or ten vertices. Preset resolution/semantics are not reduced.
+- Main-thread audio-only refill is serviced at drawing phase/batch boundaries
+  and texture-row work, throttled to 20 ms. No new decoder thread, renderer
+  reentry or guessed audio clock. It cannot prevent underruns during an
+  arbitrarily long indivisible formula evaluation or stalled network.
+- Static audit of the pinned SDK finds 106 assertion-only C functions. The
+  linked build has no instruction/data references to those stubs. This is a
+  bounded guard, not proof that every SDK function or indirect runtime path is
+  fully implemented. Host frame tests now use the actual alignment adapter.
+
+0.6.6 builds with O3/LTO; ten focused visual/math/SDK-audit checks pass (about
+12 seconds, not a full preset-collection run). The shared flight test now asserts
+the CaveScene alignment and the texture test verifies all 512x256 Morton texels.
+
+Hardware acceptance remains: start the Monkey game, play/stop, run the same
+MilkDrop preset at the same settings, and listen for interruptions. Measure
+performance on-console; host command capture does not emulate NV2A.
 
 ## Implemented test build
 

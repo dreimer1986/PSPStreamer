@@ -19,6 +19,9 @@ enum {GU_DIRECT=0,GU_SYNC_FINISH=0,GU_SYNC_WHAT_DONE=0,GU_SMOOTH=0,GU_GEQUAL=0,G
 enum {GU_COLOR_BUFFER_BIT=1,GU_DEPTH_BUFFER_BIT=2};
 extern unsigned char *xv_ram;
 extern int xv_width,xv_height;
+/* Main-thread-only cooperative audio service; never invokes drawing/input. */
+extern void (*xv_service_hook)(void);
+void xv_service(void);
 int sceGuInit(void);
 void sceGuTerm(void);
 int sceGuStart(int,void *);

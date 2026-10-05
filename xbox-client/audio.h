@@ -76,8 +76,9 @@ static void audio_submit(plm_samples_t *samples,int64_t pts){
     unsigned index=ac97Device.nextDescriptor;
     int16_t *out=(int16_t*)(pcm+index*4608);
     audio_peaks[index][0]=audio_peaks[index][1]=0;
-    for(int i=0;i<2304;i++){float f=samples->interleaved[i]*(32767.0f*volume/100.0f);if(f>32767)f=32767;if(f<-32768)f=-32768;out[i]=(int16_t)f;
-        unsigned peak=out[i]<0?-out[i]:out[i];if(peak>audio_peaks[index][i&1])audio_peaks[index][i&1]=peak;}
+    for(int i=0;i<2304;i++){float f=samples->interleaved[i]*(32767.0f*volume/100.0f);if(f>32767)f=32767;if(f<-32768)f=-32768;int16_t value=(int16_t)f;out[i]=value;
+        /* Do not read each just-written sample back from uncached DMA RAM. */
+        unsigned peak=value<0?-value:value;if(peak>audio_peaks[index][i&1])audio_peaks[index][i&1]=peak;}
     audio_pts[index]=pts;audio_serial[index]=++audio_sent;
     if(audio_analysis)for(int i=0;i<2304;i++){
         float value=samples->interleaved[i]*(32767.f*volume/100.f);
