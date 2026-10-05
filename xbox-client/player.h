@@ -69,6 +69,8 @@ close:http_close(&h);
 done:SDL_AtomicSet(&stream.done,1);return 0;
 }
 static void player_stop(void){
+    /* Stop DMA immediately, before any GPU teardown or network join. */
+    if(audio_initialized)XAudioPause();
     /* Release the visual GPU owner before reopening the PVIDEO path. */
     extern void xbox_visual_stop(void);xbox_visual_stop();
     overlay_close();

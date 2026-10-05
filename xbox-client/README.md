@@ -1,4 +1,10 @@
-# Original Xbox — native player preview 0.6.3
+# Original Xbox — native player preview 0.6.4
+
+0.6.4 fixes the 0.6.3 stop assertion: preserve HAL's virtual framebuffer pointer
+and restore physical scanout through pbkit, not XVideoSetFB. Pause audio DMA
+before teardown. Monkey/MilkDrop/Spectrum now share an opaque integer scaler
+which caches/reuses rows instead of repeatedly sampling GPU memory or using
+SDL's general-purpose scaled texture path. Console speed remains to be measured.
 
 0.6.3 skips the hidden menu pass beneath fullscreen music (including Spectrum),
 copies only the active effect rectangle in windowed mode, and explicitly returns

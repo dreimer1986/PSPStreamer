@@ -131,11 +131,11 @@ static void visual_draw(int full){
             else snprintf(status,sizeof(status),"MilkDrop L%d: %s (%d)",md_runtime_error.line,md_runtime_error.key,md_runtime_error.code);
             startup_note(status);xbox_visual_stop();visual_fault=1;return;
         }
-        SDL_Rect changed={0,0,xv_width,xv_height};
-        SDL_UpdateTexture(visual_texture,&changed,xv_pixels(),768*4);
     }
     SDL_Rect src={0,0,xv_width,xv_height};
     SDL_Rect dst=full?(SDL_Rect){0,0,720,480}:(SDL_Rect){27,60,506,232};
+    if(visual_present_pixels((const uint32_t*)xv_pixels(),768,xv_width,xv_height,dst,0))return;
+    SDL_UpdateTexture(visual_texture,&src,xv_pixels(),768*4);
     SDL_RenderCopy(renderer,visual_texture,&src,&dst);
 }
 static void visual_panel_draw(SDL_Color normal,SDL_Color selected){

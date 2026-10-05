@@ -7,15 +7,23 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 
 class XboxVisualTests(unittest.TestCase):
+    def test_opaque_scaler(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'scale'
+            subprocess.run(['cc','-O2','-fsanitize=address,undefined','-fno-sanitize-recover=all',
+                            str(ROOT/'tests/xbox_visual_scale.c'),'-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_fullscreen_skips_hidden_menu(self):
         main=(ROOT/'xbox-client/player_main.c').read_text()
         draw=main.split('static void menu_draw(void){',1)[1].split('static void frame_draw_software',1)[0]
         self.assertEqual(draw.count('menu_render()'),1)
         self.assertIn('}else menu_render();',draw)
-        self.assertIn('SDL_UpdateTexture(visual_texture,&changed',
+        self.assertIn('visual_present_pixels((const uint32_t*)xv_pixels()',
                       (ROOT/'xbox-client/visual_ui.h').read_text())
         teardown=(ROOT/'xbox-client/visual_pbkit.c').read_text().split('void pb_kill(void) {',1)[1]
-        self.assertLess(teardown.index('visual_pb_kill_inner();'),teardown.index('XVideoSetFB'))
+        self.assertLess(teardown.index('visual_pb_kill_inner();'),teardown.index('pb_show_debug_screen();'))
+        self.assertNotIn('XVideoSetFB(XVideoGetFB())',teardown)
         self.assertIn('XVideoSetVideoEnable(TRUE)',teardown)
 
     def test_shared_effect_frames(self):

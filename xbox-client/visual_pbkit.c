@@ -18,7 +18,10 @@ void pb_kill(void) {
     visual_pb_kill_inner();
     /* Return scanout ownership explicitly to HAL/SDL, including encoder enable.
      * No framebuffer allocation or video-mode change during media teardown. */
-    XVideoSetFB(XVideoGetFB());
+    /* XVideoGetFB returns the CPU virtual mapping, whereas XVideoSetFB expects
+     * a physical address and also replaces that mapping. Keep HAL's CPU pointer
+     * intact and restore only the scanout register, just as pbkit does. */
+    pb_show_debug_screen();
     XVideoSetVideoEnable(TRUE);
     XVideoFlushFB();
 }

@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.4: fix 0.6.3's virtual/physical framebuffer-pointer assertion on
+  stopping effects; stop audio DMA before GPU/network cleanup. Add a shared
+  row-cached opaque presentation scaler for Monkey, MilkDrop and Spectrum,
+  retaining the existing render resolution and preset algorithms.
+
 - Xbox 0.6.3: remove hidden full-menu rendering under fullscreen music, limit
   effect texture transfers to the visible rectangle, explicitly return HAL
   scanout after GPU teardown and log visualization stop stages. Serial inspection

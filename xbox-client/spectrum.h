@@ -33,6 +33,7 @@ static void spectrum_draw(int full){
         int prev=spectrum_shown[i];spectrum_shown[i]=target>prev?prev+(target-prev+1)/2:prev>3?prev-3:0;
         int dirty;spectrum_paint_bar(&spectrum_painter,spectrum_pixels,660,i*w/count,h,w/count-2,h,i,count,spectrum_shown[i]*h/100,now,1,spectrum_clear,NULL,&dirty);
     }
+    if(visual_present_pixels(spectrum_pixels,660,w,h,(SDL_Rect){x,y,w,h},1))return;
     if(!spectrum_texture)spectrum_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ABGR8888,SDL_TEXTUREACCESS_STREAMING,660,385);
     if(spectrum_texture){SDL_UpdateTexture(spectrum_texture,NULL,spectrum_pixels,660*4);SDL_Rect src={0,0,w,h},dst={x,y,w,h};SDL_RenderCopy(renderer,spectrum_texture,&src,&dst);}
 }

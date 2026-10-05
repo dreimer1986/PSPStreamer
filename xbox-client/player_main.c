@@ -194,6 +194,7 @@ static void wrapped(const char *s,int y,int lines){
         if(!n)break;if(s[n]&&last)n=last;memcpy(line,s,n);line[n]=0;text_at(line,35,y,492,c);s+=n;while(*s==' ')s++;y+=25;
     }
 }
+#include "visual_present.h"
 #include "spectrum.h"
 #include "visual_ui.h"
 #include "display.h"
@@ -580,7 +581,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.3 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.4 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
