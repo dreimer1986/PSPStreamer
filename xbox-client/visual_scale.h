@@ -5,6 +5,7 @@
 #define XBOX_VISUAL_SCALE_H
 #include <stdint.h>
 #include <string.h>
+#include "visual_copy.h"
 static int xbox_scale_opaque(uint32_t *dst,int pitch,int dw,int dh,
                              const uint32_t *src,int stride,int sw,int sh,int abgr){
     if(!dst||!src||sw<1||sh<1||sw>720||dw<1||dw>1920||dh<1||dh>1080||pitch<dw||stride<sw)return 0;
@@ -13,7 +14,7 @@ static int xbox_scale_opaque(uint32_t *dst,int pitch,int dw,int dh,
     for(int y=0;y<dh;y++){
         int sy=(int)(((int64_t)(2*y+1)*sh)/(2*dh));
         if(sy!=previous){
-            memcpy(input,src+sy*stride,sw*4);
+            xbox_visual_copy(input,src+sy*stride,sw*4);
             for(int x=0;x<dw;x++){
                 uint32_t c=input[columns[x]];
                 if(abgr)c=(c&0xff00ff00)|((c&255)<<16)|((c>>16)&255);
@@ -21,7 +22,7 @@ static int xbox_scale_opaque(uint32_t *dst,int pitch,int dw,int dh,
             }
             previous=sy;
         }
-        memcpy(dst+y*pitch,row,dw*4);
+        xbox_visual_copy(dst+y*pitch,row,dw*4);
     }
     return 1;
 }

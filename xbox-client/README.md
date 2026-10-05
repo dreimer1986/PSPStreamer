@@ -1,4 +1,11 @@
-# Original Xbox — native player preview 0.6.6
+# Original Xbox — native player preview 0.6.7
+
+0.6.7 replaces SDK byte-loop memcpy in the hot framebuffer, effect scaler and
+texture staging/readback paths with bounded SSE1 block copies. Serial sampling
+of 0.6.6 caught the byte loop in both texture upload preparation and effect
+presentation. No SSE2, resolution reduction or preset simplification is used.
+Five-second visual timing summaries separate composition and final presentation
+without debugger halts. Speed on the Xbox remains a hardware acceptance test.
 
 0.6.6 fixes the serially captured flight-start access violation: preserve the
 shared CaveScene's 64-byte allocation alignment (required by generated SSE

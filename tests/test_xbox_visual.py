@@ -7,6 +7,13 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 
 class XboxVisualTests(unittest.TestCase):
+    def test_sse_copy_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary=Path(directory)/'copy'
+            subprocess.run(['cc','-O3','-fsanitize=address,undefined',
+                            str(ROOT/'tests/xbox_visual_copy.c'),'-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_audio_service_is_not_renderer_reentry(self):
         player=(ROOT/'xbox-client/player.h').read_text()
         service=player.split('static int player_audio_pump(void){',1)[1].split('/* Return 1 for',1)[0]

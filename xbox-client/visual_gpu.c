@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "visual_gpu.h"
+#include "visual_copy.h"
 #include "milkdrop_warp.h"
 #include <pbkit/pbkit.h>
 #include <windows.h>
@@ -212,7 +213,7 @@ static Texture *upload(void){
         int bpp=tex_format==GU_PSM_8888?4:2;
         for(int y=0;y<tex_h;y++){
           if((y&15)==0)xv_service();
-          if(bpp==4&&!tex_swizzled)memcpy(row,(const unsigned*)tex_source+y*tex_stride,tex_w*4);
+          if(bpp==4&&!tex_swizzled)xbox_visual_copy(row,(const unsigned*)tex_source+y*tex_stride,tex_w*4);
           for(int x=0;x<tex_w;x++){
             unsigned at=(y*tex_stride+x)*bpp;
             if(tex_swizzled)at=((y/8)*(tex_stride*bpp/16)+(x*bpp/16))*128+(y%8)*16+x*bpp%16;
@@ -223,7 +224,7 @@ static Texture *upload(void){
             texture_stage[xoffset[x]|yoffset[y]]=c;
           }
         }
-        memcpy(t->pixels,texture_stage,bytes);
+        xbox_visual_copy(t->pixels,texture_stage,bytes);
         __asm__ volatile("sfence":::"memory");t->dirty=0;
     }return t;
 }
@@ -290,7 +291,7 @@ void sceGuDrawArray(int primitive,int format,int count,const void *indices,const
 void sceGuSendCommandi(int cmd,int value){if(cmd==0xd3)clearing=value!=0;}
 void sceGuClear(int flags){(void)flags;sceKernelDcacheWritebackRange(target,(size_t)target_stride*target_h*4);reg(NV097_SET_CLEAR_RECT_HORIZONTAL,(target_w-1)<<16);reg(NV097_SET_CLEAR_RECT_VERTICAL,(target_h-1)<<16);reg(NV097_SET_COLOR_CLEAR_VALUE,0);reg(NV097_CLEAR_SURFACE,0xf0);}
 void sceGuCopyImage(int fmt,int sx,int sy,int w,int h,int stride,const void *source,int dx,int dy,int dst_stride,void *dest){
-    (void)fmt;if(!wait_gpu())return;for(int row=0;row<h;row++)memcpy((unsigned*)dest+(dy+row)*dst_stride+dx,(const unsigned*)source+(sy+row)*stride+sx,w*4);__asm__ volatile("sfence":::"memory");sceKernelDcacheWritebackRange(dest,(size_t)(dy+h)*dst_stride*4);if(!is_target(dest))xv_native_texture(dest);
+    (void)fmt;if(!wait_gpu())return;for(int row=0;row<h;row++)xbox_visual_copy((unsigned*)dest+(dy+row)*dst_stride+dx,(const unsigned*)source+(sy+row)*stride+sx,w*4);__asm__ volatile("sfence":::"memory");sceKernelDcacheWritebackRange(dest,(size_t)(dy+h)*dst_stride*4);if(!is_target(dest))xv_native_texture(dest);
 }
 void xv_present_begin(void){if(xv_ram)memset(xv_ram,0,768*480*4);}
 const void *xv_pixels(void){return xv_ram;}

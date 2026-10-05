@@ -1,4 +1,33 @@
-# Xbox visualization port — 0.6.6
+# Xbox visualization port — 0.6.7
+
+## Shared performance bottleneck (0.6.7)
+
+Two serial samples of 0.6.6 stopped in `_memcpy+0x24` at `0x00015fe4`:
+the pinned SDK implements a byte load/store loop. One caller was texture
+staging in sceGuDrawArray, the other the final effect scaler. Requesting a
+whole row via memcpy was therefore still reading WC GPU memory byte by byte.
+0.6.7 uses explicit SSE1 unaligned 64/16-byte blocks with an exact byte tail
+for texture readback/upload, effect scaling and SDL framebuffer damage copies.
+It does not replace libc globally or change PSP code. Scope includes Spectrum,
+Monkey, MilkDrop, and the shared GUI output copy. Video decode/PTS is unchanged.
+
+Seven focused visual checks plus the existing damage-copy/cache harness pass.
+The new assembly-copy test includes all pointer alignments, tail sizes, output
+canaries and inaccessible guard pages (ASan alone cannot inspect inline asm).
+Serial `visual timing` summaries every five seconds report mode, output size,
+frame count, elapsed time, composition/present totals, worst draw and underruns.
+No real-console speedup is claimed before a comparable console run.
+
+The debugger halts during sampling themselves caused temporary repeating audio;
+they must not be counted as spontaneous crashes. Normal measurements should use
+the non-stopping timing summaries.
+
+Remaining candidates, conditional on those measurements: caching the static
+receiver composition instead of rebuilding it for every music frame; avoiding
+unnecessary HD copies when only a panel changes; GPU presentation/scaling instead
+of GPU-to-CPU readback; batch projection of Monkey vertices. These are not proven
+causes of the present regression, and GPU presentation changes ownership of the
+scanout, so it needs a separate compatibility/lifecycle check.
 
 ## Console fixes and current verification
 

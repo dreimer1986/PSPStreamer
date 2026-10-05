@@ -340,6 +340,7 @@ static void menu_render(void){
     receiver();
 }
 static void menu_draw(void){
+    Uint32 began=SDL_GetTicks();
     if(playing&&media_audio&&fullscreen&&!panel){
         /* No hidden theme/text/receiver pass underneath a fullscreen effect. */
         SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);clip(NULL);
@@ -347,7 +348,20 @@ static void menu_draw(void){
         if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});
     }else menu_render();
     controls_draw();if(first_frame)startup_note("before first present");
-    SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}
+    Uint32 ready=SDL_GetTicks();SDL_RenderPresent(renderer);Uint32 presented=SDL_GetTicks();
+    if(first_frame){startup_note("first present complete");first_frame=0;}
+    /* Non-stopping timing: the serial debugger must not halt playback to
+     * determine whether formulas, presentation or GUI copies are expensive. */
+    static Uint32 stats_at;static unsigned frames,compose_ms,present_ms,worst;
+    if(playing&&media_audio&&diagnostics_enabled){
+        if(!frames)stats_at=began;
+        frames++;compose_ms+=ready-began;present_ms+=presented-ready;
+        if(presented-began>worst)worst=presented-began;
+        if(presented-stats_at>=5000){
+            char line[240];snprintf(line,sizeof(line),"visual timing: mode=%d output=%dx%d full=%d frames=%u span_ms=%u compose_ms=%u present_ms=%u worst_ms=%u underruns=%u",visual_mode,width,height,fullscreen,frames,presented-stats_at,compose_ms,present_ms,worst,underflows);
+            startup_note(line);frames=compose_ms=present_ms=worst=0;
+        }
+    }else frames=compose_ms=present_ms=worst=0;
 }
 static void frame_draw_software(plm_frame_t *f){
     if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
@@ -581,7 +595,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.6 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.7 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
