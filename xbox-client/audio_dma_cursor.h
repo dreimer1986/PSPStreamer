@@ -13,3 +13,7 @@ static int xbox_dma_tail_reached(unsigned serial,unsigned last_serial,unsigned t
                                  unsigned status,unsigned control,int ran){
     return tail&&(serial==tail||(ran&&(status&1)&&(control&1)&&last_serial==tail));
 }
+static unsigned xbox_dma_completed(unsigned candidate,unsigned *known){
+    if(candidate>*known)*known=candidate;
+    return *known;
+}

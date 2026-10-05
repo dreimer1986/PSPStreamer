@@ -1,4 +1,4 @@
-# Native player preview: trusted LAN, IPv4, HTTP only. Server >= 0.1.74.
+# Native player preview: trusted LAN, IPv4, HTTP only. Server >= 0.1.75.
 # Editable in the app: main menu X -> Server connection.
 # Copy to server.cfg alongside default.xbe. No scheme or path in host.
 host=192.168.181.216

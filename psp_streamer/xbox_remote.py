@@ -1,6 +1,7 @@
 """Bounded, expiring Xbox-only remote mailbox. Never touches PSP commands."""
 import threading
 import time
+from .xbox_player import PROFILES
 
 
 class XboxRemote:
@@ -21,6 +22,9 @@ class XboxRemote:
             raise ValueError('Unsupported Xbox action')
         clean = {'action': action}
         if action == 'play':
+            size = data.get('xbox_size')
+            if size is not None and (not isinstance(size, str) or size not in PROFILES):
+                raise ValueError('Invalid Xbox video size')
             token = data.get('id')
             if not isinstance(token, str) or not token or len(token) >= 1536:
                 raise ValueError('Invalid media identifier')
@@ -31,6 +35,8 @@ class XboxRemote:
             clean.update(id=token, audio=max(0, min(31, int(data.get('audio', 0)))),
                          subtitle=max(-1, min(31, int(data.get('subtitle', -1)))),
                          start=max(0, min(604800, int(data.get('start', 0)))))
+            if size is not None:
+                clean['xbox_size'] = size
         if action == 'seek':
             clean['seconds'] = max(0, min(604800, int(data.get('seconds', 0))))
         with self.lock:

@@ -502,6 +502,8 @@ static void remote_execute(void){
         next_pending=0;
         Entry item={0};if(!text_tok(field(0,"id"),item.target,sizeof(item.target))||!*item.target)return;
         remote_audio=number(0,"audio");remote_subtitle=number(0,"subtitle");remote_start=number(0,"start");
+        char size[24];if(text_tok(field(0,"xbox_size"),size,sizeof(size)))
+            for(unsigned i=0;i<sizeof(quality_keys)/sizeof(*quality_keys);i++)if(!strcmp(size,quality_keys[i])){quality=i;break;}
         report_playback("stopped");report_started=0;player_stop();fetch_stop();panel=controls=0;autoplay_pending=0;
         remote_play_pending=1;snprintf(item.name,sizeof(item.name),"Remote selection");select_media(&item);
     }else if(!strcmp(action,"stop")){
@@ -516,7 +518,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.5 HD packet bounds / DMA end marker / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.6 remote video quality / monotonic DMA / O3 LTO\n",boot);fclose(boot);}
     spectrum_analysis_mode=1;preferences(0);snprintf(report_client,sizeof(report_client),"xbox-%08lx-%08lx",(unsigned long)GetTickCount(),(unsigned long)KeQueryPerformanceCounter());
     startup_note("entry: before graphics/input initialization");
     int configured=config();display_list();

@@ -13,6 +13,7 @@ static int audio_analysis;
 static int64_t audio_pts[32];static unsigned audio_serial[32],audio_sent;
 static int audio_running,audio_failed,audio_initialized;static int64_t audio_clock;
 static unsigned audio_tail;static int64_t audio_end_pts;static int audio_dma_ran[2];
+static unsigned audio_completed[2];
 static volatile unsigned char *const ac97=(volatile unsigned char *)0xfec00000;
 
 static int audio_reset(void){
@@ -29,6 +30,7 @@ static int audio_reset(void){
     memset(audio_serial,0,sizeof(audio_serial));memset(audio_peaks,0,sizeof(audio_peaks));audio_sent=0;audio_clock=-1;audio_running=0;
     memset(audio_waveform,0,sizeof(audio_waveform));spectrum_analysis_reset();
     audio_tail=0;audio_end_pts=0;memset(audio_dma_ran,0,sizeof(audio_dma_ran));
+    memset(audio_completed,0,sizeof(audio_completed));
     return 1;
 }
 static int audio_init(void){
@@ -62,7 +64,11 @@ static unsigned audio_cursor(unsigned base,int64_t *pts){
 static unsigned audio_queued(void){
     if(!audio_running)return audio_sent;
     int64_t analog,digital;unsigned a=audio_cursor(0x110,&analog),d=audio_cursor(0x170,&digital);
-    if(analog>=0)audio_clock=analog;
+    /* CIV may expose an older ring slot at underflow/prefetch. Completed
+     * descriptors and the sample clock cannot go backwards within a stream. */
+    a=xbox_dma_completed(a,&audio_completed[0]);
+    d=xbox_dma_completed(d,&audio_completed[1]);
+    if(analog>=0&&analog>audio_clock)audio_clock=analog;
     unsigned completed=a<d?a:d;
     return completed<=audio_sent?audio_sent-completed:0;
 }

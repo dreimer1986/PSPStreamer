@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.4.6 / server 0.1.75: web video-resolution selection for all six sizes,
+  optional client default, browser persistence and music/PSP isolation. Prevent
+  audio completion counters/sample clock from regressing after a DMA stall.
+  Episode autoplay is now confirmed; full-HD decode throughput remains limited.
+
 - Xbox 0.4.5 / server 0.1.74: allow bounded 1 MiB MPEG packets for complex
   1080p I pictures (formerly 256 KiB); preserve original stream errors. Docker
   and HA use the same transport. End-of-track audio uses a silent DMA completion

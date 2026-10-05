@@ -73,6 +73,7 @@ const browserResume=button(t('Resume'),()=>{if(browserItem)return startBrowser(b
 browserStop.before(browserResume);
 browserSeek.onchange=()=>{if(browserItem)startBrowser(browserItem,+browserSeek.value).catch(fail);};
 browserTarget.onchange=()=>{
+  xboxQualityVisibility();
   $('#play').textContent=t(browserTarget.value==='browser'?'Play in browser':browserTarget.value==='xbox'?'Play on Xbox':'Play on PSP');
   xboxPanel.hidden=browserTarget.value!=='xbox';$('#pspController').hidden=browserTarget.value!=='psp';
   if(!selected)$('#title').textContent=browserTarget.value==='xbox'?'Xbox':t('PSP controls');
@@ -101,6 +102,7 @@ command=async function(action,extra={}){
       if(!selected||!media)return;
       Object.assign(body,{id:selected.id,audio:selected.kind==='audio'?0:(+$('#audio').value||0),
         subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:+$('#seek').value||0});
+      if(selected.kind!=='audio'&&xboxQuality.value)body.xbox_size=xboxQuality.value;
     }
     await post('/api/xbox/command',body);message(t('Sent: {action}',{action:t(action)}));return;
   }
@@ -136,6 +138,17 @@ xboxPanel.append(xboxTitle,xboxStatus,xboxSeek);
 for(const [label,action] of [['Previous','previous'],['Pause','pause'],['Resume','resume'],['Stop','stop'],['Next','next']])
   xboxPanel.append(button(t(label),()=>post('/api/xbox/command',{action}).catch(fail)));
 $('nav').after(xboxPanel);
+const xboxQualityField=document.createElement('label'),xboxQuality=document.createElement('select');
+xboxQualityField.id='xboxQualityField';xboxQuality.id='xboxVideoQuality';
+const xboxQualityTitle=document.createElement('span');xboxQualityTitle.textContent=t('Xbox video resolution');
+xboxQualityField.append(xboxQualityTitle,xboxQuality);$('#mediaOptions .fields').append(xboxQualityField);
+for(const [value,label] of [['',t('Use Xbox setting')],['480p-low','480×272'],['360p','640×360'],['480p','720×480 (16:9)'],['576p','720×576 (16:9)'],['720p','1280×720'],['1080p','1920×1080 (HD)']])option(xboxQuality,value,label);
+const xboxQualityHelp=document.createElement('small');xboxQualityHelp.textContent=t('Applies on next Play. TV output mode is set on the Xbox.');xboxQualityField.append(xboxQualityHelp);
+try{const saved=localStorage.getItem('xboxVideoQuality');if([...xboxQuality.options].some(o=>o.value===saved))xboxQuality.value=saved;}catch(e){}
+xboxQuality.onchange=()=>{try{localStorage.setItem('xboxVideoQuality',xboxQuality.value);}catch(e){}};
+function xboxQualityVisibility(){xboxQualityField.hidden=browserTarget.value!=='xbox'||!selected||selected.kind==='audio';}
+const xboxChooseMedia=choose;
+choose=async function(...args){try{return await xboxChooseMedia(...args);}finally{xboxQualityVisibility();}};
 try{const saved=localStorage.getItem('playbackTarget');if(['psp','browser','xbox'].includes(saved))browserTarget.value=saved;}catch(e){}
 browserTarget.onchange();
 async function browserAdjacent(previous){

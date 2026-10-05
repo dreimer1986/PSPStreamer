@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include "../xbox-client/audio_dma_cursor.h"
 int main(void){
+    unsigned known=0;
+    assert(xbox_dma_completed(30,&known)==30);
+    assert(xbox_dma_completed(0,&known)==30);
+    assert(xbox_dma_completed(28,&known)==30);
+    assert(xbox_dma_completed(31,&known)==31);
+    assert(xbox_dma_completed(32,&known)==32);
     /* Active DMA, pauses, reset and an earlier descriptor are not EOF. */
     assert(xbox_dma_remaining(1200,0,1,7,9)==1200);
     assert(xbox_dma_remaining(1200,2,1,9,9)==1200);

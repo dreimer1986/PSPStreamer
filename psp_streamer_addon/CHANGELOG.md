@@ -1,3 +1,10 @@
+# 0.1.75
+
+- Add all six Xbox video resolutions to the web remote, plus "Use Xbox setting".
+  Remember the selection in the browser; apply it on Play with Xbox 0.4.6.
+- Keep Xbox video quality separate from TV output and PSP download profiles;
+  hide the selection for music and other playback targets. English/German labels.
+
 # 0.1.74
 
 - Raise only the Xbox MPEG packet bound from 256 KiB to 1 MiB, including PES

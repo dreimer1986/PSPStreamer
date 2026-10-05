@@ -1,4 +1,22 @@
-# Xbox 0.4.5: NV2A video presentation and stream completion
+# Xbox 0.4.6: NV2A video presentation and stream completion
+
+## 0.4.6 playback feedback
+
+0.4.5 no longer disconnects on large full-HD pictures; episode transition was
+confirmed and logged `result=2 clean=1 pictures=34048/34048`. Full-HD performance
+is not consistently real-time: at 25 s the log has 259 dropped frames and 17.4 s
+of cumulative decode work, plus 3.9 s of packing. A 24-slot audio reserve holds
+576 ms, not enough to hide sustained or bursty overload indefinitely. The queue
+counter also regressed (24 -> 30), consistent with an old DMA ring cursor.
+0.4.6 keeps per-channel completed counts and the sample clock monotonic, resetting
+them on each playback start. This safeguards accounting; it does not remove the
+CPU cost or guarantee absence of underruns. 720p video with 1080i output remains
+the practical alternative; no mandatory cap or automatic downgrade was added.
+
+Web remote 0.1.75 sends optional validated `xbox_size` profile keys on Play;
+Xbox 0.4.6 applies them to its existing quality selection. The output mode stays
+on-console. Targeted API/browser tests cover all sizes, default, persistence and
+music/PSP isolation; DMA counter checks cover stale, wrapped and advancing values.
 
 ## 0.4.5 follow-up
 

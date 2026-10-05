@@ -5,6 +5,16 @@ from psp_streamer.xbox_remote import XboxRemote
 
 
 class XboxRemoteTests(unittest.TestCase):
+    def test_video_sizes_optional_validated_and_forwarded(self):
+        remote=XboxRemote();server=SimpleNamespace(library=Mock(),radio=Mock())
+        for size in ('480p-low','360p','480p','576p','720p','1080p'):
+            remote.send(server,dict(action='play',id='test',xbox_size=size))
+            self.assertEqual(remote.poll(0)['xbox_size'],size)
+        for size in ('1080i','4k','',123,[]):
+            with self.assertRaises(ValueError):remote.send(server,dict(action='play',id='test',xbox_size=size))
+        remote.send(server,dict(action='play',id='test'))
+        self.assertNotIn('xbox_size',remote.poll(0))
+
     def test_expiry_ack_latest_and_isolation(self):
         server=SimpleNamespace(library=Mock(),radio=Mock(),remote_sequence=12)
         remote=XboxRemote()

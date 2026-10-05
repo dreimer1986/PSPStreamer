@@ -1,13 +1,13 @@
-# Original Xbox — native player preview 0.4.5
+# Original Xbox — native player preview 0.4.6
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.5 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.6 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
 ## Install and test
 
-1. Update the PSPStreamer **server to 0.1.74 or newer** (Docker or Home Assistant).
+1. Update the PSPStreamer **server to 0.1.75 or newer** (Docker or Home Assistant).
 2. Copy `bin/default.xbe`, `bin/theme.png` and `bin/font.ttf` to the same Xbox
    application directory. Keep the existing `server.cfg`, or create it from
    `server.cfg.example`. The font and image are required.
@@ -119,6 +119,19 @@ Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
+
+0.4.6 accepts the web remote's Xbox video resolution on Play. Server 0.1.75
+offers all six sizes plus "Use Xbox setting"; the latter sends no override.
+The browser remembers its choice separately from PSP download settings. Music
+and other targets hide it. This controls encoding resolution, **not** the Xbox's
+physical TV output mode, and does not restart an already playing stream.
+
+Audio completed-descriptor counts and the sample clock no longer move backwards
+when DMA exposes an older ring slot after a stall. This is not a promise of
+smooth full-HD decoding: 0.4.5 logs show rising dropped frames with 1080p video,
+while 720p video on 1080i output is much steadier. The initially filled buffer
+can hide the load briefly; CPU MPEG decoding is still required. No automatic
+quality reduction. The 0.4.5 episode transition was confirmed on hardware.
 
 0.4.5 increases the Xbox packet limit to 1 MiB together with server 0.1.74.
 Complex 1080p MPEG-2 I pictures exceeded the former 256 KiB limit and could
