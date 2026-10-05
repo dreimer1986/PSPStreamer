@@ -22,6 +22,7 @@ void xv_service(void){if(xv_service_hook)xv_service_hook();}
 static unsigned char *depth;
 static int clearing,depth_mask=1;
 static float matrices[3][16],fog_start,fog_end;
+static int clip_x,clip_y,clip_w=720,clip_h=480;
 static unsigned fog_color;
 static float tex_scale[2]={1,1},tex_offset[2];
 static char failure[96];
@@ -154,6 +155,7 @@ void sceGuFog(float start,float end,unsigned color){fog_start=start;fog_end=end;
 void sceGuOffset(int x,int y){(void)x;(void)y;}
 void sceGuViewport(int x,int y,int w,int h){(void)x;(void)y;target_w=w;target_h=h;}
 void sceGuScissor(int x,int y,int w,int h){
+    clip_x=x;clip_y=y;clip_w=w;clip_h=h;
     reg(NV097_SET_SURFACE_CLIP_HORIZONTAL,(w<<16)|x);reg(NV097_SET_SURFACE_CLIP_VERTICAL,(h<<16)|y);
     reg(NV097_SET_WINDOW_CLIP_TYPE,0);
     reg(NV097_SET_WINDOW_CLIP_HORIZONTAL,((w-1)<<16)|x);reg(NV097_SET_WINDOW_CLIP_VERTICAL,((h-1)<<16)|y);
@@ -241,7 +243,20 @@ static int bind_texture(void){
     reg(NV097_SET_TEXTURE_FILTER,tex_linear?0x02022000:0x01012000);
     return !failed;
 }
-static void transform(const float *matrix,float p[4]){float q[4];for(int i=0;i<4;i++)q[i]=matrix[i]*p[0]+matrix[4+i]*p[1]+matrix[8+i]*p[2]+matrix[12+i]*p[3];memcpy(p,q,sizeof(q));}
+static void transform(const float *matrix,float p[4]){
+    /* Four rows together, without changing the model/view/projection order
+     * or introducing approximate reciprocal/FMA/SSE2 instructions. */
+    __asm__ volatile(
+        "movups (%0), %%xmm0; movaps %%xmm0, %%xmm1; shufps $0, %%xmm1, %%xmm1;"
+        "movups (%1), %%xmm2; mulps %%xmm1, %%xmm2;"
+        "movaps %%xmm0, %%xmm1; shufps $85, %%xmm1, %%xmm1;"
+        "movups 16(%1), %%xmm3; mulps %%xmm1, %%xmm3; addps %%xmm3, %%xmm2;"
+        "movaps %%xmm0, %%xmm1; shufps $170, %%xmm1, %%xmm1;"
+        "movups 32(%1), %%xmm3; mulps %%xmm1, %%xmm3; addps %%xmm3, %%xmm2;"
+        "shufps $255, %%xmm0, %%xmm0; movups 48(%1), %%xmm3;"
+        "mulps %%xmm0, %%xmm3; addps %%xmm3, %%xmm2; movups %%xmm2, (%0)"
+        ::"r"(p),"r"(matrix):"xmm0","xmm1","xmm2","xmm3","memory");
+}
 typedef struct {float pos[4],color[4],uv[4];} Vertex;
 static Vertex convert(MdVertex v,int format){
     Vertex out={{v.x,v.y,v.z,1},{(v.color&255)/255.f,((v.color>>8)&255)/255.f,((v.color>>16)&255)/255.f,(v.color>>24)/255.f},{v.u,v.v,0,1}};
@@ -295,3 +310,38 @@ void sceGuCopyImage(int fmt,int sx,int sy,int w,int h,int stride,const void *sou
 }
 void xv_present_begin(void){if(xv_ram)memset(xv_ram,0,768*480*4);}
 const void *xv_pixels(void){return xv_ram;}
+
+/* Present the finished effect directly to HAL's existing scanout. No new HD
+ * allocation and no PVIDEO ownership: only called for music, after SDL flush.
+ * Restore every register category touched here before returning to the GU
+ * adapter, whose cached logical state must continue to match the GPU state. */
+int xv_present_scanout(void *framebuffer,int width,int height,int x,int y,int w,int h,int sw,int sh){
+    if(!running||failed||!framebuffer||width<1||width>1920||height<1||height>1080||
+       x<0||y<0||w<1||h<1||x+w>width||y+h>height||sw<1||sw>720||sh<1||sh>480||
+       (uint64_t)PHYSICAL(framebuffer)+(uint64_t)width*height*4>0x4000000)return 0;
+    if(!wait_gpu())return 0;
+    int cx=clip_x,cy=clip_y,cw=clip_w,ch=clip_h;
+    reg(NV097_SET_CONTEXT_DMA_COLOR,3);
+    reg(NV097_SET_SURFACE_PITCH,(768*4U<<16)|(width*4));
+    reg(NV097_SET_SURFACE_COLOR_OFFSET,PHYSICAL(framebuffer));
+    sceGuScissor(0,0,width,height);
+    reg(NV097_SET_DEPTH_TEST_ENABLE,0);reg(NV097_SET_DEPTH_MASK,0);reg(NV097_SET_BLEND_ENABLE,0);
+    int alpha=tex_alpha;tex_alpha=0;fragment(1);tex_alpha=alpha;
+    reg(NV097_SET_TEXTURE_OFFSET,PHYSICAL(xv_ram));reg(NV097_SET_TEXTURE_FORMAT,0x1122a);
+    reg(NV097_SET_TEXTURE_CONTROL1,768*4U<<16);
+    reg(NV097_SET_TEXTURE_IMAGE_RECT,sw<<16|sh);reg(NV097_SET_TEXTURE_ADDRESS,0x030303);
+    reg(NV097_SET_TEXTURE_CONTROL0,0x4003ffc0);reg(NV097_SET_TEXTURE_FILTER,0x01012000);
+    Vertex quad[4]={{{x,y,0,1},{1,1,1,1},{0,0,0,1}},
+                    {{x+w,y,0,1},{1,1,1,1},{sw,0,0,1}},
+                    {{x+w,y+h,0,1},{1,1,1,1},{sw,sh,0,1}},
+                    {{x,y+h,0,1},{1,1,1,1},{0,sh,0,1}}};
+    reg(NV097_SET_BEGIN_END,7);
+    uint32_t *p=pb_begin();pb_push(p++,0x40000000|NV097_INLINE_ARRAY,48);
+    xbox_visual_copy(p,quad,sizeof(quad));pb_end(p+48);reg(NV097_SET_BEGIN_END,0);
+    reg(NV097_SET_SURFACE_PITCH,(768*4U<<16)|(target_stride*4));
+    reg(NV097_SET_SURFACE_COLOR_OFFSET,PHYSICAL(target));sceGuScissor(cx,cy,cw,ch);
+    reg(NV097_SET_DEPTH_TEST_ENABLE,enabled[GU_DEPTH_TEST]);reg(NV097_SET_DEPTH_MASK,!depth_mask);
+    reg(NV097_SET_BLEND_ENABLE,enabled[GU_BLEND]);
+    if(!bind_texture())return 0;
+    return wait_gpu();
+}

@@ -4,6 +4,7 @@
 #include "cave_visual.h"
 #include "preset_sequence.h"
 static int visual_mode; /* Spectrum / Monkey / MilkDrop */
+static int visual_direct=1;
 static int visual_auto,visual_seconds=60,visual_fade=1500,visual_random_seconds=10;
 static int visual_hard_cuts,visual_hard_threshold=250,visual_hard_seconds=60;
 static char visual_preset[256]="active.milk";
@@ -34,6 +35,7 @@ static XboxVisualOption visual_options[]={
     {"preset_hard_threshold","Hard-cut threshold %","Schwellwert %",&visual_hard_threshold,125,400,10},
     {"preset_hard_seconds","Threshold half-life (s)","Schwellwert-Halbwertzeit (s)",&visual_hard_seconds,5,180,5},
     {"visual_resolution","Feedback: 512x256 / 512x512","Effektpuffer: 512x256 / 512x512",&md_high_resolution,0,1,1},
+    {"visual_direct","Direct GPU presentation","Direkte GPU-Ausgabe",&visual_direct,0,1,1},
 };
 #define X_VISUAL_OPTIONS ((int)(sizeof(visual_options)/sizeof(visual_options[0])))
 static const char *visual_text(const char *en,const char *de){return ui_language==2||(!ui_language&&dashboard_german)?de:en;}

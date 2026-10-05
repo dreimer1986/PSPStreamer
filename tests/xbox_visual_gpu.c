@@ -5,6 +5,11 @@
 static unsigned service_calls;
 static void service(void){service_calls++;}
 int main(void){
+    float matrix[16],point[4]={1.25f,-2.5f,3.75f,1},expected[4];
+    for(int i=0;i<16;i++)matrix[i]=(i-7)*.125f;
+    for(int row=0;row<4;row++)expected[row]=matrix[row]*point[0]+matrix[4+row]*point[1]+matrix[8+row]*point[2]+matrix[12+row]*point[3];
+    transform(matrix,point);
+    for(int row=0;row<4;row++)assert(fabsf(point[row]-expected[row])<.000001f);
     xv_service_hook=service;
     assert(sceGuInit()==0);assert(!xv_failed());
     sceGuSync(0,0);
@@ -54,6 +59,13 @@ int main(void){
     sceGuDisable(GU_TEXTURE_2D);unsigned before=wraps;
     for(int i=0;i<8000;i++)sceGuDrawArray(GU_TRIANGLES,GU_TRANSFORM_2D|GU_TEXTURE_32BITF,3,NULL,triangle);
     sceGuSync(0,0);assert(wraps>before&&packet_max<=1152&&!xv_failed());
+    sceGuScissor(2,3,510,253);sceGuSync(0,0);
+    unsigned allocation_count=test_allocations;
+    assert(!xv_present_scanout((void*)0x100000,1280,720,0,0,1281,720,512,256));
+    assert(xv_present_scanout((void*)0x100000,1280,720,0,0,1280,720,512,256));
+    assert(test_allocations==allocation_count);
+    assert(registers[NV097_SET_SURFACE_COLOR_OFFSET/4]==PHYSICAL(target));
+    assert(clip_x==2&&clip_y==3&&clip_w==510&&clip_h==253);
     sceGuTerm();assert(test_allocations==0&&xv_ram==NULL);
     assert(!texture_stage&&service_calls>8000);
     assert(sceGuInit()==0);sceGuTerm();assert(test_allocations==0);

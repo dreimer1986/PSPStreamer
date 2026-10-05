@@ -14,7 +14,7 @@ SRCS += $(addprefix $(CURDIR)/generated/,$(addsuffix .c,$(VISUAL_SHARED)))
 SHADER_OBJS = visual_vertex.inl visual_texture.inl visual_plain.inl visual_rgb.inl
 LTO = y
 CFLAGS += -O3 -Wall -Wextra -I$(CURDIR)/vendor/libmpeg2
-CFLAGS += -I$(VISUAL_ROOT) -I$(CURDIR)/shared
+CFLAGS += -I$(CURDIR)/generated -I$(VISUAL_ROOT) -I$(CURDIR)/shared
 CFLAGS += -I$(NXDK_DIR)/lib/sdl/SDL2/src/video/xbox
 CFLAGS += -I$(CURDIR) -I$(NXDK_DIR)/lib/pbkit
 CFLAGS += -Dstrcasecmp=_stricmp
@@ -27,8 +27,10 @@ include $(NXDK_DIR)/Makefile
 visual_texture.inl visual_rgb.inl visual_plain.inl: %.inl: %.ps.cg $(FP20COMPILER) $(CURDIR)/tools/visual_shader.py
 	python3 $(CURDIR)/tools/visual_shader.py $(CGC) $(FP20COMPILER) $< $@
 
-$(CURDIR)/generated/visual_effects.c $(CURDIR)/generated/visual_logo.c &: $(CURDIR)/tools/visual_adapter.py $(wildcard $(VISUAL_ROOT)/*.[ch]) $(VISUAL_ROOT)/assets/monkey-flight-logo.raw
+$(CURDIR)/generated/visual_effects.c $(CURDIR)/generated/visual_logo.c $(CURDIR)/generated/cave_visual.h $(CURDIR)/generated/cave_paths.h &: $(CURDIR)/tools/visual_adapter.py $(wildcard $(VISUAL_ROOT)/*.[ch]) $(VISUAL_ROOT)/assets/monkey-flight-logo.raw
 	python3 $(CURDIR)/tools/visual_adapter.py
+
+$(CURDIR)/player_main.obj $(addprefix $(CURDIR)/generated/,$(addsuffix .obj,$(VISUAL_SHARED))) $(CURDIR)/generated/visual_effects.obj: $(CURDIR)/generated/cave_visual.h $(CURDIR)/generated/cave_paths.h
 
 $(CURDIR)/generated/%.c: $(VISUAL_ROOT)/%.c
 	mkdir -p $(CURDIR)/generated

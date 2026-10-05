@@ -1,4 +1,10 @@
-# Xbox: optimization and parity checkpoint — 0.6.9
+# Xbox: optimization and parity checkpoint — 0.7.0
+
+0.7.0 checkpoint: direct GPU effect presentation, SSE1 matrix transforms and
+needle-only dirty rectangles are implemented; nine focused host checks pass.
+Hardware verification remains necessary. Monkey exit timing display is fixed
+and the visible tunnel extends from 16 to 20 sections with matching cache size.
+The earlier spectrum and MilkDrop improvements are user-confirmed.
 
 ## Implemented without changing PSP paths or preset semantics
 
@@ -20,13 +26,14 @@
 1. **Large: direct GPU effect presentation/scaling.** Avoid offscreen GPU → CPU
    readback → CPU scale → HD software surface → scanout. Especially promising at
    720p/1080i. Requires explicit ownership and restoration around PVIDEO, SDL,
-   output changes, menus and shutdown. Not yet implemented or benchmarked.
+   output changes, menus and shutdown. Implemented in 0.7.0; not benchmarked yet.
 2. **Medium/large: batch Monkey projection/vertex conversion.** Preserve original
    transform, clipping, materials and draw order; use SSE1 where mathematically
-   equivalent. Useful only if geometry dominates the timing trace, not copies.
+   equivalent. SSE1 transforms implemented in 0.7.0; wider batching remains open.
 3. **Medium: finer instrument damage regions.** Current windowed music still
    restores/copies the receiver strip. Per-needle/knob regions could reduce
-   traffic further, but add overlap/restoration complexity for a smaller gain.
+   traffic further. Needle-only damage implemented in 0.7.0; knob changes still
+   trigger complete composition to preserve overlapping graphics.
 4. **Large: MPEG decoder work.** Profile IDCT/motion compensation before replacing
    libmpeg2 or adding NV2A motion-compensation support. Fast 1080p scenes are not
    proof of enough CPU capacity for complex scenes. Keep 720p as reliable target;

@@ -1,4 +1,15 @@
-# Original Xbox — native player preview 0.6.9
+# Original Xbox — native player preview 0.7.0
+
+0.7.0 optimization checkpoint (new console test required): direct GPU scaling
+and presentation for Monkey/MilkDrop avoids CPU readback and HD scaling. The
+effect setting `Direct GPU` can disable this path for comparison. SSE1 matrix
+transforms preserve operation order; static receiver updates touch only the
+needle region. Monkey looks four tunnel sections farther ahead (20 instead of
+16, with matching path-cache capacity). Its exit hold now displays integer
+seconds/tenths correctly on nxdk, whose printf lacks floating-point formatting.
+
+The user confirmed the previous spectrum and MilkDrop improvements. This build
+does not claim completion of downloads, client subtitles or HTTPS below.
 
 0.6.9 preserves static music GUI pixels and updates only the effect/instrument
 rectangles. Spectrum decay follows the PSP's 50 ms envelope independently of

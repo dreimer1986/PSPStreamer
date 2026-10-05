@@ -5,6 +5,7 @@
 extern int xbox_cave_phase(void);
 enum {PANEL_VISUAL=9,PANEL_EFFECT=10,PANEL_PRESETS=11};
 static SDL_Texture *visual_texture;
+static int visual_direct_pending;static SDL_Rect visual_direct_rect;
 static unsigned char *visual_font;
 static int visual_started,visual_started_mode=-1,visual_loaded,visual_fault;
 static PresetSequence *visual_sequence;
@@ -16,6 +17,7 @@ static float visual_cut_threshold;
 static unsigned long long visual_cut_tick;
 static void visual_trace(const char *message,int persist){xv_service();if(persist)startup_note(message);}
 void xbox_visual_stop(void){
+    visual_direct_pending=0;
     xv_service_hook=NULL;
     int was_started=visual_started;
     if(was_started)startup_note("Visualization stop: begin");
@@ -90,7 +92,7 @@ static void visual_control_tick(void){
         fire=SDL_GameControllerGetButton(pad,SDL_CONTROLLER_BUTTON_A);break;
     }
     md_cave_control(shoulders,x,y,throttle,roll,fire,sceKernelGetSystemTimeWide());
-    const char *labels[]={visual_text("SHIELD","SCHILD"),visual_text("Score","Punkte"),"Hall of Fame","A / B: OK",visual_text("Save failed","Speichern fehlgeschlagen"),"GAME OVER",visual_text("Game Start","Spiel starten"),visual_text("Exit","Ende"),"LT + RT: 5s",visual_text("No scores yet","Noch keine Punkte"),"UP / DOWN   A: OK   B: Exit"};
+    const char *labels[]={visual_text("SHIELD","SCHILD"),visual_text("Score","Punkte"),"Hall of Fame","A / B: OK",visual_text("Save failed","Speichern fehlgeschlagen"),"GAME OVER",visual_text("Game Start","Spiel starten"),visual_text("Exit","Ende"),"LT + RT:",visual_text("No scores yet","Noch keine Punkte"),"UP / DOWN   A: OK   B: Exit"};
     md_cave_game_ui(visual_font,paused||panel||controls,labels);
     unsigned small,large;md_cave_rumble(playing&&!paused&&!panel&&!controls,&small,&large);
     for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerRumble(pads[i],large*65535/255,small?65535:0,100);
@@ -135,9 +137,17 @@ static void visual_draw(int full){
     }
     SDL_Rect src={0,0,xv_width,xv_height};
     SDL_Rect dst=full?(SDL_Rect){0,0,720,480}:(SDL_Rect){27,60,506,232};
+    if(visual_direct&&!panel&&!controls&&XVideoGetMode().bpp==32){visual_direct_rect=dst;visual_direct_pending=1;return;}
     if(visual_present_pixels((const uint32_t*)xv_pixels(),768,xv_width,xv_height,dst,0))return;
     SDL_UpdateTexture(visual_texture,&src,xv_pixels(),768*4);
     SDL_RenderCopy(renderer,visual_texture,&src,&dst);
+}
+static void visual_scanout(void){
+    if(!visual_direct_pending)return;visual_direct_pending=0;
+    SDL_Rect r=visual_direct_rect;
+    SDL_Rect physical={r.x*width/720,r.y*height/480,(r.x+r.w)*width/720-r.x*width/720,(r.y+r.h)*height/480-r.y*height/480};
+    if(xv_present_scanout(XVideoGetFB(),width,height,physical.x,physical.y,physical.w,physical.h,xv_width,xv_height))return;
+    if(!xv_failed()&&visual_present_pixels(xv_pixels(),768,xv_width,xv_height,r,0))SDL_UpdateWindowSurfaceRects(window,&physical,1);
 }
 static void visual_panel_draw(SDL_Color normal,SDL_Color selected){
     if(panel==PANEL_VISUAL){const char *rows[]={visual_name(),visual_text("Effect settings","Effekt-Einstellungen"),visual_text("MilkDrop presets","MilkDrop-Presets"),XL(SPECTRUM_SETTINGS)};

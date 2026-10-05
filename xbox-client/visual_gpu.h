@@ -63,4 +63,5 @@ const char *xv_error(void);
 void xv_native_texture(void *);
 void xv_present_begin(void);
 const void *xv_pixels(void);
+int xv_present_scanout(void *framebuffer,int width,int height,int x,int y,int w,int h,int sw,int sh);
 #endif

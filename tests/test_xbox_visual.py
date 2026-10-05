@@ -68,6 +68,7 @@ class XboxVisualTests(unittest.TestCase):
             shared=['milkdrop_warp','milkdrop_preset','preset_math','milkdrop_signal',
                     'milkdrop_wave','milkdrop_wave_extra','milkdrop_decor','milkdrop_texture','cave_visual','cave_paths']
             subprocess.run(['cc','-std=c11','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all',
+                '-include',str(ROOT/'xbox-client/generated/cave_visual.h'),
                 '-I'+str(ROOT/'tests/xbox_visual_stubs'),'-I'+str(ROOT/'.toolchain/nxdk/lib/pbkit'),
                 '-I'+str(ROOT/'xbox-client'),'-I'+str(ROOT/'psp-client'),
                 '-Dstrtof=xbox_strtof',str(ROOT/'xbox-client/visual_strto.c'),str(ROOT/'xbox-client/vendor/musl/floatscan.c'),

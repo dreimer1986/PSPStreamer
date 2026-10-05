@@ -16,15 +16,16 @@ static Uint32 music_damage_draw(void){
     SDL_Rect damage[2];int count=0;
     SDL_Rect visual=fullscreen?(visual_mode?(SDL_Rect){0,0,720,480}:(SDL_Rect){30,40,660,385}):
         (visual_mode?(SDL_Rect){27,60,506,232}:(SDL_Rect){37,147,488,135});
-    damage[count++]=(SDL_Rect){visual.x*width/720,visual.y*height/480,
+    if(!visual_direct_pending)damage[count++]=(SDL_Rect){visual.x*width/720,visual.y*height/480,
         (visual.x+visual.w)*width/720-visual.x*width/720,
         (visual.y+visual.h)*height/480-visual.y*height/480};
     if(!fullscreen){
-        SDL_Rect instruments={27,360,666,110},all={0,0,720,480};
+        /* Only the needles move while volume/theme/status stay unchanged. */
+        SDL_Rect instruments={46,388,236,45},all={0,0,720,480};
         clip(&instruments);SDL_RenderCopy(renderer,skin,NULL,&all);receiver();clip(NULL);
-        damage[count++]=(SDL_Rect){27*width/720,360*height/480,
-            693*width/720-27*width/720,470*height/480-360*height/480};
+        damage[count++]=(SDL_Rect){46*width/720,388*height/480,
+            282*width/720-46*width/720,433*height/480-388*height/480};
     }
     SDL_RenderFlush(renderer);Uint32 ready=SDL_GetTicks();
-    SDL_UpdateWindowSurfaceRects(window,damage,count);return ready;
+    if(count)SDL_UpdateWindowSurfaceRects(window,damage,count);return ready;
 }

@@ -349,6 +349,7 @@ static void menu_render(void){
 }
 #include "visual_damage.h"
 static void menu_draw(void){
+    visual_direct_pending=0;
     Uint32 began=SDL_GetTicks();
     static unsigned music_key;static int music_valid;
     int music=playing&&media_audio&&show_spectrum&&!panel&&!controls&&!fetch.thread;
@@ -363,7 +364,7 @@ static void menu_draw(void){
         if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});
     }else menu_render();
     if(!partial)controls_draw();if(first_frame)startup_note("before first present");
-    if(!partial){ready=SDL_GetTicks();SDL_RenderPresent(renderer);}Uint32 presented=SDL_GetTicks();
+    if(!partial){ready=SDL_GetTicks();SDL_RenderPresent(renderer);}visual_scanout();Uint32 presented=SDL_GetTicks();
     music_valid=music&&!visual_fault;music_key=key;
     if(first_frame){startup_note("first present complete");first_frame=0;}
     /* Non-stopping timing: the serial debugger must not halt playback to
@@ -642,7 +643,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.9 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.7.0 Monkey / MilkDrop / NV2A scanout / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;
