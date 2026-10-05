@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.2: correct NV2A color/depth DMA contexts for custom offscreen buffers;
+  size depth storage and pitch for the widest composition target. Fix the
+  reported zeta-buffer limit error; add target-switch command regression checks.
+
 - Xbox 0.6.1: implement missing SDK `exp2*` / `expm1*` math functions used by
   Monkey and audio smoothing. Fix the photographed startup assertion without
   disabling assertions or changing shared formulas. Add numerical regression

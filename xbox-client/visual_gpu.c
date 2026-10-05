@@ -64,7 +64,7 @@ int sceGuInit(void){
     failed=0;failure[0]=0;
     scratch=malloc(SCRATCH_BYTES);
     xv_ram=MmAllocateContiguousMemoryEx(4*1024*1024,0,0x03ffb000,64,PAGE_READWRITE|PAGE_WRITECOMBINE);
-    depth=MmAllocateContiguousMemoryEx(512*512*4,0,0x03ffb000,64,PAGE_READWRITE|PAGE_WRITECOMBINE);
+    depth=MmAllocateContiguousMemoryEx(768*512*4,0,0x03ffb000,64,PAGE_READWRITE|PAGE_WRITECOMBINE);
     if(!scratch||!xv_ram||!depth){sceGuTerm();fail("Not enough visualization memory");return -1;}
     memset(xv_ram,0,4*1024*1024);
     pb_size(512*1024);
@@ -112,8 +112,12 @@ void *sceGuGetMemory(size_t bytes){
 void sceGuDrawBufferList(int format,void *offset,int stride){
     (void)format;size_t address=(uintptr_t)offset;if(address>=4*1024*1024){fail("Invalid visual target");return;}
     target=xv_ram+address;target_stride=stride;
+    /* pbkit's default color/depth contexts 9/10 are based at its own buffers.
+     * Our physical offsets require its existing base-zero RAM context 3. */
+    reg(NV097_SET_CONTEXT_DMA_COLOR,3);
+    reg(NV097_SET_CONTEXT_DMA_ZETA,3);
     reg(NV097_SET_SURFACE_FORMAT,0x128); /* pitched ARGB8888 + Z24S8 */
-    reg(NV097_SET_SURFACE_PITCH,(512*4<<16)|(stride*4));
+    reg(NV097_SET_SURFACE_PITCH,(768*4<<16)|(stride*4));
     reg(NV097_SET_SURFACE_COLOR_OFFSET,PHYSICAL(target));
     reg(NV097_SET_SURFACE_ZETA_OFFSET,PHYSICAL(depth));
 }

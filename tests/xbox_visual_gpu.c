@@ -4,6 +4,13 @@
 #include "../xbox-client/visual_gpu.c"
 int main(void){
     assert(sceGuInit()==0);assert(!xv_failed());
+    assert(registers[NV097_SET_CONTEXT_DMA_COLOR/4]==3);
+    assert(registers[NV097_SET_CONTEXT_DMA_ZETA/4]==3);
+    assert((registers[NV097_SET_SURFACE_PITCH/4]>>16)==768*4);
+    /* Feedback targets change color pitch, not the depth allocation's pitch. */
+    sceGuDrawBufferList(GU_PSM_8888,(void*)(768*480*4),512);
+    assert(registers[NV097_SET_SURFACE_PITCH/4]==((768*4U<<16)|512*4U));
+    sceGuDrawBufferList(GU_PSM_8888,0,768);
     assert(registers[NV097_SET_TRANSFORM_EXECUTION_MODE/4]==6);
     assert(registers[NV097_SET_VERTEX_DATA_ARRAY_FORMAT/4]==0x42);
     assert(registers[(NV097_SET_VERTEX_DATA_ARRAY_FORMAT+9*4)/4]==0x42);

@@ -1,4 +1,9 @@
-# Original Xbox — native player preview 0.6.1
+# Original Xbox — native player preview 0.6.2
+
+0.6.2 fixes the NV2A zeta-buffer limit error: custom color/depth targets use
+pbkit's base-zero RAM DMA context instead of offsets into its own framebuffers.
+The depth allocation/pitch covers both the 720x480 composition and 512x512
+feedback surfaces. Console verification is still required.
 
 0.6.1 fixes the SDK assertion on starting Monkey: the Xbox port now supplies
 `exp2*` and `expm1*`, which are placeholders in the pinned SDK. A focused link-map
