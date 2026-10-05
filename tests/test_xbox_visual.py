@@ -34,6 +34,7 @@ class XboxVisualTests(unittest.TestCase):
             subprocess.run(['cc','-std=c11','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all',
                 '-I'+str(ROOT/'tests/xbox_visual_stubs'),'-I'+str(ROOT/'.toolchain/nxdk/lib/pbkit'),
                 '-I'+str(ROOT/'xbox-client'),'-I'+str(ROOT/'psp-client'),
+                '-Dstrtof=xbox_strtof',str(ROOT/'xbox-client/visual_strto.c'),str(ROOT/'xbox-client/vendor/musl/floatscan.c'),
                 str(ROOT/'tests/xbox_visual_effects.c'),str(ROOT/'xbox-client/generated/visual_logo.c'),
                 *[str(ROOT/'psp-client'/(s+'.c')) for s in shared],
                 '-lpng','-ljpeg','-lz','-lm','-o',str(binary)],check=True)

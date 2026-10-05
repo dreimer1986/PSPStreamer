@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class XboxMathTests(unittest.TestCase):
+    def test_string_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary=Path(tmp)/'strto'
+            subprocess.run(['cc','-O2','-fsanitize=address,undefined','-fno-sanitize-recover=all',
+                            str(ROOT/'tests/xbox_strto.c'),str(ROOT/'xbox-client/visual_strto.c'),
+                            str(ROOT/'xbox-client/vendor/musl/floatscan.c'),'-lm','-o',str(binary)],check=True)
+            subprocess.run([str(binary)],check=True,timeout=10)
+
     def test_exp2_replacement(self):
         with tempfile.TemporaryDirectory() as tmp:
             lib = Path(tmp) / 'math.so'

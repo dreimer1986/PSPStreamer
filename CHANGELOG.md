@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.5: fix MilkDrop preset-load assertion in the SDK's unimplemented
+  strtof. Reuse musl's floating-point conversion through a string adapter;
+  cover exponents, end pointers, range errors and preset loading in focused tests.
+
 - Xbox 0.6.4: fix 0.6.3's virtual/physical framebuffer-pointer assertion on
   stopping effects; stop audio DMA before GPU/network cleanup. Add a shared
   row-cached opaque presentation scaler for Monkey, MilkDrop and Spectrum,

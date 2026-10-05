@@ -53,6 +53,7 @@ if old_source.exists():
     old_source.unlink()
 licenses = out / 'licenses'
 licenses.mkdir(exist_ok=True)
+shutil.copy2(root / 'vendor/musl/COPYING', licenses / 'musl-MIT.txt')
 shutil.copy2(root.parent / 'licenses/MilkDrop2.txt', licenses / 'MilkDrop2.txt')
 for source, name in (
     (root.parent / 'LICENSE', 'GPL-2.0.txt'),

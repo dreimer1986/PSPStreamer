@@ -1,4 +1,9 @@
-# Original Xbox — native player preview 0.6.4
+# Original Xbox — native player preview 0.6.5
+
+0.6.5 replaces the SDK's unimplemented strtof/strtod/strtold calls in application
+code with musl v1.2.5 floating-point conversion and a string-only Xbox adapter.
+License/source are included under vendor/musl. Presets are not modified.
+Serial output confirmed Monkey stop completes; visualization speed remains open.
 
 0.6.4 fixes the 0.6.3 stop assertion: preserve HAL's virtual framebuffer pointer
 and restore physical scanout through pbkit, not XVideoSetFB. Pause audio DMA

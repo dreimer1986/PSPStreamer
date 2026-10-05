@@ -6,6 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+float xbox_strtof(const char *,char **);
+double xbox_strtod(const char *,char **);
+long double xbox_strtold(const char *,char **);
+#define strtof xbox_strtof
+#define strtod xbox_strtod
+#define strtold xbox_strtold
 /* Shared preset paths deliberately retain '/' for relative texture lookup.
  * Normalize only at the OS boundary; FATX/CreateFile expects backslashes. */
 static inline FILE *xbox_visual_fopen(const char *path,const char *mode){
