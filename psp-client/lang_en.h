@@ -83,6 +83,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_MILKDROP] = "MilkDrop/Monkey CPU",
     [TXT_SETTINGS_CPU_IDLE] = "Browser CPU",
     [TXT_SETTINGS_CPU_DOWNLOAD] = "Download/check CPU",
+    [TXT_SETTINGS_AUDIO_MATRIX] = "Audio downmix",
     [TXT_SETTINGS_CPU_VIDEO] = "Video CPU (plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD idle",
     [TXT_SETTINGS_RESOLUTION] = "MilkDrop resolution",

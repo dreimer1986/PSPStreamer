@@ -736,8 +736,8 @@ static void offline_browser(void) {
 }
 static void offline_enqueue_play(const char *media_id,int audio_only) {
     char post[1024];
-    snprintf(post,sizeof(post),"{\"id\":\"%s\",\"audio\":%d,\"subtitle\":%d,\"audio_quality\":\"%s\",\"video_fps\":\"%s\",\"profile\":\"%s\"}",
-        media_id,audio_only?0:selected_audio_track,audio_only?-1:selected_subtitle_track,audio_quality_name(),selected_video_fps?"24000/1001":"20",
+    snprintf(post,sizeof(post),"{\"id\":\"%s\",\"audio\":%d,\"subtitle\":%d,\"audio_quality\":\"%s\",\"audio_matrix\":\"%s\",\"video_fps\":\"%s\",\"profile\":\"%s\"}",
+        media_id,audio_only?0:selected_audio_track,audio_only?-1:selected_subtitle_track,audio_quality_name(),audio_matrix_keys[selected_audio_matrix],selected_video_fps?"24000/1001":"20",
         audio_only?"normal":(tvout_load_manager()==0 && pspDveMgrCheckVideoOut()==2)?"tv":PSP_STREAMER_PROFILE);
     if(offline_transfer(NULL,post)==0) {
         offline_scan();for(int i=0;i<offline_count;i++)if(!strcmp(offline_entries[i].id,download_key)){offline_play(&offline_entries[i],1);break;}

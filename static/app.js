@@ -83,6 +83,11 @@ function renderLibrary(){
 }
 function qualityOptions(select){for(const q of ['160k','128k','96k','v6','v5','v4','v3'])option(select,q,q.startsWith('v')?'VBR '+q.toUpperCase():'CBR '+parseInt(q)+' kbit/s');}
 qualityOptions($('#audio_quality'));qualityOptions($('#batchQuality'));
+const matrixLabel=document.createElement('label'),matrixSelect=document.createElement('select');
+matrixSelect.id='audio_matrix';matrixLabel.append(t('Audio downmix'),matrixSelect);
+for(const [value,label] of [['none','Stereo'],['dolby','Dolby Surround'],['dplii','Dolby Pro Logic II']])option(matrixSelect,value,label);
+$('#audio_quality').closest('label').after(matrixLabel);
+matrixSelect.onchange=()=>{preferences.audio_matrix=matrixSelect.value;savePreferences();};
 function savePreferences(){const data={...preferences};preferenceWrites=preferenceWrites.then(()=>post('/api/offline/preferences',data)).catch(fail);}
 for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile'],['audio','audio'],['subtitle','subtitle']]){
   $('#'+id).onchange=()=>{const s=$('#'+id);preferences[key]=['audio','subtitle'].includes(key)?s.selectedOptions[0]?.textContent||'':s.value;savePreferences();};
@@ -153,7 +158,7 @@ async function command(action,extra={}){
   if(action==='play'&&(!selected||!media))return;
   if(action==='seek'&&selected?.live)return;
   let body={action,...extra};
-  if(action==='play')Object.assign(body,{id:selected.id,audio_quality:$('#audio_quality').value,video_fps:$('#video_fps').value,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:selected.live?0:+$('#seek').value||0});
+  if(action==='play')Object.assign(body,{id:selected.id,audio_quality:$('#audio_quality').value,audio_matrix:$('#audio_matrix').value,video_fps:$('#video_fps').value,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:selected.live?0:+$('#seek').value||0});
   await post('/api/remote/command',body);if(action==='play'&&selected?.id===body.id){followPlayer=true;remotePlaying=true;pendingSeek={id:body.id,seconds:body.start,sent:performance.now(),until:performance.now()+15000}}if(action==='stop'){remotePlaying=false;playerSample=null;pendingSeek=null;}
   message(t('Sent: {action}',{action:t(action)}));
 }
@@ -239,7 +244,7 @@ setInterval(()=>{if(view==='remote')renderPosition()},500);
 action('#logout',async()=>{await post('/api/logout');location.assign('/login')});
 action('#queue',async()=>{if(!selected||!media||selected.live)return;
   const generation=chooseGeneration;$('#queue').disabled=true;
-  try{await post('/api/offline/jobs',{id:selected.id,audio:selected.kind==='audio'?0:+$('#audio').value||0,subtitle:selected.kind==='audio'?-1:+$('#subtitle').value,audio_quality:$('#audio_quality').value,video_fps:$('#video_fps').value,profile:$('#downloadProfile').value});
+  try{await post('/api/offline/jobs',{id:selected.id,audio:selected.kind==='audio'?0:+$('#audio').value||0,subtitle:selected.kind==='audio'?-1:+$('#subtitle').value,audio_quality:$('#audio_quality').value,audio_matrix:$('#audio_matrix').value,video_fps:$('#video_fps').value,profile:$('#downloadProfile').value});
     message(t('{n} jobs queued',{n:1}));setView('downloads');await updateDownloads();
   }finally{if(generation===chooseGeneration)$('#queue').disabled=false;}
 });
@@ -285,7 +290,7 @@ action('#previewBatch',async()=>{
       try{const d=await api('/api/metadata/'+encodeURIComponent(item.id),{signal});if(signal.aborted||generation!==batchGeneration)return;
         const a=item.kind==='audio'?0:preferredTrack(d.a||[],audio),s=item.kind==='audio'?-1:preferredTrack(d.s||[],subtitle,true);
         if(a===null||s===null)throw Error(t('Missing or ambiguous preferred track'));
-        row.options={id:item.id,audio:a,subtitle:s,audio_quality:$('#batchQuality').value,video_fps:$('#batchFps').value,profile:$('#batchProfile').value};
+        row.options={id:item.id,audio:a,subtitle:s,audio_quality:$('#batchQuality').value,audio_matrix:$('#audio_matrix').value,video_fps:$('#batchFps').value,profile:$('#batchProfile').value};
         const label=(tracks,n)=>n<0?t('Off'):(tracks.find(x=>+x.n===n)?.l||'und')+' '+(tracks.find(x=>+x.n===n)?.t||'');
         row.description=item.kind==='audio'?'MP3':`${t('Audio track')}: ${label(d.a||[],a)} · ${t('Subtitles')}: ${label(d.s||[],s)}`;
       }catch(e){if(e.name==='AbortError')return;row.error=e.message;}
@@ -344,6 +349,7 @@ $('#passwordForm').onsubmit=async event=>{event.preventDefault();if($('#newPassw
 async function poll(){try{if(view==='downloads')await updateDownloads();await refreshPlayer(true);if(selected?.live&&view==='remote'){const item=selected,d=await api('/api/radio/status/'+encodeURIComponent(item.id));if(selected===item)$('#details').textContent=d.radio_active?[d.radio_station,d.radio_title||t('No title supplied')].join(' · '):t('Stopped / paused / reconnecting');}}catch(e){fail(e)}setTimeout(poll,3000);}
 async function init(){const session=await api('/api/session');csrf=session.csrf;$('#logout').hidden=!session.protected;
   preferences=await api('/api/offline/preferences');for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile']])if(preferences[key])$('#'+id).value=preferences[key];
+  if(preferences.audio_matrix)$('#audio_matrix').value=preferences.audio_matrix;
   await browse('');await Promise.all([plexRefresh(),jellyfinRefresh(),dlnaRefresh(),radioRefresh(),passwordSettings()]);setView('library');poll();
 }
 init().catch(fail);

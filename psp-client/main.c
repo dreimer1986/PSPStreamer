@@ -361,6 +361,9 @@ static char status[128] = "Starting network ...";
 static int selected_audio_track;
 static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
+static int selected_audio_matrix;
+static const char *audio_matrix_keys[]={"none","dolby","dplii"};
+static const char *audio_matrix_labels[]={"Stereo","Dolby Surround","Dolby Pro Logic II"};
 static int selected_video_fps;
 #include "queue_quality.h"
 static QueueQuality queue_quality_scope;
@@ -502,6 +505,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "audio=", 6)) selected_audio_track = atoi(line + 6);
             else if (!strncmp(line, "subtitle=", 9)) selected_subtitle_track = atoi(line + 9);
             else if (!strncmp(line, "quality=", 8)) selected_audio_quality = atoi(line + 8);
+            else if (!strncmp(line,"audio_matrix=",13)) {for(int i=0;i<3;i++)if(!strcmp(line+13,audio_matrix_keys[i]))selected_audio_matrix=i;}
             else if (!strncmp(line, "music_preset=", 13) && preset_path_valid(line+13)) strcpy(music_preset_file,line+13);
             else if (!strncmp(line,"preset_auto=",12)) music_preset_auto=atoi(line+12);
             else if (!strncmp(line,"preset_seconds=",15)) music_preset_seconds=atoi(line+15);
@@ -547,6 +551,7 @@ static int save_playback_settings(void) {
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, queue_quality_scope.active?queue_quality_scope.quality:selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", (queue_quality_scope.active?queue_quality_scope.fps:selected_video_fps) ? "24000/1001" : "20");
+    length += snprintf(data+length,sizeof(data)-length,"audio_matrix=%s\n",audio_matrix_keys[selected_audio_matrix]);
     length += snprintf(data+length,sizeof(data)-length,"next_episode_seconds=%d\n",next_episode_seconds);
     length += snprintf(data + length, sizeof(data) - length, "play_mode=%s\n",download_before_play?"download":"stream");
     length += snprintf(data + length, sizeof(data) - length, "music_preset=%s\n",music_preset_file);
@@ -1605,7 +1610,7 @@ static int audio_thread(SceSize args, void *argp) {
     /* Stand-alone music has no meaningful language/subtitle selection.  Its
      * first (and normally only) audio stream is always the source. */
     network_attempted=1;
-    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), stream_start_seconds, server_host, server_auth_header);
+    snprintf(request, sizeof(request), "GET /api/transcode/%s?container=mp3&profile=%s&audio=0&audio_quality=%s&audio_matrix=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", audio_media_id, PSP_STREAMER_PROFILE, audio_quality_name(), audio_matrix_keys[selected_audio_matrix], stream_start_seconds, server_host, server_auth_header);
     socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0) { audio_transport_error=1;audio_state = -11; goto cleanup; }
     audio_socket_fd = socket_fd;
@@ -2466,10 +2471,10 @@ static int play_h264(const char *media_id) {
     codec_sema = sceKernelCreateSema("PSPStreamerME", 0, 1, 1, NULL);
     if (codec_sema < 0) { result = codec_sema; goto done; }
     snprintf(timed_request, sizeof(timed_request),
-        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&video_fps=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",
+        "GET /api/transcode/%s?container=flv&profile=%s&audio=%d&subtitle=%d&audio_quality=%s&audio_matrix=%s&video_fps=%s&start=%d HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n",
         media_id, tvout_video_active ? "tv" : PSP_STREAMER_PROFILE, selected_audio_track,
         (subtitle_client_side || bitmap_client_side) ? -1 : selected_subtitle_track,
-        audio_quality_name(), selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
+        audio_quality_name(), audio_matrix_keys[selected_audio_matrix], selected_video_fps ? "24000/1001" : "20", stream_start_seconds, server_host, server_auth_header);
     video_step = "FLV reader worker";
     timed_reader_id = sceKernelCreateThread("PSPStreamerFLV", timed_reader, 0x20, 0x10000, 0, NULL);
     if (timed_reader_id < 0) { result = timed_reader_id; goto done; }
@@ -2996,6 +3001,7 @@ static int remote_poll_play(char *media_id, size_t media_id_size, int *audio,
     if (field) remote_control_sequence = sequence = atoi(field + 6);
     if (strcmp(action, "play") || !json_value(reply, "id", media_id, media_id_size)) return 0;
     remote_control_sequence = sequence;
+    {char matrix[16];if(json_value(reply,"audio_matrix",matrix,sizeof(matrix)))for(int i=0;i<3;i++)if(!strcmp(matrix,audio_matrix_keys[i]))selected_audio_matrix=i;}
     *audio = json_integer(reply, "audio", 0);
     *subtitle = json_integer(reply, "subtitle", -1);
     {

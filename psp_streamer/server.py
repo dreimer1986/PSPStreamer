@@ -260,7 +260,29 @@ class Library:
         return {"root": root_index, "path": relative, "parent": parent, "folders": folders, "videos": videos}
 
 
-def ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
+def ffmpeg_command(*args, audio_matrix="none", **kwargs) -> list[str]:
+    command = _ffmpeg_command(*args, **kwargs)
+    return audio_matrix_command(command, audio_matrix)
+
+
+def audio_matrix_command(command: list[str], matrix: str) -> list[str]:
+    if matrix not in {"none", "dolby", "dplii"}:
+        raise ValueError("Invalid audio matrix")
+    if matrix == "none" or "-an" in command:
+        return command
+    command = list(command)
+    # Keep the established rate, first_pts and encoder. Matrix downmix must
+    # happen while the original multichannel layout is still available.
+    suffix = "out_chlayout=stereo:matrix_encoding=" + matrix + ":rematrix_maxval=1.0"
+    if "-af" in command:
+        index = command.index("-af") + 1
+        command[index] += ":" + suffix
+    else:
+        command[-1:-1] = ["-af", "aresample=44100:" + suffix]
+    return command
+
+
+def _ffmpeg_command(source: Path | RemoteSource | str, audio_track: int, container: str = "mp4", low_bandwidth: bool = False,
                    subtitle_track: int = -1, audio_bitrate: str = "160k", subtitle_source: Path | None = None,
                    start_seconds: float = 0, bitmap_subtitle: bool = False,
                    tv_output: bool = False, video_fps: str = "20", external_subtitle: bool = False) -> list[str]:
@@ -708,6 +730,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 audio = max(0, int(query.get("audio", ["0"])[0]))
                 subtitle = int(query.get("subtitle", ["-1"])[0])
                 audio_bitrate = query.get("audio_quality", ["160k"])[0]
+                audio_matrix = query.get("audio_matrix", ["none"])[0]
+                if audio_matrix not in {"none", "dolby", "dplii"}:
+                    raise ValueError("Invalid audio matrix")
                 video_fps = query.get("video_fps", ["20"])[0]
                 start_seconds = float(query.get("start", ["0"])[0])
                 container = query.get("container", ["mp4"])[0]
@@ -730,7 +755,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     from .xbox_player import PROFILES
                     if xbox_audio not in ('128k','192k','256k','320k','384k') or xbox_matrix not in ('none','dolby','dplii') or xbox_codec not in ('mpeg1', 'mpeg2') or xbox_size is not None and xbox_size not in PROFILES:
                         raise ValueError('Unsupported Xbox video profile/codec')
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix, xbox_audio=xbox_audio)
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix, xbox_audio=xbox_audio, audio_matrix=audio_matrix)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -975,6 +1000,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if live:
                     clean.update(live=True, name=display_text(station['name']), audio=0, subtitle=-1, start=0)
                 for name, allowed in (("audio_quality", {"96k", "128k", "160k", "v6", "v5", "v4", "v3"}),
+                                      ("audio_matrix", {"none", "dolby", "dplii"}),
                                       ("video_fps", {"20", "24000/1001"})):
                     if name in command:
                         if not isinstance(command[name], str) or command[name] not in allowed:
@@ -1292,7 +1318,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False,
-                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none', xbox_audio: str = '192k') -> None:
+                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none', xbox_audio: str = '192k', audio_matrix: str = 'none') -> None:
         live = token.startswith('radio.')
         managed = browser or xbox
         xbox_transport = None
@@ -1349,6 +1375,8 @@ class AppHandler(BaseHTTPRequestHandler):
                     if not subtitle_source.exists():
                         os.symlink(source, subtitle_source)
             command = radio_command(resolve_playlist(source), audio_bitrate, ffmpeg_command) if live else ffmpeg_command(source, audio_track, container, low_bandwidth, subtitle_track, audio_bitrate, subtitle_source, start_seconds, bitmap_subtitle, tv_output, video_fps, external_subtitle=external is not None)
+            if not browser and not xbox:
+                command = audio_matrix_command(command, audio_matrix)
             if browser:
                 from .browser_player import browser_command
                 command = browser_command(command, container == 'mp3')

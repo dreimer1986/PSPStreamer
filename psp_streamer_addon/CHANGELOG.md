@@ -1,3 +1,9 @@
+# 0.1.78
+
+- Optional PSP Dolby Surround / Pro Logic II stereo downmix for streams and new downloads.
+- Persisted web selection and separate offline cache identity for each downmix.
+- Unchanged default stereo, PSP sample rate and synchronization; Xbox settings remain separate.
+
 # 0.1.76
 
 - Xbox 0.5.0 library adapters for shared favorites, search and editable queue.

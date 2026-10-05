@@ -1061,6 +1061,7 @@ screen_idle=0
 audio=0
 subtitle=-1
 quality=2
+audio_matrix=none
 video_fps=20
 play_mode=stream
 music_preset=active.milk
@@ -1797,6 +1798,22 @@ app uses its persistent data directory. No StreamMaster firmware update is
 needed for these conveniences.
 
 ## Build the PSP client
+
+### PSP Dolby Surround downmix
+
+Settings → **Audio downmix** offers Stereo (default), Dolby Surround and Dolby
+Pro Logic II. The CFG key is `audio_matrix=none`, `audio_matrix=dolby` or
+`audio_matrix=dplii`. The server folds a multichannel source into matrix-encoded
+stereo; the PSP still receives its established 44.1-kHz MP3 stream. This is not
+Dolby Digital/DTS passthrough and does not create discrete surround from stereo.
+A compatible receiver must decode the stereo signal in its Surround/Pro Logic
+mode. Headphones and the PSP speakers do not provide discrete surround.
+
+The web PSP controls also offer Audio downmix and remember the selection.
+New offline conversions include the choice and keep different mixes separate;
+existing downloads must be reconverted. Server/Home Assistant app 0.1.78 and a
+matching new PSP build are required. Decoder, PTS clock, volume and video settings
+are unchanged. Xbox retains its separate downmix setting.
 
 A PSPDEV/PSPSDK toolchain is required. The active video path uses firmware AVC, not OpenH264:
 

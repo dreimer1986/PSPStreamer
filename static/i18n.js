@@ -1,5 +1,6 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
+ 'Audio downmix':'Audio-Downmix',
  'Xbox video resolution':'Xbox-Videoauflösung',
  'Use Xbox setting':'Xbox-Einstellung verwenden',
  'Applies on next Play. TV output mode is set on the Xbox.':'Gilt beim nächsten Start. Den TV-Ausgabemodus stellst du auf der Xbox ein.',
