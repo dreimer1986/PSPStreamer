@@ -1,7 +1,7 @@
-# Original Xbox — native player preview 0.4.3
+# Original Xbox — native player preview 0.4.4
 
 GUI navigation and native video **with audio** were confirmed on a real Xbox
-with 0.2.5 and 0.3.0. Version 0.4.3 extends that working foundation; its new features
+with 0.2.5 and 0.3.0. Version 0.4.4 extends that working foundation; its new features
 still require console testing. It is a native nxdk XBE, not an XBMC skin or a
 PSP executable. The proven PTS/sample-position clock is unchanged.
 
@@ -119,6 +119,21 @@ Xbox HA remote entity are **not implemented** in this build. No parity with
 all PSP features is claimed. Existing PSP plugins cannot run as Xbox plugins.
 
 ## Display and performance
+
+0.4.4 corrects vertically stretched video in 1080i output: the PVIDEO destination
+uses 540 field lines, while the RGB GUI/color-key rectangle remains in 1080
+framebuffer lines. Both fullscreen and embedded video use the correction,
+following XBMC4Xbox ComboRenderer's 1080i handling. Source quality, SD, 720p,
+software presentation and timestamp synchronization are unchanged. The 0.4.3
+speedup was confirmed by the user; this geometry correction needs a console test.
+
+At track end, AC97's halted-at-last-valid-descriptor status now takes precedence
+over a residual sample count (only while RUN is set and current equals last).
+This avoids an endless drain wait in that hardware state. The reported autoplay
+stall still needs hardware confirmation: older logs lacked the DMA status needed
+to establish its exact cause. End diagnostics now include network/clean-EOF,
+decoder/pending-frame state and both DMA cursors. No timeout forces completion;
+only a clean, fully drained stream may advance to another episode.
 
 0.4.3 repairs the PVIDEO startup handoff: reset only the overlay engine, clear
 the inherited pending-buffer state and release STOP before first submission.

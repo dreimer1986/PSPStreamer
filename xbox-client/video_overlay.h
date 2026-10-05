@@ -79,7 +79,16 @@ static int overlay_prepare(unsigned w,unsigned h){
 }
 /* Return -1 for persistent hardware trouble, 0 for a busy slot, 1 submitted.
  * Slots still owned by PVIDEO are never overwritten or waited on. */
-static int overlay_present(const plm_frame_t *f,SDL_Rect dst){
+static int overlay_present(const plm_frame_t *f,SDL_Rect dst,int output_height){
+    /* PVIDEO's 1080i destination is measured in 540 field lines, unlike
+     * SDL's 1080-line RGB framebuffer. Match XBMC4Xbox ComboRenderer's
+     * ManageDisplay correction, without changing the GUI color-key rectangle
+     * or the source dimensions/stride. SD interlace is not this mode. */
+    if(output_height==1080){
+        int bottom=(dst.y+dst.h+1)/2;
+        dst.y/=2;dst.h=bottom-dst.y;
+    }
+    if(dst.w<2||dst.h<2)return 0;
     unsigned slot=overlay.slot,bit=1u<<(slot*4),reg=slot*4;
     overlay.last_buffer=*overlay_reg(0x700);
     if(overlay.last_buffer&bit){

@@ -2,6 +2,7 @@
  * No callback-count clock and no guessed SDL/hardware queue latency. */
 #include <hal/audio.h>
 #include "spectrum_analysis_impl.h"
+#include "audio_dma_cursor.h"
 extern AC97_DEVICE ac97Device;
 static unsigned char *pcm;
 static int volume=100;static unsigned audio_peaks[32][2];
@@ -36,15 +37,17 @@ static int audio_init(void){
     return !audio_failed;
 }
 static unsigned audio_cursor(unsigned base,int64_t *pts){
-    unsigned first=0,second=0,remaining=0;
+    unsigned first=0,second=0,remaining=0,status=0,last=0,control=0;
     for(int tries=0;tries<8;tries++){
         first=ac97[base+4]&31;
         remaining=*(volatile unsigned short*)(ac97+base+8);
+        status=ac97[base+6];last=ac97[base+5]&31;control=ac97[base+11];
         second=ac97[base+4]&31;
         if(first==second)break;
     }
     unsigned serial=audio_serial[second];
     if(!serial||first!=second||remaining>2304){*pts=-1;return 0;}
+    remaining=xbox_dma_remaining(remaining,status,control,second,last);
     *pts=audio_pts[second]+(int64_t)(2304-remaining)*90000/96000;
     return serial-(remaining?1:0);
 }

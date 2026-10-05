@@ -1,4 +1,35 @@
-# Xbox 0.4.3: NV2A video presentation
+# Xbox 0.4.4: NV2A video presentation
+
+## 1080i geometry
+
+The user confirmed a substantial 0.4.3 speedup, including nearly smooth 1080i,
+but reported vertically elongated faces. The PVIDEO destination had incorrectly
+used the full 1080-line RGB framebuffer coordinates. XBMC4Xbox explicitly
+halves the vertical offset/height in `CComboRenderer::ManageDisplay` for 1080i.
+0.4.4 applies this at the register boundary: output Y/height and vertical sampling
+step use field coordinates; GUI, color key and decoded source remain unchanged.
+This depends on **actual output mode**, not selected encoding resolution.
+SD interlace and 720p are unchanged. Odd embedded boundaries round outwards.
+The register test checks 1080i fullscreen/embedded destinations and unchanged
+SD/720p scaling. Real-console geometry confirmation remains pending.
+
+Reference: [XBMC4Xbox ComboRenderer](https://github.com/antonic901/xbmc4xbox/blob/master/xbmc/cores/VideoRenderers/ComboRenderer.cpp).
+
+## End-of-episode follow-up
+
+The supplied 0.4.3 log ended with `net_bytes=0`, `audio_queue=2` and a pending
+video timestamp slightly ahead of audio, without a `playback end` record.
+The saved configuration had autoplay enabled. These records do not establish
+whether network EOF, video drain or DMA completion blocked the final transition.
+0.4.4 accepts AC97 DCH+CELV with RUN set and CIV=LVI as a completed descriptor,
+even if PICB retains samples. Normal running, paused, reset and other-descriptor
+states keep using the sample cursor. Both output channels still must drain.
+No duration estimate, forced queue discard or error-to-autoplay conversion.
+
+`tests/xbox_audio_dma.c` covers this narrow status rule and all 32 descriptor
+indices. Diagnostic fields `net_done`, `clean`, `decoder_end`, `pending_frame`
+and `analog`/`digital` (CIV/LVI/status/PICB) distinguish the remaining causes if
+the console still stalls. `audio_dma_cursor.h` is Xbox-only; PSP is untouched.
 
 ## Console finding and repair
 

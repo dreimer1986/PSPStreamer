@@ -28,7 +28,7 @@ static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
 extern Uint64 xbox_fb_copy_bytes;
 extern unsigned xbox_fb_copy_calls;
-static char player_diagnostic[400];
+static char player_diagnostic[640];
 static int diagnostics_enabled=1;
 static unsigned video_decode_ms;
 
@@ -150,7 +150,7 @@ static int player_tick(void){
     }
     if(diagnostics_enabled&&SDL_GetTicks()-log_time>5000){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
-        snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u renderer=%s gpu_frames=%u gpu_busy=%u decode_ms=%u pack_ms=%u gui_ms=%u gui_kib=%u gui_copies=%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes,overlay.active&&!overlay.disabled?"nv2a":"software",overlay.shown,overlay.busy,video_decode_ms,overlay.pack_ms,overlay.gui_ms,(unsigned)(xbox_fb_copy_bytes/1024),xbox_fb_copy_calls);log_time=SDL_GetTicks();
+        snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u renderer=%s gpu_frames=%u gpu_busy=%u decode_ms=%u pack_ms=%u gui_ms=%u gui_kib=%u gui_copies=%u net_done=%d clean=%d decoder_end=%d pending_frame=%d analog=%u/%u/%u/%u digital=%u/%u/%u/%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes,overlay.active&&!overlay.disabled?"nv2a":"software",overlay.shown,overlay.busy,video_decode_ms,overlay.pack_ms,overlay.gui_ms,(unsigned)(xbox_fb_copy_bytes/1024),xbox_fb_copy_calls,SDL_AtomicGet(&stream.done),stream.ended,decoder_ended,next_frame!=NULL,ac97[0x114],ac97[0x115],ac97[0x116],*(volatile unsigned short*)(ac97+0x118),ac97[0x174],ac97[0x175],ac97[0x176],*(volatile unsigned short*)(ac97+0x178));log_time=SDL_GetTicks();
     }
     if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&(!stream_video||decoder_ended)&&!next_frame&&!queued)return stream.ended?2:-1;
     return 0;

@@ -357,8 +357,8 @@ static void frame_draw(plm_frame_t *f){
             overlay.gui_ms+=SDL_GetTicks()-start;gui_at=now;
             old_full=fullscreen;old_controls=controls;old_row=control_row;
         }
-        if(!overlay.shown&&!overlay.busy){char line[180];snprintf(line,sizeof(line),"PVIDEO init enable=%08x inherited=%08x reset=%08x",overlay.initial_enable,overlay.initial_buffer,overlay.reset_buffer);startup_note(line);}
-        if(overlay_present(f,dst)>=0)return;
+        if(!overlay.shown&&!overlay.busy){char line[200];snprintf(line,sizeof(line),"PVIDEO init enable=%08x inherited=%08x reset=%08x output=%dx%d field_lines=%d source=%ux%u",overlay.initial_enable,overlay.initial_buffer,overlay.reset_buffer,width,height,height==1080?540:height,f->width,f->height);startup_note(line);}
+        if(overlay_present(f,dst,height)>=0)return;
         {char line[180];snprintf(line,sizeof(line),"video: NV2A busy timeout buffer=%08x shown=%u; using software",overlay.last_buffer,overlay.shown);startup_note(line);}
     }
     frame_draw_software(f);
@@ -516,7 +516,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.3 PVIDEO reset / partial GUI / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.4.4 PVIDEO 1080i field geometry / O3 LTO\n",boot);fclose(boot);}
     spectrum_analysis_mode=1;preferences(0);snprintf(report_client,sizeof(report_client),"xbox-%08lx-%08lx",(unsigned long)GetTickCount(),(unsigned long)KeQueryPerformanceCounter());
     startup_note("entry: before graphics/input initialization");
     int configured=config();display_list();
