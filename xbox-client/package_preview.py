@@ -14,7 +14,7 @@ for name in ('README.md', 'server.cfg.example'):
 (out / 'source').mkdir(exist_ok=True)
 for name in ('framebuffer_copy.h', 'text_cache.h', 'audio_dma_cursor.h', 'language.h', 'language_strings.h'):
     shutil.copy2(root / name, out / 'source' / name)
-for name in ('hostname.h','dns_resolver.h','help_ui.h'):
+for name in ('hostname.h','dns_resolver.h','help_ui.h','subtitle_client.h','subtitle_render.h'):
     shutil.copy2(root / name, out / 'source' / name)
 for name in ('player_main.c', 'video_backend.c', 'video_overlay.h', 'yuy2_pack.h', 'net.h', 'http_status.h', 'catalog.h', 'audio.h', 'player.h', 'mpeg_video.h', 'display.h', 'settings.h', 'report.h', 'remote.h', 'server_settings.h', 'spectrum.h', 'render_clip.h', 'Makefile', 'server.cfg.example', 'README.md', 'package_preview.py'):
     shutil.copy2(root / name, out / 'source' / name)
@@ -32,7 +32,7 @@ psp=root.parent/'psp-client'
 pending=['milkdrop_gu.c','milkdrop_warp.c','milkdrop_preset.c','preset_math.c',
          'milkdrop_signal.c','milkdrop_wave.c','milkdrop_wave_extra.c',
          'milkdrop_decor.c','milkdrop_texture.c','cave_visual.c','cave_paths.c',
-         'preset_sequence.h','spectrum_paint.h']
+         'preset_sequence.h','spectrum_paint.h','subtitle_pages.h']
 copied=set()
 while pending:
     name=pending.pop()

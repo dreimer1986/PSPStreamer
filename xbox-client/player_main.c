@@ -204,6 +204,7 @@ static void wrapped(const char *s,int y,int lines){
 #include "spectrum.h"
 #include "visual_ui.h"
 #include "display.h"
+#include "subtitle_render.h"
 static void seek_playback(double seconds){
     if(!playing||media_live)return;if(seconds<0)seconds=0;if(media_duration>1&&seconds>=media_duration)seconds=media_duration-1;
     player_start(seconds);report_time=0;
@@ -300,7 +301,7 @@ static void menu_render(void){
         snprintf(lines[6],100,XL(PEAK),spectrum_peak_hold?XL(ON):XL(OFF));
         for(int i=0;i<7;i++)text_at(lines[i],35,68+i*29,492,i==panel_row?selected:normal);
     }else if(panel==2){
-        char lines[20][140];snprintf(lines[0],140,XL(AUTOPLAY),auto_next?XL(ON):XL(OFF));snprintf(lines[1],140,XL(REPEAT_CURRENT),repeat_one?XL(ON):XL(OFF));
+        char lines[21][140];snprintf(lines[0],140,XL(AUTOPLAY),auto_next?XL(ON):XL(OFF));snprintf(lines[1],140,XL(REPEAT_CURRENT),repeat_one?XL(ON):XL(OFF));
         snprintf(lines[2],140,XL(FOLDER_SHUFFLE),shuffle_music?XL(ON):XL(OFF));snprintf(lines[3],140,XL(SPECTRUM),show_spectrum?XL(ON):XL(OFF));
         snprintf(lines[4],140,XL(VIDEO_QUALITY),quality_names[quality]);snprintf(lines[5],140,XL(VOLUME),volume);
         snprintf(lines[6],140,XL(AUDIO),prefer_audio?language_label(language_codes[prefer_audio]):XL(SOURCE_DEFAULT));snprintf(lines[7],140,XL(SUBTITLES),prefer_subtitle?language_label(language_codes[prefer_subtitle]):XL(OFF));
@@ -314,7 +315,8 @@ static void menu_render(void){
         snprintf(lines[17],140,XL(LANGUAGE),ui_language_name());
         snprintf(lines[18],140,XL(AUDIO_QUALITY),audio_quality_keys[audio_quality]);
         snprintf(lines[19],140,XL(STOP_TIMER),stop_minutes);
-        int first=panel_row/8*8;for(int i=first;i<20&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
+        snprintf(lines[20],140,"%s: %s",visual_text("Text subtitle overlay","Text-Untertitel-Overlay"),subtitle_overlay?XL(ON):XL(OFF));
+        int first=panel_row/8*8;for(int i=first;i<21&&i<first+8;i++)text_at(lines[i],35,64+(i-first)*28,492,i==panel_row?selected:normal);
     }else if(panel==3){
         text_at(media_name,35,66,492,selected);char line[160];snprintf(line,sizeof(line),XL(TRACK_INFO),(int)media_duration/60,(int)media_duration%60,audio_count,subtitle_count);text_at(line,35,96,492,normal);
         if(*media_artist)text_at(media_artist,35,123,492,normal);if(*media_album)text_at(media_album,35,150,492,normal);
@@ -344,7 +346,7 @@ static void menu_render(void){
     side(panel==1?XL(HELP):panel==2?XL(SETTINGS):panel==3?XL(INFO):playing?(paused?XL(PAUSED_TITLE):XL(PLAYING_TITLE)):options?XL(OPTIONS):XL(LIBRARY),0);
     if(fetch.thread){side(XL(LOADING),2);side(XL(CANCEL),4);}
     else{side(XL(SELECT),1);if(!cover||(!options&&!playing&&panel!=3)){side(XL(BACK),3);side(XL(OPEN_SETTINGS),4);side(XL(OPEN_HELP),5);}side(XL(EXIT),8);}
-    SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,308,650,normal);clip(NULL);
+    SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,316,650,normal);clip(NULL);
     receiver();
 }
 #include "visual_damage.h"
@@ -387,11 +389,12 @@ static void frame_draw_software(plm_frame_t *f){
     if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);
         /* Server frames contain a complete 16:9 canvas, including pillarbox
          * for 4:3 sources. SD output pixels are anamorphic on a wide TV. */
-        double ratio=(16.0/9.0)*((double)width/height)/(display_wide?16.0/9.0:4.0/3.0);int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}SDL_Rect dst={(width-w)/2,(height-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
-    }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(16.0/9.0)*1.5/(display_wide?16.0/9.0:4.0/3.0);int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);controls_draw();SDL_RenderPresent(renderer);}
+        double ratio=(16.0/9.0)*((double)width/height)/(display_wide?16.0/9.0:4.0/3.0);int w=width,h=(int)(w/ratio);if(h>height){h=height;w=(int)(h*ratio);}SDL_Rect dst={(width-w)/2,(height-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);subtitle_render_draw(dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
+    }else{menu_render();SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);color(0,0,0);SDL_Rect panel={27,60,506,232};SDL_RenderFillRect(renderer,&panel);double ratio=(16.0/9.0)*1.5/(display_wide?16.0/9.0:4.0/3.0);int w=506,h=(int)(w/ratio);if(h>232){h=232;w=(int)(h*ratio);}SDL_Rect dst={27+(506-w)/2,60+(232-h)/2,w,h};SDL_RenderCopy(renderer,video_texture,NULL,&dst);SDL_Rect physical={dst.x*width/720,dst.y*height/480,dst.w*width/720,dst.h*height/480};subtitle_render_draw(physical);controls_draw();SDL_RenderPresent(renderer);}
 }
 static void frame_draw(plm_frame_t *f){
     static Uint32 gui_at;static int old_full=-1,old_controls=-1,old_row=-1;
+    int subtitle_changed=subtitle_render_update();
     if(overlay_prepare(f->width,f->height)){
         SDL_Rect dst;
         if(fullscreen){
@@ -406,18 +409,23 @@ static void frame_draw(plm_frame_t *f){
         /* GUI scanout is independent of video. Update the progress bar at 4 Hz
          * and buttons immediately; don't copy a full RGB screen per frame. */
         Uint32 now=SDL_GetTicks();
-        if(!overlay.active||old_full!=fullscreen||old_controls!=controls||old_row!=control_row||now-gui_at>=250){
+        if(!overlay.active||old_full!=fullscreen||old_controls!=controls||old_row!=control_row||subtitle_changed||now-gui_at>=250){
             Uint32 start=now;
             int full=!overlay.active||old_full!=fullscreen||old_controls!=controls;
             if(full){
                 if(fullscreen){SDL_RenderSetScale(renderer,1,1);color(0,0,0);SDL_RenderClear(renderer);}
                 else{menu_render();color(0,0,0);SDL_Rect r={27,60,506,232};SDL_RenderFillRect(renderer,&r);}
                 SDL_RenderSetScale(renderer,1,1);color(1,2,3);SDL_RenderFillRect(renderer,&dst);
-                video_progress();controls_draw();SDL_RenderPresent(renderer);
+                subtitle_render_draw(dst);video_progress();controls_draw();SDL_RenderPresent(renderer);
             }else{
                 /* Preserve static pixels in SDL's existing software surface.
                  * Flush commands without SDL_RenderPresent's full-screen copy. */
-                SDL_Rect damage[3];int count=0;
+                SDL_Rect damage[4];int count=0;
+                if(subtitle_changed&&!controls){
+                    SDL_Rect area=subtitle_area(dst);SDL_RenderSetScale(renderer,1,1);
+                    color(1,2,3);SDL_RenderFillRect(renderer,&area);subtitle_render_draw(dst);
+                    damage[count++]=area;
+                }
                 if(fullscreen&&!media_live&&media_duration>0){
                     video_progress();damage[count++]=(SDL_Rect){width/30,height-10,width-2*(width/30),3};
                 }
@@ -428,7 +436,7 @@ static void frame_draw(plm_frame_t *f){
                     SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);
                     SDL_Rect footer={27,303,666,38},instruments={27,360,666,110},all={0,0,720,480};
                     clip(&footer);SDL_RenderCopy(renderer,skin,NULL,&all);
-                    text_at(status,32,308,650,(SDL_Color){225,234,237,255});clip(NULL);
+                    text_at(status,32,316,650,(SDL_Color){225,234,237,255});clip(NULL);
                     clip(&instruments);SDL_RenderCopy(renderer,skin,NULL,&all);receiver();clip(NULL);
                     damage[count++]=(SDL_Rect){26*width/720,302*height/480,668*width/720+2,40*height/480+2};
                     damage[count++]=(SDL_Rect){26*width/720,359*height/480,668*width/720+2,112*height/480+2};
@@ -539,8 +547,8 @@ static void button_down(int button){
             }return;
         }
         if(panel==2){
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+19)%20;
-            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%20;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_UP)panel_row=(panel_row+20)%21;
+            if(button==SDL_CONTROLLER_BUTTON_DPAD_DOWN)panel_row=(panel_row+1)%21;
             int d=button==SDL_CONTROLLER_BUTTON_DPAD_LEFT?-1:1;
             if(button==SDL_CONTROLLER_BUTTON_A||button==SDL_CONTROLLER_BUTTON_DPAD_LEFT||button==SDL_CONTROLLER_BUTTON_DPAD_RIGHT){
                 switch(panel_row){case 0:auto_next=!auto_next;break;case 1:repeat_one=!repeat_one;break;case 2:shuffle_music=!shuffle_music;break;
@@ -556,7 +564,8 @@ static void button_down(int button){
                 case 16:video_hardware=!video_hardware;break;
                 case 17:ui_language=(ui_language+3+d)%3;text_cache_clear();preferences(1);break;
                 case 18:audio_quality=(audio_quality+5+d)%5;break;
-                case 19:stop_minutes=(stop_minutes+195+d*15)%195;stop_deadline=SDL_GetTicks()+stop_minutes*60000u;break;}
+                case 19:stop_minutes=(stop_minutes+195+d*15)%195;stop_deadline=SDL_GetTicks()+stop_minutes*60000u;break;
+                case 20:subtitle_overlay=!subtitle_overlay;break;}
             }
         }return;
     }
@@ -643,7 +652,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.7.0 Monkey / MilkDrop / NV2A scanout / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.7.1 text subtitles / NV2A scanout / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;

@@ -16,6 +16,7 @@ static void preferences(int save){
         if(fprintf(f,"audio_matrix=%d\n",audio_matrix)<0)ok=0;
         if(fprintf(f,"ui_language=%d\naudio_quality=%d\n",ui_language,audio_quality)<0)ok=0;
         if(fprintf(f,"video_hardware=%d\n",video_hardware)<0)ok=0;
+        if(fprintf(f,"subtitle_overlay=%d\n",subtitle_overlay)<0)ok=0;
         if(!visual_preferences_write(f))ok=0;
         if(fclose(f))ok=0;
         if(ok){
@@ -30,6 +31,7 @@ static void preferences(int save){
             else if(!strcmp(line,"quality")&&n>=0&&n<6)quality=n;else if(!strcmp(line,"volume")&&n>=0&&n<=100)volume=n;
             else if(!strcmp(line,"video_codec"))video_codec=!!n;
             else if(!strcmp(line,"video_hardware"))video_hardware=!!n;
+            else if(!strcmp(line,"subtitle_overlay"))subtitle_overlay=!!n;
             else if(!strcmp(line,"audio_matrix")&&n>=0&&n<3)audio_matrix=n;
             else if(!strcmp(line,"ui_language")&&n>=0&&n<3)ui_language=n;
             else if(!strcmp(line,"audio_quality")&&n>=0&&n<5)audio_quality=n;

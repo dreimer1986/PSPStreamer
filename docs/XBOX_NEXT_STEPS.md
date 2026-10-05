@@ -1,4 +1,10 @@
-# Xbox: optimization and parity checkpoint — 0.7.0
+# Xbox: optimization and parity checkpoint — 0.7.1
+
+0.7.1 adds bounded client text subtitles using the existing PSP parser, PTS
+timing, two-page prefetch, seek/stop cancellation and a burn-in preference.
+Bitmap subtitles still use server burn-in. Native bitmap overlays, offline
+storage and HTTPS are not complete. Status footer is lower by eight logical
+pixels; console verification is pending.
 
 0.7.0 checkpoint: direct GPU effect presentation, SSE1 matrix transforms and
 needle-only dirty rectangles are implemented; nine focused host checks pass.
@@ -69,9 +75,9 @@ composition/presentation counters retain separate timing boundaries.
   transfer/cancel/progress and disk-space handling, local seek/resume and metadata.
   Reuse server job semantics, not PSP's incompatible FLV payload. FATX filename
   and file-size limits need explicit handling, not a renamed extension.
-- **Client subtitles:** shared text/bitmap/paging logic with Xbox renderer,
-  seek/reconnect lifecycle, bounded memory and correct PVIDEO overlay composition.
-  Server burn-in remains working until both text and bitmap paths are ready.
+- **Client bitmap subtitles:** text paging and Xbox render adapters are now
+  implemented. Bitmap transport/composition remains; retain server burn-in for
+  bitmap tracks and unsupported/error responses until native support is ready.
 - **HTTPS:** maintained TLS library with Xbox entropy/time/socket adaptation,
   certificate validation/trust UI and cancellation. Do not send Basic credentials
   over a pretend TLS connection or silently disable authentication verification.

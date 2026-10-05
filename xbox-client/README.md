@@ -1,4 +1,20 @@
-# Original Xbox — native player preview 0.7.0
+# Original Xbox — native player preview 0.7.1
+
+0.7.1 adds **Text subtitle overlay** in Settings (default on, changes apply to
+the next playback start). It shares the PSP's millisecond cue-page parser and
+stripped-text/UTF-8 transport, with two bounded pages and cancellable prefetch.
+Text is shown against the displayed video PTS, including after seek/reconnect.
+Both PVIDEO color-key and software presentation draw the text on the client;
+bitmaps/unsupported responses retain server burn-in. Turn the option off to
+use server rendering for complex ASS styling. Native bitmap overlays remain
+open work. The library/status footer is eight logical pixels lower to clear
+the theme border. Hardware verification of this build is still required.
+
+External Monkey textures go in `monkey/` beside `default.xbe`:
+`supertex_a1` through `supertex_a5`, `supertex_b1` and `supertex_b2`, with
+`.jpg`, `.png` or `.jpeg` extensions. See `monkey/README.txt` for size limits.
+The shared loader uses that same relative directory on Xbox; restart Monkey
+after replacing files. Original copyrighted images are not bundled.
 
 0.7.0 optimization checkpoint (new console test required): direct GPU scaling
 and presentation for Monkey/MilkDrop avoids CPU readback and HD scaling. The

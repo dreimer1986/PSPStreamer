@@ -4,6 +4,7 @@
 #include "audio.h"
 #include "mpeg_video.h"
 #include "video_overlay.h"
+#include "subtitle_client.h"
 #define PACKET_LIMIT (1024*1024)
 #define QUEUE_BYTES (1536*1024)
 typedef struct {unsigned char *data;unsigned size;int64_t pts;} Packet;
@@ -34,6 +35,7 @@ static char player_diagnostic[640];
 static int diagnostics_enabled=1;
 static unsigned video_decode_ms;
 static int visual_audio_error;
+static void subtitle_render_clear(void);
 
 static void stream_error(const char *s){SDL_LockMutex(stream.lock);snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
 static void stream_error_if_empty(const char *s){SDL_LockMutex(stream.lock);if(!*stream.error)snprintf(stream.error,sizeof(stream.error),"%s",s);SDL_UnlockMutex(stream.lock);}
@@ -52,6 +54,11 @@ static int pop_packet(Packets *q,Packet *p){
 static unsigned queue_count(Packets *q){SDL_LockMutex(stream.lock);unsigned count=q->count;SDL_UnlockMutex(stream.lock);return count;}
 static int network_stream(void *unused){
     (void)unused;Http h;unsigned char intro[8],header[16];
+    if(subtitle_client_ready(&stream.cancel)){
+        char *value=strstr(stream.path,"&subtitle=");
+        if(value){value+=10;char *end=strchr(value,'&');if(end){memmove(value+2,end,strlen(end)+1);value[0]='-';value[1]='1';}}
+    }
+    if(SDL_AtomicGet(&stream.cancel))goto done;
     if(!http_open(&h,stream.path,&stream.cancel)){char e[96];snprintf(e,sizeof(e),"Stream HTTP %d / network error",h.status);stream_error(e);goto done;}
     if(!http_exact(&h,intro,8)||memcmp(intro,"XSM1",4)){stream_error("Server 0.1.68 or newer required");goto close;}
     memcpy(&stream.flags,intro+4,4);
@@ -76,6 +83,8 @@ static void player_stop(void){
     extern void xbox_visual_stop(void);xbox_visual_stop();
     overlay_close();
     if(stream.thread){SDL_AtomicSet(&stream.cancel,1);SDL_WaitThread(stream.thread,NULL);stream.thread=NULL;}
+    subtitle_stop();
+    subtitle_render_clear();
     if(stream.lock){Packet p;while(pop_packet(&stream.video,&p))free(p.data);while(pop_packet(&stream.audio,&p))free(p.data);SDL_DestroyMutex(stream.lock);stream.lock=NULL;}
     if(pcm&&!audio_reset())audio_failed=1;
     xbox_video_close(&video);free(video_input);video_input=NULL;
@@ -89,6 +98,7 @@ static int player_start(double seconds){
     memset(&stream,0,sizeof(stream));stream.lock=SDL_CreateMutex();if(!stream.lock)return 0;
     char token[4700];if(!url_encode(media_id,token,sizeof(token))){player_stop();return 0;}
     unsigned start_ms=(unsigned)(seconds*1000);
+    subtitle_start(token,media_audio?-1:subtitle_track,start_ms);
     snprintf(stream.path,sizeof(stream.path),"/api/xbox-stream/%s?kind=%s&audio=%d&subtitle=%d&profile=tv&xbox_size=%s&xbox_codec=%s&xbox_matrix=%s&xbox_audio=%s&start=%u.%03u",token,media_audio?"audio":"video",audio_track,media_audio?-1:subtitle_track,quality_keys[quality],video_codec?"mpeg2":"mpeg1",matrix_keys[audio_matrix],audio_quality_keys[audio_quality],start_ms/1000,start_ms%1000);
     if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
