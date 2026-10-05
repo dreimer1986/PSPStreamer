@@ -1,4 +1,10 @@
-# Original Xbox — native player preview 0.6.2
+# Original Xbox — native player preview 0.6.3
+
+0.6.3 skips the hidden menu pass beneath fullscreen music (including Spectrum),
+copies only the active effect rectangle in windowed mode, and explicitly returns
+scanout/encoder ownership to HAL after pbkit teardown. Stop-stage diagnostics
+distinguish cleanup stalls from a still-running but invisible UI. Hardware
+verification of the reported black screen and speed remains pending.
 
 0.6.2 fixes the NV2A zeta-buffer limit error: custom color/depth targets use
 pbkit's base-zero RAM DMA context instead of offsets into its own framebuffers.

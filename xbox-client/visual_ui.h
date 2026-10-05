@@ -16,6 +16,8 @@ static float visual_cut_threshold;
 static unsigned long long visual_cut_tick;
 static void visual_trace(const char *message,int persist){if(persist)startup_note(message);}
 void xbox_visual_stop(void){
+    int was_started=visual_started;
+    if(was_started)startup_note("Visualization stop: begin");
     if(visual_started&&diagnostics_enabled){
         FILE *log=fopen("D:\\xbox-player.log","a");if(log){char line[2048];for(int i=0;md_profile_report(i,line,sizeof(line));i++)fputs(line,log);fclose(log);}
     }
@@ -26,6 +28,7 @@ void xbox_visual_stop(void){
     memset(&visual_cut_signal,0,sizeof(visual_cut_signal));visual_cut_tick=0;visual_cut_threshold=0;
     visual_fault=0;
     for(int i=0;i<4;i++)if(pads[i])SDL_GameControllerRumble(pads[i],0,0,0);
+    if(was_started)startup_note("Visualization stop: resources released");
 }
 static void visual_reset(void){xbox_visual_stop();}
 static unsigned long long visual_interval(void){return (unsigned long long)visual_seconds*1000000+(unsigned long long)visual_random_seconds*(rand()%1000)*1000;}
@@ -128,7 +131,8 @@ static void visual_draw(int full){
             else snprintf(status,sizeof(status),"MilkDrop L%d: %s (%d)",md_runtime_error.line,md_runtime_error.key,md_runtime_error.code);
             startup_note(status);xbox_visual_stop();visual_fault=1;return;
         }
-        SDL_UpdateTexture(visual_texture,NULL,xv_pixels(),768*4);
+        SDL_Rect changed={0,0,xv_width,xv_height};
+        SDL_UpdateTexture(visual_texture,&changed,xv_pixels(),768*4);
     }
     SDL_Rect src={0,0,xv_width,xv_height};
     SDL_Rect dst=full?(SDL_Rect){0,0,720,480}:(SDL_Rect){27,60,506,232};

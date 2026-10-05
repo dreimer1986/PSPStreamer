@@ -338,7 +338,16 @@ static void menu_render(void){
     SDL_Rect footer={27,303,666,38};clip(&footer);text_at(status,32,308,650,normal);clip(NULL);
     receiver();
 }
-static void menu_draw(void){menu_render();if(playing&&media_audio&&fullscreen&&!panel){color(0,0,0);SDL_RenderClear(renderer);visual_draw(1);if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});}controls_draw();if(first_frame)startup_note("before first present");SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}}
+static void menu_draw(void){
+    if(playing&&media_audio&&fullscreen&&!panel){
+        /* No hidden theme/text/receiver pass underneath a fullscreen effect. */
+        SDL_RenderSetScale(renderer,(float)width/720,(float)height/480);clip(NULL);
+        color(0,0,0);SDL_RenderClear(renderer);visual_draw(1);
+        if(!visual_mode)text_at(media_name,30,15,660,(SDL_Color){235,235,235,255});
+    }else menu_render();
+    controls_draw();if(first_frame)startup_note("before first present");
+    SDL_RenderPresent(renderer);if(first_frame){startup_note("first present complete");first_frame=0;}
+}
 static void frame_draw_software(plm_frame_t *f){
     if(!video_texture||texture_w!=(int)f->width||texture_h!=(int)f->height){if(video_texture)SDL_DestroyTexture(video_texture);texture_w=f->width;texture_h=f->height;video_texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,texture_w,texture_h);}
     if(!video_texture){stream_error(SDL_GetError());return;}
@@ -571,7 +580,7 @@ static void remote_execute(void){
     }
 }
 int main(void){
-    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.2 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
+    FILE *boot=fopen("D:\\xbox-player.log","w");if(boot){fputs("Xbox player 0.6.3 Monkey / MilkDrop / NV2A offscreen / O3 LTO\n",boot);fclose(boot);}
     /* XC_LANGUAGE: https://xboxdevwiki.net/EEPROM (read-only). */
     ULONG language_type=0,dashboard_language=1;
     if(ExQueryNonVolatileSetting(XC_LANGUAGE,&language_type,&dashboard_language,sizeof(dashboard_language),NULL)>=0)dashboard_german=dashboard_language==3;

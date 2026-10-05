@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.6.3: remove hidden full-menu rendering under fullscreen music, limit
+  effect texture transfers to the visible rectangle, explicitly return HAL
+  scanout after GPU teardown and log visualization stop stages. Serial inspection
+  of the reported black screen showed completed playback cleanup and an active
+  SDL render loop; console recovery/performance still need verification.
+
 - Xbox 0.6.2: correct NV2A color/depth DMA contexts for custom offscreen buffers;
   size depth storage and pitch for the widest composition target. Fix the
   reported zeta-buffer limit error; add target-switch command regression checks.
