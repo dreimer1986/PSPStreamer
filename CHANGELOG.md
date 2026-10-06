@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.19: postpone automatic Bluetooth reconnection to sleeping
+  controllers during substantial TCP/TLS transfers and a 30-second quiet grace
+  period. Manual connections and incoming reconnections remain available.
+  Firmware-only diagnostic fix; controller-standby playback test pending.
+
 - PSP / server 0.1.79 / StreamMaster 0.3.18: opt-in Onju V3 TOSLINK audio,
   stereo PCM, AC-3/DTS core passthrough and explicit conversion fallback.
   Audio output selection in PSP settings/CFG and web remote; a shared media

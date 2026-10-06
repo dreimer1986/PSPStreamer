@@ -430,6 +430,7 @@ static void lifecycle_task(void *unused) {
         }
         if(rc!=ESP_OK){ESP_LOGE(TAG,"Host init: %s",esp_err_to_name(rc));state(SM_BT_ERROR,rc);}
         unsigned reconnect_index=0;reconnect_at=esp_timer_get_time()+5000000;
+        int reconnect_deferred=0;
         while(atomic_load(&online) && !atomic_load(&failed) && rc==ESP_OK) {
             SmBtAction a;
             uint8_t active_peer[6];int expired=0,wait_ms=100;int64_t now=esp_timer_get_time();
@@ -444,6 +445,7 @@ static void lifecycle_task(void *unused) {
             if(expired){esp_bt_hid_host_disconnect(active_peer);atomic_store(&accept_input,0);neutral();state(SM_BT_ERROR,ESP_ERR_TIMEOUT);}
             if(xQueueReceive(actions,&a,pdMS_TO_TICKS(wait_ms))!=pdTRUE) {
                 int automatic=0;
+                int defer=sm_sockets_defer_bt_reconnect();
                 portENTER_CRITICAL(&guard);
                 if(atomic_load(&ready) && options.reconnect && !atomic_load(&reconnect_suspended) && bonded_count &&
                    (status.state==SM_BT_READY || status.state==SM_BT_ERROR) && now>=reconnect_at) {
@@ -452,6 +454,16 @@ static void lifecycle_task(void *unused) {
                 }
                 portEXIT_CRITICAL(&guard);
                 if(!automatic)continue;
+                if(defer) {
+                    if(!reconnect_deferred)ESP_LOGI(TAG,"Automatic BT reconnect deferred: network transfer active");
+                    reconnect_deferred=1;
+                    reconnect_at=esp_timer_get_time()+1000000;
+                    /* Do not rotate saved devices while postponing a try. */
+                    reconnect_index--;
+                    continue;
+                }
+                if(reconnect_deferred)ESP_LOGI(TAG,"Network transfer quiet: automatic BT reconnect resumed");
+                reconnect_deferred=0;
             }
             reconnect_at=esp_timer_get_time()+60000000;
             esp_err_t result=ESP_OK;

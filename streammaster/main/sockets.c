@@ -29,6 +29,25 @@ typedef struct {
 } Channel;
 static Channel channels[SM_SOCKET_COUNT];
 static atomic_bool reset_pending;
+/* Only the Bluetooth lifecycle task calls this. A substantial open transfer
+ * stays protected even while paused or starved; quiet HTTP control polling
+ * must not postpone reconnect forever. No blocking locks in the BT task.
+ * Retain protection across stream socket replacement/recovery for 30 seconds. */
+int sm_sockets_defer_bt_reconnect(void) {
+    static int64_t quiet_after;
+    int64_t now=esp_timer_get_time();
+    for(unsigned i=0;i<SM_SOCKET_COUNT;i++) {
+        Channel *c=&channels[i];
+        if(!c->lock)continue;
+        if(xSemaphoreTake(c->lock,0)!=pdTRUE){quiet_after=now+30000000;continue;}
+        int busy=!c->cancel && c->state!=SM_SOCKET_FREE &&
+            c->diag.rx_bytes>=65536 &&
+            (c->state==SM_SOCKET_READY || c->rx_write!=c->rx_read);
+        xSemaphoreGive(c->lock);
+        if(busy)quiet_after=now+30000000;
+    }
+    return now<quiet_after;
+}
 /* Read only by the same network-command worker immediately after bulk_read. */
 static uint32_t last_ring_copy_us,last_checksum_us;
 void sm_sockets_diagnostic(SmNetDiag *out) {

@@ -1,5 +1,18 @@
 # StreamMaster firmware changelog
 
+## 0.3.19 — Defer automatic Bluetooth reconnect during network transfers
+
+- Do not actively page sleeping controllers while a substantial TCP/TLS
+  transfer is open or its receive buffer still contains data. Detection starts
+  after 64 KiB received per socket; this also protects media downloads.
+- Keep a 30-second quiet grace period across socket replacement/recovery.
+  Small remote-control requests do not count as streams. Local playback and
+  the PSP's internal Wi-Fi are not detectable through these ESP sockets.
+- Explicit pairing/connecting remains available; incoming connections are
+  still accepted. Existing controller input, Wi-Fi and video timeouts unchanged.
+- Log deferred/resumed automatic attempts once, not on every polling cycle.
+- Hardware verification pending: compare controller standby during streaming.
+
 ## 0.3.18 — Optional Onju V3 S/PDIF output (hardware verification pending)
 
 - GPIO12/R14 emits IEC60958 using I2S DMA, only after an explicit audio-open
