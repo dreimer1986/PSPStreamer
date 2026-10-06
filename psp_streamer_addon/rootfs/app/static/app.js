@@ -88,6 +88,12 @@ matrixSelect.id='audio_matrix';matrixLabel.append(t('Audio downmix'),matrixSelec
 for(const [value,label] of [['none','Stereo'],['dolby','Dolby Surround'],['dplii','Dolby Pro Logic II']])option(matrixSelect,value,label);
 $('#audio_quality').closest('label').after(matrixLabel);
 matrixSelect.onchange=()=>{preferences.audio_matrix=matrixSelect.value;savePreferences();};
+const opticalLabel=document.createElement('label'),opticalSelect=document.createElement('select');
+opticalSelect.id='audio_output';opticalLabel.append(t('PSP audio output'),opticalSelect);
+for(const [value,label] of [['','Use PSP setting'],['psp','PSP'],['spdif_pcm','S/PDIF — stereo PCM'],['spdif_auto_pcm','S/PDIF — passthrough / PCM fallback'],['spdif_auto_ac3','S/PDIF — passthrough / AC-3 fallback']])option(opticalSelect,value,t(label));
+matrixLabel.after(opticalLabel);
+try{opticalSelect.value=localStorage.getItem('pspAudioOutput')||'';}catch(e){}
+opticalSelect.onchange=()=>{try{localStorage.setItem('pspAudioOutput',opticalSelect.value);}catch(e){}};
 function savePreferences(){const data={...preferences};preferenceWrites=preferenceWrites.then(()=>post('/api/offline/preferences',data)).catch(fail);}
 for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile'],['audio','audio'],['subtitle','subtitle']]){
   $('#'+id).onchange=()=>{const s=$('#'+id);preferences[key]=['audio','subtitle'].includes(key)?s.selectedOptions[0]?.textContent||'':s.value;savePreferences();};
@@ -158,7 +164,7 @@ async function command(action,extra={}){
   if(action==='play'&&(!selected||!media))return;
   if(action==='seek'&&selected?.live)return;
   let body={action,...extra};
-  if(action==='play')Object.assign(body,{id:selected.id,audio_quality:$('#audio_quality').value,audio_matrix:$('#audio_matrix').value,video_fps:$('#video_fps').value,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:selected.live?0:+$('#seek').value||0});
+  if(action==='play'){Object.assign(body,{id:selected.id,audio_quality:$('#audio_quality').value,audio_matrix:$('#audio_matrix').value,video_fps:$('#video_fps').value,audio:selected.kind==='audio'?0:(+$('#audio').value||0),subtitle:selected.kind==='audio'?-1:($('#subtitle').value===''?-1:+$('#subtitle').value),start:selected.live?0:+$('#seek').value||0});if(opticalSelect.value)body.audio_output=opticalSelect.value;}
   await post('/api/remote/command',body);if(action==='play'&&selected?.id===body.id){followPlayer=true;remotePlaying=true;pendingSeek={id:body.id,seconds:body.start,sent:performance.now(),until:performance.now()+15000}}if(action==='stop'){remotePlaying=false;playerSample=null;pendingSeek=null;}
   message(t('Sent: {action}',{action:t(action)}));
 }

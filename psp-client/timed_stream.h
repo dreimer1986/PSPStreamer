@@ -215,7 +215,7 @@ static int timed_reader(SceSize args, void *argp) {
 flv_header:
     DEBUG_DIAG(stream_diag.stage="FLV header";);
     if (timed_read(h, 13) != 1 || memcmp(h, "FLV\1", 4) ||
-        flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || !(h[4] & 1)) goto end;
+        flv_u32(h + 5) != 9 || flv_u32(h + 9) != 0 || (!(h[4] & 1) && !(selected_audio_output && !timed_active))) goto end;
     timed_has_audio = !!(h[4] & 4);
     timed_flv_header_received=1;
     body = malloc(FLV_MAX_VIDEO);
@@ -238,6 +238,11 @@ flv_header:
         pts = (int)(flv_u24(tag + 4) | ((unsigned int)tag[7] << 24));
         if (type == 8) {
             if(offline_active && offline_seek_offset)continue;
+            if(selected_audio_output) {
+                if(size<17 || size>4096 || memcmp(body,"\xf0SMA1",5))break;
+                if(timed_put(&timed_audio,body,size,pts)<0)break;
+                continue;
+            }
             DEBUG_DIAG(stream_diag.stage="MP3 tag";); DEBUG_DIAG(stream_diag.audio_pts=pts;);
             if (size < 5 || size - 1 > FLV_MAX_AUDIO || (body[0] >> 4) != 2) break;
             if (timed_put(&timed_audio, body + 1, size - 1, pts) < 0) break;

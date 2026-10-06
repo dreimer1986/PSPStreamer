@@ -1017,7 +1017,7 @@ Older firmware/drivers retain their negotiated legacy route. Keep the same ready
 file, HTTP route, card, hub and clock when comparing settings. No speedup is assumed.
 
 The current Onju firmware is in `StreamMaster/Onju-V3` (firmware
-`0.3.17-bt-qio80-iram`). Install all three companion PSP files: `EBOOT.PBP`,
+`0.3.18-bt-qio80-iram`). Install all three companion PSP files: `EBOOT.PBP`,
 `PSPStreamer.prx` and `StreamMasterUSB.prx`. Four-deep HTTP downloads measured
 747.5 KiB/s versus 700.5 KiB/s for two requests on the tested setup. IRAM alone
 has no demonstrated mean-speed advantage. Firmware version is visible in the
@@ -1062,6 +1062,7 @@ audio=0
 subtitle=-1
 quality=2
 audio_matrix=none
+audio_output=psp
 video_fps=20
 play_mode=stream
 music_preset=active.milk
@@ -1969,6 +1970,20 @@ to HTTP occurs. Use a trusted/VPN path when that risk is unacceptable.
 See [HTTPS and settings setup](docs/HTTPS_AND_SETTINGS.md). Browser HTTPS should
 use a normally trusted certificate. Docker and HA media sources/web assets are
 checked for equality in the test suite; both include mkvtoolnix for MKV PGS.
+
+## Optional Onju V3 optical audio
+
+Settings → **Audio output** selects the existing PSP output (default), S/PDIF
+stereo PCM, or AC-3/DTS core passthrough with an explicit PCM/AC-3 fallback.
+The same selector is in the server's web PSP controls. This needs the wired
+TOSLINK transmitter, the matching app, server **0.1.79** and Onju firmware
+**0.3.18**. Initial scope: network media files, not cached local files or radio.
+It is not a system-wide PSP sound plugin. Hardware verification is pending.
+
+CFG: `audio_output=psp`, `spdif_pcm`, `spdif_auto_pcm` or `spdif_auto_ac3`.
+Compressed passthrough uses receiver volume and does not feed decoded audio
+to visualizations. The PCM mode supports PSP volume and visualizations.
+See [wiring, setup, formats and timing](streammaster/SPDIF.md).
 
 ## Optional PSP game hit feedback
 

@@ -1,7 +1,19 @@
 # 2.4 — Original Xbox Playback, MilkDrop & Monkey, Web Streaming and Dolby Surround
 
-Changes since tag **2.3**, through commit **34c4d21**.
-Includes Xbox preview **0.7.3** and Home Assistant server app **0.1.78**.
+Changes since tag **2.3**, including the optional optical-audio implementation.
+Includes Xbox preview **0.7.3**, Home Assistant server app **0.1.79** and
+StreamMaster **0.3.18** (optical hardware verification pending).
+
+## Optional Onju V3 optical audio
+
+- Stereo PCM and AC-3/DTS core passthrough through a wired TOSLINK transmitter.
+- Explicit PCM or Dolby Digital conversion fallback for incompatible sources.
+- Output selection in PSP settings/CFG and web remote; actual ESP DMA progress
+  provides the audio clock. The default PSP audio path remains unchanged.
+- Initially for network media files, not cached local media or live radio.
+  Passthrough volume is controlled by the receiver; compressed audio is not
+  analyzed for music visualizations. See `streammaster/SPDIF.md` for wiring,
+  setup and limitations. No automated or hardware test runs for this change.
 
 ## Original Xbox player
 
@@ -87,13 +99,13 @@ Includes Xbox preview **0.7.3** and Home Assistant server app **0.1.78**.
 ## Packaging and known limits
 
 - Canonical component folders/ZIPs and integrity manifests replace duplicated
-  release copies. StreamMaster firmware targets share the 0.3.17 source base;
+  release copies. StreamMaster firmware targets share the 0.3.18 source base;
   generic hardware variants remain explicitly untested.
 - `PSPStreamerXbox.zip` contains the current 0.7.3 XBE, themes/fonts, licenses,
   shared source snapshot, existing Xbox demo presets and the familiar PSP
   release preset collection. Xbox-safe filenames have an original-name map.
 - Preserve existing configuration, scores, custom presets and external textures
-  when updating. Install server app 0.1.78 for the new PSP downmix selection.
+  when updating. Install server app 0.1.79 for optical output and PSP downmix.
 - Xbox is still a preview: offline downloads/local playback and HTTPS are not
   complete; AC-3/DTS passthrough remains deferred. No Xbox StreamMaster/Bluetooth
   relay implementation is claimed. HLSL shaders are not implemented by this port.

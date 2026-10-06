@@ -90,7 +90,7 @@ def main():
         copy(ROOT / "LICENSE", out / folder / "LICENSE")
 
     fw = out / "StreamMaster"
-    for source in ("README.md", "GENERIC.md", "BLUETOOTH.md", "INTEGRATION.md", "CHANGELOG.md", "GPL-3.0.txt", "PSPLINK-license.txt"):
+    for source in ("README.md", "GENERIC.md", "BLUETOOTH.md", "SPDIF.md", "INTEGRATION.md", "CHANGELOG.md", "GPL-3.0.txt", "PSPLINK-license.txt"):
         copy(ROOT / "streammaster" / source, fw / source)
     firmwares = {}
     builds = {
@@ -125,7 +125,7 @@ def main():
             "\n".join(f"{pairs[i]} {pairs[i+1]}" for i in range(0, len(pairs), 2)) + "\n")
         subprocess.run([sys.executable, "-m", "esptool", "--chip", desc["target"], "merge_bin",
                         *options, "-o", "factory.bin", *pairs], cwd=dest, check=True)
-        status = "UNTESTED hardware variant" if "UNTESTED" in name else "Hardware-tested Onju configuration; freshly rebuilt from current source"
+        status = "UNTESTED hardware variant" if "UNTESTED" in name else "Established Onju hardware configuration; new optical audio awaits hardware verification"
         (dest / "README.md").write_text(f"# {name}\n\nFirmware: `{embedded}`\n\n{status}.\n\n"
             f"From this folder, update with:\n\n```sh\nesptool --chip {desc['target']} --port /dev/ttyACM0 --baud 460800 write_flash @flash_args\n```\n\n"
             "This writes bootloader/partition table/app, preserving NVS profiles and bonds.\n"

@@ -1,4 +1,13 @@
 static const HelpText help_en[HELP_PAGE_COUNT]={
+    [HELP_PAGE_SPDIF]={
+        .title="StreamMaster: optical audio",
+        .step1_title="Settings: choose Audio output",
+        .step1_text="Wired Onju V3, firmware 0.3.18 needed.",
+        .step2_title="Auto: AC-3/DTS passthrough",
+        .step2_text="PCM or AC-3 is the conversion fallback.",
+        .step3_title="Network files; not radio/local files",
+        .step3_text="Passthrough volume: use the receiver."
+    },
     [HELP_PAGE_SM]={
         .title="Settings: StreamMaster USB",
         .step1_title="Library: SELECT opens settings",

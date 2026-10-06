@@ -32,6 +32,11 @@ quality=2
 # Stereo (none), Dolby Surround (dolby), or Dolby Pro Logic II (dplii).
 # Matrix surround needs a compatible receiver decoder. Applies to new streams/downloads.
 audio_matrix=none
+# Optical output requires StreamMaster Onju V3 firmware 0.3.18 and a wired
+# TOSLINK transmitter. psp (default), spdif_pcm, spdif_auto_pcm, spdif_auto_ac3.
+# Auto copies AC-3/DTS core; suffix selects the incompatible-format fallback.
+# Applies to network media files; not radio/local cached MP3/FLV in this version.
+audio_output=psp
 video_fps=20
 play_mode=stream
 music_preset=active.milk

@@ -171,6 +171,7 @@ function xboxQualityVisibility(){
   xboxAudioField.hidden=!xbox||!selected;
   $('#audio_quality').closest('label').hidden=xbox;
   $('#audio_matrix').closest('label').hidden=xbox||browserTarget.value==='browser';
+  $('#audio_output').closest('label').hidden=xbox||browserTarget.value==='browser';
   $('#fpsField').hidden=xbox||audio;
   // Download quality belongs to server preparation, not Xbox playback.
 }

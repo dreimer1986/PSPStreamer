@@ -1,4 +1,13 @@
 static const HelpText help_de[HELP_PAGE_COUNT]={
+    [HELP_PAGE_SPDIF]={
+        .title="StreamMaster: optischer Ton",
+        .step1_title="Einstellungen: Audioausgang wählen",
+        .step1_text="Onju V3 mit Sender, Firmware 0.3.18.",
+        .step2_title="Auto: AC-3/DTS direkt durchreichen",
+        .step2_text="Sonst wird in PCM oder AC-3 gewandelt.",
+        .step3_title="Netzwerkdateien; nicht Radio/lokal",
+        .step3_text="Passthrough: Lautstärke am Verstärker."
+    },
     [HELP_PAGE_SM]={
         .title="Einstellungen: StreamMaster USB",
         .step1_title="Bibliothek: SELECT öffnet Einstellungen",

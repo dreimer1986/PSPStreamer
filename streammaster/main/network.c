@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "bridge.h"
 #include "board.h"
+#include "spdif.h"
 #include "../profiles.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -174,8 +175,13 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     memset(out,0,sizeof(*out));out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;requests++;
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
+    case SM_AUDIO_OPEN:case SM_AUDIO_WRITE:case SM_AUDIO_STATUS:case SM_AUDIO_PAUSE:case SM_AUDIO_CLOSE:
+        out->result=sm_audio_command(r,out);break;
     case SM_CAPABILITIES: {
         uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES|SM_CAP_NET_DIAG;
+#if !SM_GENERIC_BOARD
+        caps|=SM_CAP_SPDIF;
+#endif
 #if CONFIG_BT_BLUEDROID_ENABLED
         caps|=SM_CAP_GAMEPAD;
 #endif

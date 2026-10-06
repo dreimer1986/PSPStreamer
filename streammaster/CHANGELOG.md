@@ -1,5 +1,16 @@
 # StreamMaster firmware changelog
 
+## 0.3.18 — Optional Onju V3 S/PDIF output (hardware verification pending)
+
+- GPIO12/R14 emits IEC60958 using I2S DMA, only after an explicit audio-open
+  command. The onboard MAX98357A remains shut down on GPIO21.
+- Accept stereo 16-bit PCM or IEC61937 AC-3/DTS carrier words at 32/44.1/48 kHz.
+  Non-audio status and validity bits prevent treating compressed words as PCM.
+- Bounded audio ring, session/sequence checks, pause/close and USB-disconnect
+  muting. Report actual DMA-completed samples and media PTS to PSPStreamer.
+- No boot sound or test tone; no change to Wi-Fi, Bluetooth or their defaults.
+- Generic boards keep S/PDIF disabled because their wiring is not defined.
+
 ## 0.3.17 — Unblock Bluetooth motor output
 
 - Release consolidation: rebuild Onju and generic S3/S2 QIO80 targets from

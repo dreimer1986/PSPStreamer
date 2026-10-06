@@ -38,6 +38,7 @@ streammaster_transport.o: streammaster_transport.h ../streammaster/protocol.h
 # 6.61.  The explicit prerequisite still makes a clean checkout buildable.
 main.o: mpeg_extra.o timed_stream.h flv.h audio_lease.h sync_trace.h display_output.h tv_canvas.h music_ui.h music_remote.h tv_gui.h lcd_music.h language.h
 main.o: spectrum_paint.h
+main.o: spdif_audio.h ../streammaster/spdif_protocol.h
 main.o h264_hw.o: h264_hw.h avcc_packet.h
 language.o: language.h lang_en.h lang_de.h
 main.o milkdrop_warp.o milkdrop_gu.o: milkdrop_warp.h

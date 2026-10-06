@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- PSP / server 0.1.79 / StreamMaster 0.3.18: opt-in Onju V3 TOSLINK audio,
+  stereo PCM, AC-3/DTS core passthrough and explicit conversion fallback.
+  Audio output selection in PSP settings/CFG and web remote; a shared media
+  timeline and ESP DMA completion reports drive optical A/V synchronization.
+  Existing PSP DAC, Xbox, browser and offline formats stay unchanged.
+  Network media files only initially; hardware verification is pending.
+
 - Xbox 0.7.3: record audio service gaps, minimum pre-refill queue depth,
   starvation and DMA halt events to investigate intermittent syllable repeats.
   No audio timing, decoding or synchronization changes in this diagnostic build.

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * One USB owner; slow Wi-Fi/HTTP work never runs in the host event loop. */
 #include "bridge.h"
+#include "spdif.h"
 #include "hotpath.h"
 #include "../gamepad_wire.h"
 #include "../rumble.h"
@@ -93,6 +94,7 @@ static void memory_report(const char *stage) {
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 static void mark_gone(void) {
+    sm_audio_disconnect();
     atomic_store(&psp_status,SM_OFFLINE);
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
 }

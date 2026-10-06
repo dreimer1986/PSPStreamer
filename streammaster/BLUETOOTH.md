@@ -1,6 +1,6 @@
 # USB Bluetooth controllers — Onju Voice V3
 
-Current release firmware: **0.3.17-bt-qio80-iram**, adding guarded POPS rumble output
+Current release firmware: **0.3.18-bt-qio80-iram**, retaining guarded POPS rumble output
 for a Bluetooth XInput controller; wired USB HID input remains available.
 Controller learning, player/Monkey
 control and four-deep downloads are hardware-tested; extended Bluetooth soak

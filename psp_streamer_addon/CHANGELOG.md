@@ -1,3 +1,11 @@
+# 0.1.79
+
+- Optional PSP/StreamMaster optical audio output: AC-3/DTS core passthrough,
+  stereo PCM, and explicit PCM or Dolby Digital conversion fallback.
+- Preserve one source timeline for AVC and optical audio. Default PSP, Xbox,
+  browser and offline encoders are unchanged. Requires Onju firmware 0.3.18.
+- Add the output selector to the PSP web remote. Hardware verification pending.
+
 # 0.1.78
 
 - Optional PSP Dolby Surround / Pro Logic II stereo downmix for streams and new downloads.

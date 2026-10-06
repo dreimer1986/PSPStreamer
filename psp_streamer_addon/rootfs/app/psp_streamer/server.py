@@ -731,6 +731,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 subtitle = int(query.get("subtitle", ["-1"])[0])
                 audio_bitrate = query.get("audio_quality", ["160k"])[0]
                 audio_matrix = query.get("audio_matrix", ["none"])[0]
+                audio_output = query.get("audio_output", ["psp"])[0]
+                from .spdif import MODES as optical_modes
+                if audio_output not in optical_modes or (audio_output != 'psp' and (browser or xbox)):
+                    raise ValueError('Unsupported audio output')
                 if audio_matrix not in {"none", "dolby", "dplii"}:
                     raise ValueError("Invalid audio matrix")
                 video_fps = query.get("video_fps", ["20"])[0]
@@ -755,7 +759,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     from .xbox_player import PROFILES
                     if xbox_audio not in ('128k','192k','256k','320k','384k') or xbox_matrix not in ('none','dolby','dplii') or xbox_codec not in ('mpeg1', 'mpeg2') or xbox_size is not None and xbox_size not in PROFILES:
                         raise ValueError('Unsupported Xbox video profile/codec')
-                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix, xbox_audio=xbox_audio, audio_matrix=audio_matrix)
+                return self.transcode(parsed.path.rsplit("/", 1)[-1], audio, container, profile == "low", subtitle, audio_bitrate, start_seconds, profile == "tv", video_fps, browser=browser, xbox=xbox, xbox_size=xbox_size, xbox_codec=xbox_codec, xbox_matrix=xbox_matrix, xbox_audio=xbox_audio, audio_matrix=audio_matrix, audio_output=audio_output)
             return self.static_file(parsed.path)
         except ValueError as exc:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
@@ -1001,6 +1005,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     clean.update(live=True, name=display_text(station['name']), audio=0, subtitle=-1, start=0)
                 for name, allowed in (("audio_quality", {"96k", "128k", "160k", "v6", "v5", "v4", "v3"}),
                                       ("audio_matrix", {"none", "dolby", "dplii"}),
+                                      ("audio_output", {"psp", "spdif_pcm", "spdif_auto_pcm", "spdif_auto_ac3"}),
                                       ("video_fps", {"20", "24000/1001"})):
                     if name in command:
                         if not isinstance(command[name], str) or command[name] not in allowed:
@@ -1318,8 +1323,11 @@ class AppHandler(BaseHTTPRequestHandler):
     def transcode(self, token: str, audio_track: int, container: str, low_bandwidth: bool = False,
                   subtitle_track: int = -1, audio_bitrate: str = "160k", start_seconds: float = 0,
                   tv_output: bool = False, video_fps: str = "20", browser: bool = False, xbox: bool = False,
-                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none', xbox_audio: str = '192k', audio_matrix: str = 'none') -> None:
+                  xbox_size: str = None, xbox_codec: str = 'mpeg1', xbox_matrix: str = 'none', xbox_audio: str = '192k', audio_matrix: str = 'none', audio_output: str = 'psp') -> None:
         live = token.startswith('radio.')
+        optical = audio_output != 'psp'
+        if optical and (container not in ('flv','mp3') or live or browser or xbox):
+            raise ValueError('Optical output requires a PSP movie or music file')
         managed = browser or xbox
         xbox_transport = None
         xbox_flags = 0
@@ -1383,6 +1391,11 @@ class AppHandler(BaseHTTPRequestHandler):
             if xbox:
                 from .xbox_player import command as xbox_command
                 command = xbox_command(command, container == 'mp3', xbox_size, xbox_codec, xbox_matrix, xbox_audio)
+            optical_label = None
+            if optical:
+                from .spdif import command as optical_command, Transport as OpticalTransport
+                command, optical_label = optical_command(command, source, audio_track, audio_output, cached_probe)
+                xbox_transport = OpticalTransport(audio_only=container == 'mp3')
             if managed:
                 from .managed_subtitles import seek_timeline
                 command = seek_timeline(command, start_seconds)
@@ -1405,7 +1418,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 content_type = 'video/mp4'
             if xbox:
                 content_type = 'application/x-pspstreamer-xbox'
+            if optical:
+                content_type = 'application/x-pspstreamer-optical'
             self.send_header("Content-Type", content_type)
+            if optical:
+                self.send_header('X-PSPStreamer-Audio', optical_label)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "close")
             self.close_connection = True
@@ -1486,7 +1503,7 @@ class AppHandler(BaseHTTPRequestHandler):
             # not a second HTTP/JSON response. Preserve existing PSP exceptions.
             if not xbox_transport or process is None:
                 raise
-            transport_outcome = f'Xbox framing: {error}'
+            transport_outcome = f'{"Optical" if optical else "Xbox"} framing: {error}'
             self.log_message('%s', transport_outcome)
         finally:
             if trace:

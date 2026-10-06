@@ -1,6 +1,11 @@
 // English phrases are stable translation keys. Add languages here.
 const webLanguages={de:{
  'Audio downmix':'Audio-Downmix',
+ 'PSP audio output':'PSP-Audioausgang',
+ 'Use PSP setting':'PSP-Einstellung verwenden',
+ 'S/PDIF — stereo PCM':'S/PDIF — Stereo-PCM',
+ 'S/PDIF — passthrough / PCM fallback':'S/PDIF — Passthrough / PCM-Ersatz',
+ 'S/PDIF — passthrough / AC-3 fallback':'S/PDIF — Passthrough / AC-3-Ersatz',
  'Xbox video resolution':'Xbox-Videoauflösung',
  'Use Xbox setting':'Xbox-Einstellung verwenden',
  'Applies on next Play. TV output mode is set on the Xbox.':'Gilt beim nächsten Start. Den TV-Ausgabemodus stellst du auf der Xbox ein.',
