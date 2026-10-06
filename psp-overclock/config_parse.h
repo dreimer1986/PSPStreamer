@@ -39,7 +39,7 @@ static int oc_config_parse(char *text, int length, OcConfig *out, int *keys, int
         while(value<end && (*value==' ' || *value=='\t'))value++;
         while(value<end && *value>='0' && *value<='9') {
             number=number*10+(*value++-'0');
-            if(number>471)goto invalid;
+            if(number>500)goto invalid;
             digits++;
         }
         if(!digits)goto invalid;

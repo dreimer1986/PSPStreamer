@@ -166,8 +166,14 @@ int main(void){
         source = r'''
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 #include "control_api.h"
 typedef int PspIoDrvFileArg;
+static int (*oc_external_osd)(const void *,int,int);
+static int oc_external_users,oc_hook_installed;
+static int pspSdkGetK1(void){return 0;}
+static int oc_hook_install(void){oc_hook_installed=1;return 0;}
 static int target=333,configured_target=443,control_ready,app_control,enabled,suspended,running=1;
 static int control_pending=-1,control_result,control_active;
 static int exit_requested,worker_exit_done,exit_result;
@@ -187,12 +193,14 @@ int main(void){
     control_ready=app_control=enabled=1;
     assert(call(OC_CMD_STATUS)==0&&!control_active);
     assert(call(OC_CMD_SET|65)<0);
-    assert(call(OC_CMD_SET|472)<0);
+    assert(call(OC_CMD_SET|501)<0);
     assert(call(OC_CMD_SET|444)<0&&!control_active);
     assert(call(OC_CMD_SET|66)==0 && control_pending==66&&control_active);
     assert(call(OC_CMD_STATUS)==1);
     control_pending=-1;
     assert(call(OC_CMD_SET|443)==0 && control_pending==443);
+    configured_target=500;
+    assert(call(OC_CMD_SET|500)==0 && control_pending==500);
     assert(call(OC_CMD_SET)==0 && control_pending==0&&control_active);
     suspended=1;assert(call(OC_CMD_SET|222)<0);
     suspended=0;enabled=0;assert(call(OC_CMD_SET|222)<0);
@@ -252,7 +260,7 @@ int main(void){
 #include <stdio.h>
 #include "config_parse.h"
 static int parse(const char *input, OcConfig *out, int *keys, int *line) {
-    char text[1024]; size_t n=strlen(input);
+    char text[4096]; size_t n=strlen(input);
     assert(n<sizeof(text)); memcpy(text,input,n+1);
     return oc_config_parse(text,(int)n,out,keys,line);
 }
@@ -270,6 +278,8 @@ int main(int argc,char **argv) {
     assert(parse("overlay_always=2",&c,&keys,&line)<0);
     assert(parse("\xef\xbb\xbf  enabled = 0\r\n\ttarget_mhz = 443 ; note\r\nreport=0",&c,&keys,&line)==0);
     assert(!c.enabled && c.target==443 && !c.report && !c.enforce && keys==3);
+    assert(parse("target_mhz=500",&c,&keys,&line)==0 && c.target==500);
+    assert(parse("target_mhz=501",&c,&keys,&line)<0);
     const char *bad[]={"", "# no settings\n", "enabled=1\ntarget_mhz=999", "enabled=2",
         "enabled=1\nreport=0\ntarget_mhz=65", "target_mhz=9999999999999999999999",
         "enabled=", "enforce=-1", "report=1oops", "typo=1", "enabled 1", "overlay=3", "enforce_unlimited=2"};
@@ -354,6 +364,9 @@ int main(void) {
     assert(oc_supported_model(2)); assert(!oc_supported_model(10));
     assert(oc_numerator(333)==180);
     assert(oc_numerator(443)==239);
+    assert(oc_numerator(500)==243 && oc_denominator(500)==18);
+    assert(oc_khz(5,(243<<8)|18,0x01ff01ff)==499500);
+    assert(!oc_known_ratio(256,18) && !oc_known_ratio(243,17));
     assert(oc_khz(5,(180<<8)|20,0x01ff01ff)==333000);
     assert(oc_khz(5,(239<<8)|20,0x01ff01ff)==442150);
     assert(oc_khz(5,(239<<8)|20,0x01000200)==0); /* invalid zero 9-bit denominator */
@@ -486,7 +499,21 @@ int main(void) {
     CTL=5;MUL=0x01240801;prior=MUL;assert(apply()==-4&&MUL==prior);
     MUL=0x01240901;CPU=0;assert(apply()==-4);
     CPU=BUS=0x01ff01ff;target=65;assert(apply()==-4);
-    target=472;assert(apply()==-4);
+    target=501;assert(apply()==-4);
+    for(target=472;target<=500;target++) {
+        assert(apply()==0 && matches() && (MUL&255)==18);
+        assert(oc_khz(CTL,MUL,CPU)<=target*1000u);
+        assert(target*1000u-oc_khz(CTL,MUL,CPU)<2100);
+        assert(restore()==0 && (MUL&0xffff)==0xb414);
+    }
+    target=500;assert(apply()==0 && matches());
+    target=133;assert(apply()==0 && matches());
+    target=500;assert(apply()==0 && matches());
+    assert(restore()==0);
+    /* A patched Sony call may inherit the experimental divider too. */
+    changed=0;CTL=3;MUL=0x0124f312;CPU=BUS=0x01ff01ff;
+    sony_mode=1;ratio_count=0;assert(startup_apply()==0 && matches());
+    assert(restore()==0);sony_calls=0;
     const char *boundaries[]={"clock_raw_guard_ready","clock_raw_ratio_3_ready",
         "clock_raw_ratio_4_ready","clock_raw_ratio_5_ready","clock_raw_multiplier_ready"};
     for(unsigned i=0;i<5;i++) {

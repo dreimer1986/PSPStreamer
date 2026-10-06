@@ -1,4 +1,9 @@
-# Original Xbox — native player preview 0.7.2
+# Original Xbox — native player preview 0.7.3
+
+0.7.3 adds pre-refill audio diagnostics for intermittent syllable repetition:
+`pump_gap_ms` (maximum service gap), `queue_min` (minimum queued descriptors),
+`starvations` (empty-queue episodes), and `dma_halts` (observed hardware halts).
+These are per-stream counters; decoding and PTS synchronization are unchanged.
 
 0.7.2 adds native **PGS bitmap subtitles** under the same Subtitle overlay
 setting. Sprites are fetched independently, then alpha-blended into the YUY2

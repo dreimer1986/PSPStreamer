@@ -5,8 +5,16 @@
 #define OC_DEN 20u
 #define OC_BASE 37u
 #define OC_NORMAL_NUM 180u
+#define OC_MAX_MHZ 500
+/* Experimental range above 471: 18 keeps the numerator within eight bits.
+ * Both 180/20 and 162/18 represent the same 333 MHz baseline. */
+static unsigned int oc_denominator(unsigned int mhz) {return mhz>471?18u:OC_DEN;}
 static unsigned int oc_numerator(unsigned int mhz) {
-    return mhz * OC_DEN / OC_BASE;
+    return mhz * oc_denominator(mhz) / OC_BASE;
+}
+static int oc_known_ratio(unsigned int num,unsigned int den) {
+    return (den==20 && num>=180 && num<=254) ||
+           (den==18 && num>=162 && num<=243);
 }
 static unsigned int oc_khz(unsigned int control,unsigned int multiplier,unsigned int domain) {
     unsigned int den=multiplier&255, num=(multiplier>>8)&255;

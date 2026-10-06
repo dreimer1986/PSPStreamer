@@ -76,6 +76,7 @@ class OfflineQueue:
             path = self.root / 'preferences.json'
             if values is not None:
                 allowed = {'audio_quality': {'96k', '128k', '160k', 'v6', 'v5', 'v4', 'v3'},
+                           'audio_matrix': {'none','dolby','dplii'},
                            'video_fps': {'20', '24000/1001'}, 'profile': {'normal', 'low', 'tv'}}
                 clean = {}
                 for key, value in values.items():
@@ -129,9 +130,11 @@ class OfflineQueue:
         clean = {'id': str(options['id']), 'audio': int(options.get('audio', 0)),
                  'subtitle': int(options.get('subtitle', -1)),
                  'audio_quality': str(options.get('audio_quality', '160k')),
+                 'audio_matrix': str(options.get('audio_matrix', 'none')),
                  'video_fps': str(options.get('video_fps', '20')),
                  'profile': str(options.get('profile', 'normal'))}
         if (not 0 <= clean['audio'] <= 31 or not -1 <= clean['subtitle'] <= 31 or
+                clean['audio_matrix'] not in {'none','dolby','dplii'} or
                 clean['audio_quality'] not in {'96k', '128k', '160k', 'v6', 'v5', 'v4', 'v3'} or
                 clean['video_fps'] not in {'20', '24000/1001'} or clean['profile'] not in {'normal', 'low', 'tv'}):
             raise ValueError('Invalid conversion options')
@@ -169,12 +172,12 @@ class OfflineQueue:
         prepared = [self.prepare(item) for item in options]
         self.start()
         with self.lock:
-            fields = ('id', 'audio', 'subtitle', 'audio_quality', 'video_fps', 'profile', 'kind')
+            fields = ('id', 'audio', 'subtitle', 'audio_quality', 'audio_matrix', 'video_fps', 'profile', 'kind')
             available = {}
             # Prefer completed packages over duplicate in-progress legacy jobs.
             for job in self.jobs.values():
                 if self._reusable(job):
-                    signature = tuple(job.get(field) for field in fields)
+                    signature = tuple(job.get(field,'none' if field=='audio_matrix' else None) for field in fields)
                     if signature not in available or job['state'] == 'ready':
                         available[signature] = job
             selected, new_jobs = [], []
@@ -388,6 +391,8 @@ class OfflineQueue:
         command = self.command_builder(source, job['audio'], 'mp3' if music else 'flv', job['profile'] == 'low',
                                       burn, job['audio_quality'], sidecar, 0, bitmap, job['profile'] == 'tv', job['video_fps'],
                                       **({'external_subtitle':True} if sidecar else {}))
+        from .server import audio_matrix_command
+        command = audio_matrix_command(command,job.get('audio_matrix','none'))
         if '-re' in command:
             command.remove('-re')
         if '-readrate_initial_burst' in command:

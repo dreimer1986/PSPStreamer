@@ -183,7 +183,8 @@ Do not add both lines for the same plugin.
    enabling clock changes. A callback registration failure still blocks them.
 2. First test `enabled=1`, `target_mhz=333`, `enforce=0`, restart the homebrew,
    and check status, playback, Stop and exit. Only then try a frequency known
-   to be stable on this particular PSP. Accepted requested range: 66–471 MHz.
+   to be stable on this particular PSP. Accepted requested range: 66–500 MHz
+   (472–500 is experimental; see the PLL discussion below).
    Targets below 333 MHz keep the PLL at 333 MHz and use direct CPU/bus
    dividers (bus approximately half CPU). These low-frequency targets are
    our adaptation, not a hardware-validated feature of the reference tester.
@@ -469,6 +470,15 @@ ratios or invalid divisors return 0 meaning **unknown**, not a stopped CPU.
 For example requested 443 MHz selects numerator 239 and estimates 442.150 MHz;
 requested 471 selects 254 and estimates 469.900 MHz. The target is not echoed
 as if it were a measurement.
+
+Experimental targets **472–500 MHz** use denominator 18 (instead of 20),
+only after establishing the same 333 MHz baseline (162/18 = 180/20).
+The numerator then ramps upwards; restoring ramps down before returning to
+the original 180/20 baseline. A request of 500 estimates **499.500 MHz**.
+This extends the INI/title-rule/plugin-settings range, not the default target.
+It is **not hardware validated** and may freeze or shut down the PSP. Save
+your work first and keep a way to disable the plugin. PSPStreamer automatic
+media profiles retain their existing 471 MHz ceiling.
 
 The stress tester itself shows target/saved values and rendering throughput;
 it does not provide an independently calibrated CPU cycle measurement. A

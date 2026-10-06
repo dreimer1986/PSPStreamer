@@ -2,6 +2,20 @@
 
 ## Additional unreleased changes
 
+- Xbox 0.7.3: record audio service gaps, minimum pre-refill queue depth,
+  starvation and DMA halt events to investigate intermittent syllable repeats.
+  No audio timing, decoding or synchronization changes in this diagnostic build.
+
+- StreamerOC: experimental 472–500 MHz target range in INI/title rules and
+  plugin settings, with an 18-denominator PLL ramp and restoration path.
+  500 requests approximately 499.5 MHz; hardware stability is untested.
+  Existing targets and defaults remain unchanged.
+
+- PSP / server 0.1.78: optional Dolby Surround and Pro Logic II matrix downmix
+  for streaming and offline conversion, selectable in the PSP settings and web
+  remote. Stereo remains the default; audio rate and timestamp synchronization
+  are unchanged. Home Assistant app includes the same server and web changes.
+
 - Xbox 0.6.5: fix MilkDrop preset-load assertion in the SDK's unimplemented
   strtof. Reuse musl's floating-point conversion through a string adapter;
   cover exponents, end pointers, range errors and preset loading in focused tests.

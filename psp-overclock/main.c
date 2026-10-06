@@ -312,7 +312,7 @@ static int thread_main(SceSize args,void *argp) {
     SceInt64 start_until=sceKernelGetSystemTimeWide()+6000000LL;
     while(running && sceKernelGetSystemTimeWide()<start_until)sceKernelDelayThreadCB(100000);
     if(!strcmp(config_state,"loaded")) {
-        static const TitleRuleKey keys[]={ {"enabled",0,1},{"target_mhz",66,471},
+        static const TitleRuleKey keys[]={ {"enabled",0,1},{"target_mhz",66,500},
             {"enforce",0,1},{"enforce_unlimited",0,1},{"app_control",0,1} };
         int values[]={enabled,target,enforce,enforce_unlimited,app_control};char file[256];
         snprintf(file,sizeof(file),"%sStreamerOC-rules.ini",directory);

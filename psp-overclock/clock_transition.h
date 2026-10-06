@@ -5,6 +5,9 @@
  */
 #include "clock_diagnostic.h"
 static void oc_remember(void);
+static void oc_multiplier_ratio(unsigned int n,unsigned int d) {
+    MUL=(MUL&0xffff0000U)|(n<<8)|d;SYNC();
+}
 /* Persist checkpoints only at settled boundaries, outside CP0/dispatch
  * locks. Recheck all registers after I/O: it can run other clock owners.
  * Always return with the caller's guard held, including failure paths. */
@@ -41,7 +44,7 @@ static unsigned int oc_domain(unsigned int mhz,int bus) {
 }
 static int matches(void) {
     unsigned int num=target<333?OC_NORMAL_NUM:oc_numerator(target);
-    return (CTL&0x8f)==5 && (MUL&0xffff)==((num<<8)|OC_DEN) &&
+    return (CTL&0x8f)==5 && (MUL&0xffff)==((num<<8)|oc_denominator(target)) &&
         (CPU&0x01ff01ff)==oc_domain(target,0) &&
         (BUS&0x01ff01ff)==oc_domain(target,1);
 }
@@ -67,14 +70,15 @@ static int restore(void) {
     OC_STEP(OC_D_RESTORE,0);
     if(suspended)return OC_RESULT(-2);
     OcClockGuard g=oc_clock_lock();
-    if(!oc_owned() || (CTL&0x8f)!=5 || (MUL&255)!=OC_DEN) {
+    if(!oc_owned() || (CTL&0x8f)!=5) {
         int result=OC_RESULT(-3);oc_clock_unlock(g);return result;
     }
-    unsigned int num=(MUL>>8)&255;
-    if(num<OC_NORMAL_NUM || num>oc_numerator(471)) {
+    unsigned int num=(MUL>>8)&255,den=MUL&255,baseline=9*den;
+    if(!oc_known_ratio(num,den)) {
         int result=OC_RESULT(-4);oc_clock_unlock(g);return result;
     }
-    while(num>OC_NORMAL_NUM) {OC_STEP(OC_D_RESTORE_RAMP,num-1);multiplier(--num);settle();}
+    while(num>baseline) {OC_STEP(OC_D_RESTORE_RAMP,num-1);oc_multiplier_ratio(--num,den);settle();}
+    if(den!=OC_DEN){multiplier(OC_NORMAL_NUM);settle();}
     OC_STEP(OC_D_RESTORE_DOMAINS,0);
     oc_domains(0x01ff01ff,0x01ff01ff);
     oc_remember();
@@ -86,7 +90,7 @@ static int restore(void) {
 static int apply(void) {
     OC_STEP(OC_D_APPLY,0);
     if(!running || suspended)return OC_RESULT(-2);
-    if(target<66 || target>471)return OC_RESULT(-4);
+    if(target<66 || target>OC_MAX_MHZ)return OC_RESULT(-4);
     if(changed) {
         int result=restore();
         if(result<0)return result;
@@ -103,8 +107,7 @@ static int apply(void) {
     /* Accept the recorded stock 9/1 and our bounded numerator/20 recipe.
      * Never invent a frequency formula for unknown PLL ratio indices. */
     int known_multiplier=(num==9 && den==1) ||
-        (den==OC_DEN && num>=OC_NORMAL_NUM && num<=oc_numerator(471) &&
-         (index==5 || num==OC_NORMAL_NUM));
+        (oc_known_ratio(num,den) && (index==5 || num==9*den));
     if(!result) {
         OC_STEP(OC_D_VALIDATE,0);
         if(index<3 || index>5 || !cn || !bn || cn>cd || bn>bd || !known_multiplier)result=OC_RESULT(-4);
@@ -119,7 +122,7 @@ static int apply(void) {
     if(!result) {
         /* Reduce an existing recognized overclock before opening dividers. */
         OC_STEP(OC_D_MULTIPLIER,num);
-        if(den==OC_DEN)while(num>OC_NORMAL_NUM){multiplier(--num);settle();}
+        if(oc_known_ratio(num,den))while(num>9*den){oc_multiplier_ratio(--num,den);settle();}
         multiplier(OC_NORMAL_NUM);settle();
         oc_remember();
         result=oc_clock_checkpoint("clock_raw_multiplier_ready",&g);
@@ -143,18 +146,26 @@ static int apply(void) {
         oc_remember();
         oc_clock_unlock(g);
     } else {
-        unsigned int wanted=oc_numerator(target);
-        for(num=OC_NORMAL_NUM+1;num<=wanted;num++) {
+        unsigned int wanted=oc_numerator(target),ramp_den=oc_denominator(target);
+        if(ramp_den!=OC_DEN) {
+            g=oc_clock_lock();
+            if(!oc_owned()){int result=OC_RESULT(-3);oc_clock_unlock(g);return result;}
+            oc_multiplier_ratio(9*ramp_den,ramp_den);settle();
+            result=(MUL&0xffff)==((9*ramp_den<<8)|ramp_den)?0:-3;
+            oc_remember();oc_clock_unlock(g);
+            if(result)return OC_RESULT(result);
+        }
+        for(num=9*ramp_den+1;num<=wanted;num++) {
             OC_STEP(OC_D_RAMP,num);
             if(!running || suspended)return OC_RESULT(-2);
             g=oc_clock_lock();
             if(!oc_owned()){int result=OC_RESULT(-3);oc_clock_unlock(g);return result;}
-            multiplier(num);settle();
-            result=OC_RESULT((MUL&0xffff)==((num<<8)|OC_DEN)?0:-3);
+            oc_multiplier_ratio(num,ramp_den);settle();
+            result=OC_RESULT((MUL&0xffff)==((num<<8)|ramp_den)?0:-3);
             oc_remember();oc_clock_unlock(g);
             if(result)return result;
             OC_STEP(OC_D_RAMP_YIELD,num);sceKernelDelayThreadCB(10000);
-            if(report && ((num-OC_NORMAL_NUM)%16==0 || num==wanted))snapshot("clock_ramp_progress");
+            if(report && ((num-9*ramp_den)%16==0 || num==wanted))snapshot("clock_ramp_progress");
         }
     }
     OC_STEP(OC_D_FINAL,0);return OC_RESULT(matches()?0:-3);

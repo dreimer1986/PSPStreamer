@@ -3,7 +3,7 @@
 #include "../psp-overclock/config_parse.h"
 typedef struct {const char *key;TextId label;int min,max,def;} PluginField;
 static const PluginField plugin_oc[]={
-    {"enabled",TXT_OC_ENABLED,0,1,0},{"target_mhz",TXT_OC_TARGET,66,471,333},
+    {"enabled",TXT_OC_ENABLED,0,1,0},{"target_mhz",TXT_OC_TARGET,66,500,333},
     {"enforce",TXT_OC_ENFORCE,0,1,0},{"enforce_unlimited",TXT_OC_UNLIMITED,0,1,0},
     {"app_control",TXT_OC_APP_CONTROL,0,1,1},{"report",TXT_OC_REPORT,0,1,1},
     {"overlay",TXT_OC_OVERLAY,0,2,1},{"overlay_always",TXT_PLUGIN_ALWAYS,0,1,0}

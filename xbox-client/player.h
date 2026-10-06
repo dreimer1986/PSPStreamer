@@ -33,7 +33,10 @@ static Uint32 silent_start,log_time;static int64_t silent_pts;
 static double seek_base,paused_position;static unsigned rendered,dropped,underflows;static int underrun,audio_finished;
 extern Uint64 xbox_fb_copy_bytes;
 extern unsigned xbox_fb_copy_calls;
-static char player_diagnostic[640];
+static char player_diagnostic[896];
+static Uint32 audio_pump_last,audio_pump_gap_max;
+static unsigned audio_queue_min,audio_starvations,audio_halts;
+static int audio_was_starved,audio_was_halted;
 static int diagnostics_enabled=1;
 static unsigned video_decode_ms;
 static int visual_audio_error;
@@ -106,6 +109,7 @@ static int player_start(double seconds){
     if(!xbox_video_init(&video)){player_stop();return 0;}
     audio_buffer=plm_buffer_create_with_capacity(4096);audio_decoder=plm_audio_create_with_buffer(audio_buffer,1);
     stream.thread=SDL_CreateThreadWithStackSize(network_stream,"stream",65536,NULL);if(!stream.thread){player_stop();return 0;}
+    audio_pump_last=audio_pump_gap_max=0;audio_queue_min=32;audio_starvations=audio_halts=0;audio_was_starved=audio_was_halted=0;
     playing=1;seek_base=seconds;silent_start=0;silent_pts=-1;stream_audio=stream_video=0;audio_finished=0;rendered=dropped=underflows=0;video_decode_ms=0;visual_audio_error=0;underrun=0;log_time=SDL_GetTicks();return 1;
 }
 static int safe_video(const Packet *p){
@@ -123,6 +127,18 @@ static void player_pause(void){if(paused){player_start(!strncmp(media_id,"radio.
 /* Audio-only, main-thread service: no teardown, input or renderer reentry. */
 static int player_audio_pump(void){
     Packet p;unsigned queued=audio_queued();
+    /* Observe BEFORE refilling: a full ring afterwards hides short starvation.
+     * Counters only; no DMA restart, repeated samples or guessed clock offset. */
+    Uint32 pump_now=SDL_GetTicks();
+    if(audio_running&&!audio_finished&&!audio_tail){
+        if(audio_pump_last&&pump_now-audio_pump_last>audio_pump_gap_max)audio_pump_gap_max=pump_now-audio_pump_last;
+        if(queued<audio_queue_min)audio_queue_min=queued;
+        int starved=!queued,halted=(ac97[0x116]&1)||(ac97[0x176]&1);
+        if(starved&&!audio_was_starved)audio_starvations++;
+        if(halted&&!audio_was_halted)audio_halts++;
+        audio_was_starved=starved;audio_was_halted=halted;
+    }
+    audio_pump_last=pump_now;
     while(stream_audio&&queued<24&&pop_packet(&stream.audio,&p)){
         plm_buffer_write(audio_buffer,p.data,p.size);free(p.data);
         plm_samples_t *s=plm_audio_decode(audio_decoder);
@@ -204,6 +220,11 @@ static int player_tick(void){
     if(diagnostics_enabled&&SDL_GetTicks()-log_time>5000){
         SDL_LockMutex(stream.lock);unsigned bytes=stream.bytes;SDL_UnlockMutex(stream.lock);
         snprintf(player_diagnostic,sizeof(player_diagnostic),"pos_ms=%u vpts=%lld apts=%lld shown=%u dropped=%u underruns=%u audio_queue=%u net_bytes=%u renderer=%s gpu_frames=%u gpu_busy=%u decode_ms=%u pack_ms=%u gui_ms=%u gui_kib=%u gui_copies=%u net_done=%d clean=%d decoder_end=%d pending_frame=%d analog=%u/%u/%u/%u digital=%u/%u/%u/%u\n",(unsigned)(player_position()*1000),(long long)frame_pts,(long long)audio_clock,rendered,dropped,underflows,queued,bytes,overlay.active&&!overlay.disabled?"nv2a":"software",overlay.shown,overlay.busy,video_decode_ms,overlay.pack_ms,overlay.gui_ms,(unsigned)(xbox_fb_copy_bytes/1024),xbox_fb_copy_calls,SDL_AtomicGet(&stream.done),stream.ended,decoder_ended,next_frame!=NULL,ac97[0x114],ac97[0x115],ac97[0x116],*(volatile unsigned short*)(ac97+0x118),ac97[0x174],ac97[0x175],ac97[0x176],*(volatile unsigned short*)(ac97+0x178));log_time=SDL_GetTicks();
+    }
+    if(*player_diagnostic&&!strstr(player_diagnostic,"pump_gap_ms=")){
+        size_t used=strlen(player_diagnostic);
+        if(used&&player_diagnostic[used-1]=='\n')used--;
+        snprintf(player_diagnostic+used,sizeof(player_diagnostic)-used," pump_gap_ms=%u queue_min=%u starvations=%u dma_halts=%u\n",audio_pump_gap_max,audio_queue_min,audio_starvations,audio_halts);
     }
     if(SDL_AtomicGet(&stream.done)&&!queue_count(&stream.video)&&!queue_count(&stream.audio)&&(!stream_video||decoder_ended)&&!next_frame&&!queued)return stream.ended?2:-1;
     return 0;

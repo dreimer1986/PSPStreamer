@@ -12,23 +12,24 @@
 static int startup_reduce_inherited(void) {
     OcClockGuard g=oc_clock_lock();
     unsigned int ctl=CTL,mul=MUL,cpu=CPU,bus=BUS;
-    unsigned int index=ctl&15,num=(mul>>8)&255;
-    int eligible=(ctl==3 || ctl==4) && (mul&0xffff00ffU)==0x01240014U &&
-        num>OC_NORMAL_NUM && num<=oc_numerator(471) &&
+    unsigned int index=ctl&15,num=(mul>>8)&255,den=mul&255,baseline=9*den;
+    int eligible=(ctl==3 || ctl==4) && (mul&0xffff0000U)==0x01240000U &&
+        oc_known_ratio(num,den) && num>baseline &&
         cpu==0x01ff01ffU && bus==0x01ff01ffU;
     oc_clock_unlock(g);
     if(!eligible)return 0; /* Existing raw validation handles other states. */
     OC_STEP(OC_D_INHERITED_REDUCE,index);
     snapshot("clock_inherited_reduce_begin");
-    while(num>OC_NORMAL_NUM) {
+    while(num>baseline) {
         if(!running || suspended)return OC_RESULT(-2);
         g=oc_clock_lock();
         OC_STEP(OC_D_INHERITED_REDUCE,num-1);
         if(CTL!=ctl || MUL!=mul || CPU!=cpu || BUS!=bus) {
             int result=OC_RESULT(-3);oc_clock_unlock(g);return result;
         }
-        multiplier(--num);settle();
-        mul=(mul&0xffff0000U)|(num<<8)|OC_DEN;
+        if(den==OC_DEN)multiplier(--num);else oc_multiplier_ratio(--num,den);
+        settle();
+        mul=(mul&0xffff0000U)|(num<<8)|den;
         if(CTL!=ctl || MUL!=mul || CPU!=cpu || BUS!=bus) {
             int result=OC_RESULT(-3);oc_clock_unlock(g);return result;
         }
@@ -47,7 +48,7 @@ static int startup_apply(void) {
     oc_diag_begin(OC_D_START,__LINE__);
     if(!running || suspended)return OC_RESULT(-2);
     if(changed)return OC_RESULT(-3);
-    if(target<66 || target>471)return OC_RESULT(-4);
+    if(target<66 || target>OC_MAX_MHZ)return OC_RESULT(-4);
     snapshot("clock_sony_baseline_begin");
     OcClockGuard g=oc_clock_lock();
     OC_STEP(OC_D_SONY_GUARD,0);
@@ -57,7 +58,7 @@ static int startup_apply(void) {
     /* Permit the observed inherited OC multiplier at ratio 3/4 for this
      * Sony call only. The direct writer's stricter validation stays intact. */
     int known=(num==9 && den==1) ||
-        (den==OC_DEN && num>=OC_NORMAL_NUM && num<=oc_numerator(471));
+        oc_known_ratio(num,den);
     if(!result && (index<3 || index>5 || !cn || !bn || cn>cd || bn>bd || !known))result=-4;
     if(result)OC_RESULT(result);
     oc_clock_unlock(g);

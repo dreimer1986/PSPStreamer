@@ -29,6 +29,9 @@ screen_idle=0
 audio=0
 subtitle=-1
 quality=2
+# Stereo (none), Dolby Surround (dolby), or Dolby Pro Logic II (dplii).
+# Matrix surround needs a compatible receiver decoder. Applies to new streams/downloads.
+audio_matrix=none
 video_fps=20
 play_mode=stream
 music_preset=active.milk
