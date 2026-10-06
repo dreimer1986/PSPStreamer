@@ -1,4 +1,4 @@
-# PSPStreamer 2.3 — release contents
+# PSPStreamer 2.4 — release contents
 
 One current folder and matching ZIP per component. No combined plugin bundle,
 duplicate PSP application, experimental clock packages or old test releases.
@@ -7,6 +7,7 @@ Choose either the extracted folder **or** its ZIP.
 | Package | Install / purpose |
 | --- | --- |
 | `PSPStreamer/` + `.zip` | Copy to `ms0:/PSP/GAME/PSPStreamer/`. App, PRX companions, fonts, presets and Monkey assets. |
+| `PSPStreamerXbox/` + `.zip` | Copy to the Xbox application folder; launch `default.xbe`. Preview 0.7.3, runtime assets, demo and familiar PSP presets, licenses and a host-readable source ZIP. |
 | `PSPConsolizer/` + `.zip` | Copy to `ms0:/SEPLUGINS/PSPConsolizer/`. Controller bridge, TV activation and rumble. |
 | `StreamerOC/` + `.zip` | Copy to `ms0:/SEPLUGINS/StreamerOC/`. Clock plugin and per-title rule examples. |
 | `FuSaFullscreen/` + `.zip` | Copy to `ms0:/SEPLUGINS/FuSaFullscreen/`. Fullscreen scaler and TV helper. |
@@ -49,7 +50,8 @@ Likewise `dvemgr.prx` is included wherever needed for independent installation.
 
 ## Release notes and integrity
 
-- `RELEASE-2.3.md`: concise English release announcement.
+- `RELEASE-2.4.md`: English changelog since tag 2.3; older notes remain historical.
+- `RELEASE-TITLE.txt`: one-line English release title.
 - `CHANGELOG.md`: detailed history.
 - `MANIFEST.json`: source revision, embedded firmware versions, configuration
   fingerprints and ZIP SHA256 hashes.
