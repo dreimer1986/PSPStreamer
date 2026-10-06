@@ -212,6 +212,18 @@ static int timed_reader(SceSize args, void *argp) {
         if (n >= 4 && !memcmp(http + n - 4, "\r\n\r\n", 4)) break;
     }
     if (!strstr(http, " 200 ") || n == (int)sizeof(http) - 1) goto end;
+    if(selected_audio_output) {
+        const char *label=strstr(http,"\r\nX-PSPStreamer-Audio: ");
+        optical_audio_label[0]=0;
+        if(label) {
+            label+=strlen("\r\nX-PSPStreamer-Audio: ");
+            unsigned i=0;
+            while(label[i] && label[i]!='\r' && label[i]!='\n' && i<sizeof(optical_audio_label)-1){
+                optical_audio_label[i]=label[i];i++;
+            }
+            optical_audio_label[i]=0;
+        }
+    }
 flv_header:
     DEBUG_DIAG(stream_diag.stage="FLV header";);
     if (timed_read(h, 13) != 1 || memcmp(h, "FLV\1", 4) ||

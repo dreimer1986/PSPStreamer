@@ -73,7 +73,7 @@ and an invalid-for-PCM validity bit. The onboard amplifier remains disabled.
 
 USB commands 50–54 open/write/status/pause/close a bounded audio session.
 Capability bit 128 prevents using old or incompatible firmware. Sequence and
-session checks reject stale writes. The ring holds 8192 carrier frames in
+session checks reject stale writes. The ring holds 16384 carrier frames in
 PSRAM; six internal DMA buffers hold 64 frames each (6 KiB total, 8 ms at
 48 kHz). The 192-frame channel-status sequence spans three DMA buffers.
 Only an explicit audio

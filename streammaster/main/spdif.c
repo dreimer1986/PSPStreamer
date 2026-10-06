@@ -18,7 +18,7 @@ int sm_audio_command(const SmFrame *request,SmFrame *reply) {
 }
 void sm_audio_disconnect(void) {}
 #else
-#define RING_FRAMES 8192U
+#define RING_FRAMES 16384U
 /* A full IEC60958 status block need not fit one DMA descriptor. Keep each
  * allocation below 1 KiB plus allocator metadata; the observed fragmented
  * internal heap could no longer supply the former 3 KiB buffers.
@@ -204,15 +204,24 @@ int sm_audio_command(const SmFrame *r,SmFrame *reply) {
                r->length!=sizeof(request)+request.frames*4 || request.sequence!=sequence)return SM_INVALID;
             portENTER_CRITICAL(&lock);
             if(request.frames>RING_FRAMES-(wr-rd))result=SM_BUSY;
-            else {
+            portEXIT_CRITICAL(&lock);
+            if(result==SM_OK) {
+                /* One command worker produces; ISR only consumes published
+                 * entries. Fill free PSRAM outside the interrupt lock, then
+                 * publish atomically. No per-sample 64-bit division in a
+                 * critical section competing with Wi-Fi/USB interrupts. */
+                uint32_t stamp=request.pts_ms,remainder=0;
                 for(unsigned i=0;i<request.frames;i++) {
                     Sample *s=&ring[(wr+i)%RING_FRAMES];
                     memcpy(&s->stereo,r->payload+sizeof(request)+i*4,4);
-                    s->end_pts_ms=request.pts_ms+(uint64_t)(i+1)*1000U/rate;
+                    remainder+=1000;
+                    if(remainder>=rate){remainder-=rate;stamp++;}
+                    s->end_pts_ms=stamp;
                 }
+                portENTER_CRITICAL(&lock);
                 wr+=request.frames;sequence++;
+                portEXIT_CRITICAL(&lock);
             }
-            portEXIT_CRITICAL(&lock);
         } else if(r->op!=SM_AUDIO_STATUS || r->length!=sizeof(id))return SM_INVALID;
     }
     if(result==SM_OK || result==SM_BUSY) {

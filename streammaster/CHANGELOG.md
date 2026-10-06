@@ -1,5 +1,17 @@
 # StreamMaster firmware changelog
 
+## 0.3.22 — Optical audio scheduling headroom
+
+- Double only the PSRAM audio ring to 16,384 carrier frames; DMA remains
+  six 1 KiB buffers and Wi-Fi/USB buffer sizes stay unchanged.
+- Fill free ring entries outside the interrupt critical section and publish
+  atomically. Replace per-sample 64-bit divisions with equivalent integer
+  timestamp increments. DMA completion remains the playback clock.
+- Companion PSP app prefills up to 200 ms, reduces full-ring status polling,
+  logs USB audio packet sizes/contention and displays the server output label.
+- Server 0.1.80 batches decoded PCM into 20 ms blocks, including short-frame
+  codecs, without padding the tail or changing the compressed passthrough path.
+
 ## 0.3.21 — Reduce S/PDIF internal DMA memory
 
 - Reduce six audio DMA buffers from 3,072 to 1,024 bytes each: 6 KiB rather

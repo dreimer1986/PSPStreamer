@@ -45,12 +45,18 @@ def command(base, source, track, mode, probe):
         label = 'Dolby Digital (converted)'
     else:
         cmd += ['-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2']
+        filters = []
         if '-af' in base:
             original_filter = base[base.index('-af')+1]
             for matrix in ('dolby', 'dplii'):
                 if f'matrix_encoding={matrix}:' in original_filter:
-                    cmd += ['-af', f'aresample=48000:out_chlayout=stereo:matrix_encoding={matrix}:rematrix_maxval=1.0']
+                    filters.append(f'aresample=48000:out_chlayout=stereo:matrix_encoding={matrix}:rematrix_maxval=1.0')
                     break
+        # Some codecs (notably TrueHD) decode very short frames. Without
+        # batching these cause hundreds of synchronous USB writes per second.
+        # Keep sample order/PTS, cap latency at 20 ms, never pad the final frame.
+        filters += ['aresample=48000', 'asetnsamples=n=960:p=0']
+        cmd += ['-af', ','.join(filters)]
         label = 'Stereo PCM (converted)'
     cmd += ['-avoid_negative_ts', 'make_zero', '-cluster_time_limit', '100',
             '-flush_packets', '1', '-f', 'matroska', 'pipe:1']

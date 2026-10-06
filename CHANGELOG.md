@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP / StreamMaster 0.3.22 / server 0.1.80: batch optical PCM into 20 ms
+  packets, increase PSRAM-only buffering, reduce interrupt-lock work and
+  status polling. Show actual server audio output in video controls/music;
+  retain the established timestamp sync and standard PSP audio path.
+
 - StreamMaster 0.3.21: reduce optical audio's internal DMA buffering from
   18 KiB to 6 KiB to address the logged S/PDIF startup allocation failure.
   Preserve channel-status continuity and all network/USB buffer sizes.

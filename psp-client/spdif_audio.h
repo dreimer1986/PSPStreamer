@@ -23,11 +23,12 @@ static int spdif_audio_thread(SceSize args,void *argp) {
     const int music=!timed_active;
     TimedPacket packet={0};
     SmAudioStatus status={0};
-    uint32_t sequence=0,rate=0,compressed=0;
+    uint32_t sequence=0,rate=0,compressed=0,prefill=0;
     int reader=-1,queues=0,pause_state=1,rc=-1800,eof=0;
     unsigned long long progress=sceKernelGetSystemTimeWide();
     unsigned last_completed=0,length=0;
     unsigned long long open_busy_since=0;
+    unsigned writes=0,polls=0,busy=0,min_frames=~0U,max_frames=0;
     if(offline_active || offline_music || !strncmp(audio_media_id,"radio.",6)) {
         rc=-1801;goto done; /* Never silently use another output. */
     }
@@ -74,8 +75,12 @@ static int spdif_audio_thread(SceSize args,void *argp) {
                 spdif_log_open(rc,length,packet_rate,packet_compressed);
                 if(rc<0 || length!=sizeof(status)){memset(&status,0,sizeof(status));rc=-1805;break;}
                 rate=packet_rate;compressed=packet_compressed;
+                prefill=rate/5;
+                /* Old optical firmware has a smaller ring: never gate video
+                 * on an amount that cannot fit while output is paused. */
+                if(prefill>status.space*3/4)prefill=status.space*3/4;
                 progress=now;
-                if(debug_enabled){char line[128];snprintf(line,sizeof(line),"SPDIF open rate=%u non_audio=%u session=%u\n",(unsigned)rate,(unsigned)compressed,(unsigned)status.session);video_watch_write(line,0);}
+                if(debug_enabled){char line[192];snprintf(line,sizeof(line),"SPDIF open rate=%u non_audio=%u session=%u output=%s\n",(unsigned)rate,(unsigned)compressed,(unsigned)status.session,optical_audio_label);video_watch_write(line,0);}
             } else if(rate!=packet_rate || compressed!=packet_compressed){rc=-1806;break;}
         }
         if(status.session) {
@@ -83,7 +88,7 @@ static int spdif_audio_thread(SceSize args,void *argp) {
             if(paused!=pause_state) {
                 SmAudioPause pause={status.session,paused};
                 rc=stm_rpc(SM_AUDIO_PAUSE,&pause,sizeof(pause),&status,sizeof(status),&length,&audio_running);
-                if(rc==SM_BUSY)continue;
+                if(rc==SM_BUSY){busy++;sceKernelDelayThread(5000);continue;}
                 if(rc<0 || length!=sizeof(status)){rc=-1807;break;}
                 pause_state=paused;
             }
@@ -97,22 +102,25 @@ static int spdif_audio_thread(SceSize args,void *argp) {
                     for(unsigned i=0;i<write.frames*2;i++)pcm[i]=(int)pcm[i]*playback_volume/30;
                 }
                 rc=stm_rpc(SM_AUDIO_WRITE,request,sizeof(write)+write.frames*4,&status,sizeof(status),&length,&audio_running);
-                if(rc==SM_BUSY){sceKernelDelayThread(5000);continue;}
+                if(rc==SM_BUSY){busy++;sceKernelDelayThread(5000);continue;}
                 if(rc<0 || length!=sizeof(status)){rc=-1808;break;}
                 sequence++;
+                writes++;if(write.frames<min_frames)min_frames=write.frames;
+                if(write.frames>max_frames)max_frames=write.frames;
                 if(!compressed)audio_measure_pcm((const short *)(request+sizeof(write)),write.frames);
                 free(packet.data);memset(&packet,0,sizeof(packet));
             } else {
                 uint32_t id=status.session;
                 rc=stm_rpc(SM_AUDIO_STATUS,&id,sizeof(id),&status,sizeof(status),&length,&audio_running);
-                if(rc==SM_BUSY){sceKernelDelayThread(5000);continue;}
+                polls++;
+                if(rc==SM_BUSY){busy++;sceKernelDelayThread(5000);continue;}
                 if(rc<0 || length!=sizeof(status)){rc=-1809;break;}
-                sceKernelDelayThread(5000);
+                sceKernelDelayThread(10000);
             }
             audio_blocks_published=(uint64_t)status.accepted*44100U/rate;
             audio_played_blocks=(uint64_t)status.completed*44100U/rate;
             if(status.playing){audio_current_timestamp_ms=status.position_ms;audio_clock_started=1;}
-            if(status.accepted>=rate/10 || eof){audio_queue_primed=1;audio_state=15;}
+            if(status.accepted>=prefill || eof){audio_queue_primed=1;audio_state=15;}
             if(status.completed!=last_completed || paused){progress=now;last_completed=status.completed;}
             if(now-progress>15000000ULL){rc=-1810;break;}
             if(eof && status.completed==status.accepted){audio_clean_eof=1;rc=0;break;}
@@ -120,6 +128,7 @@ static int spdif_audio_thread(SceSize args,void *argp) {
     }
 done:
     free(packet.data);
+    if(debug_enabled){char line[160];snprintf(line,sizeof(line),"SPDIF transfers writes=%u polls=%u busy=%u frames_min=%u frames_max=%u\n",writes,polls,busy,writes?min_frames:0,max_frames);video_watch_write(line,0);}
     if(debug_enabled){char line[192];snprintf(line,sizeof(line),"SPDIF end rc=%d rate=%u accepted=%u completed=%u underrun_blocks=%u position_ms=%u\n",rc,(unsigned)rate,(unsigned)status.accepted,(unsigned)status.completed,(unsigned)status.underruns,(unsigned)status.position_ms);video_watch_write(line,0);}
     if(status.session){uint32_t id=status.session;stm_rpc(SM_AUDIO_CLOSE,&id,sizeof(id),NULL,0,NULL,NULL);}
     if(music) {

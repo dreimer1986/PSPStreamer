@@ -1,3 +1,9 @@
+# 0.1.80
+
+- Batch S/PDIF PCM into 960-sample (20 ms) packets instead of forwarding tiny
+  decoder frames individually. Preserve timestamps and the unpadded final tail.
+- AC-3/DTS passthrough and the standard PSP/Xbox/browser paths are unchanged.
+
 # 0.1.79
 
 - Optional PSP/StreamMaster optical audio output: AC-3/DTS core passthrough,

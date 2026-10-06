@@ -363,6 +363,7 @@ static int selected_subtitle_track = -1;
 static int selected_audio_quality = 2;
 static int selected_audio_matrix;
 static int selected_audio_output;
+static char optical_audio_label[64];
 static const char *audio_output_keys[]={"psp","spdif_pcm","spdif_auto_pcm","spdif_auto_ac3"};
 static const char *audio_output_labels[]={"PSP","S/PDIF PCM","S/PDIF auto / PCM","S/PDIF auto / AC-3"};
 static const char *audio_matrix_keys[]={"none","dolby","dplii"};
@@ -2096,7 +2097,7 @@ static int play_audio_once(const char *media_id, const char *title) {
         }
         if (!fullscreen || music_visual_active) spectrum_fullscreen_reset();
         if(live)music_caption(radio_station,radio_song,fullscreen);
-        else music_caption(current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title[0]?current_media_title:title,fullscreen);
+        else music_caption(selected_audio_output && optical_audio_label[0]?optical_audio_label:current_media_artist[0]?current_media_artist:tr(TXT_MUSIC),current_media_title[0]?current_media_title:title,fullscreen);
         if(!audio_start) {next_preset_tick=sceKernelGetSystemTimeWide()+preset_interval_us();memset(&preset_cuts,0,sizeof(preset_cuts));}
         int hard_cut=0;
         if(audio_start && visual_preset==4 && music_preset_auto && preset_hard_cuts) {

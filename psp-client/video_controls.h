@@ -2,11 +2,12 @@
  * Saving only this strip lets Select/Circle close it even while paused. */
 static struct {
     int visible, selected, saved, tv;
-    u32 underlay[660*48];
+    u32 underlay[660*64];
 } video_controls;
 static int video_file_direction;
 static void video_controls_background(int save) {
     int tv=video_controls.tv,w=tv?660:440,h=tv?48:32,x=tv?30:20,y=tv?24:16;
+    if(selected_audio_output)h+=tv?16:12;
     int row,stride=tv?TVOUT_STRIDE:VIDEO_STRIDE;
     u32 *vram=(u32 *)0x44000000;
     for(row=0;row<h;row++) {
@@ -30,6 +31,17 @@ static void video_controls_draw(int paused) {
             int glyph=subtitle_utf8_char(&p);
             if(tv) tv_glyph(&canvas,subtitle_font,glyph,x+i*cell+12+offset,y+16,0x00FFFFFF);
             else gui_draw_small_glyph(vram,glyph,x+i*cell+8+offset,y+12,0x00FFFFFF);
+            offset+=tv?12:7;
+        }
+    }
+    if(selected_audio_output) {
+        int yy=y+h,offset=0;
+        spectrum_fullscreen_rect(vram,stride,x,yy,w,tv?16:12,0x00141B22);
+        const char *p=optical_audio_label[0]?optical_audio_label:audio_output_labels[selected_audio_output];
+        while(*p && offset<w-24) {
+            int glyph=subtitle_utf8_char(&p);
+            if(tv)tv_glyph(&canvas,subtitle_font,glyph,x+12+offset,yy,0x00FFFFFF);
+            else gui_draw_small_glyph(vram,glyph,x+8+offset,yy+2,0x00FFFFFF);
             offset+=tv?12:7;
         }
     }
