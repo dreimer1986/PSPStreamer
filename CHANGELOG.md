@@ -2,6 +2,9 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.20 / PSP: detailed S/PDIF startup diagnostics, bounded
+  BUSY retry on audio open, and PSRAM-backed temporary silence preparation.
+
 - StreamMaster 0.3.19: postpone automatic Bluetooth reconnection to sleeping
   controllers during substantial TCP/TLS transfers and a 30-second quiet grace
   period. Manual connections and incoming reconnections remain available.

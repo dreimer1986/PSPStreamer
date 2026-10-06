@@ -7,6 +7,7 @@
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include <stdlib.h>
@@ -29,6 +30,13 @@ static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
 static uint32_t rd,wr,rate,non_audio,session,sequence,completed,position,underruns;
 static unsigned frame,level,paused,disconnected,playing;
 static uint16_t bmc[256];
+static SmAudioDiag diagnostic;
+static void diagnose(unsigned stage,esp_err_t error) {
+    diagnostic.stage=stage;diagnostic.error=error;
+    diagnostic.dma_free=heap_caps_get_free_size(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    diagnostic.dma_largest=heap_caps_get_largest_free_block(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    diagnostic.psram_free=heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+}
 
 /* Encoded bytes are sent MSB first by the I2S serializer. Sample bits are
  * consumed LSB first, with a transition at each cell boundary. */
@@ -104,45 +112,67 @@ static void close_output(void) {
     memset(dma,0,sizeof(dma));
 }
 static int open_output(const SmAudioOpen *request) {
+    diagnostic=(SmAudioDiag){.rate=request->rate,.non_audio=request->non_audio};
+    diagnose(SM_AUDIO_STAGE_VALIDATE,ESP_ERR_INVALID_ARG);
     if((request->rate!=32000 && request->rate!=44100 && request->rate!=48000)||request->non_audio>1)return SM_INVALID;
     close_output();
+    unsigned stage=SM_AUDIO_STAGE_RING;
+    esp_err_t err=ESP_ERR_NO_MEM;
     ring=heap_caps_malloc(sizeof(*ring)*RING_FRAMES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-    if(!ring)return SM_IO;
+    if(!ring)goto fail;
     for(unsigned i=0;i<256;i++)bmc[i]=encode_byte(i);
     rate=request->rate;non_audio=request->non_audio;
     rd=wr=sequence=completed=position=underruns=frame=level=playing=disconnected=0;
     paused=1;session++;if(!session)session++;
     i2s_chan_config_t channel=I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO,I2S_ROLE_MASTER);
     channel.dma_desc_num=DMA_BLOCKS;channel.dma_frame_num=BLOCK_FRAMES*2;
-    if(i2s_new_channel(&channel,&output,NULL)!=ESP_OK)goto fail;
+    stage=SM_AUDIO_STAGE_CHANNEL;
+    if((err=i2s_new_channel(&channel,&output,NULL))!=ESP_OK)goto fail;
     i2s_std_config_t config={
         .clk_cfg=I2S_STD_CLK_DEFAULT_CONFIG(rate*2),
         .slot_cfg=I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT,I2S_SLOT_MODE_STEREO),
         .gpio_cfg={.mclk=I2S_GPIO_UNUSED,.bclk=I2S_GPIO_UNUSED,.ws=I2S_GPIO_UNUSED,
                    .dout=GPIO_NUM_12,.din=I2S_GPIO_UNUSED}
     };
-    if(i2s_channel_init_std_mode(output,&config)!=ESP_OK)goto fail;
+    stage=SM_AUDIO_STAGE_MODE;
+    if((err=i2s_channel_init_std_mode(output,&config))!=ESP_OK)goto fail;
     i2s_event_callbacks_t callbacks={.on_sent=sent};
-    if(i2s_channel_register_event_callback(output,&callbacks,NULL)!=ESP_OK)goto fail;
+    stage=SM_AUDIO_STAGE_CALLBACK;
+    if((err=i2s_channel_register_event_callback(output,&callbacks,NULL))!=ESP_OK)goto fail;
     /* Preload valid silence instead of initially emitting unframed zero bits. */
-    uint32_t *silence=malloc(BLOCK_FRAMES*16);
+    stage=SM_AUDIO_STAGE_SILENCE;err=ESP_ERR_NO_MEM;
+    uint32_t *silence=heap_caps_malloc(BLOCK_FRAMES*16,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(!silence)goto fail;
     for(unsigned i=0;i<BLOCK_FRAMES;i++) {
         subframe(silence+i*4,0,0);subframe(silence+i*4+2,0,1);frame=(frame+1)%192;
     }
-    esp_err_t err=ESP_OK;
+    stage=SM_AUDIO_STAGE_PRELOAD;err=ESP_OK;
     for(unsigned i=0;i<DMA_BLOCKS;i++) {
         size_t loaded=0;err=i2s_channel_preload_data(output,silence,BLOCK_FRAMES*16,&loaded);
-        if(err!=ESP_OK || loaded!=BLOCK_FRAMES*16){err=ESP_FAIL;break;}
+        diagnostic.loaded+=loaded;
+        if(err!=ESP_OK || loaded!=BLOCK_FRAMES*16){if(err==ESP_OK)err=ESP_FAIL;break;}
     }
     free(silence);
-    if(err!=ESP_OK || i2s_channel_enable(output)!=ESP_OK)goto fail;
+    if(err!=ESP_OK)goto fail;
+    stage=SM_AUDIO_STAGE_ENABLE;
+    if((err=i2s_channel_enable(output))!=ESP_OK)goto fail;
+    diagnose(SM_AUDIO_STAGE_READY,ESP_OK);
     return SM_OK;
 fail:
+    diagnose(stage,err);
+    ESP_LOGE("spdif","open stage=%u error=%s (%d) rate=%lu DMA free=%lu largest=%lu PSRAM=%lu loaded=%lu",
+             stage,esp_err_to_name(err),err,(unsigned long)diagnostic.rate,
+             (unsigned long)diagnostic.dma_free,(unsigned long)diagnostic.dma_largest,
+             (unsigned long)diagnostic.psram_free,(unsigned long)diagnostic.loaded);
     close_output();return SM_IO;
 }
 int sm_audio_command(const SmFrame *r,SmFrame *reply) {
     int result=SM_OK;
+    if(r->op==SM_AUDIO_DIAG) {
+        if(r->length)return SM_INVALID;
+        memcpy(reply->payload,&diagnostic,sizeof(diagnostic));reply->length=sizeof(diagnostic);
+        return SM_OK;
+    }
     if(r->op==SM_AUDIO_OPEN) {
         SmAudioOpen request;
         if(r->length!=sizeof(request))return SM_INVALID;

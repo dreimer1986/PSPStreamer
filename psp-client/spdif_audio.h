@@ -3,6 +3,21 @@
  * Called after the common transport and timed-queue definitions in main.c.
  */
 #include "../streammaster/spdif_protocol.h"
+static void spdif_log_open(int result,unsigned length,unsigned rate,unsigned non_audio) {
+    if(!debug_enabled)return;
+    char line[256];
+    snprintf(line,sizeof(line),"SPDIF open RPC rc=%d hex=%08X reply_bytes=%u rate=%u non_audio=%u\n",result,(unsigned)result,length,rate,non_audio);
+    video_watch_write(line,0);
+    SmAudioDiag d={0};unsigned bytes=0;
+    int rc=stm_rpc(SM_AUDIO_DIAG,NULL,0,&d,sizeof(d),&bytes,&audio_running);
+    if(rc==0 && bytes==sizeof(d)) {
+        static const char *stages[]={"none","validate","ring","channel","mode/DMA","callback","silence","preload","enable","ready"};
+        snprintf(line,sizeof(line),"SPDIF firmware stage=%u/%s error=%08X rate=%u non_audio=%u DMA_free=%u DMA_largest=%u PSRAM_free=%u preload_bytes=%u\n",
+                 (unsigned)d.stage,d.stage<10?stages[d.stage]:"unknown",(unsigned)d.error,(unsigned)d.rate,
+                 (unsigned)d.non_audio,(unsigned)d.dma_free,(unsigned)d.dma_largest,(unsigned)d.psram_free,(unsigned)d.loaded);
+    } else snprintf(line,sizeof(line),"SPDIF firmware diagnostics unavailable rc=%d bytes=%u\n",rc,bytes);
+    video_watch_write(line,0);
+}
 static int spdif_audio_thread(SceSize args,void *argp) {
     (void)args;(void)argp;
     const int music=!timed_active;
@@ -12,6 +27,7 @@ static int spdif_audio_thread(SceSize args,void *argp) {
     int reader=-1,queues=0,pause_state=1,rc=-1800,eof=0;
     unsigned long long progress=sceKernelGetSystemTimeWide();
     unsigned last_completed=0,length=0;
+    unsigned long long open_busy_since=0;
     if(offline_active || offline_music || !strncmp(audio_media_id,"radio.",6)) {
         rc=-1801;goto done; /* Never silently use another output. */
     }
@@ -49,7 +65,14 @@ static int spdif_audio_thread(SceSize args,void *argp) {
             if(!status.session) {
                 SmAudioOpen open={packet_rate,packet_compressed};
                 rc=stm_rpc(SM_AUDIO_OPEN,&open,sizeof(open),&status,sizeof(status),&length,&audio_running);
-                if(rc<0 || length!=sizeof(status)){rc=-1805;break;}
+                /* Contention is not an I2S initialization failure. Retry only
+                 * BUSY, never an ambiguous timeout that may have opened DMA. */
+                if(rc==SM_BUSY) {
+                    if(!open_busy_since)open_busy_since=now;
+                    if(now-open_busy_since<2000000ULL){sceKernelDelayThread(10000);continue;}
+                }
+                spdif_log_open(rc,length,packet_rate,packet_compressed);
+                if(rc<0 || length!=sizeof(status)){memset(&status,0,sizeof(status));rc=-1805;break;}
                 rate=packet_rate;compressed=packet_compressed;
                 progress=now;
                 if(debug_enabled){char line[128];snprintf(line,sizeof(line),"SPDIF open rate=%u non_audio=%u session=%u\n",(unsigned)rate,(unsigned)compressed,(unsigned)status.session);video_watch_write(line,0);}

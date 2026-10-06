@@ -175,7 +175,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     memset(out,0,sizeof(*out));out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;requests++;
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
-    case SM_AUDIO_OPEN:case SM_AUDIO_WRITE:case SM_AUDIO_STATUS:case SM_AUDIO_PAUSE:case SM_AUDIO_CLOSE:
+    case SM_AUDIO_OPEN:case SM_AUDIO_WRITE:case SM_AUDIO_STATUS:case SM_AUDIO_PAUSE:case SM_AUDIO_CLOSE:case SM_AUDIO_DIAG:
         out->result=sm_audio_command(r,out);break;
     case SM_CAPABILITIES: {
         uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES|SM_CAP_NET_DIAG;

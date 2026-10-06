@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.20 — Diagnose optical audio initialization
+
+- Preserve the failing I2S setup stage and ESP-IDF error, requested format,
+  DMA-capable free/largest memory, PSRAM free memory and preload byte count.
+  Expose the snapshot to the PSP log without requiring a serial cable.
+- Allocate the temporary silence preload in PSRAM instead of competing with
+  the DMA buffers for internal RAM. Audio/USB buffer sizes are unchanged.
+- PSP logs the original open RPC result and response length, and retries
+  temporary USB BUSY on open for up to two seconds without retrying timeouts.
+
 ## 0.3.19 — Defer automatic Bluetooth reconnect during network transfers
 
 - Do not actively page sleeping controllers while a substantial TCP/TLS

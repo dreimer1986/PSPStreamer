@@ -2,7 +2,13 @@
 #pragma once
 #include <stdint.h>
 #define SM_CAP_SPDIF 128U
-enum {SM_AUDIO_OPEN=50,SM_AUDIO_WRITE,SM_AUDIO_STATUS,SM_AUDIO_PAUSE,SM_AUDIO_CLOSE};
+enum {SM_AUDIO_OPEN=50,SM_AUDIO_WRITE,SM_AUDIO_STATUS,SM_AUDIO_PAUSE,SM_AUDIO_CLOSE,SM_AUDIO_DIAG};
+enum {SM_AUDIO_STAGE_VALIDATE=1,SM_AUDIO_STAGE_RING,SM_AUDIO_STAGE_CHANNEL,
+      SM_AUDIO_STAGE_MODE,SM_AUDIO_STAGE_CALLBACK,SM_AUDIO_STAGE_SILENCE,
+      SM_AUDIO_STAGE_PRELOAD,SM_AUDIO_STAGE_ENABLE,SM_AUDIO_STAGE_READY};
+typedef struct {
+    uint32_t stage,error,rate,non_audio,dma_free,dma_largest,psram_free,loaded;
+} SmAudioDiag;
 /* Explicit opt-in. Only Onju V3 has a known/supported output pin (GPIO12).
  * Samples are little-endian stereo PCM words or IEC61937 carrier words.
  * Compressed carrier words must NEVER be attenuated or sent to a PCM DAC. */
