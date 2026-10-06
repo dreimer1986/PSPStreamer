@@ -19,8 +19,13 @@ int sm_audio_command(const SmFrame *request,SmFrame *reply) {
 void sm_audio_disconnect(void) {}
 #else
 #define RING_FRAMES 8192U
-#define BLOCK_FRAMES 192U
+/* A full IEC60958 status block need not fit one DMA descriptor. Keep each
+ * allocation below 1 KiB plus allocator metadata; the observed fragmented
+ * internal heap could no longer supply the former 3 KiB buffers.
+ * Six buffers retain 8 ms of DMA runway at 48 kHz. */
+#define BLOCK_FRAMES 64U
 #define DMA_BLOCKS 6U
+_Static_assert((BLOCK_FRAMES*DMA_BLOCKS)%192==0,"DMA ring preserves IEC60958 status phase");
 typedef struct {uint32_t stereo,end_pts_ms;} Sample;
 typedef struct {void *buffer;uint32_t count,end_pts;} Completion;
 static i2s_chan_handle_t output;
@@ -143,11 +148,14 @@ static int open_output(const SmAudioOpen *request) {
     stage=SM_AUDIO_STAGE_SILENCE;err=ESP_ERR_NO_MEM;
     uint32_t *silence=heap_caps_malloc(BLOCK_FRAMES*16,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(!silence)goto fail;
-    for(unsigned i=0;i<BLOCK_FRAMES;i++) {
-        subframe(silence+i*4,0,0);subframe(silence+i*4+2,0,1);frame=(frame+1)%192;
-    }
     stage=SM_AUDIO_STAGE_PRELOAD;err=ESP_OK;
     for(unsigned i=0;i<DMA_BLOCKS;i++) {
+        /* Each 64-frame chunk carries a different third of the 192-frame
+         * channel-status block. Repeating the first chunk would corrupt the
+         * preambles/rate/non-audio flags, especially in passthrough mode. */
+        for(unsigned j=0;j<BLOCK_FRAMES;j++) {
+            subframe(silence+j*4,0,0);subframe(silence+j*4+2,0,1);frame=(frame+1)%192;
+        }
         size_t loaded=0;err=i2s_channel_preload_data(output,silence,BLOCK_FRAMES*16,&loaded);
         diagnostic.loaded+=loaded;
         if(err!=ESP_OK || loaded!=BLOCK_FRAMES*16){if(err==ESP_OK)err=ESP_FAIL;break;}

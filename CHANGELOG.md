@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.21: reduce optical audio's internal DMA buffering from
+  18 KiB to 6 KiB to address the logged S/PDIF startup allocation failure.
+  Preserve channel-status continuity and all network/USB buffer sizes.
+
 - StreamMaster 0.3.20 / PSP: detailed S/PDIF startup diagnostics, bounded
   BUSY retry on audio open, and PSRAM-backed temporary silence preparation.
 

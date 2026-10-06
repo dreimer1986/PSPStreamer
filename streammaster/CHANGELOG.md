@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.21 — Reduce S/PDIF internal DMA memory
+
+- Reduce six audio DMA buffers from 3,072 to 1,024 bytes each: 6 KiB rather
+  than 18 KiB, retaining 8 ms of DMA buffering at 48 kHz. The 8,192-frame
+  PSRAM audio ring and all network/USB buffers remain unchanged.
+- Generate consecutive silence chunks during preload so the 192-frame
+  IEC60958 channel-status/preamble sequence stays intact across descriptors.
+- Addresses the observed mode/DMA ESP_ERR_NO_MEM startup failure; hardware
+  verification of startup and uninterrupted output is still required.
+
 ## 0.3.20 — Diagnose optical audio initialization
 
 - Preserve the failing I2S setup stage and ESP-IDF error, requested format,
