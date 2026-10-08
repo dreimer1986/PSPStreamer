@@ -24,6 +24,7 @@ bridge.o: ../health_rumble.h ../health_rumble_psp.h
 bridge.o: ../audio_probe.h ../audio_probe_stats.h
 bridge.o: ../audio_mirror.h ../audio_mirror_signature.h ../../streammaster/spdif_protocol.h
 bridge.o: ../audio_mirror_flow.h
+bridge.o: ../../streammaster/trace_protocol.h
 bridge.o: ../../psp-client/streammaster_usb/bulk_storage.h
 pops_payload.o: ../pops_payload.c ../pops_serial.h
 	psp-gcc -O2 -G0 -mno-abicalls -fno-pic -ffreestanding -fno-builtin -fno-stack-protector -fno-jump-tables -fno-tree-switch-conversion -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra -c $< -o $@

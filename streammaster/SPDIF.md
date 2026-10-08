@@ -1,5 +1,54 @@
 # Onju V3 optical audio (first hardware build)
 
+## Runtime diagnostics (firmware 0.3.24)
+
+Serial monitoring over the Onju USB connector cannot run while that connector
+is hosting the PSP. No UART wiring is required for the new diagnostic path.
+
+- With the updated Consolizer, `audio_mirror=1` and `report=1` enable runtime
+  snapshots every five seconds. They are queued to the normal report writer,
+  not written from the Sony mixer hook. Look in `last.log` / `last.log.previous`.
+- With the updated PSPStreamer and its debug option enabled, normal network
+  diagnostic snapshots include ESP counters and the last 16 events, every
+  30 seconds during network activity. Older firmware remains usable.
+- The first explicit runtime request enables a small HTTP server at
+  `http://<StreamMaster-WLAN-IP>:8080/diagnostics.json`. Use the Onju IP shown
+  in StreamMaster settings, not the media-server or PSP internal-WLAN IP.
+- After a USB/audio failure, keep Onju powered and download that URL from a
+  device on the same reachable LAN. One or two manual downloads are enough;
+  do not continuously poll during the performance test. Wi-Fi must still work.
+- This read-only endpoint has **no authentication**. It exposes firmware,
+  numeric diagnostics and event codes only, no SSIDs/passwords/media paths.
+  Use a trusted test LAN and do not expose port 8080 through a reverse proxy.
+  It stays available after USB loss and closes on ESP restart or protocol
+  action 2. A power cycle clears the RAM trace; nothing is written to flash.
+
+Protocol opcode 56 accepts a uint32 action: 0 snapshot, 1 enable HTTP + snapshot,
+2 disable HTTP + snapshot. The reply is the versioned `SmTrace` structure.
+`http_error=0` after action 1 means HTTP initialization succeeded; a nonzero
+value means HTTP failed or was refused for low memory. USB snapshots still work.
+HTTP starts only with at least 48 KiB free internal memory and a 12 KiB largest
+block, and is stopped again if less than 24 KiB remains after initialization.
+It allows one client, one route, bounded two-second socket waits and a 4 KiB
+task stack. This is not a guarantee against unrelated memory exhaustion.
+
+`audio_flags`: bit 0 paused, bit 1 disconnected, bit 2 has played samples.
+`max_dma_gap_us` measures callback spacing, not receiver lock or optical quality.
+`last_command_ms` records entry into the command handler; a growing age with
+unchanged counters helps identify a stalled command. Diagnostic reads themselves
+do not overwrite it. `reset_reason` is the ESP reset reason, not a PSP crash code.
+Events: 1 USB gone, 2 receive failure, 3 transmit failure, 4 command failure,
+5 audio open, 6 audio close, 7 Bluetooth state. Events retain their ESP uptime.
+
+These measurements do not yet establish why the PSP occasionally shuts down.
+No new PSP kernel thread, audio ring or USB driver is allocated for diagnostics.
+The existing 144 KiB download-pool saving in games remains in place.
+The compiler stack audit measured 8 bytes for the mixer hook, 696 bytes for
+the PCM worker's own frame and 2,984 bytes for the controller service's own
+frame, against 4 KiB/8 KiB worker stacks. These exclude nested call frames:
+the new live stack-headroom report is needed to check real worst-case use.
+
+
 Requires the matching PSP application, server **0.1.79** and StreamMaster
 **0.3.18**. Built, but not hardware-verified. No automatic test tones.
 This is a PSPStreamer output, not a system-wide PSP audio plugin.

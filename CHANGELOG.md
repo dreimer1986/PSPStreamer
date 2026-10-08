@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.24 / PSP / Consolizer: bounded runtime diagnostics over USB
+  and optional read-only WLAN HTTP retrieval after USB failure. Include audio
+  DMA gaps, USB errors, BT transitions and heap counters. Consolizer also logs
+  PCM-thread stack headroom and PSP kernel memory; diagnostic HTTP allocation
+  is guarded. This is instrumentation, not a confirmed fix for game-audio stalls
+  or rare PSP shutdowns.
+
 - PSP Consolizer game PCM: defer Memory Stick diagnostics to the existing
   controller service through a bounded queue. Capture overflow no longer
   closes optical output for a two-second retry; trim excessive stale capture

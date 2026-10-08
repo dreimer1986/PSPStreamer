@@ -2,6 +2,7 @@
  * One USB owner; slow Wi-Fi/HTTP work never runs in the host event loop. */
 #include "bridge.h"
 #include "spdif.h"
+#include "trace.h"
 #include "hotpath.h"
 #include "../gamepad_wire.h"
 #include "../rumble.h"
@@ -94,6 +95,7 @@ static void memory_report(const char *stage) {
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 static void mark_gone(void) {
+    if(!gone)sm_trace_event(SM_TRACE_USB_GONE,atomic_load(&epoch),busy);
     sm_audio_disconnect();
     atomic_store(&psp_status,SM_OFFLINE);
     if(!gone){atomic_fetch_add(&epoch,1);gone=1;}
@@ -101,7 +103,11 @@ static void mark_gone(void) {
 static int process_work(Work *work,Work *response) {
     sm_network_idle();
     if(work->epoch!=atomic_load(&epoch))return 0;
-    response->epoch=work->epoch;sm_network_command(&work->frame,&response->frame);
+    response->epoch=work->epoch;
+    int64_t begin=esp_timer_get_time();
+    sm_trace_command_begin(work->frame.op);
+    sm_network_command(&work->frame,&response->frame);
+    sm_trace_command(work->frame.op,response->frame.result,(unsigned)(esp_timer_get_time()-begin));
     /* A slow diagnostic/connect operation may outlive its USB link.
      * Discard both its reply and any connection it just opened. */
     if(work->epoch!=atomic_load(&epoch)) {
@@ -340,10 +346,10 @@ void sm_usb_task(void *unused) {
         }
 #endif
         if(tx_pending && esp_timer_get_time()>tx_deadline){mark_gone();continue;}
-        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){mark_gone();continue;}if(busy)busy--;if(!busy)last_bulk_done_us=0;}
+        if(tx_done){tx_done=0;if(tx->status!=USB_TRANSFER_STATUS_COMPLETED || tx->actual_num_bytes!=tx->num_bytes){sm_trace_event(SM_TRACE_USB_TX,tx->status,tx->actual_num_bytes);mark_gone();continue;}if(busy)busy--;if(!busy)last_bulk_done_us=0;}
         if(rx_done) {
             rx_done=0;
-            if(rx->status!=USB_TRANSFER_STATUS_COMPLETED || rx->actual_num_bytes<32){mark_gone();continue;}
+            if(rx->status!=USB_TRANSFER_STATUS_COMPLETED || rx->actual_num_bytes<32){sm_trace_event(SM_TRACE_USB_RX,rx->status,rx->actual_num_bytes);mark_gone();continue;}
             SmFrame *frame=(SmFrame *)rx->data_buffer;
             if(!sm_request_wire_valid(frame,rx->actual_num_bytes)){mark_gone();continue;}
             memset(&job.frame,0,sizeof(job.frame));

@@ -6,6 +6,7 @@
 #include "audio_mirror_signature.h"
 #include "../streammaster/spdif_protocol.h"
 #include "audio_mirror_flow.h"
+#include "../streammaster/trace_protocol.h"
 #define MIRROR_LOG_COUNT 8U
 typedef struct { char text[128]; int rc; unsigned sec,usec; } MirrorLog;
 typedef struct {
@@ -156,7 +157,7 @@ static int audio_mirror_worker(SceSize size,void *args) {
     (void)size;(void)args;
     SmAudioStatus status={0};unsigned sequence=0,played=0,sent=0;
     unsigned long long retry=0,next_report=0,last_progress=0,next_status=0,last_loop=0;
-    int paused=1,failed=0,last_gate=-1;
+    int paused=1,failed=0,last_gate=-1,trace_supported=1,trace_started=0;
     int rc=audio_mirror_install();
     if(rc<0){audio_mirror_log("PCM mirror unsupported layout: no patch",rc);return 0;}
     while(audio_mirror_running) {
@@ -177,6 +178,13 @@ static int audio_mirror_worker(SceSize size,void *args) {
         }
         if(now<retry){sceKernelDelayThread(10000);continue;}
         if(!status.session) {
+            if(controller_report && trace_supported && !trace_started) {
+                uint32_t action=1;
+                rc=audio_mirror_rpc(SM_DIAGNOSTICS,&action,sizeof(action),NULL,0);
+                if(rc==SM_INVALID)trace_supported=0;
+                if(rc==SM_OK)trace_started=1;
+                audio_mirror_log("ESP diagnostics enable (HTTP port 8080)",rc);
+            }
             SmAudioOpen open={rate,0};
             rc=audio_mirror_rpc(SM_AUDIO_OPEN,&open,sizeof(open),&status,0);
             if(rc==SM_BUSY){sceKernelDelayThread(5000);continue;}
@@ -218,6 +226,30 @@ static int audio_mirror_worker(SceSize size,void *args) {
             audio_mirror_log(line,0);
             snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
             audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;
+            if(controller_report && trace_supported && trace_started) {
+                uint32_t action=0;
+                int trace_rc=audio_mirror_rpc(SM_DIAGNOSTICS,&action,sizeof(action),NULL,0);
+                if(trace_rc<0 && trace_rc!=SM_BUSY)audio_mirror_log("ESP runtime fetch failed",trace_rc);
+                if(trace_rc==SM_OK && m->rpc.length==sizeof(SmTrace)) {
+                    SmTrace t;memcpy(&t,m->rpc.payload,sizeof(t));
+                    if(t.version==1) {
+                        snprintf(line,sizeof(line),"ESP audio flags=%u queued=%u played=%u under=%u dma=%u gap_us=%u",
+                            (unsigned)t.audio_flags,(unsigned)t.audio_queued,(unsigned)t.audio_completed,(unsigned)t.audio_underruns,(unsigned)t.dma_callbacks,(unsigned)t.max_dma_gap_us);
+                        audio_mirror_log(line,0);
+                        snprintf(line,sizeof(line),"ESP USB errors=%u cmd_us=%u free=%u largest=%u reset=%u BT=%u HTTP=%x",
+                            (unsigned)t.usb_events,(unsigned)t.max_command_us,(unsigned)t.internal_free,(unsigned)t.internal_largest,(unsigned)t.reset_reason,(unsigned)t.bt_state,(unsigned)t.http_error);
+                        audio_mirror_log(line,0);
+                        if(t.event_count) {
+                            SmTraceEvent e=t.events[(t.event_count-1)%SM_TRACE_EVENTS];
+                            snprintf(line,sizeof(line),"ESP last event ms=%u kind=%u a=%u b=%u",(unsigned)e.ms,(unsigned)e.kind,(unsigned)e.a,(unsigned)e.b);
+                            audio_mirror_log(line,0);
+                        }
+                    }
+                }
+                snprintf(line,sizeof(line),"PSP PCM stack_free=%d kernel_free=%u largest=%u",
+                    sceKernelGetThreadStackFreeSize(sceKernelGetThreadId()),sceKernelPartitionTotalFreeMemSize(1),sceKernelPartitionMaxFreeMemSize(1));
+                audio_mirror_log(line,0);
+            }
         }
         sceKernelDelayThread(2000);
     }

@@ -34,6 +34,15 @@ levels, underruns and capture faults. `audio_mirror=0` restores the old behavior
 Do not save the PSPStreamer plugin-settings editor during this experimental,
 INI-only test; it does not yet expose these two new audio options.
 
+Firmware 0.3.24 additionally supports bounded runtime snapshots in this log and
+read-only WLAN retrieval at `http://<Onju-IP>:8080/diagnostics.json` after USB
+failure. Enabled by the first runtime request with `report=1`; keep Onju powered
+after failure because the trace is RAM-only. The endpoint is unauthenticated,
+diagnostic-only and intended for a trusted test LAN. Do not forward its port.
+It is refused if internal ESP memory is low; `HTTP=101` reports ESP_ERR_NO_MEM.
+See `streammaster/SPDIF.md` in the repository (or `SPDIF.md` in the firmware
+release). Logs also include `PSP PCM stack_free`, `kernel_free` and `largest`.
+
 The updated resident bridge no longer reserves the 144 KiB download pipeline
 in games. PSPStreamer still obtains that pool when taking USB ownership,
 before decoder startup; the standalone bridge retains its existing layout.

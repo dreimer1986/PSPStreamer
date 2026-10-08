@@ -1,5 +1,17 @@
 # StreamMaster firmware changelog
 
+## 0.3.24 — USB-independent runtime diagnostics
+
+- Add a bounded 16-event USB/audio/Bluetooth diagnostic ring and runtime
+  counters, readable over USB independently of serial-port access.
+- Add opt-in, read-only `http://<StreamMaster-IP>:8080/diagnostics.json` for
+  retrieving diagnostics after USB failure. No credentials or media are exposed.
+- Record audio DMA callback gaps, underruns, command processing delays, reset
+  reason and internal heap/fragmentation. No flash writes or per-sample logging.
+- Guard diagnostic HTTP startup against low internal memory; USB snapshots
+  remain available if the optional HTTP server cannot be started.
+
+
 ## 0.3.23 — Reuse optical DMA resources across media changes
 
 - Retain the fixed 6 KiB DMA buffers and 128 KiB PSRAM ring after the first

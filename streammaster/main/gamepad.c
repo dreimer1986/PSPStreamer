@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * External USB HCI controller. Never uses the S3's BLE-only radio. */
 #include "bridge.h"
+#include "trace.h"
 #include "gamepad.h"
 #include "gamepad_options.h"
 #include "usb_gamepad.h"
@@ -181,6 +182,7 @@ static void neutral(void) {
 }
 static void state(unsigned s,int err) {
     portENTER_CRITICAL(&guard);status.state=s;status.error=err;portEXIT_CRITICAL(&guard);
+    sm_trace_event(SM_TRACE_BT_STATE,s,(unsigned)err);
 }
 static void publish_input(const SmHidPad *input) {
     portENTER_CRITICAL(&guard);

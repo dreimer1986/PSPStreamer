@@ -2,6 +2,7 @@
 #include "bridge.h"
 #include "board.h"
 #include "spdif.h"
+#include "trace.h"
 #include "../profiles.h"
 #include "esp_app_desc.h"
 #include "esp_heap_caps.h"
@@ -175,6 +176,7 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     memset(out,0,sizeof(*out));out->op=r->op;out->sequence=r->sequence;out->flags=SM_REPLY;requests++;
     if(!sm_valid(r) || (r->flags && r->flags!=SM_COMPACT)){out->result=SM_INVALID;goto done;}
     switch(r->op) {
+    case SM_DIAGNOSTICS:out->result=sm_trace_command_read(r,out);break;
     case SM_AUDIO_OPEN:case SM_AUDIO_WRITE:case SM_AUDIO_STATUS:case SM_AUDIO_PAUSE:case SM_AUDIO_CLOSE:case SM_AUDIO_DIAG:
         out->result=sm_audio_command(r,out);break;
     case SM_CAPABILITIES: {
