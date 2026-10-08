@@ -108,9 +108,29 @@ The PSP was no longer mounted for a repeat binary comparison; previous verified
 runtime hashes and signature checks remain unchanged. Actual early startup and
 POPS sound require a new hardware run.
 
+## Separate manager installation from callback validation
+
+The next hardware run rejected the combined module-layout check with -20
+(`FFFFFFEC`) at 3.080916 seconds, before attempting the instruction patch.
+The old message did not identify the failed condition; it does not establish
+which module field was different or incomplete. Do not interpret this as an
+ME cache failure or as evidence that a live patch is necessary.
+
+Install the signature-checked manager hook independently of the POPS user module.
+Validate that module and its callback at the actual setup call, when they are
+needed. Use the manager supplied by the start handler when available. A rejected
+early layout can be reconsidered at the next relevant module-start event;
+there is no polling loop, relaxed signature check or forced ME restart.
+The consumer remains attached while that pre-start retry is pending.
+
+Deferred loader diagnostics now include a layout rejection bitmask, firmware,
+all checked manager layout values and the callback module address/size. This
+separates unsupported layouts from a setup call that was never reached. Actual
+ME sample production and audible output still require hardware verification.
+
 ## Next hardware step
 
-Use `audio_probe=1`, `audio_mirror=0`, `report=1`. Start one PS1 title for about
-30 seconds, return to XMB, provide its `audio-probe-<title>.log` and
-`audio-probe-<title>-text.bin`. In v3 the latter is the POPS manager, explicitly
-identified in the log. GAME/VSH output and ESP firmware remain untouched.
+Replace both PRXs, retain `audio_probe=0`, `audio_mirror=1`, `report=1`, `pops=1`.
+Restart the PSP and run one PS1 title for about 30 seconds. Return to XMB and
+provide `loader.log.previous` and `last.log.previous` (plus current logs).
+GAME/VSH output and ESP firmware remain unchanged.

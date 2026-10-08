@@ -22,14 +22,16 @@ static void pops_audio_boot_log(const char *text,int rc) {
 #include "pops_audio_bootstrap.h"
 static STMOD_HANDLER early_previous;
 static int early_handler_set,early_handler_pinned;
-static void early_try(void) {
-    if(!early_requested || pops_audio_setup || early_status<0)return;
-    if(!sceKernelFindModuleByName("pops") || !sceKernelFindModuleByName("scePops_Manager"))return;
-    early_time=sceKernelGetSystemTimeWide();early_status=pops_audio_install();
+static void early_try(SceModule *mod) {
+    if(!early_requested || pops_audio_setup || (early_status<0 && early_status!=-20))return;
+    SceModule *m=mod && !strcmp(mod->modname,"scePops_Manager")?mod:
+        sceKernelFindModuleByName("scePops_Manager");
+    if(!m)return;
+    early_time=sceKernelGetSystemTimeWide();early_status=pops_audio_install(m);
 }
 static int early_module_start(SceModule *mod) {
     int rc=early_previous?early_previous(mod):0;
-    if(!strcmp(mod->modname,"pops") || !strcmp(mod->modname,"scePops_Manager"))early_try();
+    if(!strcmp(mod->modname,"pops") || !strcmp(mod->modname,"scePops_Manager"))early_try(mod);
     return rc;
 }
 static void early_detach(void) {
@@ -51,7 +53,10 @@ int consolizerAudioService(unsigned op,PopsAudioLink *link) {
         early_client=1;
     } else if(op==2)early_client=0;
     link->shared=pops_audio_shared;link->published=pops_audio_published;
-    link->status=early_status;sceKernelCpuResumeIntr(intr);return 0;
+    /* A pre-start layout can still be incomplete. Keep the consumer attached
+     * while the chained handler waits for another module-start event. */
+    link->status=early_status==-20 && early_handler_set && !early_stopping?0:early_status;
+    sceKernelCpuResumeIntr(intr);return 0;
 }
 static void early_configure(const char *config) {
     if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_POPS)return;
@@ -84,7 +89,7 @@ static void early_configure(const char *config) {
         sceKernelInitFileName(),keys,7,values)<0 || !values[0])return;
     early_requested=1;early_status=0;
     early_previous=sctrlHENSetStartModuleHandler(early_module_start);early_handler_set=1;
-    early_try();
+    early_try(NULL);
 }
 static void report(const char *what,int rc) {
     if(!report_enabled)return;
@@ -112,8 +117,17 @@ static int start_worker(SceSize size,void *args) {
     if(early_requested) {
         report("early POPS install status",early_status);
         report("early POPS install time us",(int)early_time);
+        report("POPS layout rejection bits",pops_audio_layout);
+        report("POPS firmware",pops_audio_fw);
+        const char *fields[]={"manager text","manager text size","manager segments",
+            "manager data size","manager BSS size","manager segment 0",
+            "manager segment 0 size","manager segment 1","manager segment 1 size"};
+        for(unsigned i=0;i<9;i++)report(fields[i],pops_audio_manager_meta[i]);
+        report("POPS setup callback",pops_audio_callback);
+        report("POPS callback module text",pops_audio_pops_text);
+        report("POPS callback module size",pops_audio_pops_size);
         if(early_message[0])report(early_message,pops_audio_published);
-        if(pops_audio_setup || early_status<0)early_detach();
+        if(pops_audio_setup || (early_status<0 && early_status!=-20))early_detach();
     }
     int rc=0;
     if(!sceKernelFindModuleByName("sceUSB_Driver")) {

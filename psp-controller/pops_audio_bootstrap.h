@@ -11,15 +11,29 @@ static volatile uint32_t *pops_audio_setup;
 static uint32_t pops_audio_saved[2],pops_audio_jump;
 static uint32_t pops_audio_trampoline[4] __attribute__((aligned(64)));
 static volatile unsigned pops_audio_users,pops_audio_published;
-static unsigned pops_audio_base;
 static int pops_audio_pinned;
+/* Snapshots only; print later from the loader/consumer, never from ME setup. */
+static unsigned pops_audio_layout, pops_audio_callback, pops_audio_pops_text,
+    pops_audio_pops_size, pops_audio_fw;
+static unsigned pops_audio_manager_meta[9];
+
+static int pops_audio_callback_valid(unsigned callback) {
+    SceModule *p=sceKernelFindModuleByName("pops");
+    pops_audio_callback=callback;
+    pops_audio_pops_text=p?p->text_addr:0;
+    pops_audio_pops_size=p?p->text_size:0;
+    return p && p->text_size==1048036 && p->text_addr>=0x08800000U &&
+        p->text_addr<=0x09e00000U && callback==p->text_addr &&
+        p->nsegment<=4 && p->nsegment>0 && p->segmentaddr[0]==p->text_addr &&
+        p->segmentsize[0]>=p->text_size;
+}
 
 static int pops_audio_setup_hook(unsigned callback,unsigned stack) {
     pops_audio_users++;
     unsigned chosen=callback;
     /* Accept only the verified loaded POPS module's text, never an arbitrary
      * caller-supplied address. First successful publication is immutable. */
-    if(!pops_audio_published && callback==pops_audio_base && pops_audio_shared) {
+    if(!pops_audio_published && pops_audio_shared && pops_audio_callback_valid(callback)) {
         pops_audio_shared->original=callback;
         pops_audio_code((uint32_t *)pops_audio_payload,callback,(uintptr_t)pops_audio_shared);
         sceKernelDcacheWritebackInvalidateAll();sceKernelIcacheInvalidateAll();
@@ -34,14 +48,23 @@ static int pops_audio_setup_hook(unsigned callback,unsigned stack) {
     pops_audio_users--;
     return rc;
 }
-static int pops_audio_install(void) {
-    SceModule *m=sceKernelFindModuleByName("scePops_Manager");
-    SceModule *p=sceKernelFindModuleByName("pops");
-    if(sceKernelDevkitVersion()!=0x06060110 || !m || !p || m->text_size!=18832 ||
-       m->nsegment!=2 || m->data_size!=68 || m->bss_size!=920 || m->segmentsize[1]<988 ||
-       !audio_probe_text_valid(m->text_addr,m->text_size,m->segmentaddr,m->segmentsize,m->nsegment) ||
-       m->segmentaddr[1]!=m->text_addr+18832 ||
-       p->text_size!=1048036 || p->text_addr<0x08800000U || p->text_addr>0x09e00000U)return -20;
+static int pops_audio_install(SceModule *m) {
+    pops_audio_fw=sceKernelDevkitVersion();
+    pops_audio_layout=0;
+    if(pops_audio_fw!=0x06060110)pops_audio_layout|=1;
+    if(!m){pops_audio_layout|=2;return -20;}
+    unsigned meta[]={m->text_addr,m->text_size,m->nsegment,m->data_size,m->bss_size,
+        m->segmentaddr[0],m->segmentsize[0],m->segmentaddr[1],m->segmentsize[1]};
+    memcpy(pops_audio_manager_meta,meta,sizeof(meta));
+    if(m->text_size!=18832)pops_audio_layout|=4;
+    if(m->nsegment!=2)pops_audio_layout|=8;
+    if(m->data_size!=68)pops_audio_layout|=16;
+    if(m->bss_size!=920)pops_audio_layout|=32;
+    if(m->segmentsize[1]<988)pops_audio_layout|=64;
+    if(!audio_probe_text_valid(m->text_addr,m->text_size,m->segmentaddr,m->segmentsize,m->nsegment))
+        pops_audio_layout|=128;
+    if(m->segmentaddr[1]!=m->text_addr+18832)pops_audio_layout|=256;
+    if(pops_audio_layout)return -20;
     const uint32_t *code=(const uint32_t *)m->text_addr;
     unsigned state=((code[0x2fc8/4]&65535U)<<16)+(int16_t)code[0x2fcc/4];
     if(state!=m->segmentaddr[1]+0x2cc ||
@@ -65,7 +88,6 @@ static int pops_audio_install(void) {
     memset(pops_audio_payload,0,192+sizeof(PopsAudioShared));
     sceKernelDcacheWritebackInvalidateAll();
     pops_audio_shared=(void *)(((uintptr_t)pops_audio_payload+192)|0xa0000000U);
-    pops_audio_base=p->text_addr;
     pops_audio_setup=(void *)(m->text_addr+0x3490);
     pops_audio_saved[0]=pops_audio_setup[0];pops_audio_saved[1]=pops_audio_setup[1];
     pops_audio_trampoline[0]=pops_audio_saved[0];pops_audio_trampoline[1]=pops_audio_saved[1];

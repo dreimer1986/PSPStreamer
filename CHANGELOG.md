@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: separate early POPS manager-hook installation from user-module
+  validation at callback setup; retry incomplete layouts on module-start events
+  and record the exact rejection fields. No live ME reset or GAME/VSH changes;
+  audible POPS output still requires hardware verification.
+
 - PSP Consolizer: move POPS capture preparation ahead of delayed USB startup,
   with a chained pre-start hook for later-loaded POPS modules and a versioned,
   reference-held producer/consumer handoff. Both PRX files must be updated.
