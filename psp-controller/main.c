@@ -96,6 +96,10 @@ static void report(const char *what,int rc) {
     char line[120];int n=snprintf(line,sizeof(line),"%s: %08X\n",what,(unsigned)rc);
     int fd=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/loader.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(fd>=0){sceIoWrite(fd,line,n);sceIoClose(fd);}
+    if(sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) {
+        fd=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/loader-pops.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+        if(fd>=0){sceIoWrite(fd,line,n);sceIoClose(fd);}
+    }
 }
 static int load_start(const char *path) {
     int m=sceKernelLoadModule(path,0,NULL),status=0;
@@ -106,6 +110,15 @@ static int load_start(const char *path) {
 }
 static int start_worker(SceSize size,void *args) {
     (void)size;(void)args;sceKernelDelayThread(2000000);
+    /* Keep the last PS1 run even if a file manager starts before USB mode. */
+    if(report_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) {
+        const char *pops_logs[]={"ms0:/SEPLUGINS/PSPConsolizer/loader-pops.log",
+            "ms0:/SEPLUGINS/PSPConsolizer/last-pops.log"};
+        for(unsigned i=0;i<2;i++) {
+            int f=sceIoOpen(pops_logs[i],PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
+            if(f>=0)sceIoClose(f);
+        }
+    }
     const char *logs[]={"ms0:/SEPLUGINS/PSPConsolizer/loader.log","ms0:/SEPLUGINS/PSPConsolizer/last.log"};
     if(report_enabled)for(unsigned i=0;i<2;i++){
         char previous[128];snprintf(previous,sizeof(previous),"%s.previous",logs[i]);

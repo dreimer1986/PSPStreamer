@@ -716,51 +716,6 @@ static int wait_for_network_restore(void) {
     return result;
 }
 
-static int http_get_wait(const char *path, char *buffer, int buffer_size, int idle_timeout_ms) {
-    struct sockaddr_in server;
-    char request[2048], *body;
-    int socket_fd, received = 0, read_size, content_length = -1, header_length = -1, idle_ms = 0;
-    socket_fd = sceNetInetSocket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) return socket_fd;
-    if (prepare_server(&server) < 0) { connection_close(socket_fd); return -1004; }
-    if (connection_connect(socket_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
-        int error = sceNetInetGetErrno();
-        connection_close(socket_fd);
-        return error ? -error : -1001;
-    }
-    snprintf(request, sizeof(request), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n%s\r\n", path, server_host, server_auth_header);
-    if ((int)connection_send(socket_fd, request, strlen(request), 0) < 0) { connection_close(socket_fd); return -1002; }
-    while (received < buffer_size - 1) {
-        read_size = stream_recv(socket_fd, buffer + received, buffer_size - 1 - received, 250);
-        if (read_size == -2) {
-            idle_ms += 250;
-            if (idle_ms < idle_timeout_ms) continue;
-            connection_close(socket_fd);
-            return -1005;
-        }
-        if (read_size <= 0) break;
-        idle_ms = 0;
-        received += read_size;
-        buffer[received] = '\0';
-        /* The server supplies Content-Length for library/metadata replies.
-         * Do not wait for TCP close: on a flaky access point that close can
-         * arrive much later than the complete JSON response. */
-        if (header_length < 0 && (body = strstr(buffer, "\r\n\r\n"))) {
-            char *length_header = strstr(buffer, "Content-Length:");
-            header_length = (int)(body + 4 - buffer);
-            if (length_header) content_length = atoi(length_header + 15);
-        }
-        if (header_length >= 0 && content_length >= 0 &&
-            received >= header_length + content_length) break;
-    }
-    connection_close(socket_fd);
-    buffer[received] = '\0';
-    body = strstr(buffer, "\r\n\r\n");
-    if (!body || strncmp(buffer, "HTTP/1.", 7) || !strstr(buffer, " 200 ")) return -1003;
-    body += 4;
-    memmove(buffer, body, (size_t)(buffer + received - body + 1));
-    return (int)strlen(buffer);
-}
 
 #include "remote_http.h"
 #include "remote_input_impl.h"
@@ -3234,7 +3189,11 @@ static int remote_next_media(char *media_id, size_t capacity, int is_audio, int 
     /* A new Stop/Play during the transition takes precedence over autoplay.
      * Leave it for the normal command consumer; do not create commands here. */
     snprintf(path, sizeof(path), "/api/remote/next?after=%d", remote_control_sequence);
-    result = http_get_wait(path, response, sizeof(response), 1000);
+    /* This final command check is part of a media transition, not a realtime
+     * poll. Keep cancellation/UI alive while USB/TLS/server finish the reply.
+     * Never treat a failed check as idle (a pending Stop must win). */
+    result = media_request_get(path, response, sizeof(response), 15000, 0);
+    recovery_log("next media command check",result,media_request_report.status,media_request_report.stage);
     if (result < 0) return result;
     if (!json_value(response, "action", kind, sizeof(kind)) || strcmp(kind, "idle")) return 0;
     strcpy(media_id, next_id);

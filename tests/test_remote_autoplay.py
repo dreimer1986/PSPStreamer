@@ -8,6 +8,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteAutoplayTests(unittest.TestCase):
+    def test_successor_command_check_uses_cancellable_preparation(self):
+        source = (ROOT / 'psp-client/main.c').read_text()
+        start = source.index('static int remote_next_media(')
+        end = source.index('\n}', start)
+        transition = source[start:end]
+        check = transition[transition.index('/api/remote/next?after='):]
+        self.assertIn('media_request_get(path, response, sizeof(response), 15000, 0)', check)
+        self.assertNotIn('http_get_wait', check)
+        self.assertIn('recovery_log("next media command check"', check)
+        self.assertLess(check.index('if (result < 0) return result;'),
+                        check.index('strcpy(media_id, next_id);'))
+
     def test_seek_is_consumed_before_eof_stop_or_error(self):
         source = (ROOT / 'psp-client/main.c').read_text()
         start = source.index('                do {\n                    result = remote_is_audio ?')

@@ -462,6 +462,10 @@ plugin/common bridge are GPL-2.0-or-later. Sony API semantics were checked again
 The [controller emulation example](https://github.com/crozone/PSP-EmulatedControllerTest)
 was reviewed, not copied. Runtime API lookup failures disable injection safely.
 
+With `report=1`, `loader-pops.log` and `last-pops.log` additionally retain the
+latest PS1 launch, independently of the general log rotation. Returning to VSH
+or starting a file manager does not replace these files; the next POPS run does.
+
 ## Experimental POPS DualShock / rumble output
 
 Default: `pops_rumble=0`. To test, update `PSPConsolizerUSB.prx`, flash the

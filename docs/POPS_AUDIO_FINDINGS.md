@@ -134,3 +134,10 @@ Replace both PRXs, retain `audio_probe=0`, `audio_mirror=1`, `report=1`, `pops=1
 Restart the PSP and run one PS1 title for about 30 seconds. Return to XMB and
 provide `loader.log.previous` and `last.log.previous` (plus current logs).
 GAME/VSH output and ESP firmware remain unchanged.
+
+The following report's two rotating slots instead contained UCJS10041 (GAME)
+and VSH; neither contained the POPS attempt. The installed loader hash matched
+the new build. Dedicated `loader-pops.log` and `last-pops.log` now retain the
+latest PS1 run across subsequent applications. Please provide these two files.
+They are replaced only by another POPS launch with reporting enabled. No new
+audio-hook change is justified by the overwritten logs alone.

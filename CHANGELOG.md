@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- PSP remote autoplay: use the cancellable preparation worker for the final
+  Stop/Play check instead of a one-second blocking request; log that phase
+  separately. Keep pending commands authoritative and stream/subtitle budgets
+  unchanged. Remove the now-unused legacy HTTP helper.
+- PSP Consolizer: preserve the latest PS1 diagnostic run in `loader-pops.log`
+  and `last-pops.log`, so a later file manager or VSH launch cannot erase it.
+  Diagnostic change only; POPS optical audio remains under investigation.
+
 - PSP Consolizer: separate early POPS manager-hook installation from user-module
   validation at callback setup; retry incomplete layouts on module-start events
   and record the exact rejection fields. No live ME reset or GAME/VSH changes;

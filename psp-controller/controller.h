@@ -37,6 +37,10 @@ static void controller_log(const char *text,int rc) {
     if(n>=(int)sizeof(line))n=sizeof(line)-1;
     int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/last.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
+    if(sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) {
+        f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/last-pops.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+        if(f>=0){sceIoWrite(f,line,n);sceIoClose(f);}
+    }
 }
 #include "tvout.h"
 #include "pops_rumble.h"
