@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: accept the observed 6.60 API version for the verified POPS
+  capture path, alongside 6.61. Persistent logs identified the version filter
+  as the sole layout rejection. All machine-code and callback checks remain;
+  audible POPS output still awaits hardware verification.
+
 - PSP remote autoplay: use the cancellable preparation worker for the final
   Stop/Play check instead of a one-second blocking request; log that phase
   separately. Keep pending commands authoritative and stream/subtitle budgets

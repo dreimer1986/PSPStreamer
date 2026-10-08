@@ -4,6 +4,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #define POPS_AUDIO_RING 4096U
+/* Version is only a preliminary filter. Installation still verifies every
+ * required layout, relocated instruction signature and callback address. */
+static inline int pops_audio_firmware_supported(uint32_t version) {
+    return version==0x06060010U || version==0x06060110U;
+}
 typedef struct {
     uint32_t original;
     volatile uint32_t enabled,wr,rd,dropped,calls;

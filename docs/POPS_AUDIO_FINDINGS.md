@@ -141,3 +141,14 @@ the new build. Dedicated `loader-pops.log` and `last-pops.log` now retain the
 latest PS1 run across subsequent applications. Please provide these two files.
 They are replaced only by another POPS launch with reporting enabled. No new
 audio-hook change is justified by the overwritten logs alone.
+
+## Firmware filter identified by persistent logs
+
+The retained POPS log reports `POPS layout rejection bits: 00000001` and
+`POPS firmware: 06060010`. All manager layout fields match; the sole layout
+rejection was the overly narrow 6.61 version filter. This is the reported API
+version, not proof of the physical firmware installation or why it reports 6.60.
+Accept 6.60 as well as 6.61, retaining all instruction hashes, relocation checks,
+initialization-state checks and runtime callback validation. The static binary
+reference used in this investigation was already 6.60. Other API versions remain
+rejected. Actual sample production is still pending a hardware run.

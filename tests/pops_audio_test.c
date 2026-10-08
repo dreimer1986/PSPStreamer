@@ -48,6 +48,10 @@ static void run(uint32_t result) {
     assert(0);
 }
 int main(int argc,char **argv) {
+    assert(pops_audio_firmware_supported(0x06060010));
+    assert(pops_audio_firmware_supported(0x06060110));
+    assert(!pops_audio_firmware_supported(0x06050010));
+    assert(!pops_audio_firmware_supported(0));
     PopsAudioShared *s=(void *)ctx;
     run(0x80007fff);assert(s->wr==0 && s->calls==1);
     s->enabled=1;run(0x1234abcd);assert(s->wr==1 && s->pcm[0]==0x1234abcd);

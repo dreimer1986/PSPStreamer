@@ -51,7 +51,7 @@ static int pops_audio_setup_hook(unsigned callback,unsigned stack) {
 static int pops_audio_install(SceModule *m) {
     pops_audio_fw=sceKernelDevkitVersion();
     pops_audio_layout=0;
-    if(pops_audio_fw!=0x06060110)pops_audio_layout|=1;
+    if(!pops_audio_firmware_supported(pops_audio_fw))pops_audio_layout|=1;
     if(!m){pops_audio_layout|=2;return -20;}
     unsigned meta[]={m->text_addr,m->text_size,m->nsegment,m->data_size,m->bss_size,
         m->segmentaddr[0],m->segmentsize[0],m->segmentaddr[1],m->segmentsize[1]};
