@@ -6,6 +6,9 @@
 #include <pspusb.h>
 #include <pspusbbus.h>
 #include <pspiofilemgr_kernel.h>
+#ifdef SM_CONTROLLER_PLUGIN
+#include <pspsysmem_kernel.h>
+#endif
 #include <string.h>
 #include "../../streammaster/protocol.h"
 #include "../../streammaster/pad_metadata.h"
@@ -57,8 +60,7 @@ static int rumble_done(struct UsbdDeviceReq *r,int a,int b) {
     (void)r;(void)a;(void)b;rumble_pending=0;return 0;
 }
 static int exchange_active,exchange_compact;
-static SmFrame bulk_send[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
-static SmBulkFrame bulk_recv[SM_BULK_MAX_DEPTH] __attribute__((aligned(64)));
+#include "bulk_storage.h"
 static struct UsbdDeviceReq bulk_send_req[SM_BULK_MAX_DEPTH],bulk_recv_req[SM_BULK_MAX_DEPTH];
 static volatile unsigned bulk_pending;
 static int bulk_active,bulk_count=2;
@@ -169,6 +171,7 @@ static int shutdown_usb(void) {
     for(int i=0;i<100 && (send_pending||recv_pending||bulk_pending||rumble_pending);i++)sceKernelDelayThread(1000);
     if(send_pending || recv_pending || bulk_pending || rumble_pending){poisoned=1;return SM_BUSY;}
     if(started){sceUsbStop(DRIVER,0,NULL);sm_bus_stop();started=0;}
+    bulk_storage_release();
     memset(&send_frame,0,sizeof(send_frame));memset(&recv_frame,0,sizeof(recv_frame));
     attached=0;poisoned=0;exchange_active=bulk_active=0;return 0;
 }
@@ -208,15 +211,20 @@ static int exchange_finish(void *out) {
 static int bulk_begin(const SmFrame *in) {
     if(!started || !attached)return SM_OFFLINE;
     if(poisoned || exchange_active || bulk_active || bulk_pending || send_pending || recv_pending)return SM_BUSY;
-    memcpy(&bulk_send[0],in,32+sizeof(SmSocketRequest));
-    if(bulk_send[0].length!=sizeof(SmSocketRequest) || (bulk_send[0].op!=SM_SOCKET_READ_BULK && bulk_send[0].op!=SM_SOCKET_READ_BULK_EXT) ||
-       bulk_send[0].flags || !sm_valid(&bulk_send[0]))return SM_INVALID;
-    int extended=bulk_send[0].op==SM_SOCKET_READ_BULK_EXT;
-    bulk_count=extended?bulk_send[0].result:2;
-    SmSocketRequest request;memcpy(&request,bulk_send[0].payload,sizeof(request));
+    /* The ordinary exchange scratch is idle under this same lock. Snapshot
+     * the tiny request before validating; do not reread a mutable user buffer
+     * after allocation, and do not put a 4 KiB frame on a kernel stack. */
+    memcpy(&send_frame,in,32+sizeof(SmSocketRequest));in=&send_frame;
+    if(in->length!=sizeof(SmSocketRequest) || (in->op!=SM_SOCKET_READ_BULK && in->op!=SM_SOCKET_READ_BULK_EXT) ||
+       in->flags || !sm_valid(in))return SM_INVALID;
+    int extended=in->op==SM_SOCKET_READ_BULK_EXT;
+    bulk_count=extended?in->result:2;
+    SmSocketRequest request;memcpy(&request,in->payload,sizeof(request));
     if((bulk_count!=1 && bulk_count!=2 && bulk_count!=4) || !request.length ||
        request.length>(extended?SM_BULK_MAX_FRAME_SIZE-32:SM_BULK_PAYLOAD_SIZE) ||
        request.length*bulk_count>SM_MAX_GROUP_PAYLOAD)return SM_INVALID;
+    if(bulk_storage_prepare()<0)return SM_IO;
+    memcpy(&bulk_send[0],in,32+sizeof(SmSocketRequest));
     bulk_send[0].result=0;
     for(int i=1;i<bulk_count;i++) {
         memcpy(&bulk_send[i],&bulk_send[0],32+sizeof(SmSocketRequest));bulk_send[i].sequence+=i;
@@ -337,10 +345,12 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
     if(cmd==SM_DEV_READ_BEGIN && (inlen!=SM_FRAME_SIZE || outlen || !user_buffer(in,inlen)))return SM_INVALID;
     if(cmd==SM_DEV_READ_FINISH && (inlen || outlen!=SM_FRAME_SIZE || !user_buffer(out,outlen)))return SM_INVALID;
     if(cmd==SM_DEV_BULK_BEGIN && (inlen!=SM_FRAME_SIZE || outlen || !user_buffer(in,inlen)))return SM_INVALID;
-    if(cmd==SM_DEV_BULK_FINISH && (inlen ||
-       outlen!=(int)(bulk_send[0].op==SM_SOCKET_READ_BULK_EXT?sizeof(SmBulkResult):SM_LEGACY_RESULT_SIZE) || !user_buffer(out,outlen)))return SM_INVALID;
+    if(cmd==SM_DEV_BULK_FINISH && (inlen || !user_buffer(out,outlen)))return SM_INVALID;
     SceUInt timeout=100000;int rc=sceKernelWaitSema(lock_id,1,&timeout);if(rc<0)return SM_BUSY;
     if(cmd==SM_DEV_START) {
+        /* Reserve the download pool only when PSPStreamer takes over USB,
+         * before media decoder startup. Game controller/PCM needs none. */
+        if(app_owner && bulk_storage_prepare()<0){sceKernelSignalSema(lock_id,1);return SM_IO;}
         /* XMB startup can stop/deactivate USB after our initial activation.
          * A cached 'started' flag alone is not proof that the driver is live.
          * Never rebuild while requests still own DMA buffers. */
@@ -364,7 +374,12 @@ static int devctl(PspIoDrvFileArg *a,const char *name,unsigned cmd,void *in,int 
         }
     } else if(cmd==SM_DEV_STOP)rc=shutdown_usb();
     else if(cmd==SM_DEV_BULK_BEGIN)rc=bulk_begin(in);
-    else if(cmd==SM_DEV_BULK_FINISH)rc=bulk_finish(out);
+    else if(cmd==SM_DEV_BULK_FINISH) {
+        /* The resident pool can disappear on STOP. Inspect it only while
+         * holding the same lock as allocation/release. */
+        if(!bulk_active || outlen!=(int)(bulk_send[0].op==SM_SOCKET_READ_BULK_EXT?sizeof(SmBulkResult):SM_LEGACY_RESULT_SIZE))rc=SM_INVALID;
+        else rc=bulk_finish(out);
+    }
     else if(cmd==SM_DEV_READ_BEGIN) {
         /* Only socket reads may be submitted speculatively, exactly once. Never
          * retain a user pointer: begin copies into the static DMA buffer. */

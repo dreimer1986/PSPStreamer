@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: allocate the 144 KiB download pipeline only when needed,
+  reserving it when PSPStreamer takes USB ownership and releasing it after
+  USB shutdown has drained callbacks. Games retain controller/PCM support
+  without this unused kernel-memory reservation. Addresses observed memory
+  pressure; Soul Calibur save-dialog freeze fix awaits hardware confirmation.
+
 - PSP Consolizer: experimental normal-mixer stereo PCM mirror to Onju S/PDIF,
   enabled with `audio_mirror=1` (default off). Signature-guarded 6.61 game path,
   bounded capture ring and separate USB worker; original PSP audio/timing

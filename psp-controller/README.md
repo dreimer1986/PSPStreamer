@@ -11,7 +11,8 @@ is needed for this change, and input/rumble behavior is unchanged.
 **Experimental game PCM → S/PDIF (2026-10-08):** Soul Calibur `ULES01298`
 used normal mixer channels 3/4/6 in the 120-second hardware probe (2,027
 observations); SRC/Output2 was never reserved in that trace. A first PCM mirror
-is now available, **not yet hardware-validated**. It requires the verified 6.61
+is now available. Optical game sound is confirmed, but the save-dialog freeze
+reported in the first build still requires a hardware retest. It requires the verified 6.61
 audio-driver layout and Onju optical firmware 0.3.23 or newer. No firmware or
 PSPStreamer update is needed if that optical firmware is already installed.
 
@@ -32,6 +33,15 @@ from the plugin directory. Logs include accepted/played frame counts, buffer
 levels, underruns and capture faults. `audio_mirror=0` restores the old behavior.
 Do not save the PSPStreamer plugin-settings editor during this experimental,
 INI-only test; it does not yet expose these two new audio options.
+
+The updated resident bridge no longer reserves the 144 KiB download pipeline
+in games. PSPStreamer still obtains that pool when taking USB ownership,
+before decoder startup; the standalone bridge retains its existing layout.
+Release waits for outstanding USB callbacks. The first game trace had only
+about 80 KiB free kernel memory (largest block about 50 KiB) after OSD startup.
+This removes concrete memory pressure, but does not yet prove the cause of the
+save-dialog hang. Retest loading a save and leaving through the PS menu after
+a clean restart of both PSP and Onju. No audio-hook timing changes were made.
 
 The implementation validates the whole relevant mixer function using a
 relocation-normalized signature, the module/segment layout and the flush stub.
