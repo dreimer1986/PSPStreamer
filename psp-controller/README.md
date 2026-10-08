@@ -8,6 +8,35 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+**System-audio investigation (2026-10-08):** an opt-in, read-only probe prepares
+the first PCM-capture prototype. This build does **not** send game audio to
+S/PDIF yet. Add `audio_probe=1` and set `report=1` in `PSPConsolizer.ini`, then
+restart a game. Do not save plugin settings in PSPStreamer during this test:
+this experimental option is INI-only, not yet part of its settings editor.
+
+Play Soul Calibur (menu and combat) for roughly 60–120 seconds. Optionally also
+run a different game or a POPS title. The plugin queries queue occupancy every
+50 ms or later and writes cumulative summaries every five seconds, stopping
+after 120 seconds. It uses the existing service thread, not an audio callback.
+Current input, USB, optical-streaming firmware, TV and clock behavior is unchanged.
+
+Return the `audio-probe-<title>.log` and `audio-probe-<title>-text.bin` files from
+`ms0:/SEPLUGINS/PSPConsolizer/`. XMB uses its own `VSH` name. Each title retains
+one previous pair. The binary is a bounded copy of the loaded audio driver's
+validated executable text (at most 128 KiB), **not** a recording of game audio
+or a dump of general RAM. Treat it as a local diagnostic firmware extract;
+do not include it in releases. The log includes load addresses, exports and
+audio thread entry points needed to validate a later hook against this exact
+driver, rather than assuming the older uOFW offsets match.
+
+Normal channel occupancy and SRC/Output2 occupancy are tracked independently.
+`src_unreserved` is normal when that route is unused; no observations on a
+channel do not prove it is never used. Missing exports or an invalid module
+range are reported without patching anything. No audio channels are reserved,
+no mixer/DMA settings are changed, and no additional USB transfers are made.
+PSPStreamer ownership disables this probe. `report=0` disables it completely;
+`audio_probe=0` (default) leaves ordinary Consolizer reports available.
+
 **POPS rumble output test (2026-10-02):** real motor commands were captured
 in Need for Speed High Stakes (`SLUS00826`). The updated `PSPConsolizerUSB.prx`
 and StreamMaster **0.3.17-bt-qio80-iram** now forward them to a compatible

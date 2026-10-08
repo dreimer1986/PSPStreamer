@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: opt-in read-only system-audio probe (`audio_probe=1`, also
+  requiring `report=1`). Capture the running audio driver's text/signature
+  evidence and normal/SRC queue activity per title. No audio hooks or game
+  S/PDIF output yet; a hardware trace is required before the capture stage.
+
 - StreamMaster 0.3.23: retain the bounded optical DMA/ring resources across
   media changes to avoid repeated ESP_ERR_NO_MEM startup failures. Stop still
   disables output; reopen resets sessions, queued data and clock configuration.
