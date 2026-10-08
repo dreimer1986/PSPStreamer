@@ -29,10 +29,13 @@ static void audio_probe_line(const char *line) {
     int rc=audio_probe_write_all(f,line,strlen(line));sceIoClose(f);
     if(rc<0){audio_probe_finished=1;controller_log("audio probe log write failed",rc);}
 }
-static unsigned audio_probe_export(const char *library,unsigned nid,const char *name) {
-    unsigned ptr=(unsigned)sctrlHENFindFunction("sceAudio_Driver",library,nid);
+static unsigned audio_probe_module_export(const char *module,const char *library,unsigned nid,const char *name) {
+    unsigned ptr=(unsigned)sctrlHENFindFunction(module,library,nid);
     char line[160];snprintf(line,sizeof(line),"export %s %s nid=%08X address=%08X\n",library,name,nid,ptr);
     audio_probe_line(line);return ptr;
+}
+static unsigned audio_probe_export(const char *library,unsigned nid,const char *name) {
+    return audio_probe_module_export("sceAudio_Driver",library,nid,name);
 }
 /* Bounded metadata only: no guessing pointers, patching or reading user RAM.
  * Include every module/thread: POPS need not name its audio path "Audio". */
@@ -82,7 +85,7 @@ static void audio_probe_begin(void) {
     }
     int f=sceIoOpen(audio_probe_path,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
     if(f<0){audio_probe_finished=1;controller_log("audio probe create failed",f);return;}sceIoClose(f);
-    snprintf(line,sizeof(line),"PSPConsolizer audio probe v2 READ ONLY\nfirmware=%08X context=%d key=%s\n",
+    snprintf(line,sizeof(line),"PSPConsolizer audio probe v3 READ ONLY\nfirmware=%08X context=%d key=%s\n",
              (unsigned)sceKernelDevkitVersion(),context,key);audio_probe_line(line);
     strcpy(audio_probe_binary,binary);
     audio_probe_start=sceKernelGetSystemTimeWide();audio_probe_next=audio_probe_start;
@@ -91,7 +94,12 @@ static void audio_probe_begin(void) {
 }
 static void audio_probe_discover(void) {
     char line[256];
+    int pops_manager=0;
     SceModule *mod=sceKernelFindModuleByName("sceAudio_Driver");
+    if(!mod && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) {
+        mod=sceKernelFindModuleByName("scePops_Manager");
+        pops_manager=mod!=NULL;
+    }
     if(!mod) {
         audio_probe_line("sceAudio_Driver absent; waiting for module load.\n");return;
     }
@@ -104,14 +112,25 @@ static void audio_probe_discover(void) {
     if(!audio_probe_text_valid(mod->text_addr,mod->text_size,mod->segmentaddr,mod->segmentsize,mod->nsegment)) {
         audio_probe_line("Audio module present but text range rejected; no dump, calls or patches. Retrying.\n");return;
     }
-    unsigned normal=audio_probe_export("sceAudio_driver",0x9D77949E,"GetChannelRestLength");
-    unsigned src=audio_probe_export("sceAudio_driver",0x8A7CD9C6,"Output2GetRestSample");
+    unsigned normal=0,src=0;
+    if(pops_manager) {
+        snprintf(line,sizeof(line),"POPS manager text-only inspection gp=%08X exports=%08X/%u imports=%08X/%u\n",
+            (unsigned)mod->gp_value,(unsigned)mod->ent_top,(unsigned)mod->ent_size,
+            (unsigned)mod->stub_top,(unsigned)mod->stub_size);audio_probe_line(line);
+        audio_probe_module_export("scePops_Manager","sceMeAudio",0xDE630CD2,"ME callback setup (6.60 reference)");
+        audio_probe_module_export("scePops_Manager","sceMeAudio",0x68C55F4C,"ME run state (6.60 reference)");
+        audio_probe_module_export("scePops_Manager","sceMeAudio",0xC93C56F8,"ME clock parameter (6.60 reference)");
+        audio_probe_line("No POPS export invoked; no ME registers read or written; no PCM capture installed.\n");
+    } else {
+    normal=audio_probe_export("sceAudio_driver",0x9D77949E,"GetChannelRestLength");
+    src=audio_probe_export("sceAudio_driver",0x8A7CD9C6,"Output2GetRestSample");
     if(normal>=mod->text_addr && normal-mod->text_addr<mod->text_size && !(normal&3))audio_probe_normal=(void *)normal;
     if(src>=mod->text_addr && src-mod->text_addr<mod->text_size && !(src&3))audio_probe_src=(void *)src;
     audio_probe_export("sceAudio_driver",0x4A0FE97D,"SetFrequency");
     audio_probe_export("sceAudio_driver",0xAC81DE4F,"SRCOutputBlocking");
     audio_probe_export("sceAudio_driver",0x5CDEF9A4,"OutputBlocking");
     audio_probe_export("sceAudio_driver",0x837701CC,"SRCChReserve");
+    }
     SceUID ids[64];int count=0;
     int result=sceKernelGetThreadmanIdList(SCE_KERNEL_TMID_Thread,ids,64,&count);
     snprintf(line,sizeof(line),"thread_list rc=%08X count=%d (inspection capped at 64)\n",(unsigned)result,count);audio_probe_line(line);
@@ -137,6 +156,12 @@ static void audio_probe_discover(void) {
         sceIoClose(f);
     }
     snprintf(line,sizeof(line),"text_dump bytes=%u expected=%u fnv1a=%08X open_rc=%08X\n",bytes,(unsigned)mod->text_size,(unsigned)hash,(unsigned)f);audio_probe_line(line);
+    if(pops_manager) {
+        audio_probe_line(bytes==mod->text_size ?
+            "POPS manager code capture complete. Binary contains relocated kernel code, NOT PCM or user RAM.\n" :
+            "POPS manager code capture FAILED/INCOMPLETE; retain log and retry after checking storage.\n");
+        audio_probe_finished=1;return;
+    }
     audio_probe_line("Sampling queue occupancy for 120 s at >=50 ms intervals. Zero hits do NOT prove an unused path. No PCM output yet.\n");
     audio_probe_start=sceKernelGetSystemTimeWide();audio_probe_next=audio_probe_start;audio_probe_report=audio_probe_start+5000000ULL;
     audio_probe_module=mod->modid;audio_probe_ready=1;

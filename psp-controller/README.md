@@ -92,6 +92,12 @@ send audio or install the PCM hook by itself. Add `audio_probe=1` and set
 restart a game. Do not save plugin settings in PSPStreamer during this test:
 this experimental option is INI-only, not yet part of its settings editor.
 
+Probe v3 additionally captures the validated kernel code of `scePops_Manager`
+when POPS has no normal audio driver. For this case use `audio_mirror=0` and
+run a PS1 game for about 30 seconds. The title's `-text.bin` then contains the
+manager (identified in the log), not `sceAudio_Driver`. No ME functions are
+called or patched. See `docs/POPS_AUDIO_FINDINGS.md` for the separate ME path.
+
 For the POPS discovery test, also set `audio_mirror=0`, launch a PS1 game and
 play for four minutes. Probe v2 retries discovery for up to 120 seconds instead
 of stopping at the first missing module. Missing modules and rejected text

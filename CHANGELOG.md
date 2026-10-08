@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: trace the reference POPS Media Engine audio output path;
+  add a bounded read-only capture of the running POPS manager for runtime
+  signature verification. No unverified POPS audio hook or firmware change.
+
 - PSP Consolizer: read-only POPS audio probe v2 retries delayed audio-module
   discovery, distinguishes missing modules from rejected memory layouts, and
   records bounded module/thread inventories. The working PCM mirror and ESP
