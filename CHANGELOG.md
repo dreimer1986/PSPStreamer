@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: experimental normal-mixer stereo PCM mirror to Onju S/PDIF,
+  enabled with `audio_mirror=1` (default off). Signature-guarded 6.61 game path,
+  bounded capture ring and separate USB worker; original PSP audio/timing
+  preserved. Soul Calibur playback test pending; POPS/SRC and long-term clock
+  compensation are not yet supported. Existing StreamMaster 0.3.23 is reused.
+
 - PSP Consolizer: opt-in read-only system-audio probe (`audio_probe=1`, also
   requiring `report=1`). Capture the running audio driver's text/signature
   evidence and normal/SRC queue activity per title. No audio hooks or game

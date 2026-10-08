@@ -42,6 +42,7 @@ static void controller_log(const char *text,int rc) {
 #include "pops_rumble.h"
 #include "health_rumble_psp.h"
 #include "audio_probe.h"
+#include "audio_mirror.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -65,6 +66,7 @@ static void controller_config(void) {
         size_t len=strlen(line);while(len && (line[len-1]==' ' || line[len-1]=='\t'))line[--len]=0;
         if(!strncmp(line,"enabled=",8))controller_enabled=!strcmp(line+8,"1");
         else if(!strncmp(line,"audio_probe=",12))audio_probe_enabled=!strcmp(line+12,"1");
+        else if(!strncmp(line,"audio_mirror=",13))audio_mirror_enabled=!strcmp(line+13,"1");
         else if(!strncmp(line,"home_combo=",11))controller_home=!strcmp(line+11,"1");
         else if(!strncmp(line,"vsh=",4))controller_vsh=!strcmp(line+4,"1");
         else if(!strncmp(line,"pops=",5))controller_pops=!strcmp(line+5,"1");
@@ -111,6 +113,7 @@ static int controller_worker(SceSize size,void *args) {
     int power=controller_callback<0?controller_callback:oc_register_power_callback(controller_callback,&automatic,&last);
     if(power<0){controller_log("power callback unavailable (disabled)",power);goto done;}
     int allowed=controller_enabled && controller_context(),last_state=-1;
+    if(allowed)audio_mirror_start();
     health_load();
     pad_rumble_enabled=allowed && ((pops_rumble_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) || health_config[HR_ENABLED]);
     controller_log("Consolizer on-demand OSD: context",sceKernelInitKeyConfig());
@@ -149,6 +152,7 @@ static int controller_worker(SceSize size,void *args) {
             next_context=now+100000;
         }
         audio_probe_update(now,allowed && !controller_disabled && !controller_suspended && !in_streamer && !app_owner);
+        audio_mirror_allowed=allowed && !controller_disabled && !controller_suspended && !controller_usb_paused && !in_streamer && !app_owner;
         /* NOTE + VOLUP cannot be synthesized by our 12-button wire mask.
          * Thus only physical PSP buttons can trigger the emergency disable. */
         SceCtrlData physical={0};
@@ -247,6 +251,7 @@ static int controller_worker(SceSize size,void *args) {
     }
     scePowerUnregisterCallback(power);
 done:
+    audio_mirror_stop();
     audio_probe_stop();
     pops_rumble_stop();
     controller_clear();
@@ -267,5 +272,6 @@ static int controller_stop(void) {
         if(rc<0)return rc; /* Never unload live code or forcibly kill an owner. */
         sceKernelDeleteThread(controller_thread);controller_thread=-1;
     }
+    if(audio_mirror_pinned)return SM_BUSY;
     return pad_overlay_stop();
 }
