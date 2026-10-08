@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: move POPS capture preparation ahead of delayed USB startup,
+  with a chained pre-start hook for later-loaded POPS modules and a versioned,
+  reference-held producer/consumer handoff. Both PRX files must be updated.
+  Fixes the confirmed late-install design; hardware audio test remains pending.
+
 - PSP Consolizer: first signature-checked POPS Media Engine PCM capture test.
   Intercept initial callback setup, retain the original generator, and forward
   samples through a bounded user-memory ring into the existing optical PCM

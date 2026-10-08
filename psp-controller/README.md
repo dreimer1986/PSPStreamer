@@ -95,6 +95,12 @@ this experimental option is INI-only, not yet part of its settings editor.
 **POPS PCM capture test (2026-10-09):** use `audio_mirror=1`, `audio_probe=0`,
 `report=1`, `pops=1` and restart the PS1 title completely. The first ME producer
 implementation reuses the existing USB PCM output without changing firmware.
+Replace **both** PRX files: the small loader now prepares capture synchronously
+before its USB delay, or in a chained pre-start module callback when POPS loads
+later. The USB bridge acquires the ring via a versioned kernel-only interface;
+the loader cannot unload while that consumer holds a reference. Check
+`loader.log` for early installation time/status and `last.log` for handoff and
+sample counts. The previous late-install failure was confirmed on hardware.
 Only the verified manager layout is accepted, and only before its ME callback
 has been configured. `POPS ME already configured` means the loader arrived too
 late; this build deliberately does not reset a running emulator. Published

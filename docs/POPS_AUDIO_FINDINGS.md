@@ -85,6 +85,29 @@ Hardware test: `audio_mirror=1`, `audio_probe=0`, `report=1`, `pops=1`.
 Fully exit/restart the PS1 title, play, open/close HOME and exit. Check
 `last.log`/`last.log.previous` for setup armed, callback samples and PCM progress.
 
+## Early-loader correction
+
+Hardware reported `POPS ME already configured` at 4.721929 seconds: the bridge
+worker necessarily arrived too late. Capture installation is now owned by
+PSPConsolizer's small loader, before its two-second USB delay. It first checks
+already loaded modules synchronously and otherwise chains the existing HEN
+pre-start callback. No USB imports or transport initialization occur in that
+callback. Global/context/path/title exclusions are checked before arming.
+
+The bridge acquires a versioned `ConsolizerAudio` service reference (NID
+0xB05501FB) and consumes the existing shared ring, rather than reinstalling the
+hook. Acquire/release prevents loader unload while its interface is referenced.
+Handler removal preserves a later owner's chain; if another hook could still
+call into the loader, unload is refused rather than freeing reachable code.
+Both PRX files are required. The ME producer and its allocation size are unchanged.
+
+Builds completed before targeted host tests. Producer paths and consumer
+handoff/release/error handling pass ASan/UBSan; exports were inspected in the
+built loader. Early-config function stack: 1072 bytes; ME-setup hook: 168 bytes.
+The PSP was no longer mounted for a repeat binary comparison; previous verified
+runtime hashes and signature checks remain unchanged. Actual early startup and
+POPS sound require a new hardware run.
+
 ## Next hardware step
 
 Use `audio_probe=1`, `audio_mirror=0`, `report=1`. Start one PS1 title for about

@@ -5,8 +5,9 @@ report=1
 # Read-only system-audio investigation; also requires report=1. Separate from
 # audio_mirror below. Per-title logs/text dump, 120 seconds, default off.
 audio_probe=0
-# Experimental normal-mixer PCM mirror to Onju S/PDIF (firmware >=0.3.23).
-# Verified 6.61 normal mixer; GAME/VSH/POPS context test. No SRC/Output2.
+# PCM mirror to Onju S/PDIF (firmware >=0.3.23). GAME/VSH confirmed.
+# POPS: experimental early ME callback capture; both current PRX files required.
+# No generic SRC/Output2 support. Set audio_probe=0 for playback tests.
 audio_mirror=0
 # Start+Select held for one second sends PS/HOME in controlled games.
 home_combo=1
