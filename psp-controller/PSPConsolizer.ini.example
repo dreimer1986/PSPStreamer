@@ -2,11 +2,11 @@
 enabled=1
 # 0 disables all loader/runtime diagnostic file writes; 1 enables reports.
 report=1
-# Read-only system-audio investigation; also requires report=1. No S/PDIF
-# output or audio hooks yet. Per-title logs/text dump, 120 seconds, default off.
+# Read-only system-audio investigation; also requires report=1. Separate from
+# audio_mirror below. Per-title logs/text dump, 120 seconds, default off.
 audio_probe=0
 # Experimental normal-mixer PCM mirror to Onju S/PDIF (firmware >=0.3.23).
-# Only verified 6.61 driver in GAME context. No POPS/SRC/Output2, default off.
+# Verified 6.61 normal mixer; GAME/VSH/POPS context test. No SRC/Output2.
 audio_mirror=0
 # Start+Select held for one second sends PS/HOME in controlled games.
 home_combo=1

@@ -94,12 +94,6 @@ static struct {
     unsigned long long usb_us,wait_us,start;
 } diagnostic;
 void stm_diagnostic_enable(int enabled){diagnostic_enabled=enabled;}
-int stm_trace_snapshot(SmTrace *out) {
-    if(!selected || !diagnostic_enabled || rpc_lock<0)return 0;
-    uint32_t action=1;unsigned bytes=0;
-    int rc=stm_rpc(SM_DIAGNOSTICS,&action,sizeof(action),out,sizeof(*out),&bytes,NULL);
-    return rc==0 && bytes==sizeof(*out) && out->version==1;
-}
 int stm_diagnostic_snapshot(char *line,unsigned size,int buffers) {
     if(!selected || !diagnostic_enabled || rpc_lock<0)return 0;
     SceUInt wait=1000;

@@ -3,8 +3,6 @@
  * is connected to this pin. DMA completion, not USB acceptance, is the clock.
  */
 #include "spdif.h"
-#include "trace.h"
-#include "esp_timer.h"
 #include "board.h"
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
@@ -19,7 +17,6 @@ int sm_audio_command(const SmFrame *request,SmFrame *reply) {
     (void)request;(void)reply;return SM_INVALID;
 }
 void sm_audio_disconnect(void) {}
-void sm_trace_audio(SmTrace *out){(void)out;}
 #else
 #define RING_FRAMES 16384U
 /* A full IEC60958 status block need not fit one DMA descriptor. Keep each
@@ -40,15 +37,6 @@ static uint32_t rd,wr,rate,non_audio,session,sequence,completed,position,underru
 static unsigned frame,level,paused,disconnected,playing;
 static uint16_t bmc[256];
 static SmAudioDiag diagnostic;
-static uint32_t dma_callbacks,max_dma_gap_us,last_dma_us;
-void sm_trace_audio(SmTrace *out) {
-    portENTER_CRITICAL(&lock);
-    out->audio_session=session;out->audio_rate=rate;
-    out->audio_flags=(paused?1:0)|(disconnected?2:0)|(playing?4:0);
-    out->audio_queued=wr-rd;out->audio_completed=completed;out->audio_underruns=underruns;
-    out->dma_callbacks=dma_callbacks;out->max_dma_gap_us=max_dma_gap_us;
-    portEXIT_CRITICAL(&lock);
-}
 static void diagnose(unsigned stage,esp_err_t error) {
     diagnostic.stage=stage;diagnostic.error=error;
     diagnostic.dma_free=heap_caps_get_free_size(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
@@ -97,9 +85,6 @@ static bool sent(i2s_chan_handle_t channel,i2s_event_data_t *event,void *unused)
     if(!slot)for(unsigned i=0;i<DMA_BLOCKS;i++)if(!dma[i].buffer){slot=&dma[i];slot->buffer=event->dma_buf;break;}
     if(!slot || event->size!=BLOCK_FRAMES*16)return false;
     portENTER_CRITICAL_ISR(&lock);
-    uint32_t now=(uint32_t)esp_timer_get_time();
-    if(last_dma_us && now-last_dma_us>max_dma_gap_us)max_dma_gap_us=now-last_dma_us;
-    last_dma_us=now;dma_callbacks++;
     completed+=slot->count;
     if(slot->count){position=slot->end_pts;playing=1;}
     slot->count=0;
@@ -153,7 +138,6 @@ static int open_output(const SmAudioOpen *request) {
     for(unsigned i=0;i<256;i++)bmc[i]=encode_byte(i);
     rate=request->rate;non_audio=request->non_audio;
     rd=wr=sequence=completed=position=underruns=frame=level=playing=disconnected=0;
-    dma_callbacks=max_dma_gap_us=last_dma_us=0;
     paused=1;session++;if(!session)session++;
     i2s_chan_config_t channel=I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO,I2S_ROLE_MASTER);
     channel.dma_desc_num=DMA_BLOCKS;channel.dma_frame_num=BLOCK_FRAMES*2;
@@ -217,13 +201,12 @@ int sm_audio_command(const SmFrame *r,SmFrame *reply) {
         SmAudioOpen request;
         if(r->length!=sizeof(request))return SM_INVALID;
         memcpy(&request,r->payload,sizeof(request));result=open_output(&request);
-        sm_trace_event(SM_TRACE_AUDIO_OPEN,request.rate,(unsigned)result);
     } else {
         uint32_t id;
         if(r->length<sizeof(id))return SM_INVALID;
         memcpy(&id,r->payload,sizeof(id));
         if(!output || id!=session || disconnected)return SM_OFFLINE;
-        if(r->op==SM_AUDIO_CLOSE){sm_trace_event(SM_TRACE_AUDIO_CLOSE,session,0);stop_output();return SM_OK;}
+        if(r->op==SM_AUDIO_CLOSE){stop_output();return SM_OK;}
         if(r->op==SM_AUDIO_PAUSE) {
             SmAudioPause request;
             if(r->length!=sizeof(request))return SM_INVALID;

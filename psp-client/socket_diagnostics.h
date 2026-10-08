@@ -73,20 +73,6 @@ static void socket_snapshot_tick(void) {
         if(stm_diagnostic_snapshot(usb,sizeof(usb),0))recovery_log("USB throughput",0,0,usb);
         if(stm_diagnostic_snapshot(usb,sizeof(usb),1))recovery_log("ESP RX samples",0,0,usb);
         if(stm_diagnostic_snapshot(usb,sizeof(usb),2))recovery_log("ESP firmware",0,0,usb);
-        SmTrace trace;
-        if(stm_trace_snapshot(&trace)) {
-            snprintf(usb,sizeof(usb),"uptime_ms=%u reset=%u free=%u largest=%u USB_events=%u max_command_us=%u BT=%u audio_flags=%u queued=%u completed=%u underruns=%u dma=%u max_dma_gap_us=%u",
-                (unsigned)trace.uptime_ms,(unsigned)trace.reset_reason,(unsigned)trace.internal_free,(unsigned)trace.internal_largest,(unsigned)trace.usb_events,(unsigned)trace.max_command_us,
-                (unsigned)trace.bt_state,(unsigned)trace.audio_flags,(unsigned)trace.audio_queued,(unsigned)trace.audio_completed,(unsigned)trace.audio_underruns,(unsigned)trace.dma_callbacks,(unsigned)trace.max_dma_gap_us);
-            recovery_log("ESP runtime",0,0,usb);
-            if(trace.http_error)recovery_log("ESP diagnostic HTTP unavailable",trace.http_error,0,"USB diagnostics remain available");
-            unsigned count=trace.event_count<SM_TRACE_EVENTS?trace.event_count:SM_TRACE_EVENTS;
-            for(unsigned i=0;i<count;i++) {
-                SmTraceEvent e=trace.events[(trace.event_count-count+i)%SM_TRACE_EVENTS];
-                snprintf(usb,sizeof(usb),"ms=%u kind=%u a=%u b=%u",(unsigned)e.ms,(unsigned)e.kind,(unsigned)e.a,(unsigned)e.b);
-                recovery_log("ESP event",0,0,usb);
-            }
-        }
         SmNetDiag net;
         if(stm_network_diagnostic(&net)) {
             snprintf(usb,sizeof(usb),"wifi=%u reason=%u rssi=%d internal_free=%u sampled=%x",

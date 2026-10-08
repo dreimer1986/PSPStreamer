@@ -8,13 +8,15 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
-**Experimental game PCM → S/PDIF (2026-10-08):** Soul Calibur `ULES01298`
+**Experimental system PCM → S/PDIF (2026-10-08):** Soul Calibur `ULES01298`
 used normal mixer channels 3/4/6 in the 120-second hardware probe (2,027
 observations); SRC/Output2 was never reserved in that trace. A first PCM mirror
-is now available. Optical game sound and entering the game are confirmed;
-periodic sound gaps and delay are being corrected. It requires the verified 6.61
+is now available. The user confirmed repeated Soul Calibur restarts/gameplay
+(remaining lobby stutter), Metal Slug XX, Star Ocean and Street Fighter Alpha 3.
+VSH and POPS are now enabled for testing. It requires the verified 6.61
 audio-driver layout and Onju optical firmware 0.3.23 or newer. No firmware or
-PSPStreamer update is needed if that optical firmware is already installed.
+PSPStreamer update is needed for the mixer itself. Use firmware 0.3.25 and the
+matching PSPStreamer build to remove the temporary 0.3.24 ESP diagnostics.
 
 Replace `PSPConsolizerUSB.prx`, retain your other settings and use:
 
@@ -22,6 +24,8 @@ Replace `PSPConsolizerUSB.prx`, retain your other settings and use:
 report=1
 audio_probe=0
 audio_mirror=1
+vsh=1
+pops=1
 ```
 
 Restart Soul Calibur. Select the optical input at the receiver (expect PCM
@@ -34,14 +38,15 @@ levels, underruns and capture faults. `audio_mirror=0` restores the old behavior
 Do not save the PSPStreamer plugin-settings editor during this experimental,
 INI-only test; it does not yet expose these two new audio options.
 
-Firmware 0.3.24 additionally supports bounded runtime snapshots in this log and
-read-only WLAN retrieval at `http://<Onju-IP>:8080/diagnostics.json` after USB
-failure. Enabled by the first runtime request with `report=1`; keep Onju powered
-after failure because the trace is RAM-only. The endpoint is unauthenticated,
-diagnostic-only and intended for a trusted test LAN. Do not forward its port.
-It is refused if internal ESP memory is low; `HTTP=101` reports ESP_ERR_NO_MEM.
-See `streammaster/SPDIF.md` in the repository (or `SPDIF.md` in the firmware
-release). Logs also include `PSP PCM stack_free`, `kernel_free` and `largest`.
+The plugin must also be enabled for VSH and POPS in ARK's plugin configuration;
+the INI flags alone cannot load it in those contexts. VSH startup may precede
+USB readiness, so the earliest boot sound is not guaranteed to be mirrored.
+POPS is a context test, not support for every Popsloader driver: an unknown
+audio-driver signature or SRC/Output2 use still suppresses capture and is logged.
+This prevents treating the normal-mixer buffer as a different audio path.
+Firmware 0.3.25 removes the temporary ESP event ring and HTTP diagnostics server,
+and both PSP clients stop requesting that diagnostic opcode. No port 8080 is
+opened. Existing opt-in PSP reports and the original audio-open diagnostic remain.
 
 The updated resident bridge no longer reserves the 144 KiB download pipeline
 in games. PSPStreamer still obtains that pool when taking USB ownership,
@@ -58,8 +63,7 @@ When servicing resumes with more than 3,072 frames pending, the worker discards
 old capture data and retains the newest 1,024 frames (about 23 ms at 44.1 kHz).
 This bounds stale playback but cannot reconstruct audio lost during a stall.
 Worker gaps, USB RPC time, discarded frames and ESP underruns remain logged.
-Retest menu transitions, combat and PS-menu exit; hardware verification of
-continuous audio is pending. The Sony audio clock/hook timing is unchanged.
+The validated game audio path and its Sony audio clock/hook timing are unchanged.
 
 The implementation validates the whole relevant mixer function using a
 relocation-normalized signature, the module/segment layout and the flush stub.
@@ -69,7 +73,8 @@ DDR flush. It never sends USB, logs, waits, reserves audio channels, or changes
 the DAC/mixer clock. No decoding or remixing of individual channels is needed.
 The new worker reuses the existing USB bridge and its semaphore, not a second
 USB driver. Optional memory is about 20 KiB plus a 4 KiB worker stack. No buffers
-or worker are allocated when disabled, in VSH/POPS, or at PSPStreamer startup.
+or worker are allocated when disabled or at PSPStreamer startup. In VSH/POPS
+the same optional allocation now applies when those contexts are enabled.
 
 Initial optical prefill is 1,536 frames (about 35 ms at 44.1 kHz), not a claim
 of total end-to-end latency. This prototype does not yet resample to compensate
@@ -78,13 +83,12 @@ rate change stops capture and reopens the optical session; transport failure
 never blocks the game's original audio, and poisoned USB transport remains
 disabled until reset/relaunch. Suspend, emergency disable and PSPStreamer
 ownership suppress capture. SRC/Output2 activity suppresses the mirror rather
-than pretending that only the normal mix is complete. POPS and VSH audio are
-deliberately excluded from this first test. Unknown driver signatures are left
+than pretending that only the normal mix is complete. Unknown driver signatures are left
 unpatched; no universal firmware compatibility is claimed.
 
-**System-audio investigation (2026-10-08):** an opt-in, read-only probe prepares
-the first PCM-capture prototype. This build does **not** send game audio to
-S/PDIF yet. Add `audio_probe=1` and set `report=1` in `PSPConsolizer.ini`, then
+**Optional read-only audio probe:** this separate diagnostic feature does not
+send audio or install the PCM hook by itself. Add `audio_probe=1` and set
+`report=1` in `PSPConsolizer.ini`, then
 restart a game. Do not save plugin settings in PSPStreamer during this test:
 this experimental option is INI-only, not yet part of its settings editor.
 

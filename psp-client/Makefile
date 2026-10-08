@@ -32,7 +32,6 @@ $(OBJS): Makefile
 
 main.o: streammaster_redirect.h streammaster_transport.h
 streammaster_transport.o: streammaster_transport.h ../streammaster/protocol.h
-streammaster_transport.o main.o: ../streammaster/trace_protocol.h
 
 # mpeg_extra must remain at its historical position between libmpeg and
 # libmpegbase: moving it into OBJS makes PSP import stubs non-contiguous on

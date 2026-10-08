@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.25 / PSP Consolizer: remove temporary ESP runtime/HTTP
+  diagnostics and their PSP queries; retain the validated game PCM path.
+  Repeated Soul Calibur and three other game tests succeeded (lobby stutter
+  remains). Enable VSH/POPS normal-mixer testing without bypassing driver
+  validation or claiming SRC/Output2 support.
+
 - StreamMaster 0.3.24 / PSP / Consolizer: bounded runtime diagnostics over USB
   and optional read-only WLAN HTTP retrieval after USB failure. Include audio
   DMA gaps, USB errors, BT transitions and heap counters. Consolizer also logs

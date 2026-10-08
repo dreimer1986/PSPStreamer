@@ -1,5 +1,14 @@
 # StreamMaster firmware changelog
 
+## 0.3.25 — Remove temporary runtime diagnostics
+
+- Remove the 0.3.24 event ring, DMA timing instrumentation and optional HTTP
+  diagnostic server after successful game-audio tests. Retain the established
+  optical transport, resource reuse and original audio-open diagnostics.
+- Matching PSPStreamer/Consolizer builds stop polling the removed diagnostics.
+  Consolizer opens the unchanged normal-mixer mirror to VSH/POPS testing;
+  verified-driver and SRC/Output2 checks remain in place.
+
 ## 0.3.24 — USB-independent runtime diagnostics
 
 - Add a bounded 16-event USB/audio/Bluetooth diagnostic ring and runtime

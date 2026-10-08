@@ -3,8 +3,6 @@
 #include <pspnet_inet.h>
 #include "tls_transport.h"
 #include "../streammaster/protocol.h"
-#include "../streammaster/trace_protocol.h"
-int stm_trace_snapshot(SmTrace *out);
 int stm_init(int enabled,const char *host,int port,int https);
 int stm_enabled(void);
 void stm_app_rumble(unsigned small,unsigned large);
