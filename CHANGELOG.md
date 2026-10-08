@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- StreamMaster 0.3.23: retain the bounded optical DMA/ring resources across
+  media changes to avoid repeated ESP_ERR_NO_MEM startup failures. Stop still
+  disables output; reopen resets sessions, queued data and clock configuration.
+- PSP / server 0.1.81: consistently label the circle button O in StreamMaster
+  menus and web keyboard help. Optical playback confirmed by the user;
+  server-triggered next-track regression fix awaits hardware verification.
+
 - PSP / StreamMaster 0.3.22 / server 0.1.80: batch optical PCM into 20 ms
   packets, increase PSRAM-only buffering, reduce interrupt-lock work and
   status polling. Show actual server audio output in video controls/music;

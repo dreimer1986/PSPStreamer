@@ -238,8 +238,8 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SM_BT_SAVED_MARK] = "* = saved controller",
 
     [TXT_SM_WAIT] = "Waiting for StreamMaster...",
-    [TXT_SM_CANCEL] = "Circle: cancel",
-    [TXT_SM_HELP] = "Up/down: select | X: edit/run | Circle: back",
+    [TXT_SM_CANCEL] = "O: cancel",
+    [TXT_SM_HELP] = "Up/down: select | X: edit/run | O: back",
     [TXT_SM_RETAIN] = "Keep saved",
     [TXT_SM_HIDDEN] = "********",
     [TXT_SM_ERROR] = "Error",

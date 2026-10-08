@@ -29,6 +29,7 @@ _Static_assert((BLOCK_FRAMES*DMA_BLOCKS)%192==0,"DMA ring preserves IEC60958 sta
 typedef struct {uint32_t stereo,end_pts_ms;} Sample;
 typedef struct {void *buffer;uint32_t count,end_pts;} Completion;
 static i2s_chan_handle_t output;
+static int output_ready,output_running;
 static Sample *ring;
 static Completion dma[DMA_BLOCKS];
 static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
@@ -108,8 +109,17 @@ static bool sent(i2s_chan_handle_t channel,i2s_event_data_t *event,void *unused)
 void sm_audio_disconnect(void) {
     portENTER_CRITICAL(&lock);disconnected=1;paused=1;portEXIT_CRITICAL(&lock);
 }
+static void stop_output(void) {
+    /* Keep the bounded opt-in DMA allocation across tracks. Reallocating it
+     * amid Wi-Fi/BT activity can fail even after hours of successful audio. */
+    portENTER_CRITICAL(&lock);paused=1;disconnected=1;portEXIT_CRITICAL(&lock);
+    if(output_running){i2s_channel_disable(output);output_running=0;}
+    memset(dma,0,sizeof(dma));
+}
 static void close_output(void) {
-    if(output){i2s_channel_disable(output);i2s_del_channel(output);output=NULL;}
+    stop_output();
+    if(output){i2s_del_channel(output);output=NULL;}
+    output_ready=0;
 #if !SM_GENERIC_BOARD
     gpio_set_direction(GPIO_NUM_12,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_12,0);
 #endif
@@ -120,10 +130,10 @@ static int open_output(const SmAudioOpen *request) {
     diagnostic=(SmAudioDiag){.rate=request->rate,.non_audio=request->non_audio};
     diagnose(SM_AUDIO_STAGE_VALIDATE,ESP_ERR_INVALID_ARG);
     if((request->rate!=32000 && request->rate!=44100 && request->rate!=48000)||request->non_audio>1)return SM_INVALID;
-    close_output();
+    stop_output();
     unsigned stage=SM_AUDIO_STAGE_RING;
     esp_err_t err=ESP_ERR_NO_MEM;
-    ring=heap_caps_malloc(sizeof(*ring)*RING_FRAMES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!ring)ring=heap_caps_malloc(sizeof(*ring)*RING_FRAMES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(!ring)goto fail;
     for(unsigned i=0;i<256;i++)bmc[i]=encode_byte(i);
     rate=request->rate;non_audio=request->non_audio;
@@ -132,7 +142,7 @@ static int open_output(const SmAudioOpen *request) {
     i2s_chan_config_t channel=I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO,I2S_ROLE_MASTER);
     channel.dma_desc_num=DMA_BLOCKS;channel.dma_frame_num=BLOCK_FRAMES*2;
     stage=SM_AUDIO_STAGE_CHANNEL;
-    if((err=i2s_new_channel(&channel,&output,NULL))!=ESP_OK)goto fail;
+    if(!output && (err=i2s_new_channel(&channel,&output,NULL))!=ESP_OK)goto fail;
     i2s_std_config_t config={
         .clk_cfg=I2S_STD_CLK_DEFAULT_CONFIG(rate*2),
         .slot_cfg=I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT,I2S_SLOT_MODE_STEREO),
@@ -140,7 +150,12 @@ static int open_output(const SmAudioOpen *request) {
                    .dout=GPIO_NUM_12,.din=I2S_GPIO_UNUSED}
     };
     stage=SM_AUDIO_STAGE_MODE;
-    if((err=i2s_channel_init_std_mode(output,&config))!=ESP_OK)goto fail;
+    if(output_ready)err=i2s_channel_reconfig_std_clock(output,&config.clk_cfg);
+    else {
+        err=i2s_channel_init_std_mode(output,&config);
+        if(err==ESP_OK)output_ready=1;
+    }
+    if(err!=ESP_OK)goto fail;
     i2s_event_callbacks_t callbacks={.on_sent=sent};
     stage=SM_AUDIO_STAGE_CALLBACK;
     if((err=i2s_channel_register_event_callback(output,&callbacks,NULL))!=ESP_OK)goto fail;
@@ -164,6 +179,7 @@ static int open_output(const SmAudioOpen *request) {
     if(err!=ESP_OK)goto fail;
     stage=SM_AUDIO_STAGE_ENABLE;
     if((err=i2s_channel_enable(output))!=ESP_OK)goto fail;
+    output_running=1;
     diagnose(SM_AUDIO_STAGE_READY,ESP_OK);
     return SM_OK;
 fail:
@@ -190,7 +206,7 @@ int sm_audio_command(const SmFrame *r,SmFrame *reply) {
         if(r->length<sizeof(id))return SM_INVALID;
         memcpy(&id,r->payload,sizeof(id));
         if(!output || id!=session || disconnected)return SM_OFFLINE;
-        if(r->op==SM_AUDIO_CLOSE){close_output();return SM_OK;}
+        if(r->op==SM_AUDIO_CLOSE){stop_output();return SM_OK;}
         if(r->op==SM_AUDIO_PAUSE) {
             SmAudioPause request;
             if(r->length!=sizeof(request))return SM_INVALID;

@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.23 — Reuse optical DMA resources across media changes
+
+- Retain the fixed 6 KiB DMA buffers and 128 KiB PSRAM ring after the first
+  successful optical setup instead of reallocating them for every episode.
+- Stop disables I2S and invalidates the old session; reopening resets all
+  counters, reloads silence and reconfigures the clock for the requested rate.
+- This addresses repeated mode/DMA out-of-memory errors at episode changes.
+  Failed initialization still frees partial allocations. No boot-time audio
+  reservation, no change to Wi-Fi/USB buffer sizes or playback synchronization.
+
 ## 0.3.22 — Optical audio scheduling headroom
 
 - Double only the PSRAM audio ring to 16,384 carrier frames; DMA remains

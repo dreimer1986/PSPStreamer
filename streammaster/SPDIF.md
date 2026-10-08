@@ -76,8 +76,11 @@ Capability bit 128 prevents using old or incompatible firmware. Sequence and
 session checks reject stale writes. The ring holds 16384 carrier frames in
 PSRAM; six internal DMA buffers hold 64 frames each (6 KiB total, 8 ms at
 48 kHz). The 192-frame channel-status sequence spans three DMA buffers.
-Only an explicit audio
-session allocates these buffers. No Wi-Fi buffer tuning is changed.
+Only an explicit audio session allocates these buffers. After the first
+successful setup they remain reserved across stops/track changes, avoiding
+fragmentation-sensitive DMA reallocation. Stop disables I2S; the next open
+uses a new session, resets counters/queued audio and preloads valid silence.
+No Wi-Fi buffer tuning is changed.
 Status reports media PTS and samples **completed by DMA**, not merely received
 over USB. The PSP video scheduler follows that clock. Pause/underflow emits
 silence/stuffing without advancing the media clock; samples are not replayed

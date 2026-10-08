@@ -58,7 +58,10 @@ Punkte bleiben Vorschläge, keine Zusage eines Geschwindigkeitsgewinns.
     gemessene Laufzeitprofile für Compilerentscheidungen. Beides kann auch größere
     oder ungünstigere Programme erzeugen. Die PSP-App verwendet bereits O3; ein
     generelles weiteres O3-Umschalten fehlt nicht. Bewährte Taktprofile vergleichen
-    wäre eine Messung, kein neuer Übertaktungsversuch.
+    wäre eine Messung, kein neuer Übertaktungsversuch. Stand 08.10.2026: LTO ist
+    nach erfolgreichem Hardwaretest bereits Standard. Offen bleibt nur ein
+    optionaler, kontrollierter PGO-Vergleich mit repräsentativen Laufzeitprofilen;
+    neue oder höhere Taktraten sind damit nicht beauftragt.
 
 Empfehlung: zunächst 5–7 nur bei konkretem Messbedarf; 11 bei einem bewussten
 HTTPS-Schwerpunkt. 8–10 nicht ohne deutlichen Engpassnachweis. 12 und 13 sind

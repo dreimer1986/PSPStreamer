@@ -1,3 +1,7 @@
+# 0.1.81
+
+- Use O consistently for the PSP circle button in the web keyboard help.
+
 # 0.1.80
 
 - Batch S/PDIF PCM into 960-sample (20 ms) packets instead of forwarding tiny

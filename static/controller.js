@@ -9,7 +9,7 @@
       <div class="psp-analog" tabindex="0" role="group" aria-label="Analog stick"><span></span></div>
     </div>
     <div class="controls"><label><input id="padLatchL" type="checkbox">${t('Hold L')}</label><label><input id="padLatchR" type="checkbox">${t('Hold R')}</label><button id="padRelease">${t('Release all buttons')}</button></div>
-    <p class="muted">${t('Keyboard: arrows, Z = cross, X = circle, A = square, S = triangle, Q/E = L/R, Enter = START, Shift = SELECT. Focus the PSP first.')}</p>
+    <p class="muted">${t('Keyboard: arrows, Z = cross, X = O, A = square, S = triangle, Q/E = L/R, Enter = START, Shift = SELECT. Focus the PSP first.')}</p>
     <form id="padTextForm"><label>${t('Text for the open PSP field')}<input id="padText" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" disabled></label><button id="padTextSend" disabled>${t('Send text')}</button><p id="padTextStatus" role="status">${t('Open a text field on the PSP first')}</p></form>`;
   $('#view-remote').append(panel);
   const pad=panel.querySelector('.psp-pad'),status=$('#padStatus'),text=$('#padText');

@@ -82,7 +82,7 @@ const webLanguages={de:{
   'Controls work inside PSPStreamer only. Hold buttons to repeat; touch supports combinations.':'Steuert nur PSPStreamer. Tasten für Wiederholungen gedrückt halten; mit Touch sind Kombinationen möglich.',
   'Watch the PSP or TV screen':'Anzeige auf PSP oder TV verfolgen',
   'Hold L':'L halten','Hold R':'R halten','Release all buttons':'Alle Tasten loslassen',
-  'Keyboard: arrows, Z = cross, X = circle, A = square, S = triangle, Q/E = L/R, Enter = START, Shift = SELECT. Focus the PSP first.':'Tastatur: Pfeile, Z = Kreuz, X = Kreis, A = Quadrat, S = Dreieck, Q/E = L/R, Enter = START, Umschalt = SELECT. Zuerst die PSP anklicken.',
+  'Keyboard: arrows, Z = cross, X = O, A = square, S = triangle, Q/E = L/R, Enter = START, Shift = SELECT. Focus the PSP first.':'Tastatur: Pfeile, Z = Kreuz, X = O, A = Quadrat, S = Dreieck, Q/E = L/R, Enter = START, Umschalt = SELECT. Zuerst die PSP anklicken.',
   'Text for the open PSP field':'Text für das geöffnete PSP-Eingabefeld','Send text':'Text senden',
   'PSP connected':'PSP verbunden','PSP input is offline':'PSP-Steuerung nicht erreichbar',
   'Open a text field on the PSP first':'Zuerst ein Texteingabefeld auf der PSP öffnen',

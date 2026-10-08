@@ -239,8 +239,8 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SM_BT_SAVED_MARK] = "* = gespeicherter Controller",
 
     [TXT_SM_WAIT] = "Warte auf StreamMaster...",
-    [TXT_SM_CANCEL] = "Kreis: abbrechen",
-    [TXT_SM_HELP] = "Hoch/runter: wählen | X: öffnen | Kreis: zurück",
+    [TXT_SM_CANCEL] = "O: abbrechen",
+    [TXT_SM_HELP] = "Hoch/runter: wählen | X: öffnen | O: zurück",
     [TXT_SM_RETAIN] = "Gespeichertes behalten",
     [TXT_SM_HIDDEN] = "********",
     [TXT_SM_ERROR] = "Fehler",
