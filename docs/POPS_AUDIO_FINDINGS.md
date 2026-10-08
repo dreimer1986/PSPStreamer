@@ -29,12 +29,14 @@ before relocation. ELF LOAD file offsets are 0xA0 (manager) and 0xC0 (03g).
   There is also a fade/control path writing a repacked sample at 0x3194.
 - `pops_03g.prx` calls the DE630CD2 import at 0x1A2B0. Its a0 load is subject
   to PRX relocation: the raw zero immediate is NOT a null callback at runtime.
-- `sceMeAudio_C93C56F8` at 0x3590 writes a shifted parameter to 0xBFC007F4;
+- `sceMeAudio_C93C56F8` at 0x3590 writes a shifted volume parameter to 0xBFC007F4;
   `sceMeAudio_68C55F4C` at 0x3514 controls/waits on ME state at 0xBFC007F0/7F8.
 
 The local uOFW audio.c independently uses 0xBE000070 as an audio DMA destination.
-The packed halves strongly identify stereo PCM; channel order, exact sample
-rate and cache/coherency requirements still need validation before playback.
+The packed halves strongly identify stereo PCM. Setup at 0x3478 calls the
+clock-generation import with 44100 (delay slot 0x347C). This is distinct from
+the volume parameter above. Channel order and cross-CPU operation still need
+hardware verification.
 
 ## Implementation consequence
 
@@ -44,7 +46,7 @@ assumptions, stack and services are inappropriate there. A possible next design
 is a tiny ME-safe producer writing a bounded shared ring, with the existing main
 CPU worker forwarding blocks. It must preserve registers, original hardware
 writes, pacing, fade behavior, and safely coordinate ME stop/restart and cache
-visibility. No such patch is enabled yet.
+visibility.
 
 Probe v3 captures only the validated kernel TEXT of `scePops_Manager` when
 the ordinary driver is absent in POPS. It records module/segment metadata,
@@ -52,6 +54,36 @@ GP, import/export table locations and selected export addresses, without calling
 them. Existing <=128 KiB segment validation remains unchanged; the expected
 manager dump is 18832 bytes. No ME hardware reads/writes or user RAM dumps.
 This gives an exact relocated runtime reference for the next signature check.
+
+## First capture build — 2026-10-09
+
+The runtime manager dump matches the reference output loop after explicitly
+accounting for relocated addresses. A first opt-in path now intercepts the
+main-CPU callback setup, **only before its callback slot has been populated**.
+It substitutes a self-contained user-memory producer that calls the original
+callback, preserves its return value and places one stereo word into a 4096-word
+uncached single-producer/single-consumer ring. No ME kernel calls, USB, logging,
+semaphores or heap operations. The existing PCM worker collects and forwards it.
+
+Runtime validation checks the output loop and setup hashes, exact memory layout,
+callback-slot references and the 44100 clock setup. Different or already active
+layouts remain untouched. A late install reports `POPS ME already configured`
+(-22); it does not attempt to halt/reset the ME or patch its live instruction
+cache. Whether the current loader is early enough requires a hardware test.
+
+The producer and ring occupy 16640 bytes in user partition 2. Once published,
+they remain resident until POPS process teardown, even if our kernel plugin is
+stopped: the ME might retain the callback across a pause/resume. Unload disables
+capture and restores the main-CPU setup entry, never freeing published callback
+code underneath the ME. The resident producer has no kernel-plugin references.
+Failed, unpublished allocations are released. No ESP firmware change.
+
+Build precedes tests. Host instruction-path checks cover disable, one sample,
+full ring, counter wrap, stack/return preservation and the runtime hashes;
+they do not emulate actual ME cache behavior or certify playback stability.
+Hardware test: `audio_mirror=1`, `audio_probe=0`, `report=1`, `pops=1`.
+Fully exit/restart the PS1 title, play, open/close HOME and exit. Check
+`last.log`/`last.log.previous` for setup armed, callback samples and PCM progress.
 
 ## Next hardware step
 

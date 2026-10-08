@@ -92,6 +92,15 @@ send audio or install the PCM hook by itself. Add `audio_probe=1` and set
 restart a game. Do not save plugin settings in PSPStreamer during this test:
 this experimental option is INI-only, not yet part of its settings editor.
 
+**POPS PCM capture test (2026-10-09):** use `audio_mirror=1`, `audio_probe=0`,
+`report=1`, `pops=1` and restart the PS1 title completely. The first ME producer
+implementation reuses the existing USB PCM output without changing firmware.
+Only the verified manager layout is accepted, and only before its ME callback
+has been configured. `POPS ME already configured` means the loader arrived too
+late; this build deliberately does not reset a running emulator. Published
+producer code/ring stay in user memory until process teardown, not kernel RAM.
+This is a hardware-test build, not yet confirmed POPS playback support.
+
 Probe v3 additionally captures the validated kernel code of `scePops_Manager`
 when POPS has no normal audio driver. For this case use `audio_mirror=0` and
 run a PS1 game for about 30 seconds. The title's `-text.bin` then contains the

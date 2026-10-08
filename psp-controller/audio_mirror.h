@@ -51,6 +51,7 @@ static void audio_mirror_log_drain(void) {
     if(have){char line[160];snprintf(line,sizeof(line),"at %u.%06u %s",item.sec,item.usec,item.text);controller_log(line,item.rc);}
 }
 
+#include "pops_audio.h"
 static int audio_mirror_flush(int mask) {
     AudioMirror *m=audio_mirror;
     m->users++;
@@ -78,6 +79,7 @@ done:
     return rc;
 }
 static int audio_mirror_install(void) {
+    if(sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS)return pops_audio_install();
     SceModule *mod=sceKernelFindModuleByName("sceAudio_Driver");
     if(sceKernelDevkitVersion()!=0x06060110 || !mod || mod->nsegment!=2 || mod->data_size!=64 || mod->bss_size!=1400 ||
        !audio_probe_text_valid(mod->text_addr,mod->text_size,mod->segmentaddr,mod->segmentsize,mod->nsegment) ||
@@ -101,6 +103,7 @@ static int audio_mirror_install(void) {
     return 0;
 }
 static void audio_mirror_uninstall(void) {
+    if(pops_audio_mode){pops_audio_uninstall();return;}
     if(!audio_mirror_call)return;
     audio_mirror->enabled=0;
     int intr=sceKernelCpuSuspendIntr();
@@ -164,11 +167,12 @@ static int audio_mirror_worker(SceSize size,void *args) {
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(last_loop && now-last_loop>m->gap_us)m->gap_us=(unsigned)(now-last_loop);
         last_loop=now;
-        unsigned rate=*(volatile unsigned short *)(audio_mirror_state+1360);
-        unsigned src=*(volatile unsigned short *)(audio_mirror_state+1368);
-        int gate=(!audio_mirror_allowed || app_owner)?1:(!started || !attached)?2:poisoned?3:src?4:(rate!=44100 && rate!=48000)?5:0;
+        if(pops_audio_mode)pops_audio_collect(m);
+        unsigned rate=pops_audio_mode?44100:*(volatile unsigned short *)(audio_mirror_state+1360);
+        unsigned src=pops_audio_mode?0:*(volatile unsigned short *)(audio_mirror_state+1368);
+        int gate=(!audio_mirror_allowed || app_owner)?1:(!started || !attached)?2:poisoned?3:src?4:(rate!=44100 && rate!=48000)?5:(pops_audio_mode && !pops_audio_published)?6:0;
         int usable=gate==0;
-        if(gate!=last_gate){audio_mirror_log("PCM mirror gate (0 ready/1 context/2 USB/3 transport/4 SRC/5 rate)",gate);last_gate=gate;}
+        if(gate!=last_gate){audio_mirror_log("PCM mirror gate (0 ready/1 context/2 USB/3 transport/4 SRC/5 rate/6 ME bootstrap)",gate);last_gate=gate;}
         if(!usable || failed || m->fault) {
             if(m->fault){audio_mirror_log("PCM mirror capture fault (1 half/2 rate)",m->fault);m->fault=0;failed=1;}
             int closed=audio_mirror_close(&status);
@@ -218,6 +222,7 @@ static int audio_mirror_worker(SceSize size,void *args) {
             audio_mirror_log(line,0);
             snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
             audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;
+            if(pops_audio_mode && pops_audio_shared)audio_mirror_log("POPS ME callback samples",pops_audio_shared->calls);
         }
         sceKernelDelayThread(2000);
     }

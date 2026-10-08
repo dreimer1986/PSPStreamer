@@ -119,7 +119,7 @@ static void audio_probe_discover(void) {
             (unsigned)mod->stub_top,(unsigned)mod->stub_size);audio_probe_line(line);
         audio_probe_module_export("scePops_Manager","sceMeAudio",0xDE630CD2,"ME callback setup (6.60 reference)");
         audio_probe_module_export("scePops_Manager","sceMeAudio",0x68C55F4C,"ME run state (6.60 reference)");
-        audio_probe_module_export("scePops_Manager","sceMeAudio",0xC93C56F8,"ME clock parameter (6.60 reference)");
+        audio_probe_module_export("scePops_Manager","sceMeAudio",0xC93C56F8,"ME volume parameter (6.60 reference)");
         audio_probe_line("No POPS export invoked; no ME registers read or written; no PCM capture installed.\n");
     } else {
     normal=audio_probe_export("sceAudio_driver",0x9D77949E,"GetChannelRestLength");

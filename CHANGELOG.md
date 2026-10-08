@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: first signature-checked POPS Media Engine PCM capture test.
+  Intercept initial callback setup, retain the original generator, and forward
+  samples through a bounded user-memory ring into the existing optical PCM
+  worker. No live ME reset, no new ESP firmware, and no change to GAME/VSH
+  capture. POPS startup timing and sound remain pending hardware verification.
+
 - PSP Consolizer: trace the reference POPS Media Engine audio output path;
   add a bounded read-only capture of the running POPS manager for runtime
   signature verification. No unverified POPS audio hook or firmware change.
