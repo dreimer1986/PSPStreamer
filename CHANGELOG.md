@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: read-only POPS audio probe v2 retries delayed audio-module
+  discovery, distinguishes missing modules from rejected memory layouts, and
+  records bounded module/thread inventories. The working PCM mirror and ESP
+  firmware remain unchanged; this diagnoses POPS silence, not yet fixes it.
+
 - StreamMaster 0.3.25 / PSP Consolizer: remove temporary ESP runtime/HTTP
   diagnostics and their PSP queries; retain the validated game PCM path.
   Repeated Soul Calibur and three other game tests succeeded (lobby stutter

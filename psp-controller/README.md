@@ -92,10 +92,17 @@ send audio or install the PCM hook by itself. Add `audio_probe=1` and set
 restart a game. Do not save plugin settings in PSPStreamer during this test:
 this experimental option is INI-only, not yet part of its settings editor.
 
-Play Soul Calibur (menu and combat) for roughly 60–120 seconds. Optionally also
-run a different game or a POPS title. The plugin queries queue occupancy every
+For the POPS discovery test, also set `audio_mirror=0`, launch a PS1 game and
+play for four minutes. Probe v2 retries discovery for up to 120 seconds instead
+of stopping at the first missing module. Missing modules and rejected text
+ranges have separate messages, including module metadata for rejected ranges.
+Bounded module/thread inventories are recorded every 30 seconds, including
+non-audio names to expose alternate POPS routes. No extra worker or heap buffer
+is allocated. The PCM mirror and ESP firmware are unchanged by this diagnostic.
+
+Once a validated audio driver is found, the plugin queries queue occupancy every
 50 ms or later and writes cumulative summaries every five seconds, stopping
-after 120 seconds. It uses the existing service thread, not an audio callback.
+after another 120 seconds. It uses the existing service thread, not an audio callback.
 Current input, USB, optical-streaming firmware, TV and clock behavior is unchanged.
 
 Return the `audio-probe-<title>.log` and `audio-probe-<title>-text.bin` files from

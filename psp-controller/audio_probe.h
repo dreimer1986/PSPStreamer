@@ -11,6 +11,11 @@ static int (*audio_probe_normal)(unsigned);
 static int (*audio_probe_src)(void);
 static AudioProbeStats audio_probe_stats;
 static char audio_probe_path[128];
+static char audio_probe_binary[128];
+static int audio_probe_ready;
+static SceUID audio_probe_module=-1;
+static unsigned long long audio_probe_inventory_next;
+
 
 static int audio_probe_write_all(int fd,const void *data,unsigned size) {
     const unsigned char *p=data;
@@ -28,6 +33,27 @@ static unsigned audio_probe_export(const char *library,unsigned nid,const char *
     unsigned ptr=(unsigned)sctrlHENFindFunction("sceAudio_Driver",library,nid);
     char line[160];snprintf(line,sizeof(line),"export %s %s nid=%08X address=%08X\n",library,name,nid,ptr);
     audio_probe_line(line);return ptr;
+}
+/* Bounded metadata only: no guessing pointers, patching or reading user RAM.
+ * Include every module/thread: POPS need not name its audio path "Audio". */
+static void __attribute__((noinline)) audio_probe_inventory(void) {
+    SceUID ids[128];int count=0;char line[256];
+    int rc=sceKernelGetModuleIdList(ids,sizeof(ids),&count);
+    snprintf(line,sizeof(line),"module_inventory rc=%08X count=%u cap=128\n",(unsigned)rc,(unsigned)count);audio_probe_line(line);
+    if(rc>=0)for(int i=0;i<count && i<128;i++) {
+        SceModule *m=sceKernelFindModuleByUID(ids[i]);if(!m)continue;
+        snprintf(line,sizeof(line),"module=%.27s uid=%08X text=%08X size=%u data=%u bss=%u segments=%u\n",
+            m->modname,(unsigned)m->modid,(unsigned)m->text_addr,(unsigned)m->text_size,
+            (unsigned)m->data_size,(unsigned)m->bss_size,(unsigned)m->nsegment);audio_probe_line(line);
+    }
+    int threads=0;rc=sceKernelGetThreadmanIdList(SCE_KERNEL_TMID_Thread,ids,128,&threads);
+    snprintf(line,sizeof(line),"thread_inventory rc=%08X count=%d cap=128\n",(unsigned)rc,threads);audio_probe_line(line);
+    if(rc>=0)for(int i=0;i<threads && i<128;i++) {
+        SceKernelThreadInfo info={.size=sizeof(info)};
+        if(sceKernelReferThreadStatus(ids[i],&info)<0)continue;
+        snprintf(line,sizeof(line),"thread=%.32s entry=%08X priority=%d stack=%u wait=%d\n",
+            info.name,(unsigned)info.entry,info.currentPriority,info.stackSize,info.waitType);audio_probe_line(line);
+    }
 }
 static void audio_probe_begin(void) {
     audio_probe_started=1;
@@ -56,17 +82,27 @@ static void audio_probe_begin(void) {
     }
     int f=sceIoOpen(audio_probe_path,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
     if(f<0){audio_probe_finished=1;controller_log("audio probe create failed",f);return;}sceIoClose(f);
-    snprintf(line,sizeof(line),"PSPConsolizer audio probe v1 READ ONLY\nfirmware=%08X context=%d key=%s\n",
+    snprintf(line,sizeof(line),"PSPConsolizer audio probe v2 READ ONLY\nfirmware=%08X context=%d key=%s\n",
              (unsigned)sceKernelDevkitVersion(),context,key);audio_probe_line(line);
+    strcpy(audio_probe_binary,binary);
+    audio_probe_start=sceKernelGetSystemTimeWide();audio_probe_next=audio_probe_start;
+    audio_probe_inventory_next=audio_probe_start;
+    audio_probe_line("Discovering audio module for up to 120 s; inventories every 30 s.\n");
+}
+static void audio_probe_discover(void) {
+    char line[256];
     SceModule *mod=sceKernelFindModuleByName("sceAudio_Driver");
-    if(!mod || !audio_probe_text_valid(mod->text_addr,mod->text_size,mod->segmentaddr,mod->segmentsize,mod->nsegment)) {
-        audio_probe_line("Audio module absent or text range not validated; probe stopped.\n");audio_probe_finished=1;return;
+    if(!mod) {
+        audio_probe_line("sceAudio_Driver absent; waiting for module load.\n");return;
     }
     snprintf(line,sizeof(line),"module=%s uid=%08X version=%u.%u text=%08X size=%u data_size=%u bss_size=%u\n",
              mod->modname,(unsigned)mod->modid,mod->version[1],mod->version[0],(unsigned)mod->text_addr,(unsigned)mod->text_size,(unsigned)mod->data_size,(unsigned)mod->bss_size);
     audio_probe_line(line);
-    for(unsigned i=0;i<mod->nsegment;i++) {
+    for(unsigned i=0;i<mod->nsegment && i<4;i++) {
         snprintf(line,sizeof(line),"segment%u address=%08X size=%u\n",i,(unsigned)mod->segmentaddr[i],mod->segmentsize[i]);audio_probe_line(line);
+    }
+    if(!audio_probe_text_valid(mod->text_addr,mod->text_size,mod->segmentaddr,mod->segmentsize,mod->nsegment)) {
+        audio_probe_line("Audio module present but text range rejected; no dump, calls or patches. Retrying.\n");return;
     }
     unsigned normal=audio_probe_export("sceAudio_driver",0x9D77949E,"GetChannelRestLength");
     unsigned src=audio_probe_export("sceAudio_driver",0x8A7CD9C6,"Output2GetRestSample");
@@ -88,7 +124,7 @@ static void audio_probe_begin(void) {
     }
     /* Dump ONLY this module's validated TEXT, never user PCM/general RAM/BSS.
      * No allocation: write small chunks directly from resident driver code. */
-    f=sceIoOpen(binary,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
+    int f=sceIoOpen(audio_probe_binary,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
     unsigned bytes=0;uint32_t hash=2166136261U;
     if(f>=0) {
         const unsigned char *p=(const unsigned char *)mod->text_addr;
@@ -103,6 +139,7 @@ static void audio_probe_begin(void) {
     snprintf(line,sizeof(line),"text_dump bytes=%u expected=%u fnv1a=%08X open_rc=%08X\n",bytes,(unsigned)mod->text_size,(unsigned)hash,(unsigned)f);audio_probe_line(line);
     audio_probe_line("Sampling queue occupancy for 120 s at >=50 ms intervals. Zero hits do NOT prove an unused path. No PCM output yet.\n");
     audio_probe_start=sceKernelGetSystemTimeWide();audio_probe_next=audio_probe_start;audio_probe_report=audio_probe_start+5000000ULL;
+    audio_probe_module=mod->modid;audio_probe_ready=1;
     controller_log("read-only audio probe started",normal && src?0:-1);
 }
 static void audio_probe_summary(unsigned long long now,const char *reason) {
@@ -125,6 +162,21 @@ static void audio_probe_update(unsigned long long now,int allowed) {
         audio_probe_summary(now,"complete");audio_probe_finished=1;return;
     }
     if(now<audio_probe_next)return;
+    if(!audio_probe_ready) {
+        audio_probe_next=now+1000000ULL;
+        if(now>=audio_probe_inventory_next) {
+            audio_probe_inventory();audio_probe_inventory_next=now+30000000ULL;
+        }
+        audio_probe_discover();return;
+    }
+    SceModule *mod=sceKernelFindModuleByName("sceAudio_Driver");
+    if(!mod || mod->modid!=audio_probe_module) {
+        audio_probe_line("Sampled audio module unloaded/replaced; stopping before export calls.\n");
+        audio_probe_finished=1;audio_probe_normal=NULL;audio_probe_src=NULL;return;
+    }
+    if(now>=audio_probe_inventory_next) {
+        audio_probe_inventory();audio_probe_inventory_next=now+30000000ULL;
+    }
     audio_probe_next=now+50000;
     int values[8];for(unsigned i=0;i<8;i++)values[i]=audio_probe_normal?audio_probe_normal(i):-1;
     audio_probe_observe(&audio_probe_stats,values,audio_probe_src?audio_probe_src():-1);
