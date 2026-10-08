@@ -247,6 +247,7 @@ static int controller_worker(SceSize size,void *args) {
             diagnostic_loops=0;diagnostic_gap=0;diagnostic_next=now+5000000ULL;
         }
         pad_overlay_update(controller_usb_paused?6:controller_disabled || !allowed?4:controller_suspended?3:!attached?5:value.connected?(in_streamer?2:1):0,usb_error,controller_suspended);
+        audio_mirror_log_drain();
         sceKernelDelayThreadCB(10000);
     }
     scePowerUnregisterCallback(power);

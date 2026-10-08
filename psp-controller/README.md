@@ -11,8 +11,8 @@ is needed for this change, and input/rumble behavior is unchanged.
 **Experimental game PCM → S/PDIF (2026-10-08):** Soul Calibur `ULES01298`
 used normal mixer channels 3/4/6 in the 120-second hardware probe (2,027
 observations); SRC/Output2 was never reserved in that trace. A first PCM mirror
-is now available. Optical game sound is confirmed, but the save-dialog freeze
-reported in the first build still requires a hardware retest. It requires the verified 6.61
+is now available. Optical game sound and entering the game are confirmed;
+periodic sound gaps and delay are being corrected. It requires the verified 6.61
 audio-driver layout and Onju optical firmware 0.3.23 or newer. No firmware or
 PSPStreamer update is needed if that optical firmware is already installed.
 
@@ -39,9 +39,18 @@ in games. PSPStreamer still obtains that pool when taking USB ownership,
 before decoder startup; the standalone bridge retains its existing layout.
 Release waits for outstanding USB callbacks. The first game trace had only
 about 80 KiB free kernel memory (largest block about 50 KiB) after OSD startup.
-This removes concrete memory pressure, but does not yet prove the cause of the
-save-dialog hang. Retest loading a save and leaving through the PS menu after
-a clean restart of both PSP and Onju. No audio-hook timing changes were made.
+This removes concrete memory pressure. The next test reached gameplay, but
+showed repeated capture overflows followed by two-second optical restarts.
+The PCM worker now queues diagnostics for the controller service instead of
+performing Memory Stick I/O itself. At most eight messages are retained;
+overflow drops diagnostics, not audio. Entries include the original event time.
+Capture overflow drops the incoming block without restarting optical output.
+When servicing resumes with more than 3,072 frames pending, the worker discards
+old capture data and retains the newest 1,024 frames (about 23 ms at 44.1 kHz).
+This bounds stale playback but cannot reconstruct audio lost during a stall.
+Worker gaps, USB RPC time, discarded frames and ESP underruns remain logged.
+Retest menu transitions, combat and PS-menu exit; hardware verification of
+continuous audio is pending. The Sony audio clock/hook timing is unchanged.
 
 The implementation validates the whole relevant mixer function using a
 relocation-normalized signature, the module/segment layout and the flush stub.
@@ -55,7 +64,7 @@ or worker are allocated when disabled, in VSH/POPS, or at PSPStreamer startup.
 
 Initial optical prefill is 1,536 frames (about 35 ms at 44.1 kHz), not a claim
 of total end-to-end latency. This prototype does not yet resample to compensate
-long-term PSP/ESP oscillator drift: buffer levels are logged first. Overflow or
+long-term PSP/ESP oscillator drift: buffer levels are logged first. A sample
 rate change stops capture and reopens the optical session; transport failure
 never blocks the game's original audio, and poisoned USB transport remains
 disabled until reset/relaunch. Suspend, emergency disable and PSPStreamer

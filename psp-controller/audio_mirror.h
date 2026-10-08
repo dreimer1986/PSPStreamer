@@ -5,9 +5,14 @@
  */
 #include "audio_mirror_signature.h"
 #include "../streammaster/spdif_protocol.h"
-#define MIRROR_RING 4096U
+#include "audio_mirror_flow.h"
+#define MIRROR_LOG_COUNT 8U
+typedef struct { char text[128]; int rc; unsigned sec,usec; } MirrorLog;
 typedef struct {
     volatile unsigned rd,wr,rate,enabled,fault,users,blocks,dropped;
+    volatile unsigned log_rd,log_wr,log_lost;
+    unsigned trimmed,gap_us,rpc_us;
+    MirrorLog log[MIRROR_LOG_COUNT];
     unsigned words[MIRROR_RING];
     SmFrame rpc;
 } AudioMirror;
@@ -20,6 +25,31 @@ static volatile unsigned char *audio_mirror_state;
 static volatile uint32_t *audio_mirror_call;
 static uint32_t audio_mirror_saved,audio_mirror_jump;
 static int (*audio_mirror_flush_original)(int);
+
+/* Never write the Memory Stick from the time-sensitive PCM worker. The
+ * existing service thread drains at most one bounded diagnostic per tick.
+ * A full diagnostic queue drops diagnostics, not audio. */
+static void audio_mirror_log(const char *text,int rc) {
+    AudioMirror *m=audio_mirror;
+    if(!controller_report || !m)return;
+    MirrorLog item;memset(&item,0,sizeof(item));
+    snprintf(item.text,sizeof(item.text),"%s",text);item.rc=rc;
+    unsigned long long now=sceKernelGetSystemTimeWide();
+    item.sec=now/1000000;item.usec=now%1000000;
+    int intr=sceKernelCpuSuspendIntr();
+    if(m->log_wr-m->log_rd<MIRROR_LOG_COUNT) {
+        m->log[m->log_wr&(MIRROR_LOG_COUNT-1)]=item;m->log_wr++;
+    } else m->log_lost++;
+    sceKernelCpuResumeIntr(intr);
+}
+static void audio_mirror_log_drain(void) {
+    AudioMirror *m=audio_mirror;MirrorLog item;int have=0;
+    if(!m)return;
+    int intr=sceKernelCpuSuspendIntr();
+    if(m->log_wr!=m->log_rd){item=m->log[m->log_rd&(MIRROR_LOG_COUNT-1)];m->log_rd++;have=1;}
+    sceKernelCpuResumeIntr(intr);
+    if(have){char line[160];snprintf(line,sizeof(line),"at %u.%06u %s",item.sec,item.usec,item.text);controller_log(line,item.rc);}
+}
 
 static int audio_mirror_flush(int mask) {
     AudioMirror *m=audio_mirror;
@@ -34,7 +64,7 @@ static int audio_mirror_flush(int mask) {
         if(half<0){m->fault=1;goto done;}
         if(rate!=m->rate){m->fault=2;goto done;}
         unsigned wr=m->wr;
-        if(wr-m->rd>MIRROR_RING-64){m->dropped+=64;m->fault=3;goto done;}
+        if(wr-m->rd>MIRROR_RING-64){m->dropped+=64;goto done;}
         volatile unsigned *pcm=(volatile unsigned *)(audio_mirror_state+half*256);
         for(unsigned i=0;i<64;i++)m->words[(wr+i)&(MIRROR_RING-1)]=pcm[i];
         __asm__ volatile("sync" ::: "memory");
@@ -67,7 +97,7 @@ static int audio_mirror_install(void) {
     *audio_mirror_call=audio_mirror_jump;
     sceKernelDcacheWritebackInvalidateAll();sceKernelIcacheInvalidateAll();
     sceKernelCpuResumeIntr(intr);
-    controller_log("PCM mirror verified mixer JAL installed",mod->text_addr+0x46c);
+    audio_mirror_log("PCM mirror verified mixer JAL installed",mod->text_addr+0x46c);
     return 0;
 }
 static void audio_mirror_uninstall(void) {
@@ -83,7 +113,7 @@ static void audio_mirror_uninstall(void) {
     }
     sceKernelCpuResumeIntr(intr);
     while(audio_mirror->users)sceKernelDelayThread(1000);
-    if(audio_mirror_pinned)controller_log("PCM mirror foreign hook: unload refused",-1);
+    if(audio_mirror_pinned)audio_mirror_log("PCM mirror foreign hook: unload refused",-1);
     audio_mirror_call=NULL;
 }
 static int audio_mirror_rpc(unsigned op,const void *data,unsigned length,SmAudioStatus *status,int closing) {
@@ -96,8 +126,11 @@ static int audio_mirror_rpc(unsigned op,const void *data,unsigned length,SmAudio
         /* PCM payload can already be in place; preserve it in that case. */
         if(data!=f->payload && length)memcpy(f->payload,data,length);
         memset(f,0,32);f->op=op;f->sequence=++sequence;f->length=length;sm_seal(f);
+        unsigned long long begin=sceKernelGetSystemTimeWide();
         rc=exchange_begin(f,1);
         if(rc>=0)rc=exchange_finish(f);
+        unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
+        if(elapsed>audio_mirror->rpc_us)audio_mirror->rpc_us=elapsed;
         if(rc>=0) {
             rc=f->result;
             if(rc==SM_OK && status) {
@@ -122,20 +155,22 @@ static int audio_mirror_close(SmAudioStatus *status) {
 static int audio_mirror_worker(SceSize size,void *args) {
     (void)size;(void)args;
     SmAudioStatus status={0};unsigned sequence=0,played=0,sent=0;
-    unsigned long long retry=0,next_report=0,last_progress=0,next_status=0;
+    unsigned long long retry=0,next_report=0,last_progress=0,next_status=0,last_loop=0;
     int paused=1,failed=0,last_gate=-1;
     int rc=audio_mirror_install();
-    if(rc<0){controller_log("PCM mirror unsupported layout: no patch",rc);return 0;}
+    if(rc<0){audio_mirror_log("PCM mirror unsupported layout: no patch",rc);return 0;}
     while(audio_mirror_running) {
         AudioMirror *m=audio_mirror;
         unsigned long long now=sceKernelGetSystemTimeWide();
+        if(last_loop && now-last_loop>m->gap_us)m->gap_us=(unsigned)(now-last_loop);
+        last_loop=now;
         unsigned rate=*(volatile unsigned short *)(audio_mirror_state+1360);
         unsigned src=*(volatile unsigned short *)(audio_mirror_state+1368);
         int gate=(!audio_mirror_allowed || app_owner)?1:(!started || !attached)?2:poisoned?3:src?4:(rate!=44100 && rate!=48000)?5:0;
         int usable=gate==0;
-        if(gate!=last_gate){controller_log("PCM mirror gate (0 ready/1 context/2 USB/3 transport/4 SRC/5 rate)",gate);last_gate=gate;}
+        if(gate!=last_gate){audio_mirror_log("PCM mirror gate (0 ready/1 context/2 USB/3 transport/4 SRC/5 rate)",gate);last_gate=gate;}
         if(!usable || failed || m->fault) {
-            if(m->fault){controller_log("PCM mirror capture fault (1 half/2 rate/3 overflow)",m->fault);m->fault=0;failed=1;}
+            if(m->fault){audio_mirror_log("PCM mirror capture fault (1 half/2 rate)",m->fault);m->fault=0;failed=1;}
             int closed=audio_mirror_close(&status);
             if(failed && closed){retry=now+2000000;failed=0;}
             sceKernelDelayThread(10000);continue;
@@ -145,12 +180,14 @@ static int audio_mirror_worker(SceSize size,void *args) {
             SmAudioOpen open={rate,0};
             rc=audio_mirror_rpc(SM_AUDIO_OPEN,&open,sizeof(open),&status,0);
             if(rc==SM_BUSY){sceKernelDelayThread(5000);continue;}
-            if(rc<0){controller_log("PCM mirror OPEN failed",rc);retry=now+2000000;sceKernelDelayThread(10000);continue;}
-            controller_log("PCM mirror opened rate",rate);
+            if(rc<0){audio_mirror_log("PCM mirror OPEN failed",rc);retry=now+2000000;sceKernelDelayThread(10000);continue;}
+            audio_mirror_log("PCM mirror opened rate",rate);
             m->rd=m->wr;m->rate=rate;m->fault=0;sequence=sent=played=0;paused=1;last_progress=now;
             __asm__ volatile("sync" ::: "memory");m->enabled=1;
         }
         unsigned available=m->wr-m->rd;
+        unsigned trim=mirror_trim_frames(available);
+        if(trim){m->rd+=trim;m->trimmed+=trim;available-=trim;}
         if(available>=512 && status.accepted-status.completed<2048 && status.space>=512) {
             SmAudioWrite write={status.session,sequence,(uint32_t)((uint64_t)sent*1000/rate),512};
             unsigned rd=m->rd;
@@ -164,21 +201,23 @@ static int audio_mirror_worker(SceSize size,void *args) {
             next_status=now+10000;
         }
         if(rc==SM_BUSY){sceKernelDelayThread(2000);continue;}
-        if(rc<0){controller_log("PCM mirror USB write/status failed",rc);failed=1;continue;}
+        if(rc<0){audio_mirror_log("PCM mirror USB write/status failed",rc);failed=1;continue;}
         if(paused && status.accepted>=1536) {
             SmAudioPause pause={status.session,0};
             rc=audio_mirror_rpc(SM_AUDIO_PAUSE,&pause,sizeof(pause),&status,0);
             if(rc==SM_OK){paused=0;last_progress=now;}
-            else if(rc!=SM_BUSY){controller_log("PCM mirror unpause failed",rc);failed=1;}
+            else if(rc!=SM_BUSY){audio_mirror_log("PCM mirror unpause failed",rc);failed=1;}
         }
         if(status.completed!=played){played=status.completed;last_progress=now;}
         if(!paused && status.accepted>status.completed && now-last_progress>2000000) {
-            controller_log("PCM mirror DMA stalled",status.completed);failed=1;
+            audio_mirror_log("PCM mirror DMA stalled",status.completed);failed=1;
         }
         if(now>=next_report) {
             char line[160];snprintf(line,sizeof(line),"PCM mirror blocks=%u ring=%u ESP=%u sent=%u played=%u underruns=%u dropped=%u",
                 m->blocks,m->wr-m->rd,(unsigned)(status.accepted-status.completed),sent,(unsigned)status.completed,(unsigned)status.underruns,m->dropped);
-            controller_log(line,0);next_report=now+5000000;
+            audio_mirror_log(line,0);
+            snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
+            audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;
         }
         sceKernelDelayThread(2000);
     }
@@ -187,7 +226,7 @@ static int audio_mirror_worker(SceSize size,void *args) {
      * old session alone: the app OPEN replaces it and stale IDs cannot close it. */
     audio_mirror_close(&status);
     audio_mirror_uninstall();
-    controller_log("PCM mirror stopped",0);return 0;
+    audio_mirror_log("PCM mirror stopped",0);return 0;
 }
 static void audio_mirror_start(void) {
     if(!audio_mirror_enabled || sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME || sceKernelFindModuleByName("PSPStreamer"))return;
@@ -211,5 +250,6 @@ static void audio_mirror_stop(void) {
         /* No forced termination: a hook or USB request must not outlive us. */
         sceKernelWaitThreadEnd(audio_mirror_thread,NULL);sceKernelDeleteThread(audio_mirror_thread);audio_mirror_thread=-1;
     }
+    if(audio_mirror)while(audio_mirror->log_rd!=audio_mirror->log_wr)audio_mirror_log_drain();
     if(audio_mirror_memory>=0 && !audio_mirror_pinned){sceKernelFreePartitionMemory(audio_mirror_memory);audio_mirror_memory=-1;audio_mirror=NULL;}
 }

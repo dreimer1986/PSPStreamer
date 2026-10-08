@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../psp-controller/audio_mirror_signature.h"
+#include "../psp-controller/audio_mirror_flow.h"
 static void check(const char *path,uint32_t base,uint32_t state) {
     FILE *f=fopen(path,"rb");assert(f);
     uint32_t words[13588/4];assert(fread(words,1,sizeof(words),f)==sizeof(words));assert(fgetc(f)==EOF);fclose(f);
@@ -22,6 +23,22 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    /* Exercise backlog thresholds and ring-index wrap without enlarging the
+     * allocation or resetting the optical session on capture overflow. */
+    assert(mirror_trim_frames(0)==0);
+    assert(mirror_trim_frames(3072)==0);
+    assert(mirror_trim_frames(3136)==2112);
+    assert(mirror_trim_frames(MIRROR_RING)==3072);
+    for(unsigned rd=0xfffff000U;rd!=0;rd+=64) {
+        for(unsigned available=0;available<=MIRROR_RING;available+=64) {
+            unsigned wr=rd+available;
+            unsigned next=rd+mirror_trim_frames(wr-rd);
+            assert(wr-next<=3072);
+            assert((next&63)==0);
+            if(available>3072)assert(wr-next==1024);
+            else assert(next==rd);
+        }
+    }
     uint32_t physical=0x0813d180;
     assert(mirror_dma_half(0,physical+1024,physical)==0);
     assert(mirror_dma_half(physical+1056,0,physical)==1);

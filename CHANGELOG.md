@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer game PCM: defer Memory Stick diagnostics to the existing
+  controller service through a bounded queue. Capture overflow no longer
+  closes optical output for a two-second retry; trim excessive stale capture
+  backlog instead. Log worker/USB delays and discarded frames for hardware
+  verification. No firmware, Sony mixer-clock or VSH/POPS changes.
+
 - PSP Consolizer: allocate the 144 KiB download pipeline only when needed,
   reserving it when PSPStreamer takes USB ownership and releasing it after
   USB shutdown has drained callbacks. Games retain controller/PCM support
