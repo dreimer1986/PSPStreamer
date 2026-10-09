@@ -2,10 +2,19 @@
 
 ## Additional unreleased changes
 
+- Consolizer: verified SRC/Output2 PCM capture for games that switch away from
+  the normal mixer, with native 32/44.1/48 kHz output, lower-rate conversion and
+  a SRC-only 32 KiB ring. Sony pacing remains untouched; hardware test pending.
+- Hide unused MP3 quality in optical playback options (LCD, TV and web).
+  Offline conversion retains its own quality selection. Report the PSP output
+  mode to the web, including idle state and the "Use PSP setting" option.
+- Log player entry/return errors and AVC bridge initialization: the latest
+  failed-playback reports contained successful metadata but no start/error code.
+
 - PSP Consolizer: defer VSH overlay allocation, hook attachment and drawing by
   five seconds after service initialization, leaving the startup sound alone.
   Both overlay modes and always-on are covered; controller/audio startup and
-  GAME/POPS overlay timing are unchanged. Hardware confirmation pending.
+  GAME/POPS overlay timing are unchanged. VSH startup fix confirmed on hardware.
 
 - PSP Consolizer optical PCM: restart the DMA watchdog deadline when a new
   audio burst is accepted after the previous output has fully drained. Applies

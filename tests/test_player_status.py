@@ -11,6 +11,16 @@ from psp_streamer.server import AppServer, Library
 
 
 class PlayerStatusTests(unittest.TestCase):
+    def test_optical_mode_reported_even_while_idle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status = PlayerStatus(directory)
+            status.report({'audio_output': ['spdif_auto_ac3']})
+            self.assertEqual(status.snapshot()['audio_output'], 'spdif_auto_ac3')
+            status.report({'media': ['test'], 'state': ['playing']})
+            self.assertEqual(status.snapshot()['audio_output'], 'spdif_auto_ac3')
+            status.report({'audio_output': ['psp']})
+            self.assertEqual(status.snapshot()['audio_output'], 'psp')
+
     def test_confirmation_expiry_and_persistent_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             status = PlayerStatus(directory)

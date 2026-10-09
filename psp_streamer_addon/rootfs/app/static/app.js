@@ -83,6 +83,13 @@ function renderLibrary(){
 }
 function qualityOptions(select){for(const q of ['160k','128k','96k','v6','v5','v4','v3'])option(select,q,q.startsWith('v')?'VBR '+q.toUpperCase():'CBR '+parseInt(q)+' kbit/s');}
 qualityOptions($('#audio_quality'));qualityOptions($('#batchQuality'));
+// Optical playback has no MP3 quality. Offline conversion still does: keep
+// that control separate so hiding playback quality does not hide download quality.
+const downloadAudioLabel=document.createElement('label'),downloadAudioSelect=document.createElement('select');
+downloadAudioLabel.hidden=true;downloadAudioSelect.id='downloadAudioQuality';
+downloadAudioLabel.append(t('Convert for download')+' — '+t('Audio quality'),downloadAudioSelect);
+qualityOptions(downloadAudioSelect);$('#profileField').after(downloadAudioLabel);
+downloadAudioSelect.onchange=()=>{$('#audio_quality').value=downloadAudioSelect.value;$('#audio_quality').dispatchEvent(new Event('change'));};
 const matrixLabel=document.createElement('label'),matrixSelect=document.createElement('select');
 matrixSelect.id='audio_matrix';matrixLabel.append(t('Audio downmix'),matrixSelect);
 for(const [value,label] of [['none','Stereo'],['dolby','Dolby Surround'],['dplii','Dolby Pro Logic II']])option(matrixSelect,value,label);
@@ -93,7 +100,7 @@ opticalSelect.id='audio_output';opticalLabel.append(t('PSP audio output'),optica
 for(const [value,label] of [['','Use PSP setting'],['psp','PSP'],['spdif_pcm','S/PDIF — stereo PCM'],['spdif_auto_pcm','S/PDIF — passthrough / PCM fallback'],['spdif_auto_ac3','S/PDIF — passthrough / AC-3 fallback']])option(opticalSelect,value,t(label));
 matrixLabel.after(opticalLabel);
 try{opticalSelect.value=localStorage.getItem('pspAudioOutput')||'';}catch(e){}
-opticalSelect.onchange=()=>{try{localStorage.setItem('pspAudioOutput',opticalSelect.value);}catch(e){}};
+opticalSelect.onchange=()=>{try{localStorage.setItem('pspAudioOutput',opticalSelect.value);}catch(e){}xboxQualityVisibility();};
 function savePreferences(){const data={...preferences};preferenceWrites=preferenceWrites.then(()=>post('/api/offline/preferences',data)).catch(fail);}
 for(const [id,key] of [['audio_quality','audio_quality'],['video_fps','video_fps'],['downloadProfile','profile'],['audio','audio'],['subtitle','subtitle']]){
   $('#'+id).onchange=()=>{const s=$('#'+id);preferences[key]=['audio','subtitle'].includes(key)?s.selectedOptions[0]?.textContent||'':s.value;savePreferences();};
@@ -191,6 +198,7 @@ async function refreshPlayer(adopt=false){
 async function applyPlayerStatus(p,adopt=false){
   const previous=playerSample;
   playerSample={...p,received:performance.now()};
+  xboxQualityVisibility();
   const active=activePlayer(p);nowPlaying.hidden=!active;
   nowPlayingText.textContent=active?`${t('Now playing')}: ${p.title||p.id} — ${t(p.state)}`:'';
   if(previous?.id!==p.id||previous?.state!==p.state||previous?.online!==p.online)renderLibrary();

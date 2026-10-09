@@ -169,7 +169,11 @@ function xboxQualityVisibility(){
   const xbox=browserTarget.value==='xbox',audio=selected?.kind==='audio';
   xboxQualityField.hidden=!xbox||!selected||audio;
   xboxAudioField.hidden=!xbox||!selected;
-  $('#audio_quality').closest('label').hidden=xbox;
+  const output=$('#audio_output').value||(playerSample?.online?playerSample.audio_output:'')||'';
+  const optical=browserTarget.value==='psp'&&output.startsWith('spdif_');
+  $('#audio_quality').closest('label').hidden=xbox||optical;
+  downloadAudioLabel.hidden=!(xbox||optical)||!selected||selected.live;
+  downloadAudioSelect.value=$('#audio_quality').value;
   $('#audio_matrix').closest('label').hidden=xbox||browserTarget.value==='browser';
   $('#audio_output').closest('label').hidden=xbox||browserTarget.value==='browser';
   $('#fpsField').hidden=xbox||audio;

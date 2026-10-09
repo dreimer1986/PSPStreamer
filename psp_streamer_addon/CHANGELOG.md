@@ -1,3 +1,8 @@
+# 0.1.82
+
+- Hide unused MP3 playback quality for optical PSP output, also when using
+  the output setting reported by the PSP. Keep download quality accessible.
+
 # 0.1.81
 
 - Use O consistently for the PSP circle button in the web keyboard help.

@@ -52,7 +52,10 @@ class PlayerStatus:
             data['state'] = 'buffering'
         with self.lock:
             self.tick = time.monotonic()
+            output = value('audio_output', self.current.get('audio_output', ''))
             self.current = data if data['state'] != 'idle' else {'state': 'idle'}
+            if output in {'psp', 'spdif_pcm', 'spdif_auto_pcm', 'spdif_auto_ac3'}:
+                self.current['audio_output'] = output
 
     def snapshot(self):
         with self.lock:

@@ -6,11 +6,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../psp-controller/audio_mirror_signature.h"
+#include "../psp-controller/audio_mirror_src.h"
 #include "../psp-controller/audio_mirror_flow.h"
 static void check(const char *path,uint32_t base,uint32_t state) {
     FILE *f=fopen(path,"rb");assert(f);
     uint32_t words[13588/4];assert(fread(words,1,sizeof(words),f)==sizeof(words));assert(fgetc(f)==EOF);fclose(f);
     assert(mirror_signature(words,sizeof(words),base,state));
+    assert(mirror_src_signature(words,sizeof(words),base,state));
+    assert(!mirror_src_signature(words,sizeof(words),base,state+64));
+    for(unsigned off=0x20ec;off<0x2454;off+=4) {
+        words[off/4]^=0x100;
+        assert(!mirror_src_signature(words,sizeof(words),base,state));
+        words[off/4]^=0x100;
+    }
     assert(!mirror_signature(words,sizeof(words)-4,base,state));
     assert(!mirror_signature(words,sizeof(words),base+256,state));
     assert(!mirror_signature(words,sizeof(words),base,state+64));
@@ -23,6 +31,16 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    assert(mirror_src_rate(32000)==32000 && mirror_src_rate(44100)==44100);
+    assert(mirror_src_rate(8000)==48000 && !mirror_src_rate(12345));
+    assert(mirror_src_sample(0x7fff8000,0x8000)==0x7fff8000);
+    assert(!mirror_src_sample(0x7fff8000,0));
+    assert(mirror_src_sample(0x4000c000,0xfffff)==0x7fff8000);
+    assert(mirror_src_lerp(0x00000000,0x4000c000,24000,48000)==0x2000e000);
+    /* 22.05 kHz -> 48 kHz keeps rational phase over arbitrary packets. */
+    unsigned phase=0,consumed=0;
+    for(unsigned i=0;i<48000;i++){phase+=22050;consumed+=phase/48000;phase%=48000;}
+    assert(consumed==22050 && !phase);
     assert(mirror_fresh_burst(4096,4096,256));
     assert(!mirror_fresh_burst(4096,4096,0));
     assert(!mirror_fresh_burst(4352,4096,256));

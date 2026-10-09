@@ -406,6 +406,12 @@ static int receiver_visible;
 static unsigned int receiver_flash_button;
 static int stream_start_seconds;
 static int download_before_play;
+/* Offline files still use MP3, irrespective of the current optical output. */
+static int playback_option_index(int row,int audio_only) {
+    int quality=audio_only?0:2;
+    int hide=selected_audio_output && (!download_before_play || audio_only==2);
+    return hide && row==quality?-1:row-(hide && row>quality);
+}
 /* Opt-in diagnostics; normal errors and recovery remain active. */
 static int debug_enabled;
 static int resume_pending;
@@ -1823,7 +1829,7 @@ static void plex_report_path(char *path, size_t capacity, int sequence, int stop
         snprintf(path+used,capacity-used,"&media=%s",playback_report_id);
     }
     size_t used=strlen(path);
-    snprintf(path+used,capacity-used,"&started=%d",plex_started);
+    snprintf(path+used,capacity-used,"&started=%d&audio_output=%s",plex_started,audio_output_keys[selected_audio_output]);
 }
 static void plex_report_begin(const char *id) {
     snprintf(playback_report_id,sizeof(playback_report_id),"%s",id);
@@ -2816,7 +2822,9 @@ static int comfort_play_audio(const char *id,const char *name) {
     int result;
     do {
         int recovery_start=stream_start_seconds;
+        recovery_log("music play begin",selected_audio_output,0,offline_active?"local":"stream");
         result=play_audio(id,name);
+        recovery_log("music play returned",result,0,video_step);
         if(offline_active || radio_is_live(id) || !music_network_failed)break;
         if(playback_position_ms-recovery_start*1000>=30000)recovery_failures=0;
         if(!playback_reconnect_wait()) {playback_recovery_cancel();result=0;break;}
@@ -2835,7 +2843,9 @@ static int comfort_play_video(const char *id) {
     int result,decoder_failures=0;
     do {
         int recovery_start=stream_start_seconds;
+        recovery_log("video play begin",selected_audio_output,0,offline_active?"local":"stream");
         result=play_h264(id);
+        recovery_log("video play returned",result,0,video_step);
         if(offline_active || seek_requested || video_file_direction)break;
         int decoder=playback_decoder_retry(result,video_step,
             playback_position_ms-recovery_start*1000,&decoder_failures);
@@ -3418,6 +3428,7 @@ static int playback_options(int audio_only) {
     SceCtrlData pad;
     unsigned int old = 0;
     int row = 0;
+    recovery_log("playback options opened",audio_only,0,audio_output_keys[selected_audio_output]);
     /* The dialog is opened with X.  Consume that press first, otherwise the
      * first controller poll treats the still-held button as "Start". */
     do {
@@ -3426,30 +3437,25 @@ static int playback_options(int audio_only) {
     } while (pad.Buttons & PSP_CTRL_CROSS);
     while (1) {
         keep_awake();
+        if(playback_option_index(row,audio_only)<0 && audio_only!=2)row++;
         if (tv_ui_active) tv_draw_view(TV_VIEW_OPTIONS, 0, row, audio_only, NULL, 0);
         else {
             gui_library_shell(tr(TXT_STREAM_OPTIONS));
             gui_text(38, 40, 0x0000D8FF, "%s", tr(TXT_STREAM_OPTIONS));
             if (audio_only) {
-                if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-                if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-                if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
-                gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
-                if(audio_only!=2)gui_text(38, 84, 0x00FFFFFF, "%s: %s", tr(TXT_PLAY_ORDER), tr(audio_shuffle ? TXT_SHUFFLE : TXT_SEQUENTIAL));
-                if(audio_only!=2)gui_text(38, 104, 0x00FFFFFF, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
-                gui_text(376, 47, 0x00FFB000, "%s", tr(TXT_QUALITY));
+                if(playback_option_index(row,audio_only)>=0)gui_rect((u32 *)0x44000000,36,64+20*playback_option_index(row,audio_only),310,9,0x004A5A32);
+                if(playback_option_index(0,audio_only)>=0)gui_text(38, 64, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+                if(audio_only!=2)gui_text(38,64+20*playback_option_index(1,audio_only),0x00FFFFFF,"%s: %s",tr(TXT_PLAY_ORDER),tr(audio_shuffle?TXT_SHUFFLE:TXT_SEQUENTIAL));
+                if(audio_only!=2)gui_text(38,64+20*playback_option_index(2,audio_only),0x00FFFFFF,"%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
+                gui_text(376, 47, 0x00FFB000, "%s", tr(selected_audio_output?TXT_MUSIC:TXT_QUALITY));
                 gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
                 gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_MUSIC));
                 gui_text(376, 98, 0x008A9BAA, "%s", tr(TXT_STREAM_BANG));
                 gui_text(38, 177, 0x00FFFFFF, "%s", tr(TXT_MUSIC_SETUP_CONTROLS));
             } else {
-                if (row == 0) gui_rect((u32 *)0x44000000, 36, 64, 310, 9, 0x004A5A32);
-                if (row == 1) gui_rect((u32 *)0x44000000, 36, 84, 310, 9, 0x004A5A32);
-                if (row == 2) gui_rect((u32 *)0x44000000, 36, 104, 310, 9, 0x004A5A32);
-                if (row == 3) gui_rect((u32 *)0x44000000, 36, 124, 310, 9, 0x004A5A32);
-                if (row == 4) gui_rect((u32 *)0x44000000, 36, 144, 310, 9, 0x004A5A32);
-                gui_text(38, 144, 0x00FFFFFF, "%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
-                gui_text(38, 124, 0x00FFFFFF, "%s: %s", tr(TXT_FRAME_RATE), selected_video_fps ? "23.976 fps" : "20 fps");
+                gui_rect((u32 *)0x44000000,36,64+20*playback_option_index(row,0),310,9,0x004A5A32);
+                gui_text(38,64+20*playback_option_index(4,0),0x00FFFFFF,"%s: %s",tr(TXT_PLAY_MODE),tr(download_before_play?TXT_DOWNLOAD_MODE:TXT_STREAM_MODE));
+                gui_text(38,64+20*playback_option_index(3,0),0x00FFFFFF,"%s: %s",tr(TXT_FRAME_RATE),selected_video_fps?"23.976 fps":"20 fps");
                 gui_text(38, 64, 0x00FFFFFF, tr(TXT_AUDIO_LABEL),
                                      audio_track_count ? audio_tracks[selected_audio_track].language : tr(TXT_NOT_DETECTED),
                                      audio_track_count && audio_tracks[selected_audio_track].title[0] ? " - " : "",
@@ -3458,7 +3464,7 @@ static int playback_options(int audio_only) {
                                      selected_subtitle_track < 0 ? tr(TXT_OFF) : subtitle_tracks[selected_subtitle_track].language,
                                      selected_subtitle_track >= 0 && subtitle_tracks[selected_subtitle_track].title[0] ? " - " : "",
                                      selected_subtitle_track >= 0 ? subtitle_tracks[selected_subtitle_track].title : "");
-                gui_text(38, 104, 0x00FFFFFF, "%s: %s", tr(TXT_QUALITY), audio_quality_name());
+                if(playback_option_index(2,0)>=0)gui_text(38,104,0x00FFFFFF,"%s: %s",tr(TXT_QUALITY),audio_quality_name());
                 gui_text(373, 47, 0x00FFB000, "%s", tr(TXT_AUDIO_SUB));
                 gui_text(376, 76, 0x008A9BAA, "%s", tr(TXT_SAVED_FOR));
                 gui_text(376, 87, 0x008A9BAA, "%s", tr(TXT_NEXT_PLAY));
@@ -3477,17 +3483,22 @@ static int playback_options(int audio_only) {
             if(saved>=0){series_saved=!remove;preferred_audio=selected_audio_track;preferred_subtitle=selected_subtitle_track;}
             else {snprintf(status,sizeof(status),tr(TXT_SERVER_ERROR),saved);old=pad.Buttons;return 0;}
         }
-        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) return 0;
-        if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) return 1;
+        if ((pad.Buttons & PSP_CTRL_CIRCLE) && !(old & PSP_CTRL_CIRCLE)) {
+            recovery_log("playback options cancelled",pad.Buttons,0,"O");return 0;
+        }
+        if ((pad.Buttons & PSP_CTRL_CROSS) && !(old & PSP_CTRL_CROSS)) {
+            recovery_log("playback options accepted",pad.Buttons,0,download_before_play?"download":"stream");return 1;
+        }
         if ((pad.Buttons & PSP_CTRL_SQUARE) && !(old & PSP_CTRL_SQUARE)) {
             help_open(audio_only?HELP_MUSIC:HELP_OPTIONS);
             sceCtrlReadBufferPositive(&pad,1);old=pad.Buttons;continue;
         }
-        if (audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 2) % (audio_only==2?1:3);
-        if (audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % (audio_only==2?1:3);
-        if (!audio_only && (pad.Buttons & PSP_CTRL_UP) && !(old & PSP_CTRL_UP)) row = (row + 4) % 5;
-        if (!audio_only && (pad.Buttons & PSP_CTRL_DOWN) && !(old & PSP_CTRL_DOWN)) row = (row + 1) % 5;
-        if ((pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
+        int rows=audio_only?(audio_only==2?1:3):5;
+        if((pad.Buttons & ~old)&(PSP_CTRL_UP|PSP_CTRL_DOWN)) {
+            int delta=(pad.Buttons&PSP_CTRL_UP)?-1:1;
+            for(int i=0;i<rows;i++){row=(row+delta+rows)%rows;if(playback_option_index(row,audio_only)>=0)break;}
+        }
+        if (playback_option_index(row,audio_only)>=0 && (pad.Buttons & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT)) && !(old & (PSP_CTRL_LEFT | PSP_CTRL_RIGHT))) {
             int delta = (pad.Buttons & PSP_CTRL_RIGHT) ? 1 : -1;
             if (audio_only && row == 0) selected_audio_quality = (selected_audio_quality + delta + 7) % 7;
             else if (audio_only && row==1) audio_shuffle = !audio_shuffle;
@@ -3628,6 +3639,7 @@ int main(void) {
     /* Keep the established network/module order, but initialise AVC even if
      * association failed: local playback has no network dependency. */
     hardware_runtime_result = load_hardware_avc_runtime();
+    recovery_log("AVC runtime initialization",hardware_runtime_result,0,"cooleyesBridge");
     if (result < 0) {
         if(pad.Buttons & PSP_CTRL_RTRIGGER)snprintf(status,sizeof(status),"%s",tr(TXT_LOCAL_STORAGE));
         else snprintf(status, sizeof(status), tr(TXT_NETWORK_FAILED), failure_step, result);

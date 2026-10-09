@@ -63,7 +63,7 @@ static const char *browser_remote_poll(int sequence) {
     } else if(now < browser_remote_next)return NULL;
     browser_art_turn=0;
     browser_remote_next = now + 1000000ULL;
-    snprintf(browser_remote_path, sizeof(browser_remote_path), "/api/remote/next?after=%d", sequence);
+    snprintf(browser_remote_path,sizeof(browser_remote_path),"/api/remote/next?after=%d&audio_output=%s",sequence,audio_output_keys[selected_audio_output]);
     browser_remote_running = 1;
     browser_remote_done = 0;
     browser_remote_thread_id = sceKernelCreateThread("browser remote", browser_remote_worker,

@@ -43,6 +43,22 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert(!(await page.locator('#xboxQualityField').isVisible()));await page.click('#play');assert(!('xbox_size' in commands.at(-1)));
   await page.selectOption('#playbackTarget','psp');assert(!(await page.locator('#xboxQualityField').isVisible()));
   assert(await page.locator('#audio_quality').isVisible());
+  for(const mode of ['spdif_pcm','spdif_auto_pcm','spdif_auto_ac3']) {
+   await page.selectOption('#audio_output',mode);
+   assert(!(await page.locator('#audio_quality').isVisible()));
+   assert(await page.locator('#downloadAudioQuality').isVisible());
+  }
+  await page.selectOption('#downloadAudioQuality','v5');
+  assert.equal(await page.locator('#audio_quality').inputValue(),'v5');
+  await page.selectOption('#audio_output','psp');
+  assert(await page.locator('#audio_quality').isVisible());
+  await page.selectOption('#audio_output','');
+  pspState={online:true,state:'idle',audio_output:'spdif_pcm'};
+  await page.evaluate(()=>refreshPlayer());
+  assert(!(await page.locator('#audio_quality').isVisible()));
+  pspState={online:true,state:'idle',audio_output:'psp'};
+  await page.evaluate(()=>refreshPlayer());
+  assert(await page.locator('#audio_quality').isVisible());
   await page.click('#play');assert.equal(commands.at(-1).path,'/api/remote/command');assert(!('xbox_size' in commands.at(-1)));
   await page.selectOption('#playbackTarget','browser');assert(!(await page.locator('#xboxQualityField').isVisible()));
   assert.equal(await page.evaluate(()=>localStorage.getItem('xboxVideoQuality')),'720p');

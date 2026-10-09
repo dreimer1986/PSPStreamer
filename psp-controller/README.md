@@ -77,8 +77,8 @@ The plugin must also be enabled for VSH and POPS in ARK's plugin configuration;
 the INI flags alone cannot load it in those contexts. VSH startup may precede
 USB readiness, so the earliest boot sound is not guaranteed to be mirrored.
 POPS is a context test, not support for every Popsloader driver: an unknown
-audio-driver signature or SRC/Output2 use still suppresses capture and is logged.
-This prevents treating the normal-mixer buffer as a different audio path.
+audio-driver signature still suppresses capture and is logged. SRC/Output2 has
+its own verified capture hook; it never treats the normal-mixer buffer as SRC.
 Firmware 0.3.25 removes the temporary ESP event ring and HTTP diagnostics server,
 and both PSP clients stop requesting that diagnostic opcode. No port 8080 is
 opened. Existing opt-in PSP reports and the original audio-open diagnostic remain.
@@ -111,15 +111,27 @@ USB driver. Optional memory is about 20 KiB plus a 4 KiB worker stack. No buffer
 or worker are allocated when disabled or at PSPStreamer startup. In VSH/POPS
 the same optional allocation now applies when those contexts are enabled.
 
-Initial optical prefill is 1,536 frames (about 35 ms at 44.1 kHz), not a claim
+Initial optical prefill is 2,304 frames (about 52 ms at 44.1 kHz), not a claim
 of total end-to-end latency. This prototype does not yet resample to compensate
 long-term PSP/ESP oscillator drift: buffer levels are logged first. A sample
 rate change stops capture and reopens the optical session; transport failure
 never blocks the game's original audio, and poisoned USB transport remains
 disabled until reset/relaunch. Suspend, emergency disable and PSPStreamer
-ownership suppress capture. SRC/Output2 activity suppresses the mirror rather
-than pretending that only the normal mix is complete. Unknown driver signatures are left
-unpatched; no universal firmware compatibility is claimed.
+ownership suppress capture. Unknown driver signatures are left unpatched;
+no universal firmware compatibility is claimed.
+
+**SRC/Output2 capture (hardware test pending):** a separately fingerprinted
+6.61 internal call mirrors only successfully submitted stereo PCM. Its original
+return value, interrupt handling and blocking/pacing remain Sony's. A 32 KiB
+raw ring is allocated only while SRC is in use, then released on returning to
+the normal mixer. No game pointer survives the hook and it never waits for USB.
+32/44.1/48 kHz are sent at native rate. The worker converts the lower Sony SRC
+rates to 48 kHz with continuous-phase integer linear interpolation. Capture
+honors SRC volume and clips to signed 16-bit. Output2 uses the same entry point.
+While SRC is reserved, it replaces normal-mixer capture; simultaneous mixing
+of both hardware paths is not implemented. Allocation/signature failures are
+logged and leave original PSP audio untouched. Test GTA VCS beyond its intro,
+then exit/restart and check normal-channel games and POPS for regressions.
 
 **Optional read-only audio probe:** this separate diagnostic feature does not
 send audio or install the PCM hook by itself. Add `audio_probe=1` and set

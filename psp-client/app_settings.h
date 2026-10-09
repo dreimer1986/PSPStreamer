@@ -116,9 +116,11 @@ static int app_settings(void) {
         unsigned int pressed=pad.Buttons&~old;
         if(dirty) {
             settings_shell(tr(TXT_SETTINGS));
-            int first=(selected+3)/8*8;
-            for(int entry=first;entry<SET_COUNT+3 && entry<first+8;entry++) {
-                int i=entry-3;
+            int hide_quality=draft.value[SET_AUDIO_OUTPUT]!=0;
+            int visible=selected+3-(hide_quality && selected>SET_QUALITY);
+            int first=visible/8*8;
+            for(int entry=first;entry<SET_COUNT+3-hide_quality && entry<first+8;entry++) {
+                int i=entry-3;if(hide_quality && i>=SET_QUALITY)i++;
                 if(i<0) {settings_line(entry-first,selected==i,tr(i==-3?TXT_COMFORT:i==-2?TXT_HELP_OPEN:tv_ui_active?TXT_OUTPUT_LCD:TXT_OUTPUT_TV));continue;}
                 char value[64],line[128];
                 if(i==SET_HOST)snprintf(value,sizeof(value),"%s",draft.host);
@@ -218,8 +220,13 @@ static int app_settings(void) {
         unsigned int movement=pad.Buttons&(PSP_CTRL_UP|PSP_CTRL_DOWN|PSP_CTRL_LEFT|PSP_CTRL_RIGHT);
         unsigned long long now=sceKernelGetSystemTimeWide();
         if(movement && ((pressed&movement)||now>=repeat)) {
-            if(movement&PSP_CTRL_UP)selected=(selected+SET_COUNT+5)%(SET_COUNT+3)-3;
-            else if(movement&PSP_CTRL_DOWN)selected=(selected+4)%(SET_COUNT+3)-3;
+            if(movement&PSP_CTRL_UP) {
+                selected=(selected+SET_COUNT+5)%(SET_COUNT+3)-3;
+                if(selected==SET_QUALITY && draft.value[SET_AUDIO_OUTPUT])selected--;
+            } else if(movement&PSP_CTRL_DOWN) {
+                selected=(selected+4)%(SET_COUNT+3)-3;
+                if(selected==SET_QUALITY && draft.value[SET_AUDIO_OUTPUT])selected++;
+            }
             else if(selected>=0 && maximum[selected]) {
                 int step=selected==SET_FADE?100:1;
                 int value=draft.value[selected]+((movement&PSP_CTRL_LEFT)?-step:step);
