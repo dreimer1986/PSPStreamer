@@ -6,6 +6,7 @@
 #include <systemctrl.h>
 #include <stdio.h>
 #include "report_config.h"
+#include "vsh_audio_start.h"
 #include "audio_probe_stats.h"
 #include "audio_mirror_signature.h"
 #include "pops_audio_link.h"
@@ -13,6 +14,7 @@
 PSP_MODULE_INFO("PSPConsolizer",PSP_MODULE_KERNEL,0,2);
 static SceUID worker=-1;
 static int report_enabled=1;
+static int fast_vsh_audio;
 static int early_status=-27,early_requested,early_client,early_stopping;
 static unsigned long long early_time;
 static char early_message[96];
@@ -109,7 +111,16 @@ static int load_start(const char *path) {
     return 0;
 }
 static int start_worker(SceSize size,void *args) {
-    (void)size;(void)args;sceKernelDelayThread(2000000);
+    (void)size;(void)args;
+    /* Do not spend two seconds of the boot sound waiting if VSH's audio,
+     * USB and input services are already resident. Keep the established
+     * fallback, and all GAME/POPS startup timing, unchanged. */
+    int early_vsh=fast_vsh_audio && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_VSH &&
+        sceKernelFindModuleByName("sceAudio_Driver") &&
+        sceKernelFindModuleByName("sceUSB_Driver") &&
+        sceKernelFindModuleByName("sceController_Service") &&
+        sceKernelFindModuleByName("sceDisplay_Service");
+    if(!early_vsh)sceKernelDelayThread(2000000);
     /* Keep the last PS1 run even if a file manager starts before USB mode. */
     if(report_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) {
         const char *pops_logs[]={"ms0:/SEPLUGINS/PSPConsolizer/loader-pops.log",
@@ -142,6 +153,7 @@ static int start_worker(SceSize size,void *args) {
         if(early_message[0])report(early_message,pops_audio_published);
         if(pops_audio_setup || (early_status<0 && early_status!=-20))early_detach();
     }
+    report("VSH audio ready-services fast start",early_vsh);
     int rc=0;
     if(!sceKernelFindModuleByName("sceUSB_Driver")) {
         rc=load_start("flash0:/kd/usb.prx");
@@ -158,7 +170,8 @@ int module_start(SceSize size,void *args) {
     int config_fd=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini",PSP_O_RDONLY,0);
     if(config_fd>=0) {
         int n=sceIoRead(config_fd,config,sizeof(config)-1);sceIoClose(config_fd);
-        if(n>0){config[n]=0;report_enabled=consolizer_report_setting(config);early_configure(config);}
+        if(n>0){config[n]=0;report_enabled=consolizer_report_setting(config);
+            fast_vsh_audio=consolizer_vsh_audio_requested(config);early_configure(config);}
     }
     worker=sceKernelCreateThread("PSPConsolizer loader",start_worker,0x30,4096,0,NULL);
     /* Once an early hook exists, returning an error could unload its code.
