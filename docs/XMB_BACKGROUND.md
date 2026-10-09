@@ -24,6 +24,18 @@ An independent animated overlay is not proof of an animated PIC1 solution.
 
 ## Next hardware-facing step
 
+First capture, 2026-10-09: PAF was complete (1,623,320 + 287,400 bytes), both
+FNV-1a values verified. Its `scePaf` export table contains 1,078 functions and
+24 variables. Observed NID offsets include `3874A5F8=3C5EC`,
+`82B37153=36D88`, `C22BACF3=DE044`; these are evidence, not installed hooks.
+Capture stopped at the next module's layout validation before printing its
+layout. The exact rejected segment therefore cannot be recovered from that log.
+The revised probe prints every layout first, supports the 64 MiB RAM boundary
+on known later PSP models, accepts empty segments without dereferencing them,
+and continues other modules after a layout rejection. The two missing modules
+still need a fresh capture. `check_xmb_capture.py --partial` verifies completed
+segments without claiming the whole session is complete.
+
 Consolizer now includes an **opt-in, read-only module capture**, not an animation
 renderer. Install the current `PSPConsolizerUSB.prx` and add these settings to
 `ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini`:

@@ -9,6 +9,9 @@
 - Add disabled-by-default, read-only VSH module capture (`xmb_probe=1`) for the
   optional animated-background investigation. No animation renderer, display
   hooks or texture modifications are added by this diagnostic.
+- Harden XMB capture after the first partial hardware run: model-aware RAM
+  bounds, empty-segment handling, rejected-layout logging and continued capture
+  of remaining modules. PAF capture verified; game menu and VSH still pending.
 
 - Release 2.5 summary: [system optical audio, smoother TV gaming and cyberpunk
   XMB](docs/RELEASE_2.5.md). Prior PSP/plugin/S/PDIF tests were accepted by the

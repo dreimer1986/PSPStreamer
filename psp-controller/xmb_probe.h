@@ -9,7 +9,7 @@ static SceUID xmb_probe_memory=-1,xmb_probe_fd=-1,xmb_probe_log=-1;
 static unsigned char *xmb_probe_buffer;
 static unsigned long long xmb_probe_after,xmb_probe_deadline,xmb_probe_next;
 static int xmb_probe_begun,xmb_probe_finished,xmb_probe_slot=-1;
-static unsigned xmb_probe_done,xmb_probe_segment,xmb_probe_offset,xmb_probe_crc;
+static unsigned xmb_probe_done,xmb_probe_rejected,xmb_probe_segment,xmb_probe_offset,xmb_probe_crc;
 static SceModule xmb_probe_module;
 static char xmb_probe_partial[168],xmb_probe_final[160];
 static const char *const xmb_probe_names[]={"scePaf_Module","game_plugin_module","vsh_module"};
@@ -23,7 +23,7 @@ static int xmb_probe_write(int fd,const void *data,unsigned bytes) {
 static void xmb_probe_finish(const char *reason) {
     if(xmb_probe_fd>=0){sceIoClose(xmb_probe_fd);xmb_probe_fd=-1;}
     if(xmb_probe_log>=0){
-        char line[160];int n=snprintf(line,sizeof(line),"finish=%s completed_mask=%u\n",reason,xmb_probe_done);
+        char line[160];int n=snprintf(line,sizeof(line),"rejected_mask=%u\nfinish=%s completed_mask=%u\n",xmb_probe_rejected,reason,xmb_probe_done);
         xmb_probe_write(xmb_probe_log,line,n);sceIoClose(xmb_probe_log);xmb_probe_log=-1;
     }
     if(xmb_probe_memory>=0){sceKernelFreePartitionMemory(xmb_probe_memory);xmb_probe_memory=-1;xmb_probe_buffer=NULL;}
@@ -52,8 +52,9 @@ static void xmb_probe_update(unsigned long long now,int allowed) {
         sceIoMkdir(XMB_PROBE_DIR,0777);
         xmb_probe_log=sceIoOpen(XMB_PROBE_DIR "/capture.txt",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC,0666);
         if(xmb_probe_log<0){xmb_probe_finish("open_error");return;}
-        char line[192];snprintf(line,sizeof(line),"PSPConsolizer XMB probe v1 READ ONLY\nfirmware=%08X model=%d tick=%llu\nNo animation renderer installed. Private diagnostic module capture.\n",
-            (unsigned)sceKernelDevkitVersion(),sceKernelGetModel(),now);
+        char line[224];snprintf(line,sizeof(line),"PSPConsolizer XMB probe v1 READ ONLY\nfirmware=%08X model=%d tick_hi=%08X tick_lo=%08X ram_end=%08X\nNo animation renderer installed. Private diagnostic module capture.\n",
+            (unsigned)sceKernelDevkitVersion(),sceKernelGetModel(),(unsigned)(now>>32),(unsigned)now,
+            (unsigned)xmb_probe_ram_end(sceKernelGetModel()));
         if(xmb_probe_record(line)<0)return;
         controller_log("XMB capture started; select PSPStreamer in XMB",0);
     }
@@ -63,25 +64,35 @@ static void xmb_probe_update(unsigned long long now,int allowed) {
          * Each later chunk revalidates identity and segment layout before
          * touching the range; a menu unload cancels that capture. */
         int intr=sceKernelCpuSuspendIntr();
-        for(unsigned i=0;i<3;i++)if(!(xmb_probe_done&(1U<<i))){
+        for(unsigned i=0;i<3;i++)if(!((xmb_probe_done|xmb_probe_rejected)&(1U<<i))){
             SceModule *m=sceKernelFindModuleByName(xmb_probe_names[i]);
             if(m){memcpy(&xmb_probe_module,m,sizeof(*m));xmb_probe_slot=(int)i;break;}
         }
         sceKernelCpuResumeIntr(intr);
         if(xmb_probe_slot<0){xmb_probe_next=now+500000;return;}
         SceModule *m=&xmb_probe_module;
-        unsigned total=0;int valid=m->nsegment>0 && m->nsegment<=4;
-        for(unsigned i=0;valid && i<m->nsegment;i++){
-            if(!xmb_probe_range(m->segmentaddr[i],m->segmentsize[i]) ||
-               m->segmentsize[i]>8U*1024*1024-total)valid=0;
-            else total+=m->segmentsize[i];
-        }
-        if(!valid){xmb_probe_finish("invalid_module_layout");return;}
         char line[256];snprintf(line,sizeof(line),"module=%s uid=%08X text=%08X text_size=%u data=%u bss=%u segments=%u exports=%08X export_size=%u imports=%08X import_size=%u\n",
             xmb_probe_names[xmb_probe_slot],(unsigned)m->modid,(unsigned)m->text_addr,(unsigned)m->text_size,
             (unsigned)m->data_size,(unsigned)m->bss_size,m->nsegment,(unsigned)m->ent_top,(unsigned)m->ent_size,
             (unsigned)m->stub_top,(unsigned)m->stub_size);
         if(xmb_probe_record(line)<0)return;
+        unsigned total=0,ram_end=xmb_probe_ram_end(sceKernelGetModel());
+        int valid=m->nsegment>0 && m->nsegment<=4;
+        for(unsigned i=0;i<m->nsegment && i<4;i++){
+            unsigned bytes=m->segmentsize[i];
+            int range_ok=!bytes || xmb_probe_range(m->segmentaddr[i],bytes,ram_end);
+            snprintf(line,sizeof(line),"layout_segment=%u address=%08X size=%u range_ok=%d\n",
+                i,(unsigned)m->segmentaddr[i],bytes,range_ok);
+            if(xmb_probe_record(line)<0)return;
+            if(!range_ok || bytes>8U*1024*1024-total)valid=0;
+            else total+=bytes;
+        }
+        if(!valid || !total){
+            if(xmb_probe_record("module_result=invalid_layout\n")<0)return;
+            xmb_probe_rejected|=1U<<xmb_probe_slot;xmb_probe_slot=-1;
+            if((xmb_probe_done|xmb_probe_rejected)==7)xmb_probe_finish("incomplete_layout");
+            return;
+        }
         xmb_probe_segment=0;xmb_probe_offset=0;
     }
     unsigned segment=xmb_probe_segment;
@@ -99,7 +110,7 @@ static void xmb_probe_update(unsigned long long now,int allowed) {
     int valid=m && m->modid==xmb_probe_module.modid && m->nsegment==xmb_probe_module.nsegment &&
         m->segmentaddr[segment]==xmb_probe_module.segmentaddr[segment] &&
         m->segmentsize[segment]==xmb_probe_module.segmentsize[segment];
-    if(valid)memcpy(xmb_probe_buffer,(void *)(xmb_probe_module.segmentaddr[segment]+xmb_probe_offset),amount);
+    if(valid && amount)memcpy(xmb_probe_buffer,(void *)(xmb_probe_module.segmentaddr[segment]+xmb_probe_offset),amount);
     sceKernelCpuResumeIntr(intr);
     if(!valid){xmb_probe_finish("module_unloaded_or_changed");return;}
     if(xmb_probe_write(xmb_probe_fd,xmb_probe_buffer,amount)<0){xmb_probe_finish("segment_write_error");return;}
@@ -117,7 +128,7 @@ static void xmb_probe_update(unsigned long long now,int allowed) {
         xmb_probe_offset=0;
         if(++xmb_probe_segment==xmb_probe_module.nsegment){
             xmb_probe_done|=1U<<xmb_probe_slot;xmb_probe_slot=-1;
-            if(xmb_probe_done==7)xmb_probe_finish("complete");
+            if((xmb_probe_done|xmb_probe_rejected)==7)xmb_probe_finish(xmb_probe_rejected?"incomplete_layout":"complete");
         }
     }
 }

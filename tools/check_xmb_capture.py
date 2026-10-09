@@ -5,11 +5,11 @@ from pathlib import Path
 import re
 
 
-def validate(directory):
+def validate(directory,allow_partial=False):
     text = (directory / 'capture.txt').read_text()
     if not text.startswith('PSPConsolizer XMB probe v1 READ ONLY\n'):
         raise ValueError('Unknown capture format')
-    if 'finish=complete completed_mask=7\n' not in text:
+    if not allow_partial and 'finish=complete completed_mask=7\n' not in text:
         raise ValueError('Incomplete capture; keep capture.txt to diagnose missing modules/errors')
     expected = {}
     for line in text.splitlines():
@@ -29,7 +29,7 @@ def validate(directory):
         if name not in expected or not 0 <= key[1] < expected[name] or key in segments:
             raise ValueError('Unexpected or duplicate segment')
         size = int(size)
-        if not 0 < size <= 8 * 1024 * 1024:
+        if not 0 <= size <= 8 * 1024 * 1024:
             raise ValueError('Invalid segment size')
         path = directory / f'{name}-{index}.bin'
         if path.stat().st_size != size:
@@ -41,7 +41,7 @@ def validate(directory):
         if value != int(checksum, 16):
             raise ValueError(f'Checksum mismatch: {path.name}')
         segments[key] = (int(address, 16), size)
-    if len(expected) != 3 or len(segments) != sum(expected.values()):
+    if not allow_partial and (len(expected) != 3 or len(segments) != sum(expected.values())):
         raise ValueError('Missing module/segment records')
     return segments
 
@@ -49,9 +49,11 @@ def validate(directory):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
+    parser.add_argument('--partial',action='store_true',help='Verify completed segments without claiming capture completeness')
     args = parser.parse_args()
     try:
-        for (name, index), (address, size) in validate(args.directory).items():
+        if args.partial: print('Partial validation only; this does not establish capture completeness.')
+        for (name, index), (address, size) in validate(args.directory,args.partial).items():
             print(f'{name}-{index}.bin: {address:08X}, {size} bytes, checksum OK')
     except (OSError, ValueError, KeyError) as exc:
         parser.exit(1, f'Capture not ready: {exc}\n')

@@ -16,18 +16,25 @@ class XmbProbeTests(unittest.TestCase):
 #include <assert.h>
 #include "xmb_probe_bounds.h"
 int main(void) {
-    assert(xmb_probe_range(0x08800000,8192));
-    assert(xmb_probe_range(0x88000000,8192));
-    assert(xmb_probe_range(0x08900000,2*1024*1024));
-    assert(!xmb_probe_range(0,8192));
-    assert(!xmb_probe_range(0x04000000,8192));
-    assert(!xmb_probe_range(0xbc000000,8192));
-    assert(!xmb_probe_range(0x08800000,0));
-    assert(!xmb_probe_range(0x09ffffff,2));
-    assert(!xmb_probe_range(0x08800000,0xffffffff));
-    assert(!xmb_probe_range(0xffffffff,1));
-    assert(!xmb_probe_range(0x28800000,8192));
-    assert(!xmb_probe_range(0x48800000,8192));
+    unsigned small=xmb_probe_ram_end(0),large=xmb_probe_ram_end(2);
+    assert(small==0x0a000000 && large==0x0c000000);
+    assert(xmb_probe_ram_end(-1)==small && xmb_probe_ram_end(99)==small);
+    assert(xmb_probe_range(0x08800000,8192,small));
+    assert(xmb_probe_range(0x88000000,8192,small));
+    assert(xmb_probe_range(0x08900000,2*1024*1024,small));
+    assert(!xmb_probe_range(0,8192,large));
+    assert(!xmb_probe_range(0x04000000,8192,large));
+    assert(!xmb_probe_range(0xbc000000,8192,large));
+    assert(!xmb_probe_range(0x08800000,0,large));
+    assert(!xmb_probe_range(0x09ffffff,2,small));
+    assert(xmb_probe_range(0x0a000000,8192,large));
+    assert(!xmb_probe_range(0x0a000000,8192,small));
+    assert(!xmb_probe_range(0x0bffffff,2,large));
+    assert(!xmb_probe_range(0x08800000,0xffffffff,large));
+    assert(!xmb_probe_range(0xffffffff,1,large));
+    assert(!xmb_probe_range(0x28800000,8192,large));
+    assert(!xmb_probe_range(0x48800000,8192,large));
+    assert(!xmb_probe_range(0x08800000,8192,0xffffffff));
     return 0;
 }
 '''
@@ -49,6 +56,7 @@ int main(void) {
             (path/'capture.txt').write_text(text)
             with self.assertRaisesRegex(ValueError,'Incomplete'):
                 capture.validate(path)
+            self.assertEqual(len(capture.validate(path,allow_partial=True)),3)
             (path/'capture.txt').write_text(text+'finish=complete completed_mask=7\n')
             self.assertEqual(len(capture.validate(path)),3)
             (path/'vsh_module-0.bin').write_bytes(b'b')
