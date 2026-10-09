@@ -57,7 +57,7 @@ def main():
         ("psp-client/streammaster_usb/StreamMasterUSB.prx", "StreamMasterUSB.prx"),
         ("psp-client/assets/subtitle_font.raw", "subtitle_font.raw"),
         ("psp-client/PSPStreamer.cfg.example", "PSPStreamer.cfg.example"),
-        ("README.md", "README.md"),
+        ("docs/PSP_PACKAGE_README.md", "README.md"),
         ("psp-client/assets/cave_ship.CREDITS.md", "cave_ship.CREDITS.md"),
         ("psp-client/assets/ships/CREDITS.md", "Flight-models-CREDITS.md"),
         ("psp-client/assets/shield/CREDITS.md", "AstroShield-CREDITS.md"),
@@ -142,7 +142,7 @@ def main():
         "components/esp_phy/lib/LICENSE": "esp-phy.txt", "components/wpa_supplicant/COPYING": "wpa-supplicant.txt",
         "components/bt/common/tinycrypt/LICENSE": "bt-tinycrypt.txt",
     }.items(): copy(idf / source, fw / "licenses" / target)
-    for source, target in [("docs/RELEASE_LAYOUT.md", "README.md"), ("docs/RELEASE_2.3.md", "RELEASE-2.3.md"), ("CHANGELOG.md", "CHANGELOG.md")]:
+    for source, target in [("docs/RELEASE_LAYOUT.md", "README.md"), ("docs/RELEASE_2.5.md", "RELEASE-2.5.md"), ("CHANGELOG.md", "CHANGELOG.md")]:
         copy(ROOT / source, out / target)
     todo = seed / "Probleme und Ideen.txt"
     if todo.exists(): copy(todo, out / todo.name)

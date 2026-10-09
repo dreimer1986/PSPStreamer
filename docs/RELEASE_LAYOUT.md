@@ -1,4 +1,4 @@
-# PSPStreamer 2.4 — release contents
+# PSPStreamer 2.5 — release contents
 
 One current folder and matching ZIP per component. No combined plugin bundle,
 duplicate PSP application, experimental clock packages or old test releases.
@@ -11,7 +11,7 @@ Choose either the extracted folder **or** its ZIP.
 | `PSPConsolizer/` + `.zip` | Copy to `ms0:/SEPLUGINS/PSPConsolizer/`. Controller bridge, TV activation and rumble. |
 | `StreamerOC/` + `.zip` | Copy to `ms0:/SEPLUGINS/StreamerOC/`. Clock plugin and per-title rule examples. |
 | `FuSaFullscreen/` + `.zip` | Copy to `ms0:/SEPLUGINS/FuSaFullscreen/`. Fullscreen scaler and TV helper. |
-| `StreamMaster/` + `.zip` | All firmware targets, from the same source and **0.3.18** version base. No PSP app/plugins inside. |
+| `StreamMaster/` + `.zip` | All firmware targets, from the same source and **0.3.25** version base. No PSP app/plugins inside. |
 
 Plugin folders contain `.ini.example` files. For a **new installation**, copy
 the main example to the corresponding `.ini` filename. On update, **preserve
@@ -22,14 +22,14 @@ for ARK registration and dependencies.
 ## Firmware targets
 
 - `StreamMaster/Onju-V3/`: ESP32-S3 Onju Voice V3,
-  `0.3.18-bt-qio80-iram`, USB Bluetooth/HID, rumble and optional S/PDIF. QIO flash 80 MHz,
+  `0.3.25-bt-qio80-iram`, USB Bluetooth/HID, rumble and optional S/PDIF. QIO flash 80 MHz,
   16 MB layout, CPU 240 MHz, Octal PSRAM 80 MHz. Hardware-tested configuration,
-  freshly rebuilt from current source; no new performance claim.
+  retained from the validated optical-audio build; no new performance claim.
 - `StreamMaster/ESP32-S3-QUAD-UNTESTED/`: generic S3, Quad PSRAM.
 - `StreamMaster/ESP32-S3-OCTAL-UNTESTED/`: generic S3, Octal PSRAM.
 - `StreamMaster/ESP32-S2-UNTESTED/`: generic S2, SPI PSRAM.
 
-Generic versions are `0.3.18-generic-qio80`, 4 MB layout, QIO flash 80 MHz and
+Generic versions are `0.3.25-generic-qio80`, 4 MB layout, QIO flash 80 MHz and
 PSRAM 80 MHz. **UNTESTED** means compiled, not physically validated. S2 has less
 internal-memory/CPU headroom. Generics retain their network-only feature set
 (no external USB Bluetooth); equal versions do not imply equal capabilities.
@@ -50,7 +50,7 @@ Likewise `dvemgr.prx` is included wherever needed for independent installation.
 
 ## Release notes and integrity
 
-- `RELEASE-2.4.md`: English changelog since tag 2.3; older notes remain historical.
+- `RELEASE-2.5.md`: English changelog since tag 2.4; older notes remain historical.
 - `RELEASE-TITLE.txt`: one-line English release title.
 - `CHANGELOG.md`: detailed history.
 - `MANIFEST.json`: source revision, embedded firmware versions, configuration

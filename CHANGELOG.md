@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Release 2.5 summary: [system optical audio, smoother TV gaming and cyberpunk
+  XMB](docs/RELEASE_2.5.md). Prior PSP/plugin/S/PDIF tests were accepted by the
+  user on 2026-10-09; older pending-test notes below are historical snapshots.
+- Add native animated ICON1.PMF and ATRAC3 SND0.AT3 with matching static artwork;
+  XMB hardware test pending. No animated full-screen background hook is shipped.
+- Replace the 1,994-line landing README with a concise project overview; move
+  installation/configuration, building and earlier notes to separate documents.
+
 - Consolizer: withdraw the early VSH optical startup after a cold-boot shutdown
   report; restore the established two-second loader delay. GAME/POPS timing
   and audio transport are unchanged. Boot-sound completeness remains limited

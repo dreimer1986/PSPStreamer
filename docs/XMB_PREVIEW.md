@@ -1,5 +1,41 @@
 # Cyber-Stream XMB preview
 
+## Native XMB package — 2026-10-09
+
+The user approved revision 3. The current EBOOT includes the new static ICON0
+and PIC1, animated ICON1.PMF and stereo SND0.AT3. No plugin is required.
+**PSP XMB hardware validation remains pending.** The following older preview
+sections record the design process; their earlier "not installed" statements
+no longer describe the current package.
+
+- ICON1: 144×80, 240 frames at 30000/1001, Main/CABAC, one reference, no B-frames.
+- PSMF: 362,496 bytes; AU/index round-trip and all 240 decoded frames checked.
+- SND0: ATRAC3 LP4, 44.1 kHz stereo, 66,960 bytes, RIFF fact/smpl loop metadata.
+- Combined media: 429,456 bytes (419.4 KiB), below the 500 KiB packaging budget.
+- Repack compares executable, SFO, PIC0 and PSAR byte-for-byte with the donor.
+- Static PIC1 stays usable without Consolizer. The separate animated-background
+  request remains [an open rendering-hook investigation](XMB_BACKGROUND.md).
+
+Reproduce with the MIT toolkit snapshot in `tools/vendor/psp-media-toolkit/`:
+
+```sh
+python3 tools/render_xmb_flyby.py --output /path/to/preview
+python3 tools/vendor/psp-media-toolkit/pspmedia.py convert /path/to/preview/Cyberpunk-Icon-Flyby.mp4 -o psp-client/assets/icon1.pmf --budget-kb 360
+python3 tools/vendor/psp-media-toolkit/pspmedia.py snd0 /path/to/preview/Cyberpunk-Flyby-Sound.wav -o psp-client/assets/snd0.at3 --encoder atracdenc
+python3 tools/package_xmb.py /path/to/previous/EBOOT.PBP /path/to/new/EBOOT.PBP
+```
+
+The native encoder was built from the user-provided atracdenc 0.2.3 source
+archive with CMake, libsndfile and `-DCMAKE_CXX_FLAGS='-include cstdint'` for GCC
+16's stricter header dependencies. Native source compilation required no Wine.
+Put its `src/atracdenc` binary on PATH for the sound command. Encoder binaries
+are not redistributed. Native artwork is in `psp-client/assets/icon0.png` and
+`pic1.png`; the Makefile includes all four assets for future builds.
+
+Only packaging/media checks were run for this change, not the playback suite.
+On PSP: highlight the entry, observe two full loops, check sound, then start and
+exit the app once. Repeat with Consolizer disabled to confirm independence.
+
 ## Cyberpunk revision 3: flyby
 
 `python3 tools/render_xmb_flyby.py --output ~/Bilder/PSPStreamer-XMB/Cyberpunk-v3`

@@ -8,6 +8,9 @@ BUILD_PRX = 1
 PSP_EBOOT_TITLE = PSP Streamer
 PSP_EBOOT_ICON = assets/icon0.png
 PSP_EBOOT_PIC1 = assets/pic1.png
+# Native XMB assets. No Consolizer/plugin dependency for the app or icon.
+PSP_EBOOT_ICON1 = assets/icon1.pmf
+PSP_EBOOT_SND0 = assets/snd0.at3
 
 OPT_LEVEL ?= -O3
 CFLAGS = $(OPT_LEVEL) -G0 -Wall -Wextra
@@ -25,6 +28,8 @@ LIBS = -lpspjpeg -lpspaudio -lpspaudiocodec -lpsppower -lpspkubridge -lpspmpeg m
 EXTRA_TARGETS = EBOOT.PBP
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
+
+EBOOT.PBP: $(PSP_EBOOT_ICON) $(PSP_EBOOT_ICON1) $(PSP_EBOOT_PIC1) $(PSP_EBOOT_SND0)
 
 # Rebuild objects when the project's default compiler options change.
 # Use make clean before overriding LTO/OPT_LEVEL on the command line.
