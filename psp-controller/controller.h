@@ -127,7 +127,7 @@ static int controller_worker(SceSize size,void *args) {
     controller_log("configured TV policy",controller_tvout);
     controller_log("metadata capability",pad_metadata_enabled);
     controller_log("POPS serial capture / EP0 rumble option",pops_rumble_enabled);
-    controller_log("overlay initialization",pad_overlay_init());
+    pad_overlay_start();
     controller_log("kernel free bytes after OSD",sceKernelPartitionTotalFreeMemSize(1));
     controller_log("kernel largest block after OSD",sceKernelPartitionMaxFreeMemSize(1));
     controller_log("OSD backup bytes",oc_hook_buffer_count*sizeof(OcOverlay));

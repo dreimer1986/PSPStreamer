@@ -19,6 +19,7 @@ static int pad_overlay_enabled=1,pad_overlay_always,pad_overlay_shared;
 static int pad_overlay_pending;
 static SceUID pad_overlay_memory=-1;
 static unsigned long long pad_overlay_retry,pad_overlay_deadline;
+static unsigned long long pad_overlay_start_after;
 static int pad_present_render(const void *base,int stride,int format) {
     if(!controller_running || controller_suspended || !oc_hook_lock())return 0;
     int rc=oc_hook_render(base,stride,format);oc_hook_unlock();return rc;
@@ -54,7 +55,17 @@ static int pad_overlay_init(void) {
     if(rc<0)pad_overlay_enabled=0;
     return rc;
 }
+static void pad_overlay_start(void) {
+    /* The boot animation's present hook must not draw/restore OSD pixels
+     * while VSH is producing its startup sound. Defer ALL OSD setup, not
+     * the controller/audio service and not just overlay visibility. */
+    if(pad_overlay_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_VSH) {
+        pad_overlay_start_after=sceKernelGetSystemTimeWide()+5000000ULL;
+        controller_log("VSH overlay initialization deferred ms",5000);
+    } else controller_log("overlay initialization",pad_overlay_init());
+}
 static int pad_overlay_stop(void) {
+    pad_overlay_start_after=0;
     oc_hook_publish(NULL,0);
     SceInt64 deadline=sceKernelGetSystemTimeWide()+100000;
     if(pad_overlay_shared){
@@ -79,6 +90,13 @@ static void pad_overlay_update(int state,int error,int is_suspended) {
     static SmPadMeta previous_meta;
     static unsigned long long until,next;
     unsigned long long now=sceKernelGetSystemTimeWide();
+    if(pad_overlay_start_after) {
+        if(is_suspended || now<pad_overlay_start_after)return;
+        pad_overlay_start_after=0;
+        int rc=pad_overlay_init();
+        controller_log("VSH deferred overlay initialization",rc);
+        if(rc<0 || !pad_overlay_enabled)return;
+    }
     if(pad_overlay_pending){
         if(is_suspended || now<pad_overlay_retry)return;
         if(now>=pad_overlay_deadline){

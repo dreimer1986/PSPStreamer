@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: defer VSH overlay allocation, hook attachment and drawing by
+  five seconds after service initialization, leaving the startup sound alone.
+  Both overlay modes and always-on are covered; controller/audio startup and
+  GAME/POPS overlay timing are unchanged. Hardware confirmation pending.
+
 - PSP Consolizer optical PCM: restart the DMA watchdog deadline when a new
   audio burst is accepted after the previous output has fully drained. Applies
   to GAME, VSH and POPS; existing backlogs still time out. Prevents false stall

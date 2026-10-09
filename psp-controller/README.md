@@ -8,6 +8,13 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+In VSH, both overlay modes now initialize five seconds later than the controller
+service (also with `overlay_always=1`). Until then no Consolizer overlay buffers
+are allocated and no overlay display hook/shared callback is attached. USB,
+controller input and optical audio start normally. GAME/POPS timing is unchanged.
+This avoids overlay work during the VSH startup sound; verify with a cold boot.
+`overlay=0` remains fully off, not temporarily off. Existing settings are retained.
+
 The PCM stall watchdog now starts a fresh deadline when new audio is accepted
 after all previously submitted samples have played. Silence before that burst
 does not count as a DMA stall. This applies to GAME/VSH/POPS; an existing stuck
