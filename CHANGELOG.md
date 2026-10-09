@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer: opt-in PCM timing diagnostics separate USB submission,
+  reply-callback arrival and worker resumption, with five-second thread runtime,
+  preemption and stack-headroom samples. No buffer, priority or playback changes.
+
 - PSP Consolizer optical PCM: batch up to 960 stereo frames in the existing
   USB packet, reuse WRITE status replies, and increase the ESP playback target
   from 2048 to 3072 frames (startup reserve 1536 to 2304). Trim only near capture

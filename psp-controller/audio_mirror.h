@@ -13,6 +13,7 @@ typedef struct {
     volatile unsigned rd,wr,rate,enabled,fault,users,blocks,dropped;
     volatile unsigned log_rd,log_wr,log_lost;
     unsigned trimmed,gap_us,rpc_us;
+    unsigned diag_calls,diag_busy,diag_missing,diag_wall,diag_submit,diag_reply,diag_wake;
     MirrorLog log[MIRROR_LOG_COUNT];
     unsigned words[MIRROR_RING];
     SmFrame rpc;
@@ -122,7 +123,7 @@ static void audio_mirror_uninstall(void) {
 }
 static int audio_mirror_rpc(unsigned op,const void *data,unsigned length,SmAudioStatus *status,int closing) {
     if(length>SM_PAYLOAD_SIZE)return SM_INVALID;
-    if(sceKernelPollSema(lock_id,1)<0)return SM_BUSY;
+    if(sceKernelPollSema(lock_id,1)<0){if(controller_report)audio_mirror->diag_busy++;return SM_BUSY;}
     int rc=SM_OFFLINE;
     if(started && attached && (closing || (audio_mirror_allowed && !app_owner))) {
         static unsigned sequence;
@@ -131,9 +132,26 @@ static int audio_mirror_rpc(unsigned op,const void *data,unsigned length,SmAudio
         if(data!=f->payload && length)memcpy(f->payload,data,length);
         memset(f,0,32);f->op=op;f->sequence=++sequence;f->length=length;sm_seal(f);
         unsigned long long begin=sceKernelGetSystemTimeWide();
+        pcm_diag_done=0;pcm_diag_active=controller_report;
         rc=exchange_begin(f,1);
+        unsigned submitted=controller_report?sceKernelGetSystemTimeLow():0;
         if(rc>=0)rc=exchange_finish(f);
-        unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
+        unsigned end=sceKernelGetSystemTimeLow();
+        pcm_diag_active=0;
+        unsigned elapsed=end-(unsigned)begin;
+        if(controller_report) {
+            AudioMirror *m=audio_mirror;
+            m->diag_calls++;m->diag_wall+=elapsed;
+            unsigned submit=submitted-(unsigned)begin;
+            if(submit>m->diag_submit)m->diag_submit=submit;
+            if(rc>=0 && pcm_diag_done==3) {
+                unsigned reply,wake;
+                if(mirror_rpc_timing((unsigned)begin,pcm_diag_send,pcm_diag_recv,end,&reply,&wake)) {
+                    if(reply>m->diag_reply)m->diag_reply=reply;
+                    if(wake>m->diag_wake)m->diag_wake=wake;
+                } else m->diag_missing++;
+            } else m->diag_missing++;
+        }
         if(elapsed>audio_mirror->rpc_us)audio_mirror->rpc_us=elapsed;
         if(rc>=0) {
             rc=f->result;
@@ -161,6 +179,8 @@ static int audio_mirror_worker(SceSize size,void *args) {
     SmAudioStatus status={0};unsigned sequence=0,played=0,sent=0;
     unsigned long long retry=0,next_report=0,last_progress=0,next_status=0,last_loop=0;
     int paused=1,failed=0,last_gate=-1;
+    unsigned long long diag_clock=0,diag_time=0;
+    unsigned diag_preempt=0;
     int rc=audio_mirror_install();
     if(rc<0){audio_mirror_log("PCM mirror unsupported layout: no patch",rc);return 0;}
     while(audio_mirror_running) {
@@ -226,6 +246,26 @@ static int audio_mirror_worker(SceSize size,void *args) {
             audio_mirror_log(line,0);
             snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
             audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;
+            if(controller_report) {
+                snprintf(line,sizeof(line),"PCM RPC n=%u busy=%u missing=%u wall_us=%u submit_max=%u reply_max=%u wake_max=%u",
+                    m->diag_calls,m->diag_busy,m->diag_missing,m->diag_wall,m->diag_submit,m->diag_reply,m->diag_wake);
+                audio_mirror_log(line,0);
+                m->diag_calls=m->diag_busy=m->diag_missing=m->diag_wall=0;
+                m->diag_submit=m->diag_reply=m->diag_wake=0;
+                SceKernelThreadInfo info;memset(&info,0,sizeof(info));info.size=sizeof(info);
+                int irc=sceKernelReferThreadStatus(0,&info);
+                if(irc>=0) {
+                    unsigned long long clocks=((unsigned long long)info.runClocks.hi<<32)|info.runClocks.low;
+                    unsigned long long stamp=sceKernelGetSystemTimeWide();
+                    if(diag_time) {
+                        snprintf(line,sizeof(line),"PCM thread wall_us=%u run_ticks=%u preempt=%u priority=%d stack_free=%d",
+                            (unsigned)(stamp-diag_time),(unsigned)(clocks-diag_clock),
+                            info.threadPreemptCount-diag_preempt,info.currentPriority,sceKernelCheckThreadStack());
+                        audio_mirror_log(line,0);
+                    }
+                    diag_clock=clocks;diag_time=stamp;diag_preempt=info.threadPreemptCount;
+                } else audio_mirror_log("PCM thread timing unavailable",irc);
+            }
             if(pops_audio_mode && pops_audio_shared)audio_mirror_log("POPS ME callback samples",pops_audio_shared->calls);
         }
         sceKernelDelayThread(2000);

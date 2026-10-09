@@ -23,6 +23,12 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    unsigned reply=0,wake=0;
+    assert(mirror_rpc_timing(100,110,130,150,&reply,&wake) && reply==30 && wake==20);
+    assert(mirror_rpc_timing(100,140,130,150,&reply,&wake) && reply==30 && wake==10);
+    assert(mirror_rpc_timing(0xfffffff0U,0xfffffff8U,0x10,0x20,&reply,&wake) && reply==32 && wake==16);
+    assert(!mirror_rpc_timing(100,99,130,150,&reply,&wake));
+    assert(!mirror_rpc_timing(100,110,151,150,&reply,&wake));
     /* Exercise backlog thresholds and ring-index wrap without enlarging the
      * allocation or resetting the optical session on capture overflow. */
     assert(mirror_trim_frames(0)==0);

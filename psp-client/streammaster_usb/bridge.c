@@ -38,6 +38,9 @@ static int started;
 static volatile int rumble_pending;
 #ifdef SM_CONTROLLER_PLUGIN
 static volatile int app_owner,pad_emergency_stop;
+/* Opt-in PCM diagnostics, owned under the existing USB exchange lock.
+ * Completion callbacks only store timestamps; never log or allocate here. */
+static volatile unsigned pcm_diag_active,pcm_diag_send,pcm_diag_recv,pcm_diag_done;
 static int pad_metadata_enabled;
 static int pad_rumble_enabled;
 #else
@@ -111,6 +114,13 @@ static int done(struct UsbdDeviceReq *r,int a,int b) {
         if(bit){__sync_fetch_and_and(&bulk_pending,~bit);sceKernelSetEventFlag(event_id,bit);return 0;}
     }
     if(r==&send_req)send_pending=0;else recv_pending=0;
+#ifdef SM_CONTROLLER_PLUGIN
+    if(pcm_diag_active) {
+        unsigned stamp=sceKernelGetSystemTimeLow();
+        if(r==&send_req){pcm_diag_send=stamp;pcm_diag_done|=1;}
+        else if(r==&recv_req){pcm_diag_recv=stamp;pcm_diag_done|=2;}
+    }
+#endif
     sceKernelSetEventFlag(event_id,r==&send_req?1:2);return 0;
 }
 static void cancel_requests(void) {

@@ -171,3 +171,28 @@ Near-full local capture sheds at most 512 frames rather than discarding over
 output under sustained overload. Allocated ring sizes and thread priority are
 unchanged; no ESP reflash. Compare underruns, trimmed frames and service gaps
 in POPS and a busy GAME/VSH scene before claiming a hardware fix.
+
+## Soul Calibur timing diagnostic build
+
+ULES01298's busy scene drops 427456 capture frames and trims another 36096 by
+71 seconds. Optical throughput in the 51–61 second interval is about 17k
+frames/s, far below 44.1k. RPC wall time alone cannot separate device delay
+from a descheduled PSP worker. With `report=1`, bounded five-second reports add:
+
+- `PCM RPC`: attempts, failed lock acquisitions, incomplete timing samples,
+  summed RPC wall microseconds, maximum submission/receive-callback/resumption
+  times. `reply_max` is from RPC start to receive callback. `wake_max` is from
+  the later of both USB completions to exchange return (including final reply
+  validation/copy), not pure scheduler time. Maxima need not share one RPC.
+- `PCM thread`: interval wall microseconds, raw SDK runClocks delta, thread
+  preemption delta, current priority and remaining stack. These counters describe
+  the PCM worker, not all game, mixer-hook or USB interrupt CPU consumption.
+
+Callbacks only write timestamps; file writes remain in the separate diagnostic
+drainer. Measurements are disabled with `report=0`. Added state is 44 bytes
+(28 in the existing AudioMirror allocation and 16 in bridge static storage),
+plus bounded worker locals; no extra ring, task or firmware change. PSP-side
+callback timestamps still include USB interrupt dispatch delays: a large
+`reply_max` by itself does not prove a slow ESP. Buffering and priorities remain
+unchanged from the nearly clean POPS test. Timer wrap and completion ordering
+are covered by the targeted host harness.
