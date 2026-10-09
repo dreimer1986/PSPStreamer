@@ -23,7 +23,7 @@ their first real-PSP check before publishing this release.
 - Overlay pixel backups now use on-demand user RAM instead of scarce kernel
   RAM, addressing AVCODEC module allocation failure 800200D9 with both plugins
   enabled. Controller/clock services remain available if an OSD cannot allocate
-  its backup. This memory-layout correction still needs a hardware check.
+  its backup. This memory-layout correction was confirmed on the user's PSP.
 
 - Multiple named health-based rumble profiles per title, supporting compilations
   and separate monitored values. Added confirmed EU profile examples for Mortal

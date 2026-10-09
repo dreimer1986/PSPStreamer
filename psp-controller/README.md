@@ -8,6 +8,13 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+Optional `xmb_probe=1` (with `report=1`, VSH only) captures the three loaded XMB
+modules for animated-background development. It does not enable an animation
+or change rendering. Select PSPStreamer in Game / Memory Stick without starting
+it, wait 30 seconds, then collect `PSPConsolizer/xmb-probe/`. Turn the option off
+afterwards. Keep these private diagnostics out of published release packages.
+Instructions and boundaries: `docs/XMB_BACKGROUND.md` in the source repository.
+
 Overlay pixel backups now use user partition 2 rather than scarce kernel RAM,
 leaving room for AVC codec modules when both plugin overlays are enabled.
 Allocation failure disables only the OSD, not controller/audio services. Buffers

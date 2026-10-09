@@ -2,6 +2,10 @@
 enabled=1
 # 0 disables all loader/runtime diagnostic file writes; 1 enables reports.
 report=1
+# One-shot read-only VSH module capture for animated background development.
+# Requires report=1; writes private diagnostics to PSPConsolizer/xmb-probe/.
+# Default off; this is NOT an animated-background toggle. See docs/XMB_BACKGROUND.md.
+xmb_probe=0
 # Read-only system-audio investigation; also requires report=1. Separate from
 # audio_mirror below. Per-title logs/text dump, 120 seconds, default off.
 audio_probe=0

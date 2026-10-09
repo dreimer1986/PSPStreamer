@@ -24,6 +24,47 @@ An independent animated overlay is not proof of an animated PIC1 solution.
 
 ## Next hardware-facing step
 
+Consolizer now includes an **opt-in, read-only module capture**, not an animation
+renderer. Install the current `PSPConsolizerUSB.prx` and add these settings to
+`ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini`:
+
+```ini
+report=1
+xmb_probe=1
+```
+
+Restart VSH, open Game / Memory Stick and select PSPStreamer **without starting
+it**. Leave the entry selected for about 30 seconds, then mount the Memory Stick.
+The directory `SEPLUGINS/PSPConsolizer/xmb-probe/` contains `capture.txt` and the
+loaded segments of `scePaf_Module`, `game_plugin_module` and `vsh_module`.
+If a module is not loaded yet, the capture waits up to two minutes. A complete
+capture ends with `finish=complete completed_mask=7`. Otherwise preserve the
+text report too: it distinguishes an absent module, I/O error, exit or unload.
+Set `xmb_probe=0` again afterwards; there is no need to leave diagnostics enabled.
+
+This code installs **no hooks** and changes no module, texture, firmware file or
+framebuffer. It waits eight seconds after service setup, uses an 8 KiB user-RAM
+buffer, and writes at most one chunk per 20 ms from the service worker. GAME and
+POPS never start it. Suspend, service exit and explicit USB hand-off stop a
+running capture. Normal controller/audio/hook settings remain untouched. During
+capture, extra Memory Stick I/O is expected; this is not a performance test.
+
+Module identity/ranges are rechecked per chunk. Completed segments have sizes
+and FNV-1a integrity values in the report; incomplete files retain `.part`.
+These are runtime snapshots, not an atomic snapshot of all mutable module data.
+Only files listed as complete in the **current** report belong to that session.
+Do not publish the dumps or include Sony module data in release archives.
+
+Host verification (read only):
+
+```sh
+python3 tools/check_xmb_capture.py /path/to/PSPConsolizer/xmb-probe
+```
+
+The next analysis uses those exact module addresses, exports/imports and code
+to trace PIC1 loading, the selected item, texture ownership and destruction.
+The dump alone does not establish a safe update/lifecycle hook.
+
 Identify and observe that texture/lifecycle before writing to it. Only then add
 the optional renderer: delayed VSH initialization, bounded non-kernel asset
 storage, no I/O/decoding inside a display callback, clean stop on app launch,

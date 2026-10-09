@@ -5,7 +5,10 @@
 - Move StreamerOC and Consolizer overlay pixel backups out of kernel RAM into
   on-demand user RAM. This addresses codec-module allocation failure 800200D9
   with both overlays enabled. Allocation failure disables only the affected OSD;
-  no kernel-memory fallback. Hardware confirmation pending.
+  no kernel-memory fallback. Confirmed working by the user on 2026-10-09.
+- Add disabled-by-default, read-only VSH module capture (`xmb_probe=1`) for the
+  optional animated-background investigation. No animation renderer, display
+  hooks or texture modifications are added by this diagnostic.
 
 - Release 2.5 summary: [system optical audio, smoother TV gaming and cyberpunk
   XMB](docs/RELEASE_2.5.md). Prior PSP/plugin/S/PDIF tests were accepted by the
