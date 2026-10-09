@@ -143,12 +143,10 @@ another detected failed start of that same title replaces it. `report=0`
 disables this diagnostic. Include it along with `last.log` when reporting a
 black cold start. It is diagnostic, not a claim that the startup bug is fixed.
 
-For enabled VSH optical audio, the loader skips its fixed two-second delay if
-Sony audio, USB, controller and display modules are already resident. Otherwise
-the existing delayed path is retained. GAME/POPS timing is unchanged. The bridge
-still checks configuration and transport availability; this does not bypass
-USB enumeration or guarantee receiver lock before the first boot-sound sample.
-`loader.log` reports `VSH audio ready-services fast start: 00000001` when used.
+The loader retains its established two-second startup delay in all contexts.
+The attempted early VSH audio path was withdrawn following a cold-boot shutdown
+report: resident modules are not proof of completed initialization. Optical
+output may miss the beginning of the boot sound while USB/receiver lock settles.
 
 When optical audio has completely drained, DMA status is queried every 100 ms
 instead of every 10 ms. Actual audio packets bypass this idle deadline. During

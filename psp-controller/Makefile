@@ -10,5 +10,4 @@ PRX_EXPORTS = exports.exp
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 main.o: report_config.h
-main.o: vsh_audio_start.h
 main.o: pops_audio_bootstrap.h pops_audio_link.h pops_audio_shared.h audio_probe_stats.h audio_mirror_signature.h ../psp-overclock/title_rules_io.h ../psp-overclock/title_rules.h

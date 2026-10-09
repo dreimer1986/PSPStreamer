@@ -2,10 +2,10 @@
 
 ## Additional unreleased changes
 
-- Consolizer: skip the loader's fixed two-second wait for enabled VSH optical
-  audio when Sony audio/USB/controller/display modules are already resident.
-  GAME/POPS timing, transport readiness checks and PCM buffering are unchanged.
-  Complete boot-sound playback still depends on USB and receiver lock timing.
+- Consolizer: withdraw the early VSH optical startup after a cold-boot shutdown
+  report; restore the established two-second loader delay. GAME/POPS timing
+  and audio transport are unchanged. Boot-sound completeness remains limited
+  by startup/USB/receiver readiness.
 
 - FuSa Fullscreen 0.27: remove the 100 ms fallback refresh cap for persistent
   framebuffers, which limited GTA VCS movie output to about 10 fps. Existing
