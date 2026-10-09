@@ -38,11 +38,20 @@ levels, underruns and capture faults. `audio_mirror=0` restores the old behavior
 
 Editable in PSPStreamer: **Settings -> Plugins -> PSPConsolizer: Global ->
 Global S/PDIF PCM**. START saves; restart the game (or PSP for VSH) to apply.
+
+The dedicated PCM transport worker uses PSP priority `0x18` (previously `0x28`)
+to reduce scheduling delays observed during busy game menus. Its USB event
+waits, 2 ms loop yield, packet limits, stack and capture ring are unchanged.
+No Sony mixer/game-thread priorities are modified. This applies to GAME, VSH
+and POPS mirroring, not PSPStreamer's own playback. Check menu responsiveness,
+controller input and game exit as well as audio when testing this change;
+hardware validation is still required. Existing opt-in timing logs record the
+effective worker priority and callback-to-worker delays.
+
 Default is off. This requires the enabled plugin and wired Onju optical output.
 It mirrors system stereo PCM, independently of PSPStreamer's player output and
 AC-3/DTS passthrough settings. The existing VSH/POPS context switches still apply.
-Do not save the PSPStreamer plugin-settings editor during this experimental,
-INI-only test; it does not yet expose these two new audio options.
+The separate `audio_probe` diagnostic option remains INI-only.
 
 The plugin must also be enabled for VSH and POPS in ARK's plugin configuration;
 the INI flags alone cannot load it in those contexts. VSH startup may precede

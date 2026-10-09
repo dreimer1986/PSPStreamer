@@ -288,7 +288,12 @@ static void audio_mirror_start(void) {
     if(!audio_mirror){sceKernelFreePartitionMemory(audio_mirror_memory);audio_mirror_memory=-1;controller_log("PCM mirror missing allocation address",-1);return;}
     memset(audio_mirror,0,sizeof(*audio_mirror));
     audio_mirror_running=1;
-    audio_mirror_thread=sceKernelCreateThread("Consolizer PCM",audio_mirror_worker,0x28,4096,0,NULL);
+    /* Captured audio has a bounded deadline: lobby/loading threads can starve
+     * priority 0x28 even after both USB callbacks completed. Prioritize only
+     * our transport worker (smaller value = higher PSP priority). Keep the
+     * blocking USB waits, bounded packets and 2 ms yield; do not alter Sony's
+     * mixer, game threads or USB callbacks, or allocate a larger audio ring. */
+    audio_mirror_thread=sceKernelCreateThread("Consolizer PCM",audio_mirror_worker,0x18,4096,0,NULL);
     int rc=audio_mirror_thread<0?audio_mirror_thread:sceKernelStartThread(audio_mirror_thread,0,NULL);
     if(rc<0) {
         controller_log("PCM mirror worker failed",rc);audio_mirror_running=0;

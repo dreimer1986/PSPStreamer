@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer optical PCM: prioritize the dedicated transport worker
+  (0x18 instead of 0x28) to reduce starvation during busy game menus and VSH
+  startup. Existing waits, yields, buffers and Sony mixer behavior are unchanged;
+  hardware verification pending.
+- Rumble examples: add user-confirmed EU Mortal Kombat: Unchained and Street
+  Fighter Alpha 3 MAX health profiles; examples remain disabled by default.
+
 - PSP game rumble: up to 16 independent named rules per matching game, with
   per-rule gates/history/cooldowns and strongest-active-effect mixing. GUI and
   cheat imports support multiple addresses per title; legacy unnamed rules

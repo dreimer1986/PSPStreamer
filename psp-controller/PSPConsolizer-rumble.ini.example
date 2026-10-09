@@ -21,3 +21,43 @@ dynamic=1
 damage_peak=120
 duration_min_ms=60
 duration_max_ms=500
+
+# User-tested EU Street Fighter Alpha 3 MAX, 2026-10-09.
+# Read the low 16-bit health field, not the packed 0x00900090 cheat value.
+[title:ULES00235|Player]
+enabled=0
+address=0x092E3F10
+type=2
+pointer=0
+offset=0
+minimum=0
+maximum=144
+strength=180
+duration_ms=120
+cooldown_ms=200
+gate_address=0
+gate_value=1
+dynamic=0
+damage_peak=144
+duration_min_ms=60
+duration_max_ms=500
+
+# User-tested EU Mortal Kombat: Unchained, 2026-10-09.
+# Normalized float health (0.0 to 1.0), fixed-strength rumble.
+[title:ULES00353|Player]
+enabled=0
+address=0x08D953B8
+type=4
+pointer=0
+offset=0
+minimum=0
+maximum=1
+strength=180
+duration_ms=120
+cooldown_ms=200
+gate_address=0
+gate_value=1
+dynamic=0
+damage_peak=1
+duration_min_ms=60
+duration_max_ms=500
