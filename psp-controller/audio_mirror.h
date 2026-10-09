@@ -6,6 +6,7 @@
 #include "audio_mirror_signature.h"
 #include "../streammaster/spdif_protocol.h"
 #include "audio_mirror_flow.h"
+_Static_assert(sizeof(SmAudioWrite)+MIRROR_PACKET_MAX*4<=SM_PAYLOAD_SIZE,"PCM packet fits existing RPC buffer");
 #define MIRROR_LOG_COUNT 8U
 typedef struct { char text[128]; int rc; unsigned sec,usec; } MirrorLog;
 typedef struct {
@@ -192,21 +193,24 @@ static int audio_mirror_worker(SceSize size,void *args) {
         unsigned available=m->wr-m->rd;
         unsigned trim=mirror_trim_frames(available);
         if(trim){m->rd+=trim;m->trimmed+=trim;available-=trim;}
-        if(available>=512 && status.accepted-status.completed<2048 && status.space>=512) {
-            SmAudioWrite write={status.session,sequence,(uint32_t)((uint64_t)sent*1000/rate),512};
+        unsigned frames=mirror_packet_frames(available,status.accepted-status.completed,status.space);
+        if(frames) {
+            SmAudioWrite write={status.session,sequence,(uint32_t)((uint64_t)sent*1000/rate),frames};
             unsigned rd=m->rd;
             memcpy(m->rpc.payload,&write,sizeof(write));
-            for(unsigned i=0;i<512;i++)memcpy(m->rpc.payload+sizeof(write)+4*i,&m->words[(rd+i)&(MIRROR_RING-1)],4);
-            rc=audio_mirror_rpc(SM_AUDIO_WRITE,m->rpc.payload,sizeof(write)+2048,&status,0);
-            if(rc==SM_OK){m->rd=rd+512;sent+=512;sequence++;}
+            for(unsigned i=0;i<frames;i++)memcpy(m->rpc.payload+sizeof(write)+4*i,&m->words[(rd+i)&(MIRROR_RING-1)],4);
+            rc=audio_mirror_rpc(SM_AUDIO_WRITE,m->rpc.payload,sizeof(write)+frames*4,&status,0);
+            if(rc==SM_OK){m->rd=rd+frames;sent+=frames;sequence++;}
         } else {
             if(now<next_status){sceKernelDelayThread(2000);continue;}
             rc=audio_mirror_rpc(SM_AUDIO_STATUS,&status.session,sizeof(status.session),&status,0);
-            next_status=now+10000;
         }
         if(rc==SM_BUSY){sceKernelDelayThread(2000);continue;}
         if(rc<0){audio_mirror_log("PCM mirror USB write/status failed",rc);failed=1;continue;}
-        if(paused && status.accepted>=1536) {
+        /* WRITE already returned the same status snapshot. Avoid an immediate
+         * redundant STATUS round trip after draining the local capture ring. */
+        next_status=sceKernelGetSystemTimeWide()+10000;
+        if(paused && status.accepted>=2304) {
             SmAudioPause pause={status.session,0};
             rc=audio_mirror_rpc(SM_AUDIO_PAUSE,&pause,sizeof(pause),&status,0);
             if(rc==SM_OK){paused=0;last_progress=now;}

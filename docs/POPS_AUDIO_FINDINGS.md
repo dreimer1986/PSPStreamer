@@ -152,3 +152,22 @@ Accept 6.60 as well as 6.61, retaining all instruction hashes, relocation checks
 initialization-state checks and runtime callback validation. The static binary
 reference used in this investigation was already 6.60. Other API versions remain
 rejected. Actual sample production is still pending a hardware run.
+
+## First audible capture and transport jitter
+
+Hardware now confirms POPS sound. At roughly 166 seconds the log reports 5094
+ESP underrun blocks and 326019 locally trimmed stereo frames, despite zero
+producer drops. Typical busy-phase RPC maxima are 35–42 ms, versus only 11.6 ms
+of audio in the old fixed 512-frame packet. Counters stop increasing when RPC
+latency falls near the end of the run. This supports a transport-service problem,
+not a missing hook. These are interval maxima, not average transfer times.
+
+The shared GAME/VSH/POPS worker now uses 256–960 frame batches according to
+backlog, ESP reserve and reported free space, still within its existing SmFrame.
+Every successful WRITE refreshes the status-poll deadline. The ESP target grows
+by 1024 frames (23.2 ms at 44.1 kHz) and initial reserve by 768 (17.4 ms).
+Near-full local capture sheds at most 512 frames rather than discarding over
+2000. This is still lossy emergency recovery, not a guarantee of click-free
+output under sustained overload. Allocated ring sizes and thread priority are
+unchanged; no ESP reflash. Compare underruns, trimmed frames and service gaps
+in POPS and a busy GAME/VSH scene before claiming a hardware fix.

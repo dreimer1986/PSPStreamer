@@ -27,15 +27,28 @@ int main(int argc,char **argv) {
      * allocation or resetting the optical session on capture overflow. */
     assert(mirror_trim_frames(0)==0);
     assert(mirror_trim_frames(3072)==0);
-    assert(mirror_trim_frames(3136)==2112);
-    assert(mirror_trim_frames(MIRROR_RING)==3072);
+    assert(mirror_trim_frames(3136)==0);
+    assert(mirror_trim_frames(3840)==0);
+    assert(mirror_trim_frames(MIRROR_RING)==512);
+    assert(mirror_packet_frames(4096,0,4096)==960);
+    assert(mirror_packet_frames(320,0,4096)==320);
+    assert(mirror_packet_frames(320,2048,4096)==0);
+    assert(mirror_packet_frames(4096,3072,4096)==0);
+    assert(mirror_packet_frames(4096,0,128)==0);
+    for(unsigned available=0;available<=4096;available+=31)
+        for(unsigned queued=0;queued<=4096;queued+=63)
+            for(unsigned space=0;space<=4096;space+=127) {
+                unsigned n=mirror_packet_frames(available,queued,space);
+                assert(n<=available && n<=space && n<=960 && !(n&63));
+                if(n)assert(queued+n<=3072);
+            }
     for(unsigned rd=0xfffff000U;rd!=0;rd+=64) {
         for(unsigned available=0;available<=MIRROR_RING;available+=64) {
             unsigned wr=rd+available;
             unsigned next=rd+mirror_trim_frames(wr-rd);
-            assert(wr-next<=3072);
+            assert(wr-next<=3840);
             assert((next&63)==0);
-            if(available>3072)assert(wr-next==1024);
+            if(available>3840)assert(wr-next==3584);
             else assert(next==rd);
         }
     }
