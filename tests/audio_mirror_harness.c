@@ -31,6 +31,24 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    /* Compare optimized block copies with the original sample-wise ring
+     * indexing, including full-size SRC submissions and counter wrap. */
+    unsigned ring[MIRROR_SRC_RING],input[MIRROR_SRC_RING],output[MIRROR_SRC_RING];
+    for(unsigned i=0;i<MIRROR_SRC_RING;i++)input[i]=i*65537U+17;
+    const unsigned positions[]={0,1,4095,4096,8191,0xfffffff0U};
+    const unsigned counts[]={0,1,64,960,2048,4096,4111,8192};
+    for(unsigned p=0;p<sizeof(positions)/sizeof(*positions);p++)
+        for(unsigned n=0;n<sizeof(counts)/sizeof(*counts);n++) {
+            memset(ring,0,sizeof(ring));memset(output,0,sizeof(output));
+            mirror_ring_write(ring,MIRROR_SRC_RING,positions[p],input,counts[n]);
+            for(unsigned i=0;i<counts[n];i++)assert(ring[(positions[p]+i)&(MIRROR_SRC_RING-1)]==input[i]);
+            mirror_ring_read(output,ring,MIRROR_SRC_RING,positions[p],counts[n]);
+            assert(!memcmp(input,output,counts[n]*4));
+        }
+    /* The unchanged normal 4096-frame ring uses the same transport fast path. */
+    mirror_ring_write(ring,MIRROR_RING,4000,input,960);
+    mirror_ring_read(output,ring,MIRROR_RING,4000,960);
+    assert(!memcmp(input,output,960*4));
     assert(mirror_src_rate(32000)==32000 && mirror_src_rate(44100)==44100);
     assert(mirror_src_rate(8000)==48000 && !mirror_src_rate(12345));
     assert(mirror_src_sample(0x7fff8000,0x8000)==0x7fff8000);

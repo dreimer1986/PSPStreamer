@@ -2,7 +2,22 @@
 #ifndef CONSOLIZER_AUDIO_SRC_H
 #define CONSOLIZER_AUDIO_SRC_H
 #include <stdint.h>
+#include <string.h>
 #define MIRROR_SRC_RING 8192U
+/* Power-of-two rings, at most one ring of frames per operation. Two bounded
+ * bulk copies avoid a mask/branch and memcpy call for every stereo sample. */
+static inline void mirror_ring_read(void *out,const unsigned *ring,unsigned capacity,unsigned rd,unsigned frames) {
+    unsigned at=rd&(capacity-1),first=capacity-at;
+    if(first>frames)first=frames;
+    memcpy(out,ring+at,first*4);
+    if(first<frames)memcpy((unsigned char *)out+first*4,ring,(frames-first)*4);
+}
+static inline void mirror_ring_write(unsigned *ring,unsigned capacity,unsigned wr,const void *in,unsigned frames) {
+    unsigned at=wr&(capacity-1),first=capacity-at;
+    if(first>frames)first=frames;
+    memcpy(ring+at,in,first*4);
+    if(first<frames)memcpy(ring,(const unsigned char *)in+first*4,(frames-first)*4);
+}
 static inline unsigned mirror_src_rate(unsigned rate) {
     switch(rate) {
     case 32000: case 44100: case 48000: return rate;

@@ -51,9 +51,10 @@ static int audio_mirror_src_output(int volume,void *buffer) {
         else if(count>MIRROR_SRC_RING-(wr-m->src_rd))m->dropped+=count;
         else {
             const unsigned char *pcm=buffer;
-            for(unsigned i=0;i<count;i++) {
+            if((volume>>5)==1024)mirror_ring_write(m->src_words,MIRROR_SRC_RING,wr,buffer,count);
+            else for(unsigned i=0;i<count;i++) {
                 unsigned word;memcpy(&word,pcm+4*i,4);
-                m->src_words[(wr+i)&(MIRROR_SRC_RING-1)]=(volume>>5)==1024?word:mirror_src_sample(word,(unsigned)volume);
+                m->src_words[(wr+i)&(MIRROR_SRC_RING-1)]=mirror_src_sample(word,(unsigned)volume);
             }
             __asm__ volatile("sync" ::: "memory");m->src_wr=wr+count;m->blocks++;
         }
@@ -299,20 +300,25 @@ static int audio_mirror_worker(SceSize size,void *args) {
             m->rd=m->wr;m->rate=rate;m->fault=0;sequence=sent=played=0;paused=1;last_progress=now;
             __asm__ volatile("sync" ::: "memory");m->enabled=1;
         }
-        if(src)audio_mirror_src_fill(m);
-        unsigned available=m->wr-m->rd;
+        /* Native SRC already is optical PCM: consume its ring directly. Only
+         * lower-rate resampling needs the intermediate normal PCM ring. */
+        int direct_src=src && src==rate;
+        if(src && !direct_src)audio_mirror_src_fill(m);
+        unsigned available=direct_src?m->src_wr-m->src_rd:m->wr-m->rd;
         unsigned trim=src?0:mirror_trim_frames(available);
         if(trim){m->rd+=trim;m->trimmed+=trim;available-=trim;}
         unsigned frames=mirror_packet_frames(available,status.accepted-status.completed,status.space);
         int fresh_burst=mirror_fresh_burst(status.accepted,status.completed,frames);
         if(frames) {
             SmAudioWrite write={status.session,sequence,(uint32_t)((uint64_t)sent*1000/rate),frames};
-            unsigned rd=m->rd;
+            unsigned rd=direct_src?m->src_rd:m->rd;
             memcpy(m->rpc.payload,&write,sizeof(write));
-            for(unsigned i=0;i<frames;i++)memcpy(m->rpc.payload+sizeof(write)+4*i,&m->words[(rd+i)&(MIRROR_RING-1)],4);
+            mirror_ring_read(m->rpc.payload+sizeof(write),direct_src?m->src_words:m->words,
+                direct_src?MIRROR_SRC_RING:MIRROR_RING,rd,frames);
             rc=audio_mirror_rpc(SM_AUDIO_WRITE,m->rpc.payload,sizeof(write)+frames*4,&status,0);
             if(rc==SM_OK){
-                m->rd=rd+frames;sent+=frames;sequence++;
+                if(direct_src)m->src_rd=rd+frames;else m->rd=rd+frames;
+                sent+=frames;sequence++;
                 /* Menu/game sounds can be seconds apart. The old progress
                  * stamp belongs to the previous sound, not this new burst. */
                 if(fresh_burst)last_progress=now;
@@ -338,7 +344,7 @@ static int audio_mirror_worker(SceSize size,void *args) {
         }
         if(now>=next_report) {
             char line[160];snprintf(line,sizeof(line),"PCM mirror blocks=%u ring=%u ESP=%u sent=%u played=%u underruns=%u dropped=%u",
-                m->blocks,m->wr-m->rd,(unsigned)(status.accepted-status.completed),sent,(unsigned)status.completed,(unsigned)status.underruns,m->dropped);
+                m->blocks,direct_src?m->src_wr-m->src_rd:m->wr-m->rd,(unsigned)(status.accepted-status.completed),sent,(unsigned)status.completed,(unsigned)status.underruns,m->dropped);
             audio_mirror_log(line,0);
             snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
             audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;

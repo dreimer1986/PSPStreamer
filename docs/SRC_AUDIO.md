@@ -23,6 +23,15 @@ not a bit-exact emulation of Sony's resampling filter. Concurrent SRC and
 normal-channel mixing is not implemented: SRC takes precedence while reserved.
 Full rings drop a submitted block with a counter; they never block the game.
 
+GTA gameplay audio was confirmed by the user. The follow-up optimization sends
+native-rate SRC samples directly from the raw ring into USB packets, bypassing
+the intermediate PCM ring. Unity-volume capture and packet assembly use two
+bounded bulk copies at most, including wraparound. Lower-rate resampling keeps
+the existing worker path. No new buffer or priority change is introduced.
+Ring-copy tests compare exact samples at both boundaries and counter rollover.
+Improvement in GTA frame/audio smoothness needs hardware confirmation: the
+latest mounted `last.log`/`.previous` were VSH and PSPStreamer, not GTA.
+
 ## Hardware validation pending
 
 - GTA VCS: intro -> actual gameplay, pause/menu, exit, restart.
@@ -37,7 +46,9 @@ but no recorded player start/failure. Mounted app matches the prior release;
 config selects `audio_output=psp`, `play_mode=stream`. No playback root cause is
 established from these logs. Added opt-in entries record options accept/cancel,
 player entry/return (including early module errors) and AVC runtime setup.
-Reproduce once with this build and retain the recovery log or visible error.
+The follow-up logs show successful AVC initialization and playback with PSP,
+auto/PCM and auto/AC-3 output, and no decoder failure. The user confirms playback
+works again. This does not establish the cause of the earlier failure.
 
 MP3 quality is hidden for optical playback, not offline MP3 conversion.
 Passthrough preserves source AC-3/DTS; AC-3 fallback uses fixed 640 kbit/s;

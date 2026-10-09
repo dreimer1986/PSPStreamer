@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Consolizer optical PCM: native SRC rates now go directly from the capture
+  ring to USB packets, removing the intermediate PCM copy. Unity-volume capture
+  and USB packet assembly use at most two contiguous copies across ring wrap.
+  No extra RAM, clock or scheduling changes; GTA SRC audio confirmed, smoothness
+  of this optimization still requires a hardware comparison.
+
 - Consolizer: verified SRC/Output2 PCM capture for games that switch away from
   the normal mixer, with native 32/44.1/48 kHz output, lower-rate conversion and
   a SRC-only 32 KiB ring. Sony pacing remains untouched; hardware test pending.
