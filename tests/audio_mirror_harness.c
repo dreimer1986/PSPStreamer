@@ -31,6 +31,12 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    assert(mirror_status_interval(0,0)==100000);
+    assert(mirror_status_interval(1234,1234)==100000);
+    assert(mirror_status_interval(1235,1234)==10000);
+    assert(mirror_status_interval(64,0xffffffc0U)==10000);
+    /* New PCM selects WRITE before the worker consults an idle deadline. */
+    assert(mirror_packet_frames(512,0,4096)==512);
     /* Compare optimized block copies with the original sample-wise ring
      * indexing, including full-size SRC submissions and counter wrap. */
     unsigned ring[MIRROR_SRC_RING],input[MIRROR_SRC_RING],output[MIRROR_SRC_RING];

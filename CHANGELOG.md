@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Consolizer: reduce optical STATUS traffic while fully drained; new audio
+  packets still bypass the idle deadline. No playback clock or priority change.
+- Add bounded, report-only GAME startup diagnostics for no-frame/no-audio
+  stalls, preserved per title across successful launches. GTA VCS cold-start
+  cause is not yet established; this build gathers thread waits/module state.
+
 - Consolizer optical PCM: native SRC rates now go directly from the capture
   ring to USB packets, removing the intermediate PCM copy. Unity-volume capture
   and USB packet assembly use at most two contiguous copies across ring wrap.

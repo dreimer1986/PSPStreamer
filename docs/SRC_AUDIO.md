@@ -32,6 +32,22 @@ Ring-copy tests compare exact samples at both boundaries and counter rollover.
 Improvement in GTA frame/audio smoothness needs hardware confirmation: the
 latest mounted `last.log`/`.previous` were VSH and PSPStreamer, not GTA.
 
+## Subsequent cold-start report
+
+The next GTA log contains zero captured blocks through 26 seconds. FuSa's
+corresponding log has a null source framebuffer and never activates zoom.
+USB service/replies continue. This locates the failure before actual AV output;
+it does not identify the blocked game thread or prove which plugin causes it.
+The successful restart is not in the current Consolizer log pair. No speculative
+clock reset, display reset, driver reinitialization or extra startup delay was
+added. A report-only per-title inventory captures two thread-wait/module
+snapshots if there is still no output after 20 seconds of service. See the
+Consolizer README for `startup-TITLEID.log` and the hardware test.
+
+Drained optical STATUS polling is reduced from 10 to 100 ms. New PCM WRITE
+requests bypass that deadline, preserving output latency. This avoids repeated
+empty USB queries but is not claimed as a cold-start or cutscene fix.
+
 ## Hardware validation pending
 
 - GTA VCS: intro -> actual gameplay, pause/menu, exit, restart.

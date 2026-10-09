@@ -47,6 +47,7 @@ static void controller_log(const char *text,int rc) {
 #include "health_rumble_psp.h"
 #include "audio_probe.h"
 #include "audio_mirror.h"
+#include "startup_diagnostic.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -157,6 +158,7 @@ static int controller_worker(SceSize size,void *args) {
         }
         audio_probe_update(now,allowed && !controller_disabled && !controller_suspended && !in_streamer && !app_owner);
         audio_mirror_allowed=allowed && !controller_disabled && !controller_suspended && !controller_usb_paused && !in_streamer && !app_owner;
+        if(allowed)controller_startup_diagnostic(now,in_streamer);
         /* NOTE + VOLUP cannot be synthesized by our 12-button wire mask.
          * Thus only physical PSP buttons can trigger the emergency disable. */
         SceCtrlData physical={0};

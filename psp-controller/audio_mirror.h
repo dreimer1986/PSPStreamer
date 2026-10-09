@@ -331,7 +331,7 @@ static int audio_mirror_worker(SceSize size,void *args) {
         if(rc<0){audio_mirror_log("PCM mirror USB write/status failed",rc);failed=1;continue;}
         /* WRITE already returned the same status snapshot. Avoid an immediate
          * redundant STATUS round trip after draining the local capture ring. */
-        next_status=sceKernelGetSystemTimeWide()+10000;
+        next_status=sceKernelGetSystemTimeWide()+mirror_status_interval(status.accepted,status.completed);
         if(paused && status.accepted>=2304) {
             SmAudioPause pause={status.session,0};
             rc=audio_mirror_rpc(SM_AUDIO_PAUSE,&pause,sizeof(pause),&status,0);

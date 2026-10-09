@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #define MIRROR_RING 4096U
+/* With no outstanding audio, repeated DMA queries reveal nothing new.
+ * Producer data bypasses this deadline; this never delays a WRITE. */
+static inline unsigned mirror_status_interval(unsigned accepted,unsigned completed) {
+    return accepted==completed?100000U:10000U;
+}
 /* Starting a fresh burst after silence is not a stalled DMA transfer. */
 static inline int mirror_fresh_burst(unsigned accepted,unsigned completed,unsigned frames) {
     return frames && accepted==completed;

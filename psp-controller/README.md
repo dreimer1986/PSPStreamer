@@ -120,7 +120,7 @@ disabled until reset/relaunch. Suspend, emergency disable and PSPStreamer
 ownership suppress capture. Unknown driver signatures are left unpatched;
 no universal firmware compatibility is claimed.
 
-**SRC/Output2 capture (hardware test pending):** a separately fingerprinted
+**SRC/Output2 capture (GTA audio confirmed, cutscene smoothness still open):** a separately fingerprinted
 6.61 internal call mirrors only successfully submitted stereo PCM. Its original
 return value, interrupt handling and blocking/pacing remain Sony's. A 32 KiB
 raw ring is allocated only while SRC is in use, then released on returning to
@@ -132,6 +132,20 @@ While SRC is reserved, it replaces normal-mixer capture; simultaneous mixing
 of both hardware paths is not implemented. Allocation/signature failures are
 logged and leave original PSP audio untouched. Test GTA VCS beyond its intro,
 then exit/restart and check normal-channel games and POPS for regressions.
+
+With `report=1`, a GAME still producing neither a framebuffer nor captured
+audio after 20 seconds of controller service gets two read-only module/thread
+snapshots two seconds apart in `startup-TITLEID.log`. No additional thread,
+audio buffer, thread suspension or forced recovery is used. At most one pair
+is written per launch. VSH, PSPStreamer and games already producing output are
+excluded. A successful later launch leaves the failed-start file intact;
+another detected failed start of that same title replaces it. `report=0`
+disables this diagnostic. Include it along with `last.log` when reporting a
+black cold start. It is diagnostic, not a claim that the startup bug is fixed.
+
+When optical audio has completely drained, DMA status is queried every 100 ms
+instead of every 10 ms. Actual audio packets bypass this idle deadline. During
+outstanding playback the original 10 ms status interval remains in use.
 
 **Optional read-only audio probe:** this separate diagnostic feature does not
 send audio or install the PCM hook by itself. Add `audio_probe=1` and set
