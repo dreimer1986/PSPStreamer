@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- Move StreamerOC and Consolizer overlay pixel backups out of kernel RAM into
+  on-demand user RAM. This addresses codec-module allocation failure 800200D9
+  with both overlays enabled. Allocation failure disables only the affected OSD;
+  no kernel-memory fallback. Hardware confirmation pending.
+
 - Release 2.5 summary: [system optical audio, smoother TV gaming and cyberpunk
   XMB](docs/RELEASE_2.5.md). Prior PSP/plugin/S/PDIF tests were accepted by the
   user on 2026-10-09; older pending-test notes below are historical snapshots.

@@ -56,12 +56,30 @@ static volatile int control_active;
 static volatile int exit_requested,worker_exit_done,exit_result;
 static unsigned long long overlay_until;
 static unsigned long long overlay_next_draw;
-static OcOverlay overlay;
+static OcOverlay *overlay;
+static SceUID overlay_memory=-1;
 #include "clock_diagnostic.h"
 #include "overlay_vblank.h"
 #define OC_EXTERNAL_OSD 1
+#define OC_HOOK_DYNAMIC_BUFFERS 1
 #include "overlay_hook.h"
 #include "fullscreen_osd.h"
+
+/* Pixel history is not kernel state. Keep the scarce kernel partition free
+ * for Sony's codec modules. Allocate before publishing hooks/control APIs;
+ * never allocate in the display callback, and never fall back to kernel RAM. */
+static int overlay_allocate(void) {
+    if(!overlay_enabled)return 0;
+    overlay_memory=sceKernelAllocPartitionMemory(2,"StreamerOC OSD",PSP_SMEM_High,
+                                                4*sizeof(OcOverlay),NULL);
+    if(overlay_memory<0){overlay_enabled=0;return overlay_memory;}
+    overlay=sceKernelGetBlockHeadAddr(overlay_memory);
+    if(!overlay){sceKernelFreePartitionMemory(overlay_memory);overlay_memory=-1;overlay_enabled=0;return -1;}
+    memset(overlay,0,4*sizeof(OcOverlay));
+    oc_hook_buffers=overlay+1;
+    oc_hook_buffer_count=3;
+    return 0;
+}
 
 /* The I/O manager dispatches this optional API without mandatory client
  * imports. All hardware writes stay in our worker, never the caller thread. */
@@ -117,34 +135,34 @@ static void overlay_notify(void) {
 }
 
 static void overlay_update(int toggle) {
-    if(!overlay_enabled)return;
+    if(!overlay_enabled || !overlay)return;
     oc_hook_set_external_output(fs_osd_active());
     /* A resumed application may have reused VRAM: never restore stale pixels. */
-    if(suspended){overlay.valid=0;overlay_until=0;oc_hook_publish(NULL,0);if(oc_output_external)fs_osd_publish(0,NULL,0);return;}
+    if(suspended){overlay->valid=0;overlay_until=0;oc_hook_publish(NULL,0);if(oc_output_external)fs_osd_publish(0,NULL,0);return;}
     unsigned long long now=sceKernelGetSystemTimeWide();
     overlay_until=oc_overlay_deadline(overlay_until,now,toggle,overlay_always,running&&!overlay_stopping);
-    if(oc_output_external){overlay.valid=0;if(!overlay_until){fs_osd_publish(0,NULL,0);return;}}
+    if(oc_output_external){overlay->valid=0;if(!overlay_until){fs_osd_publish(0,NULL,0);return;}}
     if(oc_hook_installed && !overlay_until){
         int was_visible=oc_hook_visible;
         oc_hook_publish(NULL,0);
         if(was_visible)oc_hook_idle_refresh(1);
         return;
     }
-    if(!overlay_until && !overlay.valid)return;
+    if(!overlay_until && !overlay->valid)return;
     if(overlay_until && now<overlay_next_draw && !toggle)return;
     /* Bounded polling, not an unbounded VBlank wait: display shutdown or
      * cable removal must not strand module_stop. Only active OSD waits. */
     if(!oc_output_external && !oc_hook_installed && !oc_overlay_vblank())return;
-    if(suspended){overlay.valid=0;overlay_until=0;return;}
+    if(suspended){overlay->valid=0;overlay_until=0;return;}
     void *base=NULL;int stride,format,mode,width,height;
     if(!oc_output_external && !oc_hook_installed && (sceDisplayGetFrameBuf(&base,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE)<0 ||
        sceDisplayGetMode(&mode,&width,&height)<0 ||
        !oc_osd_layout((uintptr_t)base,sceGeEdramGetSize(),width,height,stride,format))) {
-        overlay.valid=0;return;
+        overlay->valid=0;return;
     }
     if(!oc_output_external && !oc_hook_installed) {
-        if(overlay.valid && (overlay.stride!=stride || overlay.format!=format))overlay.valid=0;
-        oc_osd_restore(&overlay);
+        if(overlay->valid && (overlay->stride!=stride || overlay->format!=format))overlay->valid=0;
+        oc_osd_restore(overlay);
     }
     if(!overlay_until)return;
     unsigned int cpu=0,bus=0;
@@ -162,7 +180,7 @@ static void overlay_update(int toggle) {
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
     if(oc_output_external)fs_osd_publish(0,lines,1);
     else if(oc_hook_installed){oc_hook_publish(lines,1);oc_hook_idle_refresh(0);}
-    else oc_osd_draw(&overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
+    else oc_osd_draw(overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
     overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }
 
@@ -334,6 +352,8 @@ static int thread_main(SceSize args,void *argp) {
         int r=startup_apply();status=r?"PLL apply failed: enforcement disabled":"target applied";if(r)enabled=0;
     }
     snapshot("startup_result");
+    if(running && overlay_enabled)
+        snapshot(overlay_allocate()<0?"overlay_user_memory_unavailable":"overlay_user_memory_ready");
     /* The stable plugin initialized clocks before exposing any app API.
      * Publish the new driver only after that phase has finished. This also
      * prevents register-query callbacks from overlapping initial clock work. */
@@ -467,5 +487,9 @@ int module_stop(SceSize args,void *argp) {
     /* Joining first closes the race with late driver registration. New
      * commands already fail because running was cleared before the join. */
     if(control_registered){sceIoDelDrv("streameroc");control_registered=0;}
+    if(overlay_memory>=0){
+        sceKernelFreePartitionMemory(overlay_memory);overlay_memory=-1;
+        overlay=NULL;oc_hook_buffers=NULL;oc_hook_buffer_count=0;
+    }
     return 0;
 }

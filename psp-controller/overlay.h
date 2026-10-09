@@ -25,18 +25,25 @@ static int pad_present_render(const void *base,int stride,int format) {
     int rc=oc_hook_render(base,stride,format);oc_hook_unlock();return rc;
 }
 static int pad_overlay_init(void) {
-    /* Do not consume scarce kernel memory for an OSD that is switched off.
+    /* Do not reserve pixel memory for an OSD that is switched off.
      * Polling needs one backup, presentation mode needs up to three. */
     if(pad_overlay_enabled && !oc_hook_buffers){
         int count=pad_overlay_enabled==2?3:1;
         unsigned bytes=count*sizeof(OcOverlay);
-        pad_overlay_memory=sceKernelAllocPartitionMemory(1,"Consolizer OSD",PSP_SMEM_High,bytes,NULL);
+        /* Pixel backups belong in user RAM, not the scarce codec/kernel
+         * partition. Failure disables only the OSD; no kernel fallback. */
+        pad_overlay_memory=sceKernelAllocPartitionMemory(2,"Consolizer OSD",PSP_SMEM_High,bytes,NULL);
         if(pad_overlay_memory<0){
             int rc=pad_overlay_memory;pad_overlay_enabled=0;
             controller_log("OSD allocation failed: input retained",rc);return rc;
         }
         oc_hook_buffers=sceKernelGetBlockHeadAddr(pad_overlay_memory);
+        if(!oc_hook_buffers){
+            sceKernelFreePartitionMemory(pad_overlay_memory);pad_overlay_memory=-1;
+            pad_overlay_enabled=0;controller_log("OSD address unavailable: input retained",-1);return -1;
+        }
         memset(oc_hook_buffers,0,bytes);oc_hook_buffer_count=count;
+        controller_log("OSD pixel memory partition",2);
     }
     if(pad_overlay_enabled!=2)return 0;
     if(sceKernelFindModuleByName("StreamerOC")){

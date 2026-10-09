@@ -1,5 +1,10 @@
 # StreamerOC — optional experimental kernel plugin
 
+Overlay pixel backups are allocated on demand in user partition 2, not kernel
+RAM needed by Sony's codecs. Disabled overlays reserve no pixel buffers. If
+user RAM is exhausted, only the overlay is disabled; clocks/control remain
+available. Buffers are freed after worker shutdown and presenter callbacks drain.
+
 With FuSaFullscreen 0.25+, both `overlay=1` and `overlay=2` publish their
 text to the fullscreen compositor. `overlay_always` remains effective. Update
 StreamerOC.prx together with the fullscreen plugin; no INI change is needed.

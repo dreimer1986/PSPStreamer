@@ -8,6 +8,11 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+Overlay pixel backups now use user partition 2 rather than scarce kernel RAM,
+leaving room for AVC codec modules when both plugin overlays are enabled.
+Allocation failure disables only the OSD, not controller/audio services. Buffers
+are freed only after callbacks detach and drain. No INI or firmware change needed.
+
 In VSH, both overlay modes now initialize five seconds later than the controller
 service (also with `overlay_always=1`). Until then no Consolizer overlay buffers
 are allocated and no overlay display hook/shared callback is attached. USB,
