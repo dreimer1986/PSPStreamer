@@ -1,6 +1,9 @@
 # Read RUMBLE.md first. User-tested ULES01298 (Soul Calibur: Broken Destiny).
 # Settings -> Plugins -> PSPConsolizer: Game rumble can create/edit profiles.
 # Verify your game revision. Keep the infinite-health cheat itself OFF.
+# Optional header: [title:ULES01298|Player]. Add sections with the same title
+# and other names/addresses for independent rules (max 16, strongest wins).
+# Gates can restrict rules to the active game within a compilation.
 [title:ULES01298]
 enabled=0
 address=0x08BE364C

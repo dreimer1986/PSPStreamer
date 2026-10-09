@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- PSP game rumble: up to 16 independent named rules per matching game, with
+  per-rule gates/history/cooldowns and strongest-active-effect mixing. GUI and
+  cheat imports support multiple addresses per title; legacy unnamed rules
+  remain compatible. Title matches still override paths. No game-memory writes.
+- PSPStreamer plugin settings: expose the system-wide Consolizer S/PDIF PCM
+  switch, separate from player output/passthrough; restart the game/PSP to apply.
+
 - PSP Consolizer: opt-in PCM timing diagnostics separate USB submission,
   reply-callback arrival and worker resumption, with five-second thread runtime,
   preemption and stack-headroom samples. No buffer, priority or playback changes.

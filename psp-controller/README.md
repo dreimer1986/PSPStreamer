@@ -35,6 +35,12 @@ PSP output remains active; listening to it simultaneously can produce an echo
 because the optical copy is buffered. Return `last.log` and `last.log.previous`
 from the plugin directory. Logs include accepted/played frame counts, buffer
 levels, underruns and capture faults. `audio_mirror=0` restores the old behavior.
+
+Editable in PSPStreamer: **Settings -> Plugins -> PSPConsolizer: Global ->
+Global S/PDIF PCM**. START saves; restart the game (or PSP for VSH) to apply.
+Default is off. This requires the enabled plugin and wired Onju optical output.
+It mirrors system stereo PCM, independently of PSPStreamer's player output and
+AC-3/DTS passthrough settings. The existing VSH/POPS context switches still apply.
 Do not save the PSPStreamer plugin-settings editor during this experimental,
 INI-only test; it does not yet expose these two new audio options.
 

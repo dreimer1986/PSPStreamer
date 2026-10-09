@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class HealthRumbleTests(unittest.TestCase):
     def test_monitor_and_gui(self):
         with tempfile.TemporaryDirectory() as temp:
-            for name in ("health_rumble_test", "health_rumble_ui_test", "title_rules_test"):
+            for name in ("health_rumble_test", "health_profiles_test", "health_rumble_ui_test", "title_rules_test"):
                 binary = Path(temp) / name
                 subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                                 "-fsanitize=undefined", str(ROOT / "tests" / f"{name}.c"),

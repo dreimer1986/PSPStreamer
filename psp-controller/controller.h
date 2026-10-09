@@ -119,7 +119,7 @@ static int controller_worker(SceSize size,void *args) {
     int allowed=controller_enabled && controller_context(),last_state=-1;
     if(allowed)audio_mirror_start();
     health_load();
-    pad_rumble_enabled=allowed && ((pops_rumble_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) || health_config[HR_ENABLED]);
+    pad_rumble_enabled=allowed && ((pops_rumble_enabled && sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_POPS) || health_enabled);
     controller_log("Consolizer on-demand OSD: context",sceKernelInitKeyConfig());
     controller_log("kernel free bytes before OSD",sceKernelPartitionTotalFreeMemSize(1));
     controller_log("kernel largest block before OSD",sceKernelPartitionMaxFreeMemSize(1));
@@ -214,7 +214,7 @@ static int controller_worker(SceSize size,void *args) {
         sceKernelCpuResumeIntr(intr);
         int available=allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && value.connected;
         int active=available && !in_streamer;
-        if(health_config[HR_ENABLED])health_publish(sample_now,active && !pad_emergency_stop && !app_owner);
+        if(health_enabled)health_publish(sample_now,active && !pad_emergency_stop && !app_owner);
         else pops_rumble_publish(sample_now,active && !pad_emergency_stop);
         unsigned buttons=active?value.buttons&0xf3f9U:0;
         unsigned home_button=pad_home_button(&home,&buttons,now,active && controller_home);
@@ -243,9 +243,11 @@ static int controller_worker(SceSize size,void *args) {
                 diagnostic_loops,(unsigned)(diagnostic_gap>0xffffffffULL?0xffffffffULL:diagnostic_gap),
                 (unsigned)(age>0xffffffffULL?0xffffffffULL:age),(unsigned)value.sequence,(unsigned)value.buttons,state);
             controller_log(diagnostic,injection_rc);
-            if(health_config[HR_ENABLED]){
-                snprintf(diagnostic,sizeof(diagnostic),"health baseline=%d address=%08X value_bits=%08X events=%u",
-                    health_state.baseline,(unsigned)health_state.address,(unsigned)health_state.previous,health_state.events);
+            if(health_enabled){
+                unsigned events=0,active_rules=0;
+                for(int i=0;i<health_profiles.count;i++){events+=health_states[i].events;active_rules+=health_states[i].baseline!=0;}
+                snprintf(diagnostic,sizeof(diagnostic),"health rules=%d baselines=%u events=%u",
+                    health_profiles.count,active_rules,events);
                 controller_log(diagnostic,0);
             }
             diagnostic_loops=0;diagnostic_gap=0;diagnostic_next=now+5000000ULL;

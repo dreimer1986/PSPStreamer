@@ -54,15 +54,35 @@ int main(void){
     assert(!hi_retro("00BCFF34",&a)&&a==0x08bcff34);
     assert(hi_retro("08BCFF34",&a)<0);assert(hi_retro("0",&a)<0);
     assert(!hi_maximum(0x7f800001,4));assert(!hi_maximum(0xff800000,4));
-    const char *cw[]={"_L 0x203E364C 0x43700000","4","240","ULES01298"};
+    const char *cw[]={"_L 0x203E364C 0x43700000","4","240","ULES01298","Player"};
     inputs=cw;input_pos=0;unsigned notice[]={0,PSP_CTRL_CIRCLE};feed(notice,2);
     assert(plugin_import_health(&d,0,1)==1);
     assert(pi_get(&d,1,"enabled",1)==0&&pi_get(&d,1,"address",0)==0x08be364c&&pi_get(&d,1,"type",0)==4);
     assert(pi_get(&d,1,"maximum",0)==240);
     size_t len=d.length;input_pos=0;feed(notice,2);assert(plugin_import_health(&d,0,2)<0&&d.length==len);
-    const char *ra[]={"00BCFF34","3","240","ULES00001"};inputs=ra;input_pos=0;feed(notice,2);
+    const char *ra[]={"00BCFF34","3","240","ULES01298","Vehicle"};inputs=ra;input_pos=0;feed(notice,2);
     assert(plugin_import_health(&d,1,2)==2&&pi_get(&d,2,"address",0)==0x08bcff34);
+    assert(strstr(d.text,"[title:ULES01298|Player]"));
+    assert(strstr(d.text,"[title:ULES01298|Vehicle]"));
+    assert(!plugin_rules_valid(&d,plugin_health,16));
+    char rename[256]="ULES01298|Player";
+    const char *renames[]={"ULES01298","Driver"};inputs=renames;input_pos=0;
+    assert(plugin_health_name(rename,0)==1&&!strcmp(rename,"ULES01298|Driver"));
     const char *cancel[]={"00BCFF34",NULL};inputs=cancel;input_pos=0;len=d.length;
     assert(plugin_import_health(&d,1,3)<0&&d.length==len);
+    strcpy(d.text,"audio_mirror=0\nreport=1\n");d.length=strlen(d.text);
+    unsigned spdif_keys[28]={0};int ki=0;spdif_keys[ki++]=0;
+    for(int i=0;i<10;i++){spdif_keys[ki++]=PSP_CTRL_DOWN;spdif_keys[ki++]=0;}
+    spdif_keys[ki++]=PSP_CTRL_RIGHT;spdif_keys[ki++]=0;spdif_keys[ki++]=PSP_CTRL_CIRCLE;
+    feed(spdif_keys,ki);plugin_fields(&d,-1,plugin_pad,11,"global");
+    assert(pi_get(&d,-1,"audio_mirror",0)==1&&pi_get(&d,-1,"report",0)==1);
+    d.text[0]=0;d.length=0;
+    for(int i=0;i<16;i++) {
+        char entry[64];snprintf(entry,sizeof(entry),"[title:ULES01298|Rule %d]\nenabled=0\n",i);
+        assert(!pi_replace(&d,d.length,d.length,entry));
+    }
+    assert(!plugin_rules_valid(&d,plugin_health,16));
+    assert(!pi_replace(&d,d.length,d.length,"[title:ULES-01298|Too many]\nenabled=0\n"));
+    assert(plugin_rules_valid(&d,plugin_health,16)<0);
     free(d.text);puts("Health rumble UI/import: formats, hex editor, validation, duplicates, cancel and disabled drafts OK");
 }

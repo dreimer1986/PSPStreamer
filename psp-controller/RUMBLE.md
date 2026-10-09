@@ -13,6 +13,31 @@ does not guarantee that every revision, region or mod uses the same address.
 Only enable a profile after checking your exact copy. A wrong but plausible
 address can cause false vibrations; no generic detector can infer its meaning.
 
+## Multiple rules per game
+
+Name rules in their headers: `[title:ULES01298|Player]` or
+`[path:ms0:/ISO/My Game.iso|Vehicle]`. The label after `|` is not part of the
+match. UTF-8 labels allow up to 63 bytes, without `|`, brackets or controls.
+Old unnamed sections still work; repeated unnamed matches now also run together.
+
+Add/import another rule with the same title and a different name/address.
+SQUARE on a list entry edits its selector and name. Each rule has its own health
+history, gate, cooldown and damage curve. The strongest currently active effect
+wins, without adding motor strengths. One rule's cooldown never blocks another.
+
+All matching title rules override path rules; those groups are not combined.
+The limit is 16 matching entries, including disabled ones. Exceeding it disables
+health monitoring for that launch rather than silently dropping rules. The app
+rejects oversized groups when saving. Tables use about 2.3 KiB, without per-frame
+allocation. Restart the game after saving. Personal INIs are not replaced by
+updating binaries.
+
+For GTA, use separately verified player/vehicle health addresses or pointers.
+For collections, use `gate_address`/`gate_value` to identify the active subgame
+where possible. An inactive game's address can contain misleading values.
+An Invincible cheat that changes a flag or instruction is not a falling health
+counter and does not automatically provide usable hit detection.
+
 ## Start with the simple setup
 
 1. Update `PSPConsolizerUSB.prx` and restart the PSP. Use a supported rumble
@@ -20,7 +45,9 @@ address can cause false vibrations; no generic detector can infer its meaning.
    ESP firmware is required by this feature.
 2. Open PSPStreamer: **SELECT -> Plugins -> PSPConsolizer: Game rumble**.
 3. Add the game's **title ID**. Alternatively use its exact launch path.
-   Title-ID matches take precedence; the first equally specific match wins.
+   Title-ID matches take precedence over paths. All matching rules at that
+   specificity are evaluated, up to 16 (including disabled entries).
+   An optional rule name distinguishes player/vehicle or collection entries.
 4. Enter the **full PSP health address**, its **type**, and the actual
    **minimum/maximum health**. Leave pointer and battle flag options off.
 5. Keep the default motor strength/duration/cooldown initially. Enable the
@@ -98,8 +125,9 @@ not whole cheat-database or `.cht` file imports.
   becomes `0x08BCFF34`. Do not enter a full PSP address here, and do not use
   this conversion for unrelated cores. Choose the search's actual data type
   and enter the observed **full-health** maximum, not the damaged value.
-- Enter the title ID. Existing title profiles are not overwritten or duplicated:
-  edit that profile instead. The resulting profile is **OFF** in the editor;
+- Enter the title ID and an optional rule name. The same title can have multiple
+  addresses; importing the same address/type twice for that title is rejected.
+  Existing profiles are never overwritten. The resulting profile is **OFF** in the editor;
   review it, enable it, return to the list and START-save. Canceling a wizard
   leaves the existing profile data untouched; nothing is written automatically.
 

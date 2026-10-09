@@ -60,6 +60,7 @@ tls_transport.o: tls_read_buffer.h
 main.o: server_connection.h playback_transport.h playback_recovery.h diagnostic_history.h recovery_log.h app_settings.h
 LIBS += -lpsprtc
 main.o: plugin_settings_ui.h plugin_settings_io.h ../psp-overclock/title_rules.h ../psp-overclock/config_parse.h
+main.o: ../psp-controller/health_profiles.h ../psp-controller/health_rumble.h
 main.o: health_import.h
 main.o: streammaster_ui.h ../streammaster/protocol.h
 main.o: streammaster_fields.h

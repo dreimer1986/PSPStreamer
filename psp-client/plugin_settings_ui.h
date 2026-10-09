@@ -1,5 +1,6 @@
 #include "plugin_settings_io.h"
 #include "health_import.h"
+#include "../psp-controller/health_profiles.h"
 #include "../psp-overclock/config_parse.h"
 typedef struct {const char *key;TextId label;int min,max,def;} PluginField;
 static const PluginField plugin_oc[]={
@@ -13,7 +14,8 @@ static const PluginField plugin_pad[]={
     {"overlay",TXT_OC_OVERLAY,0,2,1},{"overlay_always",TXT_PLUGIN_ALWAYS,0,1,0},
     {"tvout",TXT_PLUGIN_TV,0,2,0},{"metadata",TXT_PLUGIN_METADATA,0,1,0},
     {"pops_rumble",TXT_PLUGIN_RUMBLE,0,1,0},{"report",TXT_OC_REPORT,0,1,1},
-    {"vsh",TXT_PLUGIN_VSH,0,1,1},{"pops",TXT_PLUGIN_POPS,0,1,1}
+    {"vsh",TXT_PLUGIN_VSH,0,1,1},{"pops",TXT_PLUGIN_POPS,0,1,1},
+    {"audio_mirror",TXT_PLUGIN_SPDIF,0,1,0}
 };
 static const PluginField plugin_fusa[]={
     {"auto_zoom",TXT_PLUGIN_AUTOZOOM,0,1,0},{"auto_zoom_delay_seconds",TXT_PLUGIN_DELAY,1,60,5},
@@ -84,7 +86,7 @@ static int plugin_fields(PluginIni *d,int section,const PluginField *fields,int 
                 char value[48],row[128];plugin_value(value,sizeof(value),fields+i,pi_get(d,section,fields[i].key,(section<0||fields==plugin_health)?fields[i].def:-1));
                 snprintf(row,sizeof(row),"%s: %s",tr(fields[i].label),value);settings_line(i-first,i==sel,row);
             }
-            settings_line(8,0,tr(fields==plugin_health?plugin_health_hint(fields[sel].key):!strcmp(fields[sel].key,"target_mhz")?TXT_OC_WARNING:section<0?TXT_PLUGIN_MAIN_HINT:TXT_PLUGIN_PATH_HINT));
+            settings_line(8,0,tr(fields==plugin_health?plugin_health_hint(fields[sel].key):!strcmp(fields[sel].key,"audio_mirror")?TXT_PLUGIN_SPDIF_HINT:!strcmp(fields[sel].key,"target_mhz")?TXT_OC_WARNING:section<0?TXT_PLUGIN_MAIN_HINT:TXT_PLUGIN_PATH_HINT));
             settings_help(tr(section<0?TXT_PLUGIN_HELP:TXT_PLUGIN_VALUES_HELP));dirty=0;
         }
         unsigned hit=plugin_keys(&k);if(hit&PSP_CTRL_CIRCLE)return 0;
@@ -110,11 +112,26 @@ static int plugin_fields(PluginIni *d,int section,const PluginField *fields,int 
         }
     }
 }
+static int plugin_rules_structure(PluginIni *d,const PluginField *fields,const TitleRuleKey *keys,int count) {
+    if(fields!=plugin_health)return pi_validate_rules(d,keys,count);
+    TitleRules r={0};
+    for(size_t p=0;p<d->length;p=pi_next(d,p)) {
+        char s[384];
+        if(pi_line(d,p,s,sizeof(s)) || health_rule_header(s)<0 || title_rules_line(&r,s,"","",keys,count)<0)return -1;
+    }
+    return 0;
+}
 static int plugin_rules_valid(PluginIni *d,const PluginField *fields,int count) {
     TitleRuleKey keys[TITLE_RULE_MAX_KEYS];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
-    if(pi_validate_rules(d,keys,count))return -1;
+    if(plugin_rules_structure(d,fields,keys,count))return -1;
     if(fields==plugin_health){size_t a,b;
         for(int s=0;!pi_section(d,s,&a,&b,NULL);s++){
+            char scope[384];pi_section(d,s,&a,&b,scope);if(health_rule_header(scope)<0)return -1;
+            int matches=0;
+            for(int j=0;j<=s;j++) {
+                char other[384];size_t x,y;pi_section(d,j,&x,&y,other);health_rule_header(other);
+                if(title_rule_equal(scope,other,!strncmp(scope,"[title:",7)) && ++matches>HR_PROFILE_MAX)return -1;
+            }
             int c[16];for(int i=0;i<16;i++)c[i]=pi_get(d,s,fields[i].key,fields[i].def);
             if(c[12]&&c[14]>c[15])return -1;
             if(!c[0])continue;
@@ -128,6 +145,20 @@ static int plugin_rule_name(char *name,int kind) {
     if(!settings_text(name,256,0,tr(kind?TXT_PLUGIN_ADD_PATH:TXT_PLUGIN_ADD_TITLE)))return 0;
     if(!name[0]||strpbrk(name,"[]\r\n"))return -1;
     if(!kind){int n=0;for(char *p=name;*p;p++){if(*p=='-')continue;if(!((*p>='0'&&*p<='9')||(*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')))return -1;n++;}if(n!=9)return -1;}
+    return 1;
+}
+static int plugin_health_name(char *name,int kind) {
+    char label[64]={0},*sep=strchr(name,'|');
+    if(sep){snprintf(label,sizeof(label),"%s",sep+1);*sep=0;}
+    int rc=plugin_rule_name(name,kind);if(rc<=0)return rc;
+    if(strchr(name,'|'))return -1;
+    if(!settings_text(label,sizeof(label),0,tr(TXT_HR_RULE_NAME)))return 0;
+    if(strpbrk(label,"|[]\r\n"))return -1;
+    for(char *p=label;*p;p++)if((unsigned char)*p<32)return -1;
+    if(label[0]) {
+        size_t len=strlen(name),n=strlen(label);if(len+n+2>256)return -1;
+        name[len]='|';memcpy(name+len+1,label,n+1);
+    }
     return 1;
 }
 static int plugin_import_health(PluginIni *d,int retro,int sections){
@@ -147,10 +178,17 @@ static int plugin_import_health(PluginIni *d,int retro,int sections){
     errno=0;v=strtol(text,&end,10);
     if(errno||end==text||*end||v<1||v>INT_MAX)goto invalid;
     maximum=(int)v;
-    int rc=plugin_rule_name(name,0);if(!rc)return -1;if(rc<0)goto invalid;
+    int rc=plugin_health_name(name,0);if(!rc)return -1;if(rc<0)goto invalid;
+    char target[384];snprintf(target,sizeof(target),"[title:%s]",name);health_rule_header(target);
+    int matches=0;
     for(int i=0;i<sections;i++){size_t a,b;char header[384];pi_section(d,i,&a,&b,header);
-        if(!strncmp(header,"[title:",7)){char *e=strrchr(header,']');if(e)*e=0;
-            if(title_rule_equal(header+7,name,1)){plugin_notice(TXT_HI_DUPLICATE);return -1;}}}
+        if(health_rule_header(header)<0)goto invalid;
+        if(title_rule_equal(header,target,1)) {
+            if(++matches>=HR_PROFILE_MAX)goto invalid;
+            if(pi_get(d,i,"address",0)==(int)address && pi_get(d,i,"type",2)==type && !pi_get(d,i,"pointer",0)) {
+                plugin_notice(TXT_HI_DUPLICATE);return -1;
+            }
+        }}
     char row[512];snprintf(row,sizeof(row),"%s[title:%s]\nenabled=0\naddress=0x%08X\ntype=%d\nminimum=0\nmaximum=%d\n",
         d->length&&d->text[d->length-1]!='\n'?"\n":"",name,(unsigned)address,type,maximum);
     if(pi_replace(d,d->length,d->length,row))goto invalid;
@@ -161,7 +199,7 @@ static void plugin_rules(PluginIni *d,const PluginField *fields,int count,const 
     /* Structurally valid profiles remain editable even if their enabled
      * address/range needs repairing. Semantic checks apply when saving. */
     TitleRuleKey keys[TITLE_RULE_MAX_KEYS];for(int i=0;i<count;i++){keys[i].name=fields[i].key;keys[i].minimum=fields[i].min;keys[i].maximum=fields[i].max;}
-    if(pi_validate_rules(d,keys,count)){plugin_notice(TXT_PLUGIN_ERROR);return;}
+    if(plugin_rules_structure(d,fields,keys,count)){plugin_notice(TXT_PLUGIN_ERROR);return;}
     int sel=0,dirty=1,confirm=-1,actions=fields==plugin_health?4:2;PluginKeys k;plugin_keys_reset(&k);
     while(1){
         int sections=0;size_t a,b;while(!pi_section(d,sections,&a,&b,NULL))sections++;
@@ -192,7 +230,7 @@ static void plugin_rules(PluginIni *d,const PluginField *fields,int count,const 
                 if(sel>=actions){pi_section(d,sel-actions,&a,&b,header);kind=!strncmp(header,"[path:",6);char *end=strrchr(header,']');if(end)*end=0;
                     if(strlen(header+(kind?6:7))>=sizeof(name)){plugin_notice(TXT_PLUGIN_ERROR);plugin_keys_reset(&k);dirty=1;continue;}
                     snprintf(name,sizeof(name),"%s",header+(kind?6:7));}
-                int rc=plugin_rule_name(name,kind);
+                int rc=fields==plugin_health?plugin_health_name(name,kind):plugin_rule_name(name,kind);
                 if(rc>0){snprintf(header,sizeof(header),"%s[%s:%s]\n",sel<2&&d->length&&d->text[d->length-1]!='\n'?"\n":"",kind?"path":"title",name);
                     if(sel>=actions){pi_section(d,sel-actions,&a,&b,NULL);rc=pi_replace(d,a,pi_next(d,a),header);}else rc=pi_replace(d,d->length,d->length,header);
                     if(rc)plugin_notice(TXT_PLUGIN_ERROR);else if(sel<2)sel=sections+actions;
@@ -233,7 +271,7 @@ static void plugin_filters(PluginIni *d) {
 static void plugin_settings(void) {
     const char *names[]={"StreamerOC","PSPConsolizer","FuSaFullscreen"};
     const PluginField *fields[]={plugin_oc,plugin_pad,plugin_fusa};
-    const int counts[]={8,10,4},rules[]={5,7,0};
+    const int counts[]={8,11,4},rules[]={5,7,0};
     int sel=0,dirty=1;PluginKeys k;plugin_keys_reset(&k);
     /* Flattened hub keeps all destinations directly reachable. */
     const int owner[]={0,0,1,1,1,2,1},kind[]={0,1,0,1,2,0,3};

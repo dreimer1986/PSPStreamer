@@ -21,6 +21,7 @@ bridge.o: ../../streammaster/rumble.h
 bridge.o: ../../psp-overclock/title_rules.h ../../psp-overclock/title_rules_io.h
 bridge.o: ../pops_rumble.h ../pops_serial.h ../pops_signature.h pops_payload.inc
 bridge.o: ../health_rumble.h ../health_rumble_psp.h
+bridge.o: ../health_profiles.h
 bridge.o: ../audio_probe.h ../audio_probe_stats.h
 bridge.o: ../audio_mirror.h ../audio_mirror_signature.h ../../streammaster/spdif_protocol.h
 bridge.o: ../audio_mirror_flow.h
