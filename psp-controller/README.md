@@ -8,6 +8,19 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+The PCM stall watchdog now starts a fresh deadline when new audio is accepted
+after all previously submitted samples have played. Silence before that burst
+does not count as a DMA stall. This applies to GAME/VSH/POPS; an existing stuck
+backlog still triggers recovery. Test isolated menu sounds after at least three
+seconds of silence as well as continuous audio.
+
+With `report=1`, VSH also logs cumulative `VSH capture` counters: mixer calls,
+largest inter-call gap, gaps above 5 ms, consecutive captures from the same DMA
+half, and sample rate. Silence can legitimately increase these counters; they
+are diagnostic evidence, not proof of corruption or duplicate samples. No PCM
+content is logged. Six 32-bit counter fields are added, not another audio ring.
+The VSH startup distortion is not yet confirmed fixed. No firmware change.
+
 **Experimental system PCM → S/PDIF (2026-10-08):** Soul Calibur `ULES01298`
 used normal mixer channels 3/4/6 in the 120-second hardware probe (2,027
 observations); SRC/Output2 was never reserved in that trace. A first PCM mirror

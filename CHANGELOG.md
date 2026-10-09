@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- PSP Consolizer optical PCM: restart the DMA watchdog deadline when a new
+  audio burst is accepted after the previous output has fully drained. Applies
+  to GAME, VSH and POPS; existing backlogs still time out. Prevents false stall
+  recovery after silent intervals. Hardware verification pending.
+- VSH-only opt-in capture counters distinguish mixer callback gaps/repeated DMA
+  halves from USB scheduling delays. No sample dumps or extra audio buffers;
+  startup crackling remains under investigation.
+
 - PSP Consolizer optical PCM: prioritize the dedicated transport worker
   (0x18 instead of 0x28) to reduce starvation during busy game menus and VSH
   startup. Existing waits, yields, buffers and Sony mixer behavior are unchanged;

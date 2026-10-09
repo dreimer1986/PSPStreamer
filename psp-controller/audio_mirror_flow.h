@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #define MIRROR_RING 4096U
+/* Starting a fresh burst after silence is not a stalled DMA transfer. */
+static inline int mirror_fresh_burst(unsigned accepted,unsigned completed,unsigned frames) {
+    return frames && accepted==completed;
+}
 /* Low 32-bit microsecond clocks wrap; RPCs are bounded well below one wrap.
  * Completion order is not assumed: both requests are submitted asynchronously. */
 static inline int mirror_rpc_timing(unsigned begin,unsigned send,unsigned receive,unsigned end,

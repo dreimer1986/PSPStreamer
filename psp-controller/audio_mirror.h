@@ -14,11 +14,13 @@ typedef struct {
     volatile unsigned log_rd,log_wr,log_lost;
     unsigned trimmed,gap_us,rpc_us;
     unsigned diag_calls,diag_busy,diag_missing,diag_wall,diag_submit,diag_reply,diag_wake;
+    volatile unsigned capture_calls,capture_last,capture_gap,capture_late,capture_repeat,capture_half;
     MirrorLog log[MIRROR_LOG_COUNT];
     unsigned words[MIRROR_RING];
     SmFrame rpc;
 } AudioMirror;
 static int audio_mirror_enabled;
+static int audio_mirror_vsh;
 static int audio_mirror_pinned;
 static volatile int audio_mirror_allowed,audio_mirror_running;
 static SceUID audio_mirror_thread=-1,audio_mirror_memory=-1;
@@ -66,6 +68,19 @@ static int audio_mirror_flush(int mask) {
         int half=mirror_dma_half(d[6],d[14],physical);
         if(half<0){m->fault=1;goto done;}
         if(rate!=m->rate){m->fault=2;goto done;}
+        /* VSH-only counters: no PCM dump, allocation, file or USB operation
+         * from the mixer. Repeat halves/gaps are evidence, not errors: the
+         * driver may legitimately stop and restart between menu sounds. */
+        if(audio_mirror_vsh && controller_report) {
+            unsigned stamp=sceKernelGetSystemTimeLow();
+            if(m->capture_calls) {
+                unsigned gap=stamp-m->capture_last;
+                if(gap>m->capture_gap)m->capture_gap=gap;
+                if(gap>5000)m->capture_late++;
+                if(m->capture_half==(unsigned)half)m->capture_repeat++;
+            }
+            m->capture_last=stamp;m->capture_half=half;m->capture_calls++;
+        }
         unsigned wr=m->wr;
         if(wr-m->rd>MIRROR_RING-64){m->dropped+=64;goto done;}
         volatile unsigned *pcm=(volatile unsigned *)(audio_mirror_state+half*256);
@@ -214,13 +229,19 @@ static int audio_mirror_worker(SceSize size,void *args) {
         unsigned trim=mirror_trim_frames(available);
         if(trim){m->rd+=trim;m->trimmed+=trim;available-=trim;}
         unsigned frames=mirror_packet_frames(available,status.accepted-status.completed,status.space);
+        int fresh_burst=mirror_fresh_burst(status.accepted,status.completed,frames);
         if(frames) {
             SmAudioWrite write={status.session,sequence,(uint32_t)((uint64_t)sent*1000/rate),frames};
             unsigned rd=m->rd;
             memcpy(m->rpc.payload,&write,sizeof(write));
             for(unsigned i=0;i<frames;i++)memcpy(m->rpc.payload+sizeof(write)+4*i,&m->words[(rd+i)&(MIRROR_RING-1)],4);
             rc=audio_mirror_rpc(SM_AUDIO_WRITE,m->rpc.payload,sizeof(write)+frames*4,&status,0);
-            if(rc==SM_OK){m->rd=rd+frames;sent+=frames;sequence++;}
+            if(rc==SM_OK){
+                m->rd=rd+frames;sent+=frames;sequence++;
+                /* Menu/game sounds can be seconds apart. The old progress
+                 * stamp belongs to the previous sound, not this new burst. */
+                if(fresh_burst)last_progress=now;
+            }
         } else {
             if(now<next_status){sceKernelDelayThread(2000);continue;}
             rc=audio_mirror_rpc(SM_AUDIO_STATUS,&status.session,sizeof(status.session),&status,0);
@@ -246,6 +267,15 @@ static int audio_mirror_worker(SceSize size,void *args) {
             audio_mirror_log(line,0);
             snprintf(line,sizeof(line),"PCM service gap_us=%u rpc_us=%u trimmed=%u log_lost=%u",m->gap_us,m->rpc_us,m->trimmed,m->log_lost);
             audio_mirror_log(line,0);m->gap_us=m->rpc_us=0;next_report=now+5000000;
+            if(audio_mirror_vsh && controller_report) {
+                unsigned calls,gap,late,repeat;
+                int intr=sceKernelCpuSuspendIntr();
+                calls=m->capture_calls;gap=m->capture_gap;late=m->capture_late;repeat=m->capture_repeat;
+                sceKernelCpuResumeIntr(intr);
+                snprintf(line,sizeof(line),"VSH capture calls=%u gap_max_us=%u gaps_gt5ms=%u same_half=%u rate=%u",
+                    calls,gap,late,repeat,rate);
+                audio_mirror_log(line,0);
+            }
             if(controller_report) {
                 snprintf(line,sizeof(line),"PCM RPC n=%u busy=%u missing=%u wall_us=%u submit_max=%u reply_max=%u wake_max=%u",
                     m->diag_calls,m->diag_busy,m->diag_missing,m->diag_wall,m->diag_submit,m->diag_reply,m->diag_wake);
@@ -287,6 +317,7 @@ static void audio_mirror_start(void) {
     audio_mirror=sceKernelGetBlockHeadAddr(audio_mirror_memory);
     if(!audio_mirror){sceKernelFreePartitionMemory(audio_mirror_memory);audio_mirror_memory=-1;controller_log("PCM mirror missing allocation address",-1);return;}
     memset(audio_mirror,0,sizeof(*audio_mirror));
+    audio_mirror_vsh=sceKernelInitKeyConfig()==PSP_INIT_KEYCONFIG_VSH;
     audio_mirror_running=1;
     /* Captured audio has a bounded deadline: lobby/loading threads can starve
      * priority 0x28 even after both USB callbacks completed. Prioritize only

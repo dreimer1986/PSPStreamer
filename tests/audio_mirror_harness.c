@@ -23,6 +23,19 @@ static void check(const char *path,uint32_t base,uint32_t state) {
     words[0x2f14/4]=1;assert(!mirror_signature(words,sizeof(words),base,state));
 }
 int main(int argc,char **argv) {
+    assert(mirror_fresh_burst(4096,4096,256));
+    assert(!mirror_fresh_burst(4096,4096,0));
+    assert(!mirror_fresh_burst(4352,4096,256));
+    assert(mirror_fresh_burst(0,0,960));
+    assert(!mirror_fresh_burst(64,0xffffffc0U,256));
+    /* A new burst after a long idle must not expire immediately. An existing
+     * backlog must still time out even if more frames are being submitted. */
+    unsigned long long now=9000000,progress=1000000;
+    if(mirror_fresh_burst(4096,4096,256))progress=now;
+    assert(now-progress<2000000);
+    now+=2100000;
+    if(mirror_fresh_burst(4352,4096,256))progress=now;
+    assert(now-progress>2000000);
     unsigned reply=0,wake=0;
     assert(mirror_rpc_timing(100,110,130,150,&reply,&wake) && reply==30 && wake==20);
     assert(mirror_rpc_timing(100,140,130,150,&reply,&wake) && reply==30 && wake==10);
