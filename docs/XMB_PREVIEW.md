@@ -1,5 +1,32 @@
 # Cyber-Stream XMB preview
 
+## Cyberpunk revision 3: flyby
+
+`python3 tools/render_xmb_flyby.py --output ~/Bilder/PSPStreamer-XMB/Cyberpunk-v3`
+preserves the approved v2 scene and adds a detailed ship emerging from the display
+and passing leftwards across the foreground. This is an artistic Easter Egg homage,
+not a render of the runtime ship mesh. The high-resolution transparent sprite is
+filtered with Lanczos and gently banked during the flyby. The original synthetic
+stereo score now has layered bass impacts, an activation arpeggio, a synchronized
+right-to-left engine/whoosh with falling pitch, and a reverberant final shimmer.
+PCM peaks are limited to 0.88 full scale; start/end fades avoid loop-boundary clicks.
+No commercial sound samples are used. V2 files and installed EBOOT remain intact.
+
+Ship asset: `psp-client/assets/xmb-cyberpunk-concept/flyby-ship.png`.
+Generated using the built-in imagegen tool (not CLI), with this prompt:
+
+> Use case: stylized-concept. Production asset: transparent spacecraft cutout for
+> an animated cyberpunk PSP media-player ident. A single highly detailed sleek
+> silver graphite interceptor, swept angular wings, dark glass canopy, intricate
+> fine mechanical panels, four small cyan plasma engine outlets with short
+> luminous cyan-magenta exhaust. Cinematic premium realistic 3D rendering, smooth
+> antialiased silhouette, cyan and magenta city-light reflections, not pixel art
+> and not low-poly. Three-quarter top/side view, nose points LEFT and slightly
+> down, rear engines visible at RIGHT. Entire ship and short exhaust fully within
+> frame with generous transparent margins. No stars, no background, no ground
+> shadow, no lettering, no logo, no border. Compact wide silhouette, polished
+> futuristic mysterious heroic mood. True transparent RGBA background.
+
 ## Cyberpunk revision 2
 
 The first concept was too static. Revision 2 uses built-in image generation for
