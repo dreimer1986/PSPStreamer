@@ -1,4 +1,10 @@
-# FuSa Fullscreen 0.26
+# FuSa Fullscreen 0.27
+
+Persistent framebuffers (including GTA VCS movies) are refreshed at the existing
+VBlank-paced output cadence, not the former 100 ms fallback. Unchanged buffer
+addresses do not imply unchanged pixels. Snapshot validation and the 30 Hz
+output ceiling remain unchanged; this may increase work on static screens.
+Hardware verification of GTA movie smoothness is pending.
 
 Standalone full-screen 720×480 progressive TV output for PSP games on the
 tested PSP-3000 / ARK-5 setup. It cooperates with PSP Consolizer and StreamerOC

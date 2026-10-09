@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- FuSa Fullscreen 0.27: remove the 100 ms fallback refresh cap for persistent
+  framebuffers, which limited GTA VCS movie output to about 10 fps. Existing
+  VBlank pacing, snapshot checks and output ceiling remain unchanged.
+- Consolizer: correct failed-start detection when a short startup sound precedes
+  a permanent stall. Require lack of audio progress rather than zero lifetime
+  captured blocks. GTA cold-start cause still requires the thread snapshots.
+
 - Consolizer: reduce optical STATUS traffic while fully drained; new audio
   packets still bypass the idle deadline. No playback clock or priority change.
 - Add bounded, report-only GAME startup diagnostics for no-frame/no-audio

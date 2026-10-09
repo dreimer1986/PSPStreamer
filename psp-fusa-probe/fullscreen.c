@@ -24,7 +24,7 @@
 #define FS_OSD_SERVER 1
 #include "../psp-overclock/fullscreen_osd.h"
 #include "../psp-overclock/overlay_pixels.h"
-PSP_MODULE_INFO("FuSaFullscreen",0x1006,0,26);
+PSP_MODULE_INFO("FuSaFullscreen",0x1006,0,27);
 PSP_NO_CREATE_MAIN_THREAD();
 static int (*set_internal)(int,void *,int,int,int);
 static int (*internal_entry)(int,void *,int,int,int);
@@ -120,7 +120,7 @@ static SceUID snapshot_block=-1;
 static uint16_t *snapshot;
 static unsigned copied_frames,copy_rejected,ge_busy,copy_max_us;
 static unsigned long long copy_total_us;
-static unsigned long long request_at,last_snapshot_at;
+static unsigned long long request_at;
 static unsigned last_snapshot_sequence,timeout_snapshots;
 static volatile int capture_busy;
 void fs_copy16_vfpu(uint16_t *,const void *,int);
@@ -397,9 +397,10 @@ static int take_snapshot(unsigned *format)
     unsigned layout=source_layout;
     unsigned writers=game_writers;
     sceKernelCpuResumeIntr(intr);
-    unsigned long long now=sceKernelGetSystemTimeWide();
     if(writers||!src||!system_source_valid(src,stride,*format))return 0;
-    if(sequence==last_snapshot_sequence&&now-last_snapshot_at<100000)return 0;
+    /* An unchanged display pointer is not an unchanged picture. GTA's movie
+     * path updates a persistent framebuffer. The caller already paces copies
+     * using real VBlanks; a second 100 ms timeout capped this path at 10 fps. */
     /* GE activity may target a different backbuffer. It is diagnostic, not
      * proof that our displayed source is being written. */
     if(sceGeDrawSync(1)!=PSP_GE_LIST_DONE)ge_busy++;
@@ -413,7 +414,7 @@ static int take_snapshot(unsigned *format)
     sceKernelCpuResumeIntr(intr);
     if(!valid){copy_rejected++;return 0;}
     if(sequence==last_snapshot_sequence)timeout_snapshots++;
-    last_snapshot_sequence=sequence;last_snapshot_at=now;
+    last_snapshot_sequence=sequence;
     copied_frames++;return 1;
 }
 static void record(const char *event,int result)
@@ -544,7 +545,7 @@ static int start_scale(void)
     if(get_internal(1,&saved_aux,&aux_stride,&aux_format,&saved_sync)<0){record("cannot save auxiliary layer",-1);return -1;}
     if(saved_aux&&!system_source_valid((uintptr_t)saved_aux,aux_stride,aux_format)){record("unsupported auxiliary source",(int)saved_aux);return -1;}
     overlay_copies=overlay_rejected=0;overlay_sequence++;
-    mode_remaps=0;timeout_snapshots=0;last_snapshot_at=0;last_snapshot_sequence=~0U;
+    mode_remaps=0;timeout_snapshots=0;last_snapshot_sequence=~0U;
     frame_addr=(unsigned)src;frame_stride=stride;frame_format=fmt;frames=0;cancelled=0;
     wait_calls=wait_timeouts=0;coordinated_us=0;
     restoring=0;
@@ -598,7 +599,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreen 0.26 standalone release",sceKernelDevkitVersion());
+    record("FuSaFullscreen 0.27 standalone release",sceKernelDevkitVersion());
     int osd_rc=sceIoAddDrv(&osd_driver);osd_registered=osd_rc>=0;record("fullscreen OSD mailbox",osd_rc);
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);

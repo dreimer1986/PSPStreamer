@@ -133,12 +133,12 @@ of both hardware paths is not implemented. Allocation/signature failures are
 logged and leave original PSP audio untouched. Test GTA VCS beyond its intro,
 then exit/restart and check normal-channel games and POPS for regressions.
 
-With `report=1`, a GAME still producing neither a framebuffer nor captured
-audio after 20 seconds of controller service gets two read-only module/thread
+With `report=1`, a GAME without a framebuffer after 20 seconds of controller
+service and at least 10 seconds without new audio blocks gets two read-only module/thread
 snapshots two seconds apart in `startup-TITLEID.log`. No additional thread,
 audio buffer, thread suspension or forced recovery is used. At most one pair
-is written per launch. VSH, PSPStreamer and games already producing output are
-excluded. A successful later launch leaves the failed-start file intact;
+is written per launch. A short startup sound no longer suppresses the report.
+VSH and PSPStreamer are excluded. A successful later launch leaves the failed-start file intact;
 another detected failed start of that same title replaces it. `report=0`
 disables this diagnostic. Include it along with `last.log` when reporting a
 black cold start. It is diagnostic, not a claim that the startup bug is fixed.

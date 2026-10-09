@@ -50,6 +50,21 @@ empty USB queries but is not claimed as a cold-start or cutscene fix.
 
 ## Hardware validation pending
 
+Latest cold/warm comparison: the failed launch captures 96 blocks (6144 frames)
+then stays unchanged through 72 seconds. USB continues to answer. The original
+startup diagnostic incorrectly discarded this case because blocks were nonzero;
+it now detects ten seconds without progress after the startup grace period.
+No cold-start root cause is established yet.
+
+The successful launch loses 29888 frames and trims 5632 during its early normal
+mixer phase. After the SRC session opens around 20 seconds, neither counter grows
+and ESP underruns stay zero for the rest of the approximately 180-second log.
+FuSa captures new pointer submissions only through frame 64, but continues
+scaling about 98 outputs per ten seconds: its 100 ms same-pointer timeout is
+the explicit limiting factor. Version 0.27 removes that timeout; the existing
+VBlank cadence still applies. This fixes a video refresh bottleneck, not the
+earlier startup audio loss or the unresolved cold-start stall.
+
 - GTA VCS: intro -> actual gameplay, pause/menu, exit, restart.
 - Check `PCM mirror SRC/Output2 verified JAL`, opened rate, dropped/underruns.
 - Normal-channel game and POPS smoke check after the change.

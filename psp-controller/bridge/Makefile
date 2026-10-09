@@ -25,7 +25,7 @@ bridge.o: ../health_profiles.h
 bridge.o: ../audio_probe.h ../audio_probe_stats.h
 bridge.o: ../audio_mirror.h ../audio_mirror_signature.h ../../streammaster/spdif_protocol.h
 bridge.o: ../audio_mirror_flow.h ../audio_mirror_src.h
-bridge.o: ../startup_diagnostic.h
+bridge.o: ../startup_diagnostic.h ../startup_progress.h
 bridge.o: ../pops_audio.h ../pops_audio_shared.h
 bridge.o: ../pops_audio_link.h
 bridge.o: ../../psp-client/streammaster_usb/bulk_storage.h

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Read-only evidence for a GAME that never publishes video or audio. No
+ * Read-only evidence for a GAME stalled before video presentation. No
  * thread suspension, forced recovery, memory dumps or background file handle.
  */
+#include "startup_progress.h"
 static void __attribute__((noinline)) controller_startup_snapshot(unsigned long long now,int pass) {
     SceGameInfo *game=sceKernelGetGameInfo();
     if(!game)return;
@@ -43,18 +44,21 @@ static void __attribute__((noinline)) controller_startup_snapshot(unsigned long 
     sceIoClose(fd);controller_log("startup no frame/audio: per-title snapshot saved",pass);
 }
 static void controller_startup_diagnostic(unsigned long long now,int streamer) {
-    static unsigned long long begin,next;
+    static StartupProgress progress;
+    static unsigned long long next;
     static int finished,pass;
     if(finished || !controller_report || controller_suspended || controller_disabled)return;
     if(streamer || sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_GAME){finished=1;return;}
-    if(!begin){begin=now;next=now+20000000;}
+    int stalled=startup_audio_stalled(&progress,now,audio_mirror?audio_mirror->blocks:0);
+    if(!pass && !stalled)return;
     if(now<next)return;
     void *frame=NULL;int stride=0,format=0;
     int rc=sceDisplayGetFrameBuf(&frame,&stride,&format,PSP_DISPLAY_SETBUF_IMMEDIATE);
     if(rc<0)return;
-    /* Any presentation or captured audio rules out this specific startup
-     * stall. Never dump inventories during a running game's cutscene. */
-    if(frame || (audio_mirror && audio_mirror->blocks)){finished=1;return;}
+    /* A short startup sound does not prove that the game started. Require
+     * sustained lack of audio progress, not a lifetime block count of zero.
+     * Once triggered, take the second snapshot even if output recovered. */
+    if(!pass && frame){finished=1;return;}
     controller_startup_snapshot(now,pass++);
     next=now+2000000;
     if(pass==2)finished=1;
