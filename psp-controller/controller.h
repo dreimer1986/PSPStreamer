@@ -163,9 +163,9 @@ static int controller_worker(SceSize size,void *args) {
             in_streamer=sceKernelFindModuleByName("PSPStreamer")!=NULL;
             next_context=now+100000;
         }
-        audio_probe_update(now,allowed && !controller_disabled && !controller_suspended && !in_streamer && !app_owner);
+        if(!controller_tv_hold_until)audio_probe_update(now,allowed && !controller_disabled && !controller_suspended && !in_streamer && !app_owner);
         audio_mirror_allowed=allowed && !controller_disabled && !controller_suspended && !controller_usb_paused && !in_streamer && !app_owner;
-        if(allowed)controller_startup_diagnostic(now,in_streamer);
+        if(allowed && !controller_tv_hold_until)controller_startup_diagnostic(now,in_streamer);
         /* NOTE + VOLUP cannot be synthesized by our 12-button wire mask.
          * Thus only physical PSP buttons can trigger the emergency disable. */
         SceCtrlData physical={0};
@@ -197,7 +197,7 @@ static int controller_worker(SceSize size,void *args) {
          * In other apps this service starts only if no other USB function owns
          * the bus. Never deactivate mass storage/camera/etc to take it over. */
         if(allowed && !controller_disabled && !controller_usb_paused && !controller_suspended && !app_owner &&
-           !in_streamer && (!started || vsh) && now>=next_start) {
+           !in_streamer && !controller_tv_hold_until && (!started || vsh) && now>=next_start) {
             int was_started=started,usb_state=sceUsbGetState();
             int driver_state=sceUsbGetDrvState(DRIVER);
             if(usb_state!=last_usb || driver_state!=last_driver || attached!=last_attach) {
@@ -243,6 +243,12 @@ static int controller_worker(SceSize size,void *args) {
             else emulate_analog(3,128,128,0);
             sceKernelCpuResumeIntr(intr);
         } else controller_clear();
+        /* Sony's emulated key expires after four sampling ticks. File I/O,
+         * overlay startup and diagnostic draining can exceed that interval,
+         * turning a long Screen press into LCD-off short taps. Keep refreshing
+         * it without ancillary work until the bounded TV request completes.
+         * Audio transport runs independently; USB/input safety above remains. */
+        if(screen){sceKernelDelayThreadCB(10000);continue;}
         int state=controller_suspended?3:in_streamer?2:active?1:0;
         if(state!=last_state){controller_log("state: 0 idle / 1 injected / 2 app-owned / 3 suspended",state);last_state=state;}
         if(controller_report && now>=diagnostic_next){
@@ -265,7 +271,7 @@ static int controller_worker(SceSize size,void *args) {
         audio_mirror_log_drain();
         xmb_probe_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
         xmb_texture_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
-        xmb_animation_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
+        xmb_animation_update(sceKernelGetSystemTimeWide(),allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
         sceKernelDelayThreadCB(10000);
     }
     scePowerUnregisterCallback(power);

@@ -9,15 +9,16 @@ is needed for this change, and input/rumble behavior is unchanged.
 ### Current build
 
 The optional animated VSH background is now implemented for the verified 6.61
-PAF/game-menu layout; **its first animation hardware test is pending**.
+PAF/game-menu layout. Animation was confirmed on hardware; the smoother
+12 fps follow-up and cold-start TV fix still need a hardware test.
 `xmb_animation=1` is the default. Copy `xmb-background.xba` alongside the PRX/INI.
 Use `xmb_animation=0` and restart VSH to keep the static background. Missing or
 invalid assets, unsupported firmware/layout or insufficient RAM fall back to
 the ordinary PIC1. The EBOOT still starts without any plugin.
 
-The supplied city loop is 320x180 RGB565, 48 frames at 6 fps (eight seconds),
+The supplied city loop is 256x144 RGB565, 96 frames at 12 fps (eight seconds),
 scaled by the native XMB background renderer. Its immutable frame bank needs
-about 5.5 MiB of user RAM only in VSH; no codec, frame decoding, continuous disk
+about 7.35 MiB of user RAM only in VSH; no codec, frame decoding, continuous disk
 reads or kernel pixel buffers are involved. Initialization is delayed eight
 seconds, followed by loading. On this first build, a background already cached
 before installation needs Game / Memory Stick to be left and reopened. Keep

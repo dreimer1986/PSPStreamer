@@ -1,4 +1,4 @@
-# Optional animated VSH background — first animation build
+# Optional animated VSH background
 
 ## Use and hardware test
 
@@ -8,16 +8,18 @@ set `xmb_animation=0` in `PSPConsolizer.ini` and restart VSH. Install the matchi
 No EBOOT, firmware, OC or loader update is required. Set `xmb_probe=0` and
 `xmb_texture_probe=0`; these diagnostics take priority over animation.
 
-Restart VSH, wait about fifteen seconds, open Game / Memory Stick and select
+Restart VSH, allow the asset to load (up to a minute with logging), open Game / Memory Stick and select
 PSPStreamer without starting it. If it was already cached during startup,
 leave Memory Stick and reopen it. The background should show the moving city
 behind ordinary XMB icons/text. Verify changing selection, starting the app,
 returning to VSH, LCD and TV, and disabling the INI option. With `report=1`,
 `last.log` records install/fallback and load/bind/destruction counters.
-Host checks passed; real-PSP animation/lifecycle behavior is **not yet confirmed**.
+The first hardware test confirmed animation, but reported stutter. Logs show
+564 binds in ten seconds, while the original asset had only six unique frames
+per second. The revised asset doubles that rate; its hardware test is pending.
 
-The separate eight-second asset has 48 immutable RGB565 frames, 320x180 at
-6 fps, displayed using native XMB geometry. Its 5793792-byte bank lives in
+The separate eight-second asset has 96 immutable RGB565 frames, 256x144 at
+12 fps, displayed using native XMB geometry. Its 7704576-byte bank lives in
 user partition 2, not kernel RAM. The loader requires an additional 2 MiB
 contiguous reserve and accepts at most 8 MiB of frame data. Missing/corrupt
 assets, unsupported layouts or allocation failure leave PIC1 unchanged.
@@ -61,7 +63,7 @@ the animation may be smaller. Apps sharing exactly the same PIC1 also match.
 python3 tools/build_xmb_background.py \
   --video /path/to/background-loop.mp4 \
   --pic1 psp-client/assets/pic1.png \
-  --output xmb-background.xba --width 320 --height 180 --frames 48 --fps 6
+  --output xmb-background.xba --width 256 --height 144 --frames 96 --fps 12
 ```
 
 The tool converts existing video with FFmpeg, repeats border pixels, swizzles

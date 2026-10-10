@@ -47,7 +47,9 @@ their first real-PSP check before publishing this release.
 - Optional animated full-screen XMB background in Consolizer, default enabled
   with `xmb_animation=1` and the separate `xmb-background.xba` asset. The guarded
   6.61 renderer keeps icons/text above the animation and native PIC1 as fallback.
-  First real-PSP animation/lifecycle test remains pending before publishing.
+  First hardware animation confirmed; follow-up doubles the asset to 12 fps
+  and protects the automatic TV-button hold against background-I/O stalls.
+  This follow-up still needs a hardware test before publishing.
 - Preserve INIs, profiles, credentials, downloaded media and server data volumes.
   Update matching PSP application files together; reboot after plugin changes.
 - Generic ESP32 variants remain UNTESTED. No new USB speed claim or forced

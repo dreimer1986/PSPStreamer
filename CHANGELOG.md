@@ -2,12 +2,18 @@
 
 ## Additional unreleased changes
 
+- Keep the automatic TV Screen-button hold uninterrupted by diagnostic/asset
+  I/O and USB maintenance; transient display queries no longer release it.
+  Confirm external mode before release, retaining a bounded six-second timeout.
+- Double the XMB city animation from 6 to 12 fps within the existing 8 MiB
+  frame-bank limit (256x144 rather than 320x180); refresh timing after I/O.
 - Implement optional animated VSH backgrounds in Consolizer, default enabled
   via `xmb_animation=1`, with a separate checksummed city-loop asset. Native
   PIC1/EBOOT fallback remains independent of the plugin. Guarded 6.61 PAF
   texture binding, destruction tracking and immutable user-RAM frames avoid
-  drawing over XMB menus or rewriting live textures. First animation hardware
-  test pending; no claim of universal firmware/application compatibility.
+  drawing over XMB menus or rewriting live textures. First animation confirmed
+  on hardware; smoother follow-up build pending testing. No claim of universal
+  firmware/application compatibility.
 - Extend Consolizer's INI read buffer to 4 KiB so the documented settings and
   comments, including the new background option, do not truncate later options.
 - Move StreamerOC and Consolizer overlay pixel backups out of kernel RAM into

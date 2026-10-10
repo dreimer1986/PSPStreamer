@@ -3,16 +3,25 @@
  * transition. Do not impose PSPStreamer's 720px framebuffer on a game.
  * 0 off, 1 connected controller, 2 application start (also VSH/POPS). */
 static int controller_tvout;
+static unsigned long long controller_tv_hold_until;
 static int (*controller_check_cable)(int *);
 static unsigned controller_tv_button(unsigned long long now,int connected,int streamer,int permitted) {
-    static unsigned long long ready_at,hold_until,next_check,stable_since;
+    static unsigned long long ready_at,next_check,stable_since,external_since;
     static int attempted,ready_logged,last_stride=-1,last_format=-1;
     if(!ready_at)ready_at=now+8000000;
-    if(!controller_tvout || !permitted || streamer || controller_suspended || controller_disabled){hold_until=0;return 0;}
-    if(hold_until){
+    if(!controller_tvout || !permitted || streamer || controller_suspended || controller_disabled){controller_tv_hold_until=0;external_since=0;return 0;}
+    if(controller_tv_hold_until){
         int mode,width,height;
-        if(now>=hold_until || sceDisplayGetMode(&mode,&width,&height)<0 || mode!=0){
-            hold_until=0;controller_log("TV display-button request released",0);return 0;
+        int rc=sceDisplayGetMode(&mode,&width,&height);
+        /* A transient mode-query failure is not a completed TV transition.
+         * Require a stable external mode before releasing the long press. */
+        if(rc>=0 && mode!=0){if(!external_since)external_since=now;}
+        else external_since=0;
+        if((external_since && now-external_since>=300000) || now>=controller_tv_hold_until){
+            int confirmed=external_since && now-external_since>=300000;
+            controller_tv_hold_until=0;external_since=0;
+            controller_log(confirmed?"TV external mode confirmed":"TV long press expired without confirmation",rc<0?rc:mode);
+            return 0;
         }
         return PSP_CTRL_SCREEN;
     }
@@ -45,7 +54,7 @@ static unsigned controller_tv_button(unsigned long long now,int connected,int st
     attempted=1;
     controller_log("TV detected cable",cable);controller_log("TV existing display mode",mode);
     if(mode!=0)return 0; /* Never deliberately toggle an already external mode. */
-    hold_until=now+6000000;
+    controller_tv_hold_until=now+6000000;external_since=0;
     controller_log("TV request via Sony display button",controller_tvout);
     return PSP_CTRL_SCREEN;
 }
