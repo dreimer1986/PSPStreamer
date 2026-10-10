@@ -49,7 +49,52 @@ The constructor allocates 104 bytes. Dimension, layout, stride and backing
 pointer candidates are visible in the copy code, but these are not a license
 to write guessed offsets. The next capture records the actual objects.
 
-## Current hardware test: background texture observer
+## Hardware result, 2026-10-10
+
+The observer installed successfully and recorded four successful image loads.
+`0_bg` matches the **actual EBOOT on the user's Memory Stick**: PIC1 has
+198253 bytes and FNV-1a `28108CC0`. The EBOOT has no PIC0. The other captured
+backgrounds (`1_bg`, `2_bg`) have different fingerprints; `2_info` is a smaller
+310x180 surface. Cache keys are session-local indexes, not permanent app IDs.
+Match image content, not `0_bg` or a previously observed memory address.
+
+PSPStreamer's surface in this session was `0A0013A0`, with pixel backing at
+`0966B9C0`. Its verified layout fields are:
+
+| Offset | Value | Interpretation |
+| --- | --- | --- |
+| `08` | 3 | PAF pixel format, mapped to GU format by PAF |
+| `0C` | 5 | log2 bits per pixel: 32 bpp |
+| `18`, `1A` | 480, 272 | visible dimensions |
+| `1C` | 2 | tiled/swizzled storage (16-byte by 8-row blocks) |
+| `2A`, `2C` | 512, 512 | power-of-two texture dimensions |
+| `30`, `34` | 0.9375, 0.53125 | visible-to-texture coordinate ratios |
+| `38` | 542080 | bytes per backing slot, including padding |
+| `3C` | 1936 | row stride in bytes, not 480x4 |
+| `40` | 1 | number of backing slots |
+| `48`, `50` | nonzero, zero | primary and optional secondary backing |
+
+The stride and extra rows follow the constructor's edge padding, alignment and
+swizzle rules. Treating this as a flat 480x272 bitmap would corrupt the picture.
+The dimension/stride interpretation is supported by the captured metadata and
+PAF's construction, upload and bind code, not just guessed from the numbers.
+
+Further static tracing identifies the draw-time texture binding call at PAF
+text offset `132A5C`, targeting `134194`. That routine reads the live surface,
+sets format/swizzle and UV ratios, then submits its backing pointer to the GE.
+This is a candidate for substituting an independently owned animation frame
+without replacing the composed screen. It has **not** been hooked or tested.
+It also uses four floating-point arguments, which must be preserved explicitly.
+
+Before animation can be enabled: establish live-object destruction/replacement
+handling, preserve the original surface ownership, and keep frame buffers alive
+until outstanding GE lists have finished. A successful load-time snapshot alone
+does not authorize updating its address later from the service thread. No
+additional capture of the same four loader records is needed at this point.
+Private input logs are saved under `diagnostics/xmb-textures-20261010` outside
+the repository. The current EBOOT and plugin renderer remain unchanged.
+
+## Background texture observer procedure (completed for the current PSP)
 
 Update **only** `PSPConsolizerUSB.prx`, preserving your other settings. Configure:
 

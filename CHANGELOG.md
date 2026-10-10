@@ -15,7 +15,9 @@
 - Add an optional, default-off 6.61 background texture observer
   (`xmb_texture_probe=1`). Records fingerprints and surface metadata through
   two guarded image-loader call sites, preserving original loading behavior.
-  No animation renderer or texture writes yet; hardware observation pending.
+  Hardware observation succeeded: PSPStreamer's PIC1 identified by its exact
+  size/fingerprint and the padded/swizzled surface layout traced. No animation
+  renderer or texture writes yet; lifetime and GE synchronization remain open.
 
 - Release 2.5 summary: [system optical audio, smoother TV gaming and cyberpunk
   XMB](docs/RELEASE_2.5.md). Prior PSP/plugin/S/PDIF tests were accepted by the

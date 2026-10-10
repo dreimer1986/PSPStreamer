@@ -8,6 +8,10 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
+The 2026-10-10 hardware capture succeeded: PSPStreamer's background is identified
+by its EBOOT PIC1 fingerprint and its PAF surface layout is understood. Leave
+`xmb_texture_probe=0` after capture; an animation renderer is not installed yet.
+
 The three XMB module captures are complete. Optional `xmb_texture_probe=1`
 (with `report=1`, VSH only) now observes the verified 6.61 PIC0/PIC1 loader
 call sites. It records image fingerprints and surface metadata, not pixels,
