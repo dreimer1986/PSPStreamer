@@ -51,7 +51,9 @@ their first real-PSP check before publishing this release.
   and protects the automatic TV-button hold against background-I/O stalls.
   The smoother animation is user-confirmed. Per-background on-demand banks
   and a packaged video/EBOOT-to-XBA converter now allow other supported apps
-  to use their own animations; the bounded multi-app cache needs hardware testing.
+  to use their own animations; multi-app loading/playback is user-confirmed.
+  A further cold-start TV fix starts the long-press deadline after blocking log
+  writes rather than before them; hardware retest pending.
 - Preserve INIs, profiles, credentials, downloaded media and server data volumes.
   Update matching PSP application files together; reboot after plugin changes.
 - Generic ESP32 variants remain UNTESTED. No new USB speed claim or forced

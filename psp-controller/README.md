@@ -9,8 +9,8 @@ is needed for this change, and input/rumble behavior is unchanged.
 ### Current build
 
 The optional animated VSH background is now implemented for the verified 6.61
-PAF/game-menu layout. The smoother 12 fps animation was confirmed on hardware;
-the new per-app loading/cache behavior still needs testing.
+PAF/game-menu layout. Smoother 12 fps animation and per-app loading/playback
+were confirmed on hardware.
 `xmb_animation=1` is the default. Copy `xmb-background.xba` alongside the PRX/INI.
 Use `xmb_animation=0` and restart VSH to keep the static background. Missing or
 invalid assets, unsupported firmware/layout or insufficient RAM fall back to

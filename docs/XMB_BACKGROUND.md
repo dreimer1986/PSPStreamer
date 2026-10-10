@@ -16,8 +16,10 @@ leave Memory Stick and reopen it. The background should show the moving city
 behind ordinary XMB icons/text. Verify changing selection, starting the app,
 returning to VSH, LCD and TV, and disabling the INI option. With `report=1`,
 `last.log` records install/fallback and load/bind/destruction counters.
-The user confirmed that the 12 fps version is much smoother. The new multi-app
-cache and selection/lifetime behavior still require a hardware test.
+The user confirmed smoother 12 fps playback and working multi-app loading and
+playback. Initial on-demand loading takes a moment. The supplied Daedalus test
+asset is deliberately smaller (160x90) than PSPStreamer's 256x144 asset; this is
+not a per-app rendering limit.
 
 The separate eight-second asset has 96 immutable RGB565 frames, 256x144 at
 12 fps, displayed using native XMB geometry. Its 7704576-byte bank lives in

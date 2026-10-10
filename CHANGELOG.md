@@ -2,9 +2,13 @@
 
 ## Additional unreleased changes
 
+- Fix the automatic TV long-press deadline starting before blocking log writes:
+  cold-start logs showed 3.3 seconds consumed before injection, leaving only
+  2.7 seconds held. Arm the full six seconds after the final pre-press log write.
 - Add on-demand per-background XMB animations in `PSPConsolizer/animations/`,
   with a bounded two-bank cache and native-surface lifetime tracking. Keep the
-  legacy single animation and static fallback. Multi-app hardware test pending.
+  legacy single animation and static fallback. Multi-app loading and playback
+  confirmed by the user; initial disk-loading delay is expected.
 - Include a PC converter in the Consolizer package: video plus read-only
   EBOOT/PIC1 input produces an automatically named `.xba`; configurable duration,
   resolution and frame rate, looping short sources and explicit RAM validation.

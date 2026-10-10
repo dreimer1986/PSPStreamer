@@ -54,7 +54,10 @@ static unsigned controller_tv_button(unsigned long long now,int connected,int st
     attempted=1;
     controller_log("TV detected cable",cable);controller_log("TV existing display mode",mode);
     if(mode!=0)return 0; /* Never deliberately toggle an already external mode. */
-    controller_tv_hold_until=now+6000000;external_since=0;
     controller_log("TV request via Sony display button",controller_tvout);
+    /* Log writes above can block for seconds on a Memory Stick. Arm only
+     * after the final write, immediately before the caller injects SCREEN;
+     * never spend the hold interval before the key has even been pressed. */
+    controller_tv_hold_until=sceKernelGetSystemTimeWide()+6000000;external_since=0;
     return PSP_CTRL_SCREEN;
 }
