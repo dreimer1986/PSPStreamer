@@ -18,11 +18,24 @@ static inline int xmb_animation_header_valid(const XmbAnimationHeader *h) {
     return h->stride==stride && h->frame_bytes==bytes &&
         h->frames<=XMB_ANIMATION_MAX/bytes;
 }
+#define XMB_ANIMATION_BANKS 2
+#define XMB_ANIMATION_SURFACES 16
 typedef struct {
-    uint32_t original_load,original_bind,original_destroy[2],surface_vtable,ram_end;
-    volatile uint32_t active,target,frame,loads,binds,destroys;
+    volatile uint32_t ready,frame,references;
     XmbAnimationHeader header;
     uint32_t pixels,tex_width,tex_height,u_ratio,v_ratio;
+} XmbAnimationBank;
+typedef struct {
+    volatile uint32_t surface;
+    uint32_t size,hash,banks;
+} XmbAnimationSurface;
+typedef struct {
+    uint32_t original_load,original_bind,original_destroy[2],surface_vtable,ram_end;
+    volatile uint32_t active,target,loads,binds,destroys,users;
+    /* Sequence lock: worker only accepts an unchanged even request sequence. */
+    volatile uint32_t request_seq,request_size,request_hash;
+    XmbAnimationBank bank[XMB_ANIMATION_BANKS];
+    XmbAnimationSurface surfaces[XMB_ANIMATION_SURFACES];
 } XmbAnimationShared;
 /* Exact IEEE-754 n/power-of-two without touching the kernel's FPU context. */
 static inline uint32_t xmb_animation_ratio(unsigned n,unsigned p) {

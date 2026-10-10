@@ -3,12 +3,48 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import struct
+import shutil
+import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('asset',ROOT/'tools/build_xmb_background.py')
 asset=importlib.util.module_from_spec(spec);spec.loader.exec_module(asset)
 
 class AnimationTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ffmpeg'),'FFmpeg unavailable')
+    def test_cli_short_video_loops_and_names_output(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d);video=path/'short.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=blue:s=32x32:r=12',
+                '-t','0.1','-c:v','mpeg4',str(video)],check=True)
+            subprocess.run([sys.executable,str(ROOT/'tools/build_xmb_background.py'),
+                '--video',str(video),'--pic1',str(ROOT/'psp-client/assets/pic1.png'),
+                '--output-dir',str(path/'animations'),'--width','16','--height','8',
+                '--duration','0.5'],check=True,capture_output=True)
+            output=path/'animations/28108CC0-198253.xba'
+            data=output.read_bytes();header=asset.HEADER.unpack_from(data)
+            self.assertEqual(header[8],6)
+            self.assertEqual(len(data),48+header[7]*6)
+            self.assertEqual(header[10],asset.fnv(data[48:]))
+
+    def test_pbp_extraction_and_identity(self):
+        pic1=(ROOT/'psp-client/assets/pic1.png').read_bytes()
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'EBOOT.PBP'
+            # PIC1 is the fifth PBP section; SND0 follows it.
+            offsets=[40]*5+[40+len(pic1)]*3
+            original=struct.pack('<10I',0x50425000,0x10000,*offsets)+pic1
+            path.write_bytes(original)
+            self.assertEqual(asset.read_pic1(path,True),pic1)
+            self.assertEqual(path.read_bytes(),original)
+            self.assertEqual(asset.asset_name(pic1),'28108CC0-198253.xba')
+            path.write_bytes(struct.pack('<10I',0x50425000,0x10000,*([40]*8)))
+            with self.assertRaises(ValueError):asset.read_pic1(path,True)
+            offsets[6]=0
+            path.write_bytes(struct.pack('<10I',0x50425000,0x10000,*offsets)+pic1)
+            with self.assertRaises(ValueError):asset.read_pic1(path,True)
+
     def test_payload(self):
         with tempfile.TemporaryDirectory() as d:
             exe=str(Path(d)/'payload')

@@ -73,7 +73,8 @@ def main():
         "PSPConsolizer": ["psp-controller/PSPConsolizer.prx",
             "psp-controller/bridge/PSPConsolizerUSB.prx", "psp-controller/PSPConsolizer.ini.example",
             "psp-controller/PSPConsolizer-rules.ini.example", "psp-controller/PSPConsolizer-rumble.ini.example",
-            "psp-controller/RUMBLE.md", "psp-controller/README.md"],
+            "psp-controller/RUMBLE.md", "psp-controller/README.md",
+            "psp-controller/assets/xmb-background.xba", "docs/XMB_BACKGROUND.md"],
         "StreamerOC": ["psp-overclock/StreamerOC.prx", "psp-overclock/StreamerOC.ini.example",
             "psp-overclock/StreamerOC-rules.ini.example", "psp-overclock/LICENSE", "psp-overclock/README.md"],
         "FuSaFullscreen": ["psp-fusa-probe/FuSaFullscreen.prx", "psp-fusa-probe/FULLSCREEN.md",
@@ -84,6 +85,7 @@ def main():
             if name == "FULLSCREEN.md": name = "README.md"
             if name == "PLUGINS-fullscreen-example.TXT": name = "PLUGINS-example.TXT"
             copy(ROOT / source, out / folder / name)
+    copy(ROOT / "tools/build_xmb_background.py", out / "PSPConsolizer/tools/build_xmb_background.py")
     copy(ROOT / "psp-fusa-probe/FuSaFullscreen.ini", out / "FuSaFullscreen/FuSaFullscreen.ini.example")
     copy(seed / "PSPStreamer/dvemgr.prx", out / "FuSaFullscreen/dvemgr.prx")
     for folder in ("PSPConsolizer", "FuSaFullscreen"):

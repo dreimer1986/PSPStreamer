@@ -8,31 +8,39 @@ set `xmb_animation=0` in `PSPConsolizer.ini` and restart VSH. Install the matchi
 No EBOOT, firmware, OC or loader update is required. Set `xmb_probe=0` and
 `xmb_texture_probe=0`; these diagnostics take priority over animation.
 
-Restart VSH, allow the asset to load (up to a minute with logging), open Game / Memory Stick and select
-PSPStreamer without starting it. If it was already cached during startup,
+Restart VSH, wait about ten seconds, open Game / Memory Stick and select
+PSPStreamer without starting it. Loading begins when its background is drawn;
+the static image stays visible until the complete bank is checked and ready.
+If it was already cached during startup,
 leave Memory Stick and reopen it. The background should show the moving city
 behind ordinary XMB icons/text. Verify changing selection, starting the app,
 returning to VSH, LCD and TV, and disabling the INI option. With `report=1`,
 `last.log` records install/fallback and load/bind/destruction counters.
-The first hardware test confirmed animation, but reported stutter. Logs show
-564 binds in ten seconds, while the original asset had only six unique frames
-per second. The revised asset doubles that rate; its hardware test is pending.
+The user confirmed that the 12 fps version is much smoother. The new multi-app
+cache and selection/lifetime behavior still require a hardware test.
 
 The separate eight-second asset has 96 immutable RGB565 frames, 256x144 at
 12 fps, displayed using native XMB geometry. Its 7704576-byte bank lives in
 user partition 2, not kernel RAM. The loader requires an additional 2 MiB
-contiguous reserve and accepts at most 8 MiB of frame data. Missing/corrupt
+contiguous reserve and accepts at most 8 MiB per animation. At most two banks
+(16 MiB combined upper bound) are resident, loaded on demand rather than at
+startup. Missing/corrupt
 assets, unsupported layouts or allocation failure leave PIC1 unchanged.
 The EBOOT's native static backdrop, animated icon and sound need no plugin.
 
 ## Rendering and ownership
 
-After an eight-second startup delay, the service reads at most 32 KiB of asset
-data per iteration, verifies length/geometry/checksum, and only then publishes
-hooks. The first implementation has one frame bank matched by PIC1 size/FNV,
-not by a transient cache index or a hard-coded runtime address. It supports
+After an eight-second startup delay, guarded hooks are installed before any
+bank is loaded. The worker reads at most 32 KiB of asset data per iteration,
+verifies length/geometry/checksum, and only then enables that bank. A draw of a known
+PIC1 requests its bank from the worker; render hooks themselves do no I/O.
+Identification uses PIC1 size/FNV, not a transient cache index or a hard-coded
+runtime address. It supports
 the captured 6.61 module layout and original 480x272 RGBA PIC1 surfaces only.
-Separate multi-application banks/path-based selection are not implemented.
+Up to sixteen live native PIC1 surfaces are tracked. Further surfaces retain
+their original appearance. Apps without PIC1 or with unsupported dimensions/
+native formats also keep the original XMB behavior. Path/title-based selection
+for apps sharing an identical background is not implemented.
 
 The PIC1 load wrapper observes the original successful loader result. A guarded
 PAF call-site wrapper uses a 104-byte stack copy of the live surface to bind
@@ -47,15 +55,65 @@ All frame pixels are immutable and flushed before publication. The worker
 only changes an index; it never dereferences an old captured texture pointer.
 No I/O, allocation, decompression or frame copying occurs in a render hook.
 This avoids overwriting textures referenced by in-flight GE command lists.
-The published bank/code remain allocated until VSH loadexec/teardown, including
-after hook removal, so prefetched callbacks and queued GE commands remain safe.
-There is one bounded allocation per VSH session, not one per selection. Suspend
+The small published code/context remains allocated until VSH loadexec/teardown.
+Banks record every native surface that has bound their pixels. A bank is only
+eligible for replacement after all those surfaces have completed PAF's native
+destructor, which also releases their original texture storage. An in-flight
+bind additionally blocks reclamation; elapsed time alone never permits reuse.
+This follows native texture ownership rather than overwriting a bank on each
+selection. Two retained backgrounds can pin both slots during XMB caching or
+fades: a further app stays static until a slot becomes available. Leaving and
+reopening Game / Memory Stick can release that native cache. There is no
+unbounded per-app allocation or kernel-RAM fallback. Suspend
 and USB hand-off disable substitution; it resumes when the service is allowed.
 The game-menu load hook can reattach after that module reloads.
 
 ## Building a replacement asset
 
-Use the exact PIC1 PNG contained in the target EBOOT. The current application
+Requirements: **Python 3 and FFmpeg** in PATH (Linux, Windows or macOS). No PSP
+SDK, Python packages, firmware dumps, image editor or modification of the app
+is needed. Input can be MP4, MKV, WebM, AVI, GIF or another video FFmpeg decodes.
+Only the picture is used; animation audio is not played by this feature.
+
+The PSP reads **`.xba`**, an uncompressed, versioned RGB565 frame bank with a
+checksum and target-image fingerprint. It does not directly decode MP4 in XMB.
+The converter is included in `PSPConsolizer/tools/` in the release ZIP.
+
+Example, from the repository root (or use `python` on Windows):
+
+```sh
+python3 tools/build_xmb_background.py \
+  --video my-animation.mp4 \
+  --app /path/to/OtherApp/EBOOT.PBP \
+  --output-dir ./animations
+```
+
+Copy the resulting `animations` folder to `SEPLUGINS/PSPConsolizer/` on the
+Memory Stick. The tool automatically names files `HASH-SIZE.xba`, for example
+`28108CC0-198253.xba`. **Keep that filename.** Several animations coexist in
+this folder; no INI entry per app is needed. Keep `xmb_animation=1`, restart VSH
+after adding/replacing files, and select the app. The old root-level
+`xmb-background.xba` remains a compatible fallback when its fingerprint matches;
+an app-specific file takes precedence. A damaged app-specific file falls back
+to the static image rather than hiding the error with a different animation.
+
+The default is an eight-second, 256x144, 12 fps loop. Short source videos repeat
+to fill it; long ones use the beginning. To keep more detail with a shorter loop:
+
+```sh
+python3 tools/build_xmb_background.py \
+  --video my-animation.mp4 --app /path/to/OtherApp/EBOOT.PBP \
+  --output-dir ./animations --width 320 --height 180 --fps 12 --duration 5
+```
+
+The converter rejects settings exceeding 8 MiB and reports the maximum frame
+count for the chosen resolution. `--frames` overrides `--duration` for exact
+lengths. Video is scaled to the selected dimensions and finally to native XMB
+background geometry; use a widescreen source to avoid unwanted distortion.
+Assets are validated and atomically replaced on the PC. EBOOT is read-only.
+
+Alternatively, use the exact PIC1 PNG extracted from an EBOOT or game's ISO;
+the tool does not extract ISO contents. The current PSPStreamer
 fingerprint is `28108CC0` (198253 bytes). Original dimensions must be 480x272;
 the animation may be smaller. Apps sharing exactly the same PIC1 also match.
 
@@ -157,8 +215,8 @@ PAF's construction, upload and bind code, not just guessed from the numbers.
 Further static tracing identifies the draw-time texture binding call at PAF
 text offset `132A5C`, targeting `134194`. That routine reads the live surface,
 sets format/swizzle and UV ratios, then submits its backing pointer to the GE.
-This is the substitution point used by the first animation build above; its
-hardware behavior still needs testing. It also uses four floating-point
+This is the substitution point confirmed by the animation hardware test.
+It also uses four floating-point
 arguments, which must be preserved explicitly.
 
 The requirements established before implementation were live-object destruction/

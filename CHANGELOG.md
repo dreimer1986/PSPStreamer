@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- Add on-demand per-background XMB animations in `PSPConsolizer/animations/`,
+  with a bounded two-bank cache and native-surface lifetime tracking. Keep the
+  legacy single animation and static fallback. Multi-app hardware test pending.
+- Include a PC converter in the Consolizer package: video plus read-only
+  EBOOT/PIC1 input produces an automatically named `.xba`; configurable duration,
+  resolution and frame rate, looping short sources and explicit RAM validation.
 - Keep the automatic TV Screen-button hold uninterrupted by diagnostic/asset
   I/O and USB maintenance; transient display queries no longer release it.
   Confirm external mode before release, retaining a bounded six-second timeout.

@@ -9,8 +9,8 @@ is needed for this change, and input/rumble behavior is unchanged.
 ### Current build
 
 The optional animated VSH background is now implemented for the verified 6.61
-PAF/game-menu layout. Animation was confirmed on hardware; the smoother
-12 fps follow-up and cold-start TV fix still need a hardware test.
+PAF/game-menu layout. The smoother 12 fps animation was confirmed on hardware;
+the new per-app loading/cache behavior still needs testing.
 `xmb_animation=1` is the default. Copy `xmb-background.xba` alongside the PRX/INI.
 Use `xmb_animation=0` and restart VSH to keep the static background. Missing or
 invalid assets, unsupported firmware/layout or insufficient RAM fall back to
@@ -24,6 +24,19 @@ seconds, followed by loading. On this first build, a background already cached
 before installation needs Game / Memory Stick to be left and reopened. Keep
 both diagnostic options below at zero for animation. See `XMB_BACKGROUND.md`
 in the package for limitations, checks and creating replacement assets.
+
+For another app, use Python 3 and FFmpeg on your PC:
+
+```sh
+python3 tools/build_xmb_background.py --video animation.mp4 --app /path/to/EBOOT.PBP --output-dir animations
+```
+
+Copy `animations/` into `SEPLUGINS/PSPConsolizer/` and restart VSH. The tool
+reads the existing 480x272 PIC1 and chooses the filename; EBOOT is never changed.
+The cache holds up to two on-demand banks (8 MiB each), never all installed
+animations. Native cached/fading surfaces pin their bank until destroyed;
+if no slot is available a further app stays static. Apps without a supported
+PIC1 stay static too. Identical PIC1 images share the same animation.
 
 The three XMB module captures are complete. Optional `xmb_texture_probe=1`
 (with `report=1`, VSH only) now observes the verified 6.61 PIC0/PIC1 loader

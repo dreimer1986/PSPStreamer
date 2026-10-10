@@ -49,7 +49,9 @@ their first real-PSP check before publishing this release.
   6.61 renderer keeps icons/text above the animation and native PIC1 as fallback.
   First hardware animation confirmed; follow-up doubles the asset to 12 fps
   and protects the automatic TV-button hold against background-I/O stalls.
-  This follow-up still needs a hardware test before publishing.
+  The smoother animation is user-confirmed. Per-background on-demand banks
+  and a packaged video/EBOOT-to-XBA converter now allow other supported apps
+  to use their own animations; the bounded multi-app cache needs hardware testing.
 - Preserve INIs, profiles, credentials, downloaded media and server data volumes.
   Update matching PSP application files together; reboot after plugin changes.
 - Generic ESP32 variants remain UNTESTED. No new USB speed claim or forced
