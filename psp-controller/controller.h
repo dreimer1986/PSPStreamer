@@ -50,6 +50,7 @@ static void controller_log(const char *text,int rc) {
 #include "startup_diagnostic.h"
 #include "xmb_probe.h"
 #include "xmb_texture_probe.h"
+#include "xmb_animation.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -63,7 +64,7 @@ static int controller_power(int unknown,int flags,void *common) {
     return 0;
 }
 static void controller_config(void) {
-    char buffer[2048];int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini",PSP_O_RDONLY,0);
+    char buffer[4096];int f=sceIoOpen("ms0:/SEPLUGINS/PSPConsolizer/PSPConsolizer.ini",PSP_O_RDONLY,0);
     if(f<0)return;
     int n=sceIoRead(f,buffer,sizeof(buffer)-1);sceIoClose(f);if(n<=0)return;buffer[n]=0;
     controller_report=consolizer_report_setting(buffer);
@@ -72,6 +73,7 @@ static void controller_config(void) {
         while(*line==' ' || *line=='\t')line++;
         size_t len=strlen(line);while(len && (line[len-1]==' ' || line[len-1]=='\t'))line[--len]=0;
         if(!strncmp(line,"enabled=",8))controller_enabled=!strcmp(line+8,"1");
+        else if(!strncmp(line,"xmb_animation=",14))xmb_animation_enabled=!strcmp(line+14,"1");
         else if(!strncmp(line,"xmb_probe=",10))xmb_probe_enabled=!strcmp(line+10,"1");
         else if(!strncmp(line,"xmb_texture_probe=",18))xmb_texture_enabled=!strcmp(line+18,"1");
         else if(!strncmp(line,"audio_probe=",12))audio_probe_enabled=!strcmp(line+12,"1");
@@ -263,10 +265,12 @@ static int controller_worker(SceSize size,void *args) {
         audio_mirror_log_drain();
         xmb_probe_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
         xmb_texture_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
+        xmb_animation_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
         sceKernelDelayThreadCB(10000);
     }
     scePowerUnregisterCallback(power);
 done:
+    xmb_animation_stop();
     xmb_texture_stop();
     xmb_probe_stop();
     audio_mirror_stop();

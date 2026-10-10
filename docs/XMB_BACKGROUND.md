@@ -1,4 +1,77 @@
-# Optional animated VSH background — investigation, not shipped
+# Optional animated VSH background — first animation build
+
+## Use and hardware test
+
+`xmb_animation=1` is the default, including when the key is absent. To disable,
+set `xmb_animation=0` in `PSPConsolizer.ini` and restart VSH. Install the matching
+`PSPConsolizerUSB.prx` and `xmb-background.xba` in `SEPLUGINS/PSPConsolizer/`.
+No EBOOT, firmware, OC or loader update is required. Set `xmb_probe=0` and
+`xmb_texture_probe=0`; these diagnostics take priority over animation.
+
+Restart VSH, wait about fifteen seconds, open Game / Memory Stick and select
+PSPStreamer without starting it. If it was already cached during startup,
+leave Memory Stick and reopen it. The background should show the moving city
+behind ordinary XMB icons/text. Verify changing selection, starting the app,
+returning to VSH, LCD and TV, and disabling the INI option. With `report=1`,
+`last.log` records install/fallback and load/bind/destruction counters.
+Host checks passed; real-PSP animation/lifecycle behavior is **not yet confirmed**.
+
+The separate eight-second asset has 48 immutable RGB565 frames, 320x180 at
+6 fps, displayed using native XMB geometry. Its 5793792-byte bank lives in
+user partition 2, not kernel RAM. The loader requires an additional 2 MiB
+contiguous reserve and accepts at most 8 MiB of frame data. Missing/corrupt
+assets, unsupported layouts or allocation failure leave PIC1 unchanged.
+The EBOOT's native static backdrop, animated icon and sound need no plugin.
+
+## Rendering and ownership
+
+After an eight-second startup delay, the service reads at most 32 KiB of asset
+data per iteration, verifies length/geometry/checksum, and only then publishes
+hooks. The first implementation has one frame bank matched by PIC1 size/FNV,
+not by a transient cache index or a hard-coded runtime address. It supports
+the captured 6.61 module layout and original 480x272 RGBA PIC1 surfaces only.
+Separate multi-application banks/path-based selection are not implemented.
+
+The PIC1 load wrapper observes the original successful loader result. A guarded
+PAF call-site wrapper uses a 104-byte stack copy of the live surface to bind
+the animation buffer; native storage, refcounts and object ownership remain
+untouched. The verified binder reads the descriptor synchronously and only
+emits GE commands, without retaining that stack copy. Both virtual surface
+destructors clear the matching identity before releasing the native object.
+The four float arguments of the binder and original return values are retained.
+All wrappers execute in user context with no imports or relocations.
+
+All frame pixels are immutable and flushed before publication. The worker
+only changes an index; it never dereferences an old captured texture pointer.
+No I/O, allocation, decompression or frame copying occurs in a render hook.
+This avoids overwriting textures referenced by in-flight GE command lists.
+The published bank/code remain allocated until VSH loadexec/teardown, including
+after hook removal, so prefetched callbacks and queued GE commands remain safe.
+There is one bounded allocation per VSH session, not one per selection. Suspend
+and USB hand-off disable substitution; it resumes when the service is allowed.
+The game-menu load hook can reattach after that module reloads.
+
+## Building a replacement asset
+
+Use the exact PIC1 PNG contained in the target EBOOT. The current application
+fingerprint is `28108CC0` (198253 bytes). Original dimensions must be 480x272;
+the animation may be smaller. Apps sharing exactly the same PIC1 also match.
+
+```sh
+python3 tools/build_xmb_background.py \
+  --video /path/to/background-loop.mp4 \
+  --pic1 psp-client/assets/pic1.png \
+  --output xmb-background.xba --width 320 --height 180 --frames 48 --fps 6
+```
+
+The tool converts existing video with FFmpeg, repeats border pixels, swizzles
+16-byte by 8-row blocks and writes a versioned, checksummed container. It uses
+BGR565 little-endian bytes to match PSP's low-bit red channel. The supplied
+asset comes from the existing Cyberpunk-v2 background concept, not Sony data.
+Changing the native PIC1 requires regenerating the matching asset fingerprint.
+Resolution, duration and frame rate trade off against the fixed RAM budget.
+
+## Investigation history
 
 The native EBOOT now has ICON0.PNG, ICON1.PMF, PIC1.PNG and SND0.AT3.
 It starts normally without PSP Consolizer. ICON1 is the animated icon; PIC1 is
@@ -82,17 +155,17 @@ PAF's construction, upload and bind code, not just guessed from the numbers.
 Further static tracing identifies the draw-time texture binding call at PAF
 text offset `132A5C`, targeting `134194`. That routine reads the live surface,
 sets format/swizzle and UV ratios, then submits its backing pointer to the GE.
-This is a candidate for substituting an independently owned animation frame
-without replacing the composed screen. It has **not** been hooked or tested.
-It also uses four floating-point arguments, which must be preserved explicitly.
+This is the substitution point used by the first animation build above; its
+hardware behavior still needs testing. It also uses four floating-point
+arguments, which must be preserved explicitly.
 
-Before animation can be enabled: establish live-object destruction/replacement
-handling, preserve the original surface ownership, and keep frame buffers alive
+The requirements established before implementation were live-object destruction/
+replacement handling, preservation of original surface ownership, and keeping frame buffers alive
 until outstanding GE lists have finished. A successful load-time snapshot alone
 does not authorize updating its address later from the service thread. No
 additional capture of the same four loader records is needed at this point.
 Private input logs are saved under `diagnostics/xmb-textures-20261010` outside
-the repository. The current EBOOT and plugin renderer remain unchanged.
+the repository. The EBOOT remains unchanged by the animation extension.
 
 ## Background texture observer procedure (completed for the current PSP)
 
@@ -130,7 +203,7 @@ cannot jump into freed memory. Only one such allocation is made per session.
 Build and host tests verify standalone payload layout, original argument/result
 preservation, bounded snapshots, invalid-address rejection and record limits.
 They do not prove the firmware hook or surface ownership on real hardware.
-This is a diagnostic build, **not an animation renderer**.
+This diagnostic option itself is **not an animation toggle**.
 
 ## Older module-capture procedure (not needed again for the current PSP)
 
@@ -183,8 +256,8 @@ Verify on LCD and TV, including cold boot and return from a game. Do not revive
 the previously rejected early VSH initialization path just for visual effects.
 
 The city panorama and silent motion study are prepared in the XMB concept assets
-and `~/Bilder/PSPStreamer-XMB/Cyberpunk-v2/`. No new background INI option or
-background renderer is shipped yet; the preview MP4 is not a PSP plugin asset.
+and `~/Bilder/PSPStreamer-XMB/Cyberpunk-v2/`. The preview MP4 is not directly a
+PSP plugin asset; the separately encoded XBA file is used instead.
 
 References inspected:
 

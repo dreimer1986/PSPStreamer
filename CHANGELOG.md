@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Implement optional animated VSH backgrounds in Consolizer, default enabled
+  via `xmb_animation=1`, with a separate checksummed city-loop asset. Native
+  PIC1/EBOOT fallback remains independent of the plugin. Guarded 6.61 PAF
+  texture binding, destruction tracking and immutable user-RAM frames avoid
+  drawing over XMB menus or rewriting live textures. First animation hardware
+  test pending; no claim of universal firmware/application compatibility.
+- Extend Consolizer's INI read buffer to 4 KiB so the documented settings and
+  comments, including the new background option, do not truncate later options.
 - Move StreamerOC and Consolizer overlay pixel backups out of kernel RAM into
   on-demand user RAM. This addresses codec-module allocation failure 800200D9
   with both overlays enabled. Allocation failure disables only the affected OSD;

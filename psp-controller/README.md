@@ -8,9 +8,21 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
-The 2026-10-10 hardware capture succeeded: PSPStreamer's background is identified
-by its EBOOT PIC1 fingerprint and its PAF surface layout is understood. Leave
-`xmb_texture_probe=0` after capture; an animation renderer is not installed yet.
+The optional animated VSH background is now implemented for the verified 6.61
+PAF/game-menu layout; **its first animation hardware test is pending**.
+`xmb_animation=1` is the default. Copy `xmb-background.xba` alongside the PRX/INI.
+Use `xmb_animation=0` and restart VSH to keep the static background. Missing or
+invalid assets, unsupported firmware/layout or insufficient RAM fall back to
+the ordinary PIC1. The EBOOT still starts without any plugin.
+
+The supplied city loop is 320x180 RGB565, 48 frames at 6 fps (eight seconds),
+scaled by the native XMB background renderer. Its immutable frame bank needs
+about 5.5 MiB of user RAM only in VSH; no codec, frame decoding, continuous disk
+reads or kernel pixel buffers are involved. Initialization is delayed eight
+seconds, followed by loading. On this first build, a background already cached
+before installation needs Game / Memory Stick to be left and reopened. Keep
+both diagnostic options below at zero for animation. See `XMB_BACKGROUND.md`
+in the package for limitations, checks and creating replacement assets.
 
 The three XMB module captures are complete. Optional `xmb_texture_probe=1`
 (with `report=1`, VSH only) now observes the verified 6.61 PIC0/PIC1 loader

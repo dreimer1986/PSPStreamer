@@ -32,3 +32,5 @@ certificates/
 /psp-controller/bridge/pops_payload.inc
 /psp-controller/bridge/xmb_texture_payload.bin
 /psp-controller/bridge/xmb_texture_payload.inc
+/psp-controller/bridge/xmb_animation_payload.bin
+/psp-controller/bridge/xmb_animation_payload.inc

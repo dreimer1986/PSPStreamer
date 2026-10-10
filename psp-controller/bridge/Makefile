@@ -28,6 +28,13 @@ bridge.o: ../audio_mirror_flow.h ../audio_mirror_src.h
 bridge.o: ../startup_diagnostic.h ../startup_progress.h
 bridge.o: ../xmb_probe.h ../xmb_probe_bounds.h
 bridge.o: ../xmb_texture_probe.h ../xmb_texture_shared.h xmb_texture_payload.inc
+bridge.o: ../xmb_animation.h ../xmb_animation_shared.h xmb_animation_payload.inc
+xmb_animation_payload.o: ../xmb_animation_payload.c ../xmb_animation_shared.h
+	psp-gcc -O2 -G0 -mno-abicalls -fno-pic -ffreestanding -fno-builtin -fno-stack-protector -fno-jump-tables -fno-tree-switch-conversion -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra -c $< -o $@
+xmb_animation_payload.bin: xmb_animation_payload.o
+	psp-objcopy -O binary -j .text $< $@
+xmb_animation_payload.inc: xmb_animation_payload.o xmb_animation_payload.bin ../embed_xmb_animation.py
+	python3 ../embed_xmb_animation.py xmb_animation_payload.o xmb_animation_payload.bin $@
 xmb_texture_payload.o: ../xmb_texture_payload.c ../xmb_texture_shared.h
 	psp-gcc -O2 -G0 -mno-abicalls -fno-pic -ffreestanding -fno-builtin -fno-stack-protector -fno-jump-tables -fno-tree-switch-conversion -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra -c $< -o $@
 xmb_texture_payload.bin: xmb_texture_payload.o

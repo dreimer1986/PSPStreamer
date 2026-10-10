@@ -1,5 +1,8 @@
 # PSP Consolizer. Read once at application start.
 enabled=1
+# Animated PIC1 background in VSH; default ON. Needs xmb-background.xba.
+# 0 keeps the native static backdrop. Takes effect after restarting VSH.
+xmb_animation=1
 # 0 disables all loader/runtime diagnostic file writes; 1 enables reports.
 report=1
 # One-shot read-only VSH module capture for animated background development.

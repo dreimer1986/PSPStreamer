@@ -44,9 +44,10 @@ their first real-PSP check before publishing this release.
 
 ## Not included / update notes
 
-- Animated full-screen XMB backgrounds are **not implemented** in this release.
-  Prepared artwork is available, but a verified pre-menu VSH texture hook is
-  still needed. The static backdrop always remains the normal fallback.
+- Optional animated full-screen XMB background in Consolizer, default enabled
+  with `xmb_animation=1` and the separate `xmb-background.xba` asset. The guarded
+  6.61 renderer keeps icons/text above the animation and native PIC1 as fallback.
+  First real-PSP animation/lifecycle test remains pending before publishing.
 - Preserve INIs, profiles, credentials, downloaded media and server data volumes.
   Update matching PSP application files together; reboot after plugin changes.
 - Generic ESP32 variants remain UNTESTED. No new USB speed claim or forced
