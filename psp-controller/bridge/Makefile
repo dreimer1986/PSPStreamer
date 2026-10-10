@@ -27,6 +27,13 @@ bridge.o: ../audio_mirror.h ../audio_mirror_signature.h ../../streammaster/spdif
 bridge.o: ../audio_mirror_flow.h ../audio_mirror_src.h
 bridge.o: ../startup_diagnostic.h ../startup_progress.h
 bridge.o: ../xmb_probe.h ../xmb_probe_bounds.h
+bridge.o: ../xmb_texture_probe.h ../xmb_texture_shared.h xmb_texture_payload.inc
+xmb_texture_payload.o: ../xmb_texture_payload.c ../xmb_texture_shared.h
+	psp-gcc -O2 -G0 -mno-abicalls -fno-pic -ffreestanding -fno-builtin -fno-stack-protector -fno-jump-tables -fno-tree-switch-conversion -fno-asynchronous-unwind-tables -fno-unwind-tables -Wall -Wextra -c $< -o $@
+xmb_texture_payload.bin: xmb_texture_payload.o
+	psp-objcopy -O binary -j .text $< $@
+xmb_texture_payload.inc: xmb_texture_payload.o xmb_texture_payload.bin ../embed_xmb_texture.py
+	python3 ../embed_xmb_texture.py xmb_texture_payload.o xmb_texture_payload.bin $@
 bridge.o: ../pops_audio.h ../pops_audio_shared.h
 bridge.o: ../pops_audio_link.h
 bridge.o: ../../psp-client/streammaster_usb/bulk_storage.h

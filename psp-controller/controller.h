@@ -49,6 +49,7 @@ static void controller_log(const char *text,int rc) {
 #include "audio_mirror.h"
 #include "startup_diagnostic.h"
 #include "xmb_probe.h"
+#include "xmb_texture_probe.h"
 static void controller_clear(void) {
     /* Never use an infinite make count. Clear both kernel and user masks
      * explicitly; only our configured slot (3) is touched. */
@@ -72,6 +73,7 @@ static void controller_config(void) {
         size_t len=strlen(line);while(len && (line[len-1]==' ' || line[len-1]=='\t'))line[--len]=0;
         if(!strncmp(line,"enabled=",8))controller_enabled=!strcmp(line+8,"1");
         else if(!strncmp(line,"xmb_probe=",10))xmb_probe_enabled=!strcmp(line+10,"1");
+        else if(!strncmp(line,"xmb_texture_probe=",18))xmb_texture_enabled=!strcmp(line+18,"1");
         else if(!strncmp(line,"audio_probe=",12))audio_probe_enabled=!strcmp(line+12,"1");
         else if(!strncmp(line,"audio_mirror=",13))audio_mirror_enabled=!strcmp(line+13,"1");
         else if(!strncmp(line,"home_combo=",11))controller_home=!strcmp(line+11,"1");
@@ -260,10 +262,12 @@ static int controller_worker(SceSize size,void *args) {
         pad_overlay_update(controller_usb_paused?6:controller_disabled || !allowed?4:controller_suspended?3:!attached?5:value.connected?(in_streamer?2:1):0,usb_error,controller_suspended);
         audio_mirror_log_drain();
         xmb_probe_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
+        xmb_texture_update(now,allowed && !controller_suspended && !controller_disabled && !controller_usb_paused && !app_owner);
         sceKernelDelayThreadCB(10000);
     }
     scePowerUnregisterCallback(power);
 done:
+    xmb_texture_stop();
     xmb_probe_stop();
     audio_mirror_stop();
     audio_probe_stop();
@@ -286,6 +290,6 @@ static int controller_stop(void) {
         if(rc<0)return rc; /* Never unload live code or forcibly kill an owner. */
         sceKernelDeleteThread(controller_thread);controller_thread=-1;
     }
-    if(audio_mirror_pinned)return SM_BUSY;
+    if(audio_mirror_pinned || xmb_texture_pinned)return SM_BUSY;
     return pad_overlay_stop();
 }

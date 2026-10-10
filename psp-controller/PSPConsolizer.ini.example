@@ -6,6 +6,10 @@ report=1
 # Requires report=1; writes private diagnostics to PSPConsolizer/xmb-probe/.
 # Default off; this is NOT an animated-background toggle. See docs/XMB_BACKGROUND.md.
 xmb_probe=0
+# Optional 6.61 PIC0/PIC1 loader observer (VSH + report=1 only).
+# Temporarily hooks two verified call sites; does not animate or change images.
+# Captures at most 16 surface records in 90 seconds; see docs/XMB_BACKGROUND.md.
+xmb_texture_probe=0
 # Read-only system-audio investigation; also requires report=1. Separate from
 # audio_mirror below. Per-title logs/text dump, 120 seconds, default off.
 audio_probe=0

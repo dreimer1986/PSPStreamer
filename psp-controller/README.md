@@ -8,12 +8,15 @@ is needed for this change, and input/rumble behavior is unchanged.
 
 ### Current build
 
-Optional `xmb_probe=1` (with `report=1`, VSH only) captures the three loaded XMB
-modules for animated-background development. It does not enable an animation
-or change rendering. Select PSPStreamer in Game / Memory Stick without starting
-it, wait 30 seconds, then collect `PSPConsolizer/xmb-probe/`. Turn the option off
-afterwards. Keep these private diagnostics out of published release packages.
-Instructions and boundaries: `docs/XMB_BACKGROUND.md` in the source repository.
+The three XMB module captures are complete. Optional `xmb_texture_probe=1`
+(with `report=1`, VSH only) now observes the verified 6.61 PIC0/PIC1 loader
+call sites. It records image fingerprints and surface metadata, not pixels,
+and does not enable an animation or modify images. Keep `xmb_probe=0` for this
+step. After restarting VSH, open Game / Memory Stick, wait ten seconds on
+another entry, then select PSPStreamer and wait fifteen seconds. Collect
+`PSPConsolizer/xmb-probe/textures.txt` and `last.log`, then disable the probe.
+Instructions, compatibility guard and memory lifetime: `docs/XMB_BACKGROUND.md`
+in the source repository (also `XMB_BACKGROUND.md` in the plugin package).
 
 Overlay pixel backups now use user partition 2 rather than scarce kernel RAM,
 leaving room for AVC codec modules when both plugin overlays are enabled.

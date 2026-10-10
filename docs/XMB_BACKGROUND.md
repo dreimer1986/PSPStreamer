@@ -19,10 +19,11 @@ XMB fades, antialiased text, dimming and TV scaling alter those pixels.
 
 A proper implementation needs a verified VSH/PAF background-texture update or
 pre-menu composition point, plus identification of the selected PSPStreamer
-entry. No verified mapping for the current 6.61/ARK setup has been established.
+entry. The image-loader path has now been identified for the captured 6.61/ARK
+setup; the surface layout and lifetime still need runtime confirmation.
 An independent animated overlay is not proof of an animated PIC1 solution.
 
-## Next hardware-facing step
+## Capture and static analysis
 
 First capture, 2026-10-09: PAF was complete (1,623,320 + 287,400 bytes), both
 FNV-1a values verified. Its `scePaf` export table contains 1,078 functions and
@@ -32,9 +33,61 @@ Capture stopped at the next module's layout validation before printing its
 layout. The exact rejected segment therefore cannot be recovered from that log.
 The revised probe prints every layout first, supports the 64 MiB RAM boundary
 on known later PSP models, accepts empty segments without dereferencing them,
-and continues other modules after a layout rejection. The two missing modules
-still need a fresh capture. `check_xmb_capture.py --partial` verifies completed
-segments without claiming the whole session is complete.
+and continues other modules after a layout rejection.
+
+The second capture is complete: all six segments passed size/FNV verification.
+VSH at `0A042600` and the game plugin at `0A573D00` were indeed above the old
+32 MiB bound. The game plugin has text/data/BSS sizes 190664/84/2492 bytes.
+Its PIC1 and PIC0 load branches call the image-cache helper at text offset
+`1BDA0`, from offsets `B51C` and `B484`, respectively. Both call delay slots
+are `move t2,zero`. The helper receives the encoded image and its size, a
+cache key (`%d_bg`) and a surface-reference output. It delegates image parsing
+and surface construction/copying to PAF; the caller retains the returned object.
+
+PAF's observed surface-copy export is NID `E9570AA3` (text offset `13308C`).
+The constructor allocates 104 bytes. Dimension, layout, stride and backing
+pointer candidates are visible in the copy code, but these are not a license
+to write guessed offsets. The next capture records the actual objects.
+
+## Current hardware test: background texture observer
+
+Update **only** `PSPConsolizerUSB.prx`, preserving your other settings. Configure:
+
+```ini
+report=1
+xmb_probe=0
+xmb_texture_probe=1
+```
+
+Restart VSH. Open Game / Memory Stick, remain on another entry for ten seconds,
+then select PSPStreamer without launching it. Wait fifteen seconds. Select
+another application and return to PSPStreamer once. If PSPStreamer was already
+selected/cached before the observer installed, leave Memory Stick and reopen it.
+Collect `SEPLUGINS/PSPConsolizer/xmb-probe/textures.txt` and the plugin's `last.log`.
+Disable `xmb_texture_probe` after this capture. No new module dumps are needed.
+
+This optional observer replaces **two verified JAL instructions**, not the
+display compositor or a live function prologue. It checks firmware, module
+layout, loader signature, both call targets and delay slots, and revalidates
+the module after allocation. Unrecognized builds remain untouched. Original
+arguments, return values and object ownership are preserved. The imported
+loader runs in its original user context; the observer has no kernel imports.
+
+At most 16 records contain the encoded-image FNV, cache key, loader result and
+104-byte surface header. No texture pixels are copied or changed. The existing
+worker writes the records outside the loader; no new thread or frame polling
+is introduced. Observation ends after 90 seconds, a full log, suspend, service
+exit or USB hand-off. It is default-off and VSH-only, requires `report=1`, and
+adds about 3.4 KiB of user RAM while enabled. The published self-contained
+code/context allocation is retained until VSH teardown so a prefetched call
+cannot jump into freed memory. Only one such allocation is made per session.
+
+Build and host tests verify standalone payload layout, original argument/result
+preservation, bounded snapshots, invalid-address rejection and record limits.
+They do not prove the firmware hook or surface ownership on real hardware.
+This is a diagnostic build, **not an animation renderer**.
+
+## Older module-capture procedure (not needed again for the current PSP)
 
 Consolizer now includes an **opt-in, read-only module capture**, not an animation
 renderer. Install the current `PSPConsolizerUSB.prx` and add these settings to
@@ -73,7 +126,7 @@ Host verification (read only):
 python3 tools/check_xmb_capture.py /path/to/PSPConsolizer/xmb-probe
 ```
 
-The next analysis uses those exact module addresses, exports/imports and code
+The analysis uses those exact module addresses, exports/imports and code
 to trace PIC1 loading, the selected item, texture ownership and destruction.
 The dump alone does not establish a safe update/lifecycle hook.
 

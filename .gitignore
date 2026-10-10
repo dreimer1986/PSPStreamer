@@ -30,3 +30,5 @@ certificates/
 /streammaster/build-generic-*-qio80/
 /psp-controller/bridge/pops_payload.bin
 /psp-controller/bridge/pops_payload.inc
+/psp-controller/bridge/xmb_texture_payload.bin
+/psp-controller/bridge/xmb_texture_payload.inc
