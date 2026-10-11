@@ -7,6 +7,14 @@ No PSPStreamer, Consolizer, Bluetooth or optical-audio code is replaced.
 Real PSP/ESP operation still needs hardware testing; regression-free behavior
 cannot be guaranteed. Keep the standard firmware for rollback.
 
+Version 0.1 caused a reported VSH cold-start shutdown before any FTP status
+file was written. Version 0.2 removes INI/file I/O from `module_start`, defers
+initialization for 20 seconds, and halves the kernel worker stack to 8 KiB.
+Large scratch buffers live in the user partition. Compiler stack-usage output
+now reports 336 bytes for the worker and 2,784 bytes for the command handler;
+this is not a hardware proof of the crash's cause. The next cold-boot test is
+still required. No firmware change is needed from `ftp1`.
+
 ## Install
 
 1. Copy `PSPStreamFTP` to `ms0:/SEPLUGINS/PSPStreamFTP/`.
@@ -33,7 +41,7 @@ cannot be guaranteed. Keep the standard firmware for rollback.
    This is not a factory image for an empty board or a generic ESP32 board.
 
 5. Reconnect the normal PSP/Onju USB setup and restart VSH. Allow at least ten
-   seconds. The plugin uses the ESP's saved Wi-Fi profiles. Read
+   seconds (20–30 seconds with version 0.2). The plugin uses the ESP's saved Wi-Fi profiles. Read
    `SEPLUGINS/PSPStreamFTP/status.txt` for its IP/listener status; the same ESP
    address is available in PSPStreamer's StreamMaster settings.
 6. Connect a PC FTP client to that IP, port `2121`: **plain FTP, passive mode,

@@ -15,7 +15,7 @@
 #include "../streammaster/protocol.h"
 #include "../streammaster/tcp_server.h"
 #include "path.h"
-PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,1);
+PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,2);
 #define BASE "ms0:/SEPLUGINS/PSPStreamFTP/"
 #define CONTROL 0x46545002U
 #define LISTENER 0x46545001U
@@ -28,6 +28,10 @@ static char username[64],password[128];
 typedef struct {
     SmFrame request,reply;
     char cwd[FTP_PATH],control[1024],data[4000],rename[FTP_PATH];
+    /* Owned by the single FTP worker. Keep large temporaries out of scarce
+     * kernel thread stacks, including nested reply/transfer call chains. */
+    char config_text[2048],command_text[512],response_text[1200];
+    unsigned char write_payload[4008];
     unsigned used,peer,serial,sequence;
     int authenticated,user_ok,quit,passive,aborted,failures;
     SceOff restart;
@@ -48,10 +52,10 @@ static void status(const char *message,int code){
     if(f>=0){if(n>0)sceIoWrite(f,line,n<(int)sizeof(line)?n:(int)sizeof(line)-1);sceIoClose(f);}
 }
 static int config(void){
-    char buffer[2048];int f=sceIoOpen(BASE "PSPStreamFTP.ini",PSP_O_RDONLY,0);
+    char *buffer=s->config_text;int f=sceIoOpen(BASE "PSPStreamFTP.ini",PSP_O_RDONLY,0);
     if(f<0)return -1;
-    int n=sceIoRead(f,buffer,sizeof(buffer)-1);sceIoClose(f);
-    if(n<=0 || n==(int)sizeof(buffer)-1)return -1;
+    int n=sceIoRead(f,buffer,sizeof(s->config_text)-1);sceIoClose(f);
+    if(n<=0 || n==(int)sizeof(s->config_text)-1)return -1;
     buffer[n]=0;
     char *save=NULL;
     for(char *p=strtok_r(buffer,"\r\n",&save);p;p=strtok_r(NULL,"\r\n",&save)){
@@ -63,7 +67,7 @@ static int config(void){
         else if(!strncmp(p,"idle_seconds=",13)){unsigned v;if(decimal(p+13,3600,&v)<0)return -1;idle_seconds=v;}
         else if(!strncmp(p,"read_only=",10))read_only=!strcmp(p+10,"1");
     }
-    memset(buffer,0,sizeof(buffer));
+    memset(buffer,0,sizeof(s->config_text));
     return port>0 && port<=65535 && idle_seconds>=30 && idle_seconds<=3600 && username[0] && password[0]?0:-1;
 }
 static int rpc(unsigned op,const void *data,unsigned n){
@@ -85,8 +89,7 @@ static int read_socket(unsigned token,void *out,unsigned cap){
     memcpy(out,s->reply.payload,s->reply.length);return s->reply.length;
 }
 static int send_socket(unsigned token,const void *data,unsigned n){
-    /* Stack request is not passed to the driver; rpc copies into user RAM. */
-    unsigned char payload[4008];SmSocketRequest p={token,n};
+    unsigned char *payload=s->write_payload;SmSocketRequest p={token,n};
     if(n>4000)return SM_INVALID;
     memcpy(payload,&p,sizeof(p));memcpy(payload+sizeof(p),data,n);
     return rpc(SM_TCP_WRITE,payload,sizeof(p)+n);
@@ -101,8 +104,8 @@ static int send_all(unsigned token,const char *p,unsigned n){
     }
     return n?-1:0;
 }
-#define reply(...) do { char ftp_line[1200];int ftp_n=snprintf(ftp_line,sizeof(ftp_line),__VA_ARGS__); \
-    if(ftp_n<=0 || ftp_n>=(int)sizeof(ftp_line) || send_all(CONTROL,ftp_line,ftp_n)<0)s->quit=1; } while(0)
+#define reply(...) do { int ftp_n=snprintf(s->response_text,sizeof(s->response_text),__VA_ARGS__); \
+    if(ftp_n<=0 || ftp_n>=(int)sizeof(s->response_text) || send_all(CONTROL,s->response_text,ftp_n)<0)s->quit=1; } while(0)
 static int command_line(char *line,unsigned cap){
     for(;;){
         char *end=memchr(s->control,'\n',s->used);
@@ -276,10 +279,17 @@ static void command(char *line){
 }
 static int worker(SceSize size,void *arg){
     (void)size;(void)arg;
+    /* Never perform filesystem I/O on the module manager's startup thread.
+     * Let XMB and the resident USB loader settle before allocating or polling. */
+    for(unsigned i=0;i<200 && running;i++)sceKernelDelayThread(100000);
+    if(!running)return 0;
+    status("FTP 0.2: delayed worker started; allocating user buffers",0);
     memory=sceKernelAllocPartitionMemory(2,"FTP user buffers",PSP_SMEM_High,sizeof(Session),NULL);
     if(memory<0){status("User buffer allocation failed",memory);running=0;return 0;}
     s=sceKernelGetBlockHeadAddr(memory);memset(s,0,sizeof(*s));s->serial=(unsigned)clock_us();
-    sceKernelDelayThread(10000000);
+    status("FTP 0.2: reading INI",0);
+    if(config()<0 || !enabled){status("Disabled or missing valid INI credentials",0);goto cleanup;}
+    status("FTP 0.2: waiting for resident USB bridge",0);
     unsigned long long next_connect=0;
     while(running){
         if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)!=SM_RESIDENT_MAGIC || sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0)<=0){sceKernelDelayThread(500000);continue;}
@@ -306,9 +316,9 @@ static int worker(SceSize size,void *arg){
             reply("220 PSPStreamFTP - Memory Stick only.\r\n");
             unsigned long long deadline=clock_us()+(unsigned long long)idle_seconds*1000000;
             while(running && !s->quit){
-                char cmd[512];int n=command_line(cmd,sizeof(cmd));
+                char *cmd=s->command_text;int n=command_line(cmd,sizeof(s->command_text));
                 if(n<0)break;
-                if(n){command(cmd);memset(cmd,0,sizeof(cmd));deadline=clock_us()+(unsigned long long)idle_seconds*1000000;}
+                if(n){command(cmd);memset(cmd,0,sizeof(s->command_text));deadline=clock_us()+(unsigned long long)idle_seconds*1000000;}
                 else if(clock_us()>=deadline){reply("421 Idle timeout.\r\n");break;}
                 else sceKernelDelayThread(10000);
             }
@@ -317,15 +327,14 @@ static int worker(SceSize size,void *arg){
         rpc(SM_TCP_RESET,NULL,0);sceKernelDelayThread(500000);
     }
     /* Firmware also expires listeners after 20 s without commands. */
+cleanup:
     memset(s,0,sizeof(*s));sceKernelFreePartitionMemory(memory);memory=-1;s=NULL;
     memset(password,0,sizeof(password));running=0;return 0;
 }
 int module_start(SceSize size,void *arg){
     (void)size;(void)arg;
     if(sceKernelInitKeyConfig()!=PSP_INIT_KEYCONFIG_VSH)return 0;
-    /* Disabled installs must not retain a dormant thread's kernel stack. */
-    if(config()<0 || !enabled){status("Disabled or missing valid INI credentials",0);memset(password,0,sizeof(password));return 0;}
-    running=1;thread=sceKernelCreateThread("PSP FTP service",worker,0x38,16384,0,NULL);
+    running=1;thread=sceKernelCreateThread("PSP FTP service",worker,0x38,8192,0,NULL);
     if(thread<0){running=0;return thread;}
     int rc=sceKernelStartThread(thread,0,NULL);
     if(rc<0){sceKernelDeleteThread(thread);thread=-1;running=0;}return rc;

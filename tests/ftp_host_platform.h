@@ -65,7 +65,7 @@ static int sceIoDread(int d,SceIoDirent *e){
     struct stat st;if(stat(path,&st)<0)return -1;host_stat(&st,&e->d_stat);return 1;
 }
 static uint64_t sceKernelGetSystemTimeWide(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (uint64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
-static void sceKernelDelayThread(unsigned us){usleep(us==10000000?1000:us);}
+static void sceKernelDelayThread(unsigned us){usleep(us==100000?1000:us);}
 static int sceKernelInitKeyConfig(void){return PSP_INIT_KEYCONFIG_VSH;}
 static int sceKernelAllocPartitionMemory(int p,const char *n,int k,unsigned size,void *at){(void)p;(void)n;(void)k;(void)at;host_block=calloc(1,size);return host_block?1:-1;}
 static void *sceKernelGetBlockHeadAddr(int id){(void)id;return host_block;}

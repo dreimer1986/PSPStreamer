@@ -52,7 +52,7 @@ def main():
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)
     (out / 'BUILD.txt').write_text(f'Source: {revision}{" (working tree changes)" if dirty else ""}\n'
-                                 'Experimental FTP 0.1 / firmware 0.3.25-bt-qio80-iram-ftp1\n'
+                                 'Experimental FTP 0.2 / firmware 0.3.25-bt-qio80-iram-ftp1\n'
                                  'Hardware validation pending. Standard releases untouched.\n')
     names = sorted([*files, 'BUILD.txt'])
     (out / 'SHA256SUMS').write_text(''.join(

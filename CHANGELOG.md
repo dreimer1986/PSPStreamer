@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- FTP 0.2: investigate the reported VSH startup shutdown (no FTP status file).
+  Move INI/filesystem work off the module-loader thread, delay initialization
+  by 20 seconds, move large scratch buffers to user RAM and reduce the kernel
+  stack from 16 to 8 KiB. Record startup stages. Hardware confirmation pending;
+  the available old Consolizer log does not establish the crash's cause.
+
 - Add an isolated, opt-in VSH FTP test plugin with INI credentials and passive
   access to the Memory Stick root only. A separately packaged Onju firmware
   adds bounded incoming TCP sockets; standard release firmware is unchanged.
