@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- FTP 0.3: fix LIST/MLSD/SIZE byte counts without the PSP Sysclib unsigned
+  64-bit printf path; test zero, small, FAT-limit and full uint64 values.
+  Reject extra idle control sessions explicitly instead of letting FileZilla
+  time out. Document the per-site single-connection setting. Firmware unchanged.
+
 - FTP 0.2: investigate the reported VSH startup shutdown (no FTP status file).
   Move INI/filesystem work off the module-loader thread, delay initialization
   by 20 seconds, move large scratch buffers to user RAM and reduce the kernel

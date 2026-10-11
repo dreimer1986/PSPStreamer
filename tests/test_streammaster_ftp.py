@@ -66,6 +66,9 @@ class FTPTests(unittest.TestCase):
         self.assertEqual(self.ftp.size('Datei.bin'),len(payload))
         self.assertEqual(self.ftp.nlst(),['Datei.bin'])
         self.assertEqual(dict(self.ftp.mlsd())['Datei.bin']['type'],'file')
+        self.assertEqual(dict(self.ftp.mlsd())['Datei.bin']['size'],str(len(payload)))
+        listing=[];self.ftp.retrlines('LIST',listing.append)
+        self.assertEqual(listing[0].split()[4],str(len(payload)))
         self.ftp.rename('Datei.bin','new.bin');self.ftp.delete('new.bin')
         self.assertEqual(list((self.path/'ÄÖÜ Test').iterdir()),[])
         self.ftp.cwd('/');self.ftp.rmd('ÄÖÜ Test')
@@ -89,5 +92,20 @@ class FTPTests(unittest.TestCase):
         data.setsockopt(socket.SOL_SOCKET,socket.SO_LINGER,struct.pack('ii',1,0));data.close()
         with self.assertRaises(ftplib.error_temp):self.ftp.voidresp()
         self.assertEqual(target.read_bytes(),b'keep me')
+
+    def test_second_session_gets_explanation_not_timeout(self):
+        self.ftp.login('test','secret')
+        other=ftplib.FTP()
+        try:
+            with self.assertRaisesRegex(ftplib.error_temp,'421 One session only'):
+                other.connect('127.0.0.1',self.port,timeout=3)
+        finally:other.close()
+        self.assertEqual(self.ftp.voidcmd('NOOP'),'200 OK.')
+
+    def test_fat_maximum_file_size(self):
+        self.ftp.login('test','secret')
+        with (self.path/'large.bin').open('wb') as file:file.truncate(4294967295)
+        self.assertEqual(self.ftp.size('large.bin'),4294967295)
+        self.assertEqual(dict(self.ftp.mlsd())['large.bin']['size'],'4294967295')
 
 if __name__=='__main__':unittest.main()

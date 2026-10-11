@@ -15,12 +15,14 @@
 #include "../streammaster/protocol.h"
 #include "../streammaster/tcp_server.h"
 #include "path.h"
-PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,2);
+#include "size_text.h"
+PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,3);
 #define BASE "ms0:/SEPLUGINS/PSPStreamFTP/"
 #define CONTROL 0x46545002U
 #define LISTENER 0x46545001U
 #define PASSIVE 0x46545003U
 #define DATA 0x46545004U
+#define REFUSED 0x46545005U
 static volatile int running;
 static SceUID thread=-1,memory=-1;
 static int enabled,port=2121,idle_seconds=300,read_only;
@@ -103,6 +105,15 @@ static int send_all(unsigned token,const char *p,unsigned n){
         else sceKernelDelayThread(10000);
     }
     return n?-1:0;
+}
+static void refuse_extra_connection(void){
+    /* FileZilla normally uses separate browsing and transfer sessions. Do not
+     * leave the second socket in listen backlog until its client times out. */
+    SmTcpAccept p={LISTENER,REFUSED};
+    if(rpc(SM_TCP_ACCEPT,&p,sizeof(p))==0){
+        static const char message[]="421 One session only; set Site Manager maximum connections to 1.\r\n";
+        send_socket(REFUSED,message,sizeof(message)-1);close_socket(REFUSED);
+    }
 }
 #define reply(...) do { int ftp_n=snprintf(s->response_text,sizeof(s->response_text),__VA_ARGS__); \
     if(ftp_n<=0 || ftp_n>=(int)sizeof(s->response_text) || send_all(CONTROL,s->response_text,ftp_n)<0)s->quit=1; } while(0)
@@ -194,12 +205,13 @@ static void transfer(const char *verb,const char *arg){
             if(n<=0){if(n<0)good=0;break;}
             if(!strcmp(entry.d_name,".") || !strcmp(entry.d_name,"..") || strchr(entry.d_name,'\r') || strchr(entry.d_name,'\n'))continue;
             int dir=FIO_S_ISDIR(entry.d_stat.st_mode);
+            char size_text[21];ftp_size_text((uint64_t)entry.d_stat.st_size,size_text);
             if(!strcmp(verb,"NLST"))n=snprintf(s->data,sizeof(s->data),"%s\r\n",entry.d_name);
-            else if(!strcmp(verb,"MLSD"))n=snprintf(s->data,sizeof(s->data),"type=%s;size=%llu; %s\r\n",dir?"dir":"file",(unsigned long long)entry.d_stat.st_size,entry.d_name);
+            else if(!strcmp(verb,"MLSD"))n=snprintf(s->data,sizeof(s->data),"type=%s;size=%s; %s\r\n",dir?"dir":"file",size_text,entry.d_name);
             else {
                 static const char *months[]={"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
                 unsigned month=entry.d_stat.sce_st_mtime.month;
-                n=snprintf(s->data,sizeof(s->data),"%crw-r--r-- 1 psp psp %llu %s %02u %04u %s\r\n",dir?'d':'-',(unsigned long long)entry.d_stat.st_size,
+                n=snprintf(s->data,sizeof(s->data),"%crw-r--r-- 1 psp psp %s %s %02u %04u %s\r\n",dir?'d':'-',size_text,
                     months[month>=1 && month<=12?month-1:0],(unsigned)entry.d_stat.sce_st_mtime.day,(unsigned)entry.d_stat.sce_st_mtime.year,entry.d_name);
             }
         }else if(upload){
@@ -261,7 +273,7 @@ static void command(char *line){
             rc=sceIoGetstat(path,&st);if(rc>=0 && FIO_S_ISDIR(st.st_mode)){strcpy(s->cwd,virtual_path);reply("250 Directory changed.\r\n");}else reply("550 Not a directory.\r\n");
         }else if(!strcmp(line,"SIZE") || !strcmp(line,"MDTM")){
             if(sceIoGetstat(path,&st)<0 || FIO_S_ISDIR(st.st_mode)){reply("550 Not a file.\r\n");return;}
-            if(!strcmp(line,"SIZE"))reply("213 %llu\r\n",(unsigned long long)st.st_size);
+            if(!strcmp(line,"SIZE")){char size_text[21];ftp_size_text((uint64_t)st.st_size,size_text);reply("213 %s\r\n",size_text);}
             else reply("213 %04u%02u%02u%02u%02u%02u\r\n",st.sce_st_mtime.year,st.sce_st_mtime.month,st.sce_st_mtime.day,st.sce_st_mtime.hour,st.sce_st_mtime.minute,st.sce_st_mtime.second);
         }else if(!strcmp(line,"RNFR")){
             s->rename[0]=0;
@@ -283,13 +295,13 @@ static int worker(SceSize size,void *arg){
      * Let XMB and the resident USB loader settle before allocating or polling. */
     for(unsigned i=0;i<200 && running;i++)sceKernelDelayThread(100000);
     if(!running)return 0;
-    status("FTP 0.2: delayed worker started; allocating user buffers",0);
+    status("FTP 0.3: delayed worker started; allocating user buffers",0);
     memory=sceKernelAllocPartitionMemory(2,"FTP user buffers",PSP_SMEM_High,sizeof(Session),NULL);
     if(memory<0){status("User buffer allocation failed",memory);running=0;return 0;}
     s=sceKernelGetBlockHeadAddr(memory);memset(s,0,sizeof(*s));s->serial=(unsigned)clock_us();
-    status("FTP 0.2: reading INI",0);
+    status("FTP 0.3: reading INI",0);
     if(config()<0 || !enabled){status("Disabled or missing valid INI credentials",0);goto cleanup;}
-    status("FTP 0.2: waiting for resident USB bridge",0);
+    status("FTP 0.3: waiting for resident USB bridge",0);
     unsigned long long next_connect=0;
     while(running){
         if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)!=SM_RESIDENT_MAGIC || sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0)<=0){sceKernelDelayThread(500000);continue;}
@@ -315,12 +327,16 @@ static int worker(SceSize size,void *arg){
             s->used=s->quit=s->authenticated=s->user_ok=s->passive=s->failures=0;s->restart=0;s->rename[0]=0;strcpy(s->cwd,"/");
             reply("220 PSPStreamFTP - Memory Stick only.\r\n");
             unsigned long long deadline=clock_us()+(unsigned long long)idle_seconds*1000000;
+            unsigned long long next_accept=0;
             while(running && !s->quit){
                 char *cmd=s->command_text;int n=command_line(cmd,sizeof(s->command_text));
                 if(n<0)break;
                 if(n){command(cmd);memset(cmd,0,sizeof(s->command_text));deadline=clock_us()+(unsigned long long)idle_seconds*1000000;}
                 else if(clock_us()>=deadline){reply("421 Idle timeout.\r\n");break;}
-                else sceKernelDelayThread(10000);
+                else {
+                    if(clock_us()>=next_accept){refuse_extra_connection();next_accept=clock_us()+1000000;}
+                    sceKernelDelayThread(10000);
+                }
             }
             close_socket(DATA);close_socket(PASSIVE);close_socket(CONTROL);
         }

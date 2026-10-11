@@ -7,6 +7,15 @@ No PSPStreamer, Consolizer, Bluetooth or optical-audio code is replaced.
 Real PSP/ESP operation still needs hardware testing; regression-free behavior
 cannot be guaranteed. Keep the standard firmware for rollback.
 
+Version 0.3 fixes zero-byte file sizes by avoiding the PSP kernel's broken
+unsigned 64-bit printf conversion in LIST, MLSD and SIZE. Extra control
+connections receive `421 One session only` instead of waiting in the listener
+backlog. In **FileZilla Site Manager → Transfer Settings**, enable the limit on
+simultaneous connections and set it to **1** for this site. Limiting global
+simultaneous file transfers alone is not the same setting: FileZilla otherwise
+uses separate browsing and download sessions. Reconnect and refresh cached
+directory listings after updating. Firmware remains `ftp1`.
+
 Version 0.1 caused a reported VSH cold-start shutdown before any FTP status
 file was written. Version 0.2 removes INI/file I/O from `module_start`, defers
 initialization for 20 seconds, and halves the kernel worker stack to 8 KiB.
