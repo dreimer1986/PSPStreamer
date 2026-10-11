@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.26 — FTP transport in regular firmware
+
+- Promote the user-confirmed Onju FTP transport to all regular firmware builds.
+  Incoming sockets remain inactive until the optional PSPStreamFTP VSH plugin
+  requests them. Existing streaming, Bluetooth and optical transport unchanged.
+- All four distributed hardware variants use the same firmware base version;
+  generic S3 Quad/Octal and S2 remain explicitly UNTESTED on hardware.
+- PSPStreamFTP 0.4 ships separately with credentials in its INI, passive FTP,
+  Memory Stick root confinement and the corrected PSP file-size/root handling.
+
 ## 0.3.25-bt-qio80-iram-ftp1 — separate experimental build
 
 - Optional incoming TCP commands for the VSH Memory Stick FTP plugin. Four

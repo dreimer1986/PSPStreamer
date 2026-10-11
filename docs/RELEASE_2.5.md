@@ -1,8 +1,19 @@
 # 2.5 — System-Wide Optical Audio, Smoother TV Gaming and a Cyberpunk XMB
 
-Changes since **2.4**. Existing PSP/plugin/S/PDIF behavior was accepted on the
-user's test hardware; the newly packaged XMB animation and sound still need
-their first real-PSP check before publishing this release.
+Changes since **2.4**. PSP/plugin/S/PDIF behavior, XMB animations and the optional
+Memory Stick FTP service were accepted on the user's Onju/PSP test setup.
+Generic ESP32 firmware variants remain explicitly hardware-UNTESTED.
+
+## Wireless Memory Stick file transfers
+
+- New **PSPStreamFTP 0.4** package: upload, download, browse and manage Memory
+  Stick files through StreamMaster Wi-Fi while in VSH. No flash access.
+- Own username/password in an INI, optional read-only mode, staged uploads and
+  download resume. Disabled by default; plain FTP for trusted LAN use only.
+- Correct PSP file sizes and root navigation; configure FileZilla for one
+  simultaneous connection per site.
+- **StreamMaster 0.3.26** includes the inactive-until-requested FTP transport
+  across all four distributed firmware variants. Existing BT/S/PDIF retained.
 
 ## Optical audio beyond the player
 

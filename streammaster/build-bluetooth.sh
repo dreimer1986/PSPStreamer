@@ -27,5 +27,5 @@ for mode in "${modes[@]}"; do
     idf.py -B "$build_dir" -D "SDKCONFIG=$build_dir/sdkconfig" \
         -D "SDKCONFIG_DEFAULTS=$defaults" -D STREAMMASTER_BLUETOOTH=ON \
         -D "STREAMMASTER_QIO=$qio" -D "STREAMMASTER_FLASH80=$flash80" \
-        -D "STREAMMASTER_HOT_IRAM=$hot_iram" build
+        -D "STREAMMASTER_HOT_IRAM=$hot_iram" -D STREAMMASTER_FTP=ON build
 done

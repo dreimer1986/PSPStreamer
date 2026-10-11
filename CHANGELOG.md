@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- PSPStreamFTP 0.4 confirmed working on hardware and promoted to its own regular
+  release folder/ZIP. StreamMaster 0.3.26 includes FTP transport in every
+  distributed firmware variant; generic ESP32 variants remain UNTESTED.
+  FTP is optional, disabled by default, VSH-only and limited to the Memory Stick.
+
 - FTP 0.4: validate CWD/CDUP by opening the directory, not by requiring
   normal stat attributes on the Memory Stick device root. Add a regression
   test with root Getstat deliberately unavailable. Firmware unchanged.

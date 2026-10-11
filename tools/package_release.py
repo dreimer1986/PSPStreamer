@@ -17,7 +17,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPONENTS = ("PSPStreamer", "PSPConsolizer", "StreamerOC", "FuSaFullscreen", "StreamMaster")
+COMPONENTS = ("PSPStreamer", "PSPConsolizer", "StreamerOC", "FuSaFullscreen", "PSPStreamFTP", "StreamMaster")
 
 
 def copy(source, dest):
@@ -70,6 +70,8 @@ def main():
         shutil.copytree(seed / "PSPStreamer" / name, app / name)
 
     for folder, sources in {
+        "PSPStreamFTP": ["psp-ftp/PSPStreamFTP.prx", "psp-ftp/PSPStreamFTP.ini.example",
+            "psp-ftp/README.md"],
         "PSPConsolizer": ["psp-controller/PSPConsolizer.prx",
             "psp-controller/bridge/PSPConsolizerUSB.prx", "psp-controller/PSPConsolizer.ini.example",
             "psp-controller/PSPConsolizer-rules.ini.example", "psp-controller/PSPConsolizer-rumble.ini.example",
@@ -88,7 +90,8 @@ def main():
     copy(ROOT / "tools/build_xmb_background.py", out / "PSPConsolizer/tools/build_xmb_background.py")
     copy(ROOT / "psp-fusa-probe/FuSaFullscreen.ini", out / "FuSaFullscreen/FuSaFullscreen.ini.example")
     copy(seed / "PSPStreamer/dvemgr.prx", out / "FuSaFullscreen/dvemgr.prx")
-    for folder in ("PSPConsolizer", "FuSaFullscreen"):
+    copy(ROOT / "psp-ftp/PSPStreamFTP.ini.example", out / "PSPStreamFTP/PSPStreamFTP.ini")
+    for folder in ("PSPConsolizer", "FuSaFullscreen", "PSPStreamFTP"):
         copy(ROOT / "LICENSE", out / folder / "LICENSE")
 
     fw = out / "StreamMaster"
@@ -112,6 +115,8 @@ def main():
         if embedded != desc["project_version"] or not embedded.startswith(version + "-"):
             raise ValueError(f"Stale firmware: {name}: {embedded}")
         config = (build / "sdkconfig").read_text()
+        if "STREAMMASTER_FTP:BOOL=ON" not in (build / "CMakeCache.txt").read_text():
+            raise ValueError(f"Firmware lacks FTP transport: {name}")
         for required in ("CONFIG_ESPTOOLPY_FLASHMODE_QIO=y", "CONFIG_ESPTOOLPY_FLASHFREQ_80M=y", "CONFIG_SPIRAM_SPEED_80M=y", "CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y"):
             if required not in config: raise ValueError(f"Wrong hardware config: {name}: {required}")
         dest = fw / name
@@ -127,7 +132,7 @@ def main():
             "\n".join(f"{pairs[i]} {pairs[i+1]}" for i in range(0, len(pairs), 2)) + "\n")
         subprocess.run([sys.executable, "-m", "esptool", "--chip", desc["target"], "merge_bin",
                         *options, "-o", "factory.bin", *pairs], cwd=dest, check=True)
-        status = "UNTESTED hardware variant" if "UNTESTED" in name else "Established Onju hardware configuration; new optical audio awaits hardware verification"
+        status = "UNTESTED hardware variant" if "UNTESTED" in name else "Onju V3 hardware: streaming, Bluetooth, optical audio and FTP confirmed by user"
         (dest / "README.md").write_text(f"# {name}\n\nFirmware: `{embedded}`\n\n{status}.\n\n"
             f"From this folder, update with:\n\n```sh\nesptool --chip {desc['target']} --port /dev/ttyACM0 --baud 460800 write_flash @flash_args\n```\n\n"
             "This writes bootloader/partition table/app, preserving NVS profiles and bonds.\n"

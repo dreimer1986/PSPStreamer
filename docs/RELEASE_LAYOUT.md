@@ -11,7 +11,8 @@ Choose either the extracted folder **or** its ZIP.
 | `PSPConsolizer/` + `.zip` | Copy to `ms0:/SEPLUGINS/PSPConsolizer/`. Controller bridge, TV activation and rumble. |
 | `StreamerOC/` + `.zip` | Copy to `ms0:/SEPLUGINS/StreamerOC/`. Clock plugin and per-title rule examples. |
 | `FuSaFullscreen/` + `.zip` | Copy to `ms0:/SEPLUGINS/FuSaFullscreen/`. Fullscreen scaler and TV helper. |
-| `StreamMaster/` + `.zip` | All firmware targets, from the same source and **0.3.25** version base. No PSP app/plugins inside. |
+| `PSPStreamFTP/` + `.zip` | Optional VSH Memory Stick FTP; requires Consolizer and StreamMaster. Disabled by default; choose your own credentials. |
+| `StreamMaster/` + `.zip` | All firmware targets, from the same source and **0.3.26** version base, including FTP transport. No PSP app/plugins inside. |
 
 Plugin folders contain `.ini.example` files. For a **new installation**, copy
 the main example to the corresponding `.ini` filename. On update, **preserve
@@ -22,14 +23,14 @@ for ARK registration and dependencies.
 ## Firmware targets
 
 - `StreamMaster/Onju-V3/`: ESP32-S3 Onju Voice V3,
-  `0.3.25-bt-qio80-iram`, USB Bluetooth/HID, rumble and optional S/PDIF. QIO flash 80 MHz,
+  `0.3.26-bt-qio80-iram`, USB Bluetooth/HID, rumble, FTP and optional S/PDIF. QIO flash 80 MHz,
   16 MB layout, CPU 240 MHz, Octal PSRAM 80 MHz. Hardware-tested configuration,
   retained from the validated optical-audio build; no new performance claim.
 - `StreamMaster/ESP32-S3-QUAD-UNTESTED/`: generic S3, Quad PSRAM.
 - `StreamMaster/ESP32-S3-OCTAL-UNTESTED/`: generic S3, Octal PSRAM.
 - `StreamMaster/ESP32-S2-UNTESTED/`: generic S2, SPI PSRAM.
 
-Generic versions are `0.3.25-generic-qio80`, 4 MB layout, QIO flash 80 MHz and
+Generic versions are `0.3.26-generic-qio80`, 4 MB layout, QIO flash 80 MHz and
 PSRAM 80 MHz. **UNTESTED** means compiled, not physically validated. S2 has less
 internal-memory/CPU headroom. Generics retain their network-only feature set
 (no external USB Bluetooth); equal versions do not imply equal capabilities.

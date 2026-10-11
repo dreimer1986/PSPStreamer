@@ -20,7 +20,7 @@ if [ "$target" = esp32s3 ]; then defaults="$defaults;$PWD/sdkconfig.generic-$var
 if [ "$flash_profile" = qio80 ]; then defaults="$defaults;$PWD/sdkconfig.qio;$PWD/sdkconfig.flash80"; fi
 idf.py -B "$build_dir" -DIDF_TARGET="$target" \
     -DSTREAMMASTER_BOARD=generic -DSTREAMMASTER_O3=OFF \
-    -DSTREAMMASTER_BLUETOOTH=OFF -DSTREAMMASTER_HOT_IRAM=OFF \
+    -DSTREAMMASTER_BLUETOOTH=OFF -DSTREAMMASTER_HOT_IRAM=OFF -DSTREAMMASTER_FTP=ON \
     -DSTREAMMASTER_QIO=$([ "$flash_profile" = qio80 ] && echo ON || echo OFF) \
     -DSTREAMMASTER_FLASH80=$([ "$flash_profile" = qio80 ] && echo ON || echo OFF) \
     -DSDKCONFIG="$PWD/$build_dir/sdkconfig" -DSDKCONFIG_DEFAULTS="$defaults" build

@@ -2,6 +2,10 @@
 
 **Your media library. Your music. A new life for the PSP.**
 
+Optional [PSPStreamFTP](psp-ftp/README.md) transfers files to and from the Memory
+Stick over StreamMaster Wi-Fi directly in VSH — no flash access, no PC cable
+needed for file transfers. Separate plugin, disabled until configured.
+
 Turn Sony's handheld into a networked media player — at home on the TV or on the
 move with downloaded episodes. Browse Plex, Jellyfin, DLNA and your own files in
 a receiver-inspired interface with analog VU meters, cover art and music visualizations.
