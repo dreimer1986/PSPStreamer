@@ -16,7 +16,7 @@
 #include "../streammaster/tcp_server.h"
 #include "path.h"
 #include "size_text.h"
-PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,3);
+PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,4);
 #define BASE "ms0:/SEPLUGINS/PSPStreamFTP/"
 #define CONTROL 0x46545002U
 #define LISTENER 0x46545001U
@@ -270,7 +270,11 @@ static void command(char *line){
         if(!strcmp(line,"CDUP"))arg="..";
         if(path_for(arg,virtual_path,path)<0){reply("550 Invalid path.\r\n");return;}
         if(!strcmp(line,"CWD") || !strcmp(line,"CDUP")){
-            rc=sceIoGetstat(path,&st);if(rc>=0 && FIO_S_ISDIR(st.st_mode)){strcpy(s->cwd,virtual_path);reply("250 Directory changed.\r\n");}else reply("550 Not a directory.\r\n");
+            /* Device roots need not expose normal inode/stat attributes.
+             * Validate the operation we need, also for CWD / and CDUP. */
+            rc=sceIoDopen(path);
+            if(rc>=0){sceIoDclose(rc);strcpy(s->cwd,virtual_path);reply("250 Directory changed.\r\n");}
+            else reply("550 Not a directory.\r\n");
         }else if(!strcmp(line,"SIZE") || !strcmp(line,"MDTM")){
             if(sceIoGetstat(path,&st)<0 || FIO_S_ISDIR(st.st_mode)){reply("550 Not a file.\r\n");return;}
             if(!strcmp(line,"SIZE")){char size_text[21];ftp_size_text((uint64_t)st.st_size,size_text);reply("213 %s\r\n",size_text);}
@@ -295,13 +299,13 @@ static int worker(SceSize size,void *arg){
      * Let XMB and the resident USB loader settle before allocating or polling. */
     for(unsigned i=0;i<200 && running;i++)sceKernelDelayThread(100000);
     if(!running)return 0;
-    status("FTP 0.3: delayed worker started; allocating user buffers",0);
+    status("FTP 0.4: delayed worker started; allocating user buffers",0);
     memory=sceKernelAllocPartitionMemory(2,"FTP user buffers",PSP_SMEM_High,sizeof(Session),NULL);
     if(memory<0){status("User buffer allocation failed",memory);running=0;return 0;}
     s=sceKernelGetBlockHeadAddr(memory);memset(s,0,sizeof(*s));s->serial=(unsigned)clock_us();
-    status("FTP 0.3: reading INI",0);
+    status("FTP 0.4: reading INI",0);
     if(config()<0 || !enabled){status("Disabled or missing valid INI credentials",0);goto cleanup;}
-    status("FTP 0.3: waiting for resident USB bridge",0);
+    status("FTP 0.4: waiting for resident USB bridge",0);
     unsigned long long next_connect=0;
     while(running){
         if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)!=SM_RESIDENT_MAGIC || sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0)<=0){sceKernelDelayThread(500000);continue;}

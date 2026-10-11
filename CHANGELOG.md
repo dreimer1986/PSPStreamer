@@ -2,6 +2,10 @@
 
 ## Additional unreleased changes
 
+- FTP 0.4: validate CWD/CDUP by opening the directory, not by requiring
+  normal stat attributes on the Memory Stick device root. Add a regression
+  test with root Getstat deliberately unavailable. Firmware unchanged.
+
 - FTP 0.3: fix LIST/MLSD/SIZE byte counts without the PSP Sysclib unsigned
   64-bit printf path; test zero, small, FAT-limit and full uint64 values.
   Reject extra idle control sessions explicitly instead of letting FileZilla

@@ -7,6 +7,10 @@ No PSPStreamer, Consolizer, Bluetooth or optical-audio code is replaced.
 Real PSP/ESP operation still needs hardware testing; regression-free behavior
 cannot be guaranteed. Keep the standard firmware for rollback.
 
+Version 0.4 fixes `CWD /` and `CDUP` on the Memory Stick device root by checking
+directory access with `sceIoDopen` instead of requiring normal file-stat
+attributes. Firmware remains `ftp1`.
+
 Version 0.3 fixes zero-byte file sizes by avoiding the PSP kernel's broken
 unsigned 64-bit printf conversion in LIST, MLSD and SIZE. Extra control
 connections receive `421 One session only` instead of waiting in the listener

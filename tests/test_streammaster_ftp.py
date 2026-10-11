@@ -108,4 +108,17 @@ class FTPTests(unittest.TestCase):
         self.assertEqual(self.ftp.size('large.bin'),4294967295)
         self.assertEqual(dict(self.ftp.mlsd())['large.bin']['size'],'4294967295')
 
+    def test_device_root_without_stat_metadata(self):
+        self.ftp.login('test','secret')
+        self.ftp.cwd('SEPLUGINS/PSPStreamFTP')
+        self.ftp.cwd('/')
+        self.assertEqual(self.ftp.pwd(),'/')
+        self.assertIn('SEPLUGINS',self.ftp.nlst())
+        self.ftp.cwd('SEPLUGINS');self.ftp.sendcmd('CDUP')
+        self.assertEqual(self.ftp.pwd(),'/')
+        self.ftp.sendcmd('CDUP');self.assertEqual(self.ftp.pwd(),'/')
+        for path in ('missing','SEPLUGINS/PSPStreamFTP/PSPStreamFTP.ini'):
+            with self.assertRaises(ftplib.error_perm):self.ftp.cwd(path)
+        self.assertEqual(self.ftp.pwd(),'/')
+
 if __name__=='__main__':unittest.main()

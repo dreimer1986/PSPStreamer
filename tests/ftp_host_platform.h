@@ -49,6 +49,8 @@ static void host_stat(const struct stat *st,SceIoStat *out){
     *out=(SceIoStat){st->st_mode,st->st_size,{t.tm_year+1900,t.tm_mon+1,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec}};
 }
 static int sceIoGetstat(const char *p,SceIoStat *out){
+    /* PSP device roots may be listable without normal Getstat metadata. */
+    if(!strcmp(p,"ms0:/"))return -1;
     struct stat st;if(stat(host_path(p),&st)<0)return errno==ENOENT?(int)0x80010002:-1;
     host_stat(&st,out);return 0;
 }
