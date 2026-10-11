@@ -6,7 +6,7 @@ compilation is not a claim of board compatibility, throughput or stability.
 The tested Onju Voice V3 package remains separate and unchanged.
 
 **Current consolidated release:** all generic targets are freshly built from
-the same **0.3.18** source as Onju, in `StreamMaster/ESP32-…-UNTESTED/`.
+the same **0.3.26** source as Onju, including FTP transport, in `StreamMaster/ESP32-…-UNTESTED/`.
 The Onju optical-audio output is disabled on generic boards (no assumed GPIO).
 Only the QIO80 variants below are published there; older DIO40 commands
 describe optional developer builds. Generics remain **UNTESTED**, network-only,
