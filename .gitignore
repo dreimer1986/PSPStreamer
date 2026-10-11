@@ -27,6 +27,8 @@ certificates/
 /streammaster/build-bluetooth-qio/
 /streammaster/build-bluetooth-qio80/
 /streammaster/build-bluetooth-qio80-iram/
+/streammaster/build-bluetooth-ftp/
+/build-bluetooth-ftp/
 /streammaster/build-generic-*-qio80/
 /psp-controller/bridge/pops_payload.bin
 /psp-controller/bridge/pops_payload.inc

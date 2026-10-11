@@ -121,6 +121,9 @@ static int connect_saved(int fresh) {
     return connect_wifi();
 }
 void sm_network_idle(void) {
+#ifdef SM_TCP_SERVER
+    sm_tcp_server_idle();
+#endif
     sm_sockets_idle();
     if(atomic_exchange(&drop_http,false))close_http();
     unsigned status=atomic_load(&state);
@@ -179,6 +182,9 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
         out->result=sm_audio_command(r,out);break;
     case SM_CAPABILITIES: {
         uint32_t caps=SM_CAP_COMPACT|SM_CAP_BULK_PAIR|SM_CAP_BULK_EXT|SM_CAP_USB_METRICS|SM_CAP_PROFILES|SM_CAP_NET_DIAG;
+#ifdef SM_TCP_SERVER
+        caps|=SM_CAP_TCP_SERVER;
+#endif
 #if !SM_GENERIC_BOARD
         caps|=SM_CAP_SPDIF;
 #endif
@@ -318,6 +324,10 @@ void sm_network_command(const SmFrame *r,SmFrame *out) {
     }
     case SM_HTTP_CLOSE:close_http();break;
     default:
+#ifdef SM_TCP_SERVER
+        if(r->op>=SM_TCP_LISTEN && r->op<=SM_TCP_RESET)sm_tcp_server_command(r,out);
+        else
+#endif
         if(r->op>=SM_SOCKET_OPEN && r->op<=SM_SOCKET_RESET)sm_sockets_command(r,out);
         else out->result=SM_INVALID;
         break;

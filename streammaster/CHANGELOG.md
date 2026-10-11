@@ -1,5 +1,15 @@
 # StreamMaster firmware changelog
 
+## 0.3.25-bt-qio80-iram-ftp1 — separate experimental build
+
+- Optional incoming TCP commands for the VSH Memory Stick FTP plugin. Four
+  bounded nonblocking socket slots, passive-data peer filtering and expiry;
+  no new task, transfer ring or changes to existing streaming socket slots.
+- Disabled at compile time in normal builds. Distributed as a separate app-only
+  image, preserving Wi-Fi/Bluetooth NVS when flashed at `0x10000`.
+- PSP plugin and firmware compile; targeted host integration tests pass.
+  PSP/Onju hardware testing remains pending. Not the standard firmware.
+
 ## 0.3.25 — Remove temporary runtime diagnostics
 
 - Remove the 0.3.24 event ring, DMA timing instrumentation and optional HTTP

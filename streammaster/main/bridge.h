@@ -1,5 +1,10 @@
 #pragma once
 #include "protocol.h"
+#ifdef SM_TCP_SERVER
+#include "tcp_server.h"
+void sm_tcp_server_idle(void);
+void sm_tcp_server_command(const SmFrame *request,SmFrame *reply);
+#endif
 void sm_led_init(void);
 void sm_led_usb(int attached);
 unsigned sm_network_state(void);

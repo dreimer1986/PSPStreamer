@@ -1,0 +1,11 @@
+# VSH only; requires PSPConsolizer and the optional FTP firmware.
+# Set your OWN credentials before enabled=1. No anonymous login.
+# FTP is unencrypted. Trusted LAN only; never forward this port to the Internet.
+enabled=0
+user=psp
+password=
+port=2121
+# Idle authenticated/control connection timeout (30..3600 seconds).
+idle_seconds=300
+# 0 permits uploads, rename, mkdir and delete; 1 permits downloads only.
+read_only=0

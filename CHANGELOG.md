@@ -2,6 +2,14 @@
 
 ## Additional unreleased changes
 
+- Add an isolated, opt-in VSH FTP test plugin with INI credentials and passive
+  access to the Memory Stick root only. A separately packaged Onju firmware
+  adds bounded incoming TCP sockets; standard release firmware is unchanged.
+  Includes staged uploads, cancellation, download resume and targeted host
+  integration tests. Hardware validation pending; trusted-LAN plain FTP only.
+- XMB animation playback, PSPStreamer startup and cold-start TV switching
+  confirmed working by the user; earlier pending notes below are historical.
+
 - Fix the automatic TV long-press deadline starting before blocking log writes:
   cold-start logs showed 3.3 seconds consumed before injection, leaving only
   2.7 seconds held. Arm the full six seconds after the final pre-press log write.
