@@ -70,7 +70,7 @@ def main():
         shutil.copytree(seed / "PSPStreamer" / name, app / name)
 
     for folder, sources in {
-        "PSPStreamFTP": ["psp-ftp/PSPStreamFTP.prx", "psp-ftp/PSPStreamFTP.ini.example",
+        "PSPStreamFTP": ["psp-ftp/PSPStreamFTP.prx", "psp-ftp/service/PSPStreamFTPService.prx", "psp-ftp/PSPStreamFTP.ini.example",
             "psp-ftp/README.md"],
         "PSPConsolizer": ["psp-controller/PSPConsolizer.prx",
             "psp-controller/bridge/PSPConsolizerUSB.prx", "psp-controller/PSPConsolizer.ini.example",

@@ -2,6 +2,12 @@
 
 ## Additional unreleased changes
 
+- FTP 0.6 staged-start candidate: replace the boot-time FTP service with a
+  small loader and load PSPStreamFTPService.prx only after stable XMB readiness.
+  Keep the existing INI and single plugin entry; log delayed module load/start
+  results. The 0.5 delay alone did not fix the reported cold-boot shutdown.
+  Hardware validation remains pending; FTP transport and firmware unchanged.
+
 - FTP 0.5 startup-hardening candidate: wait for stable, ready VSH/PAF before
   allocating buffers or issuing USB RPCs; reject an unavailable buffer address.
   User isolated a cold-boot shutdown to FTP-enabled configurations. Hardware

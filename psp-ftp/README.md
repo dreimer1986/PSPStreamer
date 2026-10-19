@@ -1,10 +1,13 @@
-# PSPStreamFTP 0.5 — startup hardening candidate
+# PSPStreamFTP 0.6 — staged startup candidate
 
 The cold-boot shutdown reported with FTP enabled is **not yet confirmed fixed**.
-This candidate requires a ready VSH system state and loaded VSH/PAF modules,
-stable for five seconds after the existing 20-second minimum delay, before
-allocating session buffers or accessing USB. A missing buffer address now
-disables the worker safely. No firmware or Consolizer update is required.
+The 0.5 readiness delay did not resolve the reported shutdown. This candidate
+loads only a small loader with a 4-KiB stack during boot. After a 20-second
+minimum and five seconds of stable VSH/PAF readiness, it loads the separate
+FTP service. The service rechecks readiness for five seconds before allocating
+buffers or accessing USB. Missing service files or load failures leave the
+loader inactive rather than failing VSH startup. No firmware or Consolizer
+update is required. This changes early memory residency, not FTP transport.
 
 Transfer files between a PC and the PSP Memory Stick over StreamMaster Wi-Fi.
 This optional **VSH-only** plugin requires PSPConsolizer's resident USB bridge.
@@ -13,7 +16,9 @@ been confirmed by the user; generic S3/S2 firmware remains hardware-UNTESTED.
 
 ## Install and connect
 
-1. Copy this folder to `ms0:/SEPLUGINS/PSPStreamFTP/`.
+1. Copy this folder to `ms0:/SEPLUGINS/PSPStreamFTP/`. Both
+   `PSPStreamFTP.prx` and `PSPStreamFTPService.prx` are required.
+   Register only the loader below, never the service as a second plugin.
 2. For a new installation, edit `PSPStreamFTP.ini`: choose your own `user` and
    nonempty `password`, then set `enabled=1`. On updates **preserve your INI**.
 3. Keep Consolizer enabled in VSH. Add after its entry in ARK's PLUGINS.TXT:
@@ -27,7 +32,7 @@ been confirmed by the user; generic S3/S2 firmware remains hardware-UNTESTED.
    does not require reflashing. Follow your board's README/flash_args. Split
    images preserve NVS Wi-Fi profiles and Bluetooth bonds; factory images
    overwrite the NVS gap.
-5. Restart PSP and wait at least 25 seconds in VSH (longer if boot is slow). The service uses saved ESP Wi-Fi
+5. Restart PSP and wait at least 30 seconds in VSH (longer if boot is slow). The service uses saved ESP Wi-Fi
    profiles. IP/readiness is recorded in this folder's `status.txt`.
 6. Connect to the ESP's WLAN IP using **plain FTP, passive mode, port 2121**,
    your configured credentials and **one connection**.
@@ -71,13 +76,16 @@ Use one `key=value` per line. Restart VSH after changing settings.
 - UTF-8 names, listings, mkdir/delete/rename, upload/download and download resume
   are supported. No active FTP or upload resume. Prefer binary transfers;
   TYPE A accepts listing clients but does not convert file line endings.
-- Scratch buffers use user RAM; the kernel worker stack is 8 KiB. Initialization
-  is delayed 20 seconds. Firmware opens no FTP listener until the plugin asks.
+- Scratch buffers use user RAM; the delayed service's kernel worker stack is
+  8 KiB, in addition to the loader's 4 KiB. Firmware opens no FTP listener until the plugin asks.
   Existing streaming, Bluetooth and optical paths are unchanged.
 
 ## Troubleshooting and build
 
-Check `status.txt`. If boot fails, disable only the FTP entry using a card reader.
+Check `loader.log` (load/start results and kernel memory, hexadecimal microsecond
+timestamps) and `status.txt` (service status). Loader logging begins only after
+stable shell readiness; a failure before that may leave only older logs.
+If boot fails, disable only the FTP entry using a card reader.
 Leave your working Consolizer configuration intact.
 
 Build: `make -C psp-ftp` in the normal PSPSDK environment. Standard firmware
