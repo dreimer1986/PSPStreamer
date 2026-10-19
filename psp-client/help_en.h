@@ -320,8 +320,8 @@ static const HelpText help_en[HELP_PAGE_COUNT]={
         .step1_text="Off: LCD menu, video follows cable.",
         .step2_title="Hold L at startup: keep LCD menu",
         .step2_text="Switch later without restarting.",
-        .step3_title="Offline video: matching LCD/TV file",
-        .step3_text="Stop first; no mid-video switching."
+        .step3_title="TV scan: 0 auto, 1 interlace, 2 p",
+        .step3_text="CRT: 1. Save, switch LCD then TV."
     },
     [HELP_PAGE_REMOTE]={
         .title="Browser: PSP controller",

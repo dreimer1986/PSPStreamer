@@ -544,3 +544,11 @@ The separate rules screen supports title IDs and exact launch paths.
 copy); **Circle** cancels. Changes apply at the **next application start** and
 do not touch the running clock-control path. This is separate from saving the
 player's CPU profiles. Only use target clocks already tested on your PSP.
+## Interlaced TV overlay candidate
+
+Both overlay modes now map their pixels/restoration into the separate fields
+of a 503-row interlaced scanout. FuSa Fullscreen's final-output mailbox is
+field-aware as well. Pixel backup memory remains essentially unchanged; no
+full-screen backup is allocated. Clock policy is unchanged: this is not new
+authorization or validation of OC in VSH/POPS or on other PSP models.
+New TV cable/model combinations still require hardware validation.

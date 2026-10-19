@@ -719,3 +719,14 @@ Read [RUMBLE.md](RUMBLE.md) for every field, address discovery, limitations and
 testing. The disabled example contains the user-confirmed Soul Calibur
 ULES01298 health address. Guided CWCheat-line and RetroArch-result imports
 convert addresses without enabling cheats; imported profiles default to off.
+## TV cables: interlaced test candidate
+
+Automatic TV switching still uses Sony's SCREEN-button handler and the
+system's component scan setting; it does not force progressive mode.
+PSP-1000 and Street are excluded because they have no native TV-out hardware.
+Composite/S-video and component interlaced are now handled by both OSD modes
+when Sony exposes a field-packed 503-row framebuffer. Under FuSa Fullscreen,
+the mailbox draws into its field-aware final output instead. PSP-2000 games
+on composite require FuSa's new direct activation path; Consolizer alone
+does not remove Sony's game-output restriction. New cable/model combinations
+are **not hardware-validated**. See `docs/TV_CABLE_TEST.md` in the repository.

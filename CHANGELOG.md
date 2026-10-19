@@ -2,6 +2,13 @@
 
 ## Additional unreleased changes
 
+- TV cable test candidate: add field-packed 480i presentation for composite /
+  S-video and component interlaced in PSPStreamer and FuSa Fullscreen 0.28.
+  Add app scan selection, field-aware polling/presentation overlays in
+  Consolizer and StreamerOC, PSP-2000 composite-game activation and relative
+  FuSa paths for Go storage. Preserve LCD/component-480p rendering and audio
+  timing. New cable/model combinations await reporter hardware validation.
+
 - PSPStreamFTP 0.4 confirmed working on hardware and promoted to its own regular
   release folder/ZIP. StreamMaster 0.3.26 includes FTP transport in every
   distributed firmware variant; generic ESP32 variants remain UNTESTED.

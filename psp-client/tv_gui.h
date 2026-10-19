@@ -37,8 +37,8 @@ static int tv_menu_select(int tv) {
     if(tv) {
         result=tvout_load_manager();
         if(result<0)return result;
-        if(pspDveMgrCheckVideoOut()!=2)return -1;
-        if(!tv_canvas.pixels)tv_canvas.pixels=memalign(64,TV_GUI_BYTES);
+        if(!tvout_available())return -1;
+        if(!tv_canvas.pixels)tv_canvas.pixels=memalign(8192,TV_GUI_BYTES);
         if(!tv_canvas.pixels)return -2;
     }
     result=display_output_select(&display_output,tv);
@@ -201,9 +201,10 @@ static void tv_present(void) {
     /* The proven scanout uses real EDRAM, never RAM or the extra EDRAM alias.
      * One staged frame avoids exposing partially drawn menus to scanout. */
     sceDisplayWaitVblankStart();
-    memcpy((void *)0x44000000, tv_canvas.pixels, TV_GUI_BYTES);
+    if(tv_interlaced)tv_copy_rect(0,0,720,480);
+    else memcpy((void *)0x44000000, tv_canvas.pixels, TV_GUI_BYTES);
     sceDisplaySetFrameBuf((void *)0x04000000, TV_GUI_STRIDE,
-                         PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+                         tv_interlaced?PSP_DISPLAY_PIXEL_FORMAT_565:PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
 }
 
 static void tv_compose_view(int view, int selected, int row, int audio_only,
@@ -332,8 +333,7 @@ static void tv_library_receiver_refresh(void) {
         memcpy(tv_canvas.pixels+y*TV_GUI_STRIDE+24,receiver_tv_skin+(y*TV_GUI_WIDTH+24)*4,672*4);
     tv_receiver();
     sceDisplayWaitVblankStart();
-    for(int y=360;y<470;y++)
-        memcpy((u32 *)0x44000000+y*TV_GUI_STRIDE+24,tv_canvas.pixels+y*TV_GUI_STRIDE+24,672*4);
+    tv_copy_rect(24,360,672,110);
 }
 
 /* Music is an incremental scene. No second full-frame cache is required:
@@ -431,14 +431,10 @@ static void tv_draw_music(const char *title, int fullscreen) {
         tv_music.height[i] = height;
     }
     if (count) {
-        u32 *vram = (u32 *)0x44000000;
         sceDisplayWaitVblankStart();
         for (i = 0; i < count; i++) {
             TvDirtyRect rect = dirty[i];
-            int y;
-            for (y = rect.y; y < rect.y + rect.height; y++)
-                memcpy(vram + y * TV_GUI_STRIDE + rect.x,
-                       tv_canvas.pixels + y * TV_GUI_STRIDE + rect.x, rect.width * 4);
+            tv_copy_rect(rect.x,rect.y,rect.width,rect.height);
             tv_music.copied_bytes += (unsigned int)(rect.width * rect.height * 4);
         }
         /* Address/stride stay fixed: no display API or mode reset is needed. */

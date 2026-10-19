@@ -62,8 +62,11 @@ spectrum_peak_hold=1
 volume=24
 shuffle=0
 language=en
-# off: LCD menus, TV video. auto: native TV menus when component cable is present.
+# off: LCD menus, TV video. auto: native TV menus when a supported TV cable is present.
 tv_ui=off
+# auto: composite/S-video interlaced; component progressive unless already interlaced.
+# interlaced: also for component CRTs; progressive never forces composite to 480p.
+tv_scan=auto
 # StreamMaster USB: validated 8 KiB/four-request profile. Zero uses defaults.
 # Older firmware/drivers automatically retain their legacy transfer path.
 streammaster_bulk_kib=8

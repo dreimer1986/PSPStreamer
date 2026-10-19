@@ -34,8 +34,7 @@ static void music_caption(const char *heading,const char *song,int fullscreen) {
         tv_text(34,65,38,1,TV_CYAN,"%s",heading);
         tv_music_title_bottom=tv_text(34,85,38,1,TV_WHITE,"%s",song);
         sceDisplayWaitVblankStart();
-        for(int y=65;y<105;y++)memcpy((u32 *)0x44000000+y*TV_GUI_STRIDE+34,
-                                     tv_canvas.pixels+y*TV_GUI_STRIDE+34,498*4);
+        tv_copy_rect(34,65,498,40);
     } else if(!display_output.tv && !tvout_video_active) {
         sceDisplayWaitVblankStart();
         char first[160],second[160];

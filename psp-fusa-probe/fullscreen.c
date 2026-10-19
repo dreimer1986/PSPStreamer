@@ -24,7 +24,7 @@
 #define FS_OSD_SERVER 1
 #include "../psp-overclock/fullscreen_osd.h"
 #include "../psp-overclock/overlay_pixels.h"
-PSP_MODULE_INFO("FuSaFullscreen",0x1006,0,27);
+PSP_MODULE_INFO("FuSaFullscreen",0x1006,0,28);
 PSP_NO_CREATE_MAIN_THREAD();
 static int (*set_internal)(int,void *,int,int,int);
 static int (*internal_entry)(int,void *,int,int,int);
@@ -48,6 +48,11 @@ static unsigned (*get_edram_size)(void);
 static unsigned game_edram_size(void){return 0x200000;}
 static int (*dve_mode)(int,int,int,int,int,int,int);
 static int (*cable_type)(void);
+static int output_interlaced,output_cable,scan_preference;
+static char plugin_directory[192]="ms0:/SEPLUGINS/FuSaFullscreen/";
+static unsigned output_bytes(void){return output_interlaced?FS_FIELD_OUTPUT_BYTES:FS_OUTPUT_BYTES;}
+static int output_display_mode(void){return output_interlaced?0x1d1:0x1d2;}
+static int output_display_height(void){return output_interlaced?TV_FIELD_ROWS:480;}
 static SceUID worker=-1,callback=-1;
 static SceUID offered_event=-1;
 #define FS_WAIT_TIMEOUT ((int)SCE_KERNEL_ERROR_WAIT_TIMEOUT)
@@ -79,7 +84,7 @@ static void draw_output_osd(unsigned dest,unsigned format)
         FsOsdText text=osd_text[slot];unsigned long long stamp=osd_updated[slot];
         sceKernelCpuResumeIntr(intr);
         if(text.visible&&stamp&&now>=stamp&&now-stamp<500000ULL)
-            oc_osd_draw_fresh((void *)(dest|0x40000000U),768,format,slot?500:8,slot?212:236,text.lines);
+            oc_osd_draw_fresh_layout((void *)(dest|0x40000000U),768,format,slot?500:8,slot?212:236,text.lines,output_interlaced);
     }
 }
 enum { STOP_NONE,STOP_WAIT,STOP_SOURCE,STOP_SUSPEND,STOP_RESUME,
@@ -281,7 +286,7 @@ static int capture_mode(int mode,int width,int height)
     int lcd_requested=(unsigned long long)sceKernelGetSystemTimeWide()<screen_until;
     int redirect=fs_redirect_mode(active&&!restoring&&!suspended&&!cancelled,own,lcd_requested,mode,width,height);
     int input_mode=mode,input_width=width,input_height=height;
-    if(redirect){mode=0x1d2;width=720;height=480;mode_remaps++;}
+    if(redirect){mode=output_display_mode();width=720;height=output_display_height();mode_remaps++;}
     sceKernelCpuResumeIntr(intr);
     int rc,route=0;
     if(redirect) {
@@ -293,7 +298,7 @@ static int capture_mode(int mode,int width,int height)
         /* This query writes plugin-owned kernel-stack locals, not user data. */
         unsigned k1=pspSdkSetK1(0);
         rc=sceDisplayGetMode(&actual_mode,&actual_width,&actual_height);
-        if(rc>=0&&fs_scaled_mode(actual_mode,actual_width,actual_height)){route=1;rc=0;}
+        if(rc>=0&&actual_mode==output_display_mode()&&actual_width==720&&actual_height==output_display_height()){route=1;rc=0;}
         else if(rc>=0) {
             route=2;
             /* Only our validated, pointer-free fixed output arguments get
@@ -374,13 +379,24 @@ static int take_overlay_snapshot(unsigned *format)
 static void read_auto_config(void)
 {
     char buffer[1025];
-    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreen/FuSaFullscreen.ini",PSP_O_RDONLY,0);
+    char path[256];snprintf(path,sizeof(path),"%sFuSaFullscreen.ini",plugin_directory);
+    int fd=sceIoOpen(path,PSP_O_RDONLY,0);
     if(fd<0)return;
     int n=sceIoRead(fd,buffer,sizeof(buffer)-1);sceIoClose(fd);
     if(n<=0||n>=1024)return;
     buffer[n]=0;
     char *line=buffer;
     while(*line){char *end=strchr(line,'\n');if(end)*end=0;
+        const char *p=line;while(*p==' '||*p=='\t')p++;
+        if(!strncmp(p,"tv_scan",7)){
+            p+=7;while(*p==' '||*p=='\t')p++;
+            if(*p=='='){
+                p++;while(*p==' '||*p=='\t')p++;
+                int scan=*p-'0';if(*p)p++;
+                while(*p==' '||*p=='\t'||*p=='\r')p++;
+                if(scan>=0&&scan<=2&&(!*p||*p==';'||*p=='#'))scan_preference=scan;
+            }
+        }
         fs_auto_option_ex(line,&auto_zoom,&auto_delay,&keep_fullscreen,&experimental_speedboost);if(!end)break;line=end+1;}
 }
 /* Event-driven, nonblocking source observation as in FuSa. Never wait inside
@@ -424,7 +440,8 @@ static void record(const char *event,int result)
         (unsigned)(now/1000000),(unsigned)(now%1000000),event,result,active,frames,frame_addr,frame_stride,frame_format);
     if(n<0)return;
     if(n>=(int)sizeof(text))n=sizeof(text)-1;
-    int fd=sceIoOpen("ms0:/SEPLUGINS/FuSaFullscreen/fullscreen.log",PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
+    char path[256];snprintf(path,sizeof(path),"%sfullscreen.log",plugin_directory);
+    int fd=sceIoOpen(path,PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND,0666);
     if(fd>=0){sceIoWrite(fd,text,n);sceIoClose(fd);}
 }
 /* GE completion alone is racy: a game thread could enqueue another list
@@ -476,7 +493,7 @@ static int restore(void)
     restoring=1;
     remove_wait_hooks();
     int external=stop_reason==STOP_MODE;
-    int rc=external?0:dve_mode(0,old_mode,old_w,old_h,1,15,0);
+    int rc=external?0:dve_mode(old_mode&&output_cable==1?2:0,old_mode,old_w,old_h,1,15,0);
     int overlay_rc=0,frame_rc=0;
     /* On an external mode change preserve Sony's new layer state, except
      * layers still pointing at our buffers. Do not replay stale TV geometry. */
@@ -525,11 +542,16 @@ static int start_scale(void)
 {
     void *src=NULL;int stride=0,fmt=-1;
     if(suspended||expanded||internal_users||internal_hooked||mode_hooked||mode_users||mode_query_users||wait_users)return -1;
-    if(cable_type()!=2){record("component cable required",-1);return -1;}
-    if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||!fs_game_tv_layout(old_mode,old_w,old_h)){
-        record("start in Sony game 480p TV mode",-1);record("start mode",old_mode);
+    output_cable=cable_type();
+    if(!tv_cable_supported(output_cable)){record("TV cable required",output_cable);return -1;}
+    if(sceDisplayGetMode(&old_mode,&old_w,&old_h)<0||
+       !(fs_game_tv_layout(old_mode,old_w,old_h)||
+         (((sceKernelGetModel()==1&&output_cable==1)||scan_preference==TV_SCAN_INTERLACED)&&old_mode==0&&old_w==480&&old_h==272))){
+        record("start in Sony game TV mode",-1);record("start mode",old_mode);
         record("start width",old_w);record("start height",old_h);return -1;}
     if(sceGeEdramGetSize()!=0x200000){record("VRAM already expanded; refuse ownership",-1);return -1;}
+    output_interlaced=tv_choose_interlaced(output_cable,scan_preference,old_mode);
+    record("TV cable",output_cable);record("interlaced scanout",output_interlaced);
     logical_mode=old_mode;logical_width=old_w;logical_height=old_h;
     memset(osd_updated,0,sizeof(osd_updated));
     mode_queries=mode_events=0;
@@ -564,10 +586,10 @@ static int start_scale(void)
     sctrlHENPatchSyscall((void *)get_edram_size,(void *)game_edram_size);
     sctrlHENPatchSyscall((void *)get_mode_original,(void *)game_get_mode);query_hooked=1;
     sceKernelCpuResumeIntr(intr);
-    memset((void *)(FS_OUTPUT_BASE|0x40000000U),0,2*FS_OUTPUT_BYTES);
+    memset((void *)(FS_OUTPUT_BASE|0x40000000U),0,2*output_bytes());
     /* Never scale live game VRAM, including the first frame. The cleared
      * output stays black until the worker accepts a RAM snapshot. */
-    rc=dve_mode(0,0x1d2,720,480,1,15,0);record("720x480 output",rc);
+    rc=dve_mode(output_cable==1?2:0,output_display_mode(),720,output_display_height(),1,15,0);record("720x480 output",rc);
     if(rc>=0)rc=set_internal(0,(void *)FS_OUTPUT_BASE,768,fs_output_format(fmt),1);
     displayed_base=FS_OUTPUT_BASE;displayed_format=fs_output_format(fmt);
     record("first fullscreen frame",rc);
@@ -577,6 +599,7 @@ static int start_scale(void)
 }
 static int setup(void)
 {
+    if(!tv_model_has_output(sceKernelGetModel()))return -1;
     /* Resolve capabilities, not a plugin/model/firmware allowlist. Overlays
      * and Consolizer may coexist; source and VRAM ownership are checked live. */
     mode_entry=(void *)sctrlHENFindFunction("sceDisplay_Service","sceDisplay",0x0E20F177);
@@ -588,7 +611,8 @@ static int setup(void)
     edram_size=(void *)sctrlHENFindFunction("sceGE_Manager","sceGe_driver",0x5BAA5439);
     get_edram_size=(void *)sctrlHENFindFunction("sceGE_Manager","sceGe_driver",0x1F6752AD);
     if(!sceKernelFindModuleByName("pspDveManager_Module")) {
-        int id=sceKernelLoadModule("ms0:/SEPLUGINS/FuSaFullscreen/dvemgr.prx",0,NULL),status;
+        char path[256];snprintf(path,sizeof(path),"%sdvemgr.prx",plugin_directory);
+        int id=sceKernelLoadModule(path,0,NULL),status;
         if(id<0)return id;
         int rc=sceKernelStartModule(id,0,NULL,&status,NULL);if(rc<0)return rc;
     }
@@ -599,7 +623,7 @@ static int setup(void)
 static int work(SceSize size,void *args)
 {
     (void)size;(void)args;
-    record("FuSaFullscreen 0.27 standalone release",sceKernelDevkitVersion());
+    record("FuSaFullscreen 0.28 interlaced candidate",sceKernelDevkitVersion());
     int osd_rc=sceIoAddDrv(&osd_driver);osd_registered=osd_rc>=0;record("fullscreen OSD mailbox",osd_rc);
     read_auto_config();record("auto zoom enabled",auto_zoom);record("auto zoom delay seconds",auto_delay);
     record("keep fullscreen enabled",keep_fullscreen);
@@ -710,7 +734,9 @@ static int work(SceSize size,void *args)
         if(fs_zoom_wanted(auto_zoom,keep_fullscreen,zoom_armed)&&!active&&!suspended&&!expanded&&!internal_hooked&&!mode_hooked&&now>=auto_poll) {
             auto_poll=now+250000ULL;
             int mode=0,w=0,h=0;
-            int tv=sceDisplayGetMode(&mode,&w,&h)>=0&&fs_game_tv_layout(mode,w,h)&&cable_type()==2;
+            int cable=cable_type();
+            int tv=sceDisplayGetMode(&mode,&w,&h)>=0&&tv_cable_supported(cable)&&
+                (fs_game_tv_layout(mode,w,h)||(((sceKernelGetModel()==1&&cable==1)||scan_preference==TV_SCAN_INTERLACED)&&mode==0&&w==480&&h==272));
             unsigned inhibit=PSP_CTRL_NOTE|PSP_CTRL_RTRIGGER;
             if(!keep_fullscreen)inhibit|=PSP_CTRL_HOME|PSP_CTRL_SCREEN;
             if(pad.Buttons&inhibit)automatic_zoom.timing=0;
@@ -727,10 +753,10 @@ static int work(SceSize size,void *args)
             int mode=0,w=0,h=0;
             int mode_rc=sceDisplayGetMode(&mode,&w,&h);
             unsigned vram=sceGeEdramGetSize();
-            if(mode_rc<0||mode!=0x1d2||w!=720||h!=480||vram!=0x400000){
+            if(mode_rc<0||mode!=output_display_mode()||w!=720||h!=output_display_height()||vram!=0x400000){
                 observed_mode=mode;observed_w=w;observed_h=h;observed_vram=vram;
                 request_stop(STOP_MODE,mode_rc);continue;}
-            unsigned dest=FS_OUTPUT_BASE+back*FS_OUTPUT_BYTES;
+            unsigned dest=FS_OUTPUT_BASE+back*output_bytes();
             sceKernelChangeThreadPriority(0,24);
             sceDisplayWaitVblankStart();
             unsigned vblank=(unsigned)sceDisplayGetVcount();
@@ -748,7 +774,8 @@ static int work(SceSize size,void *args)
             last_output_vblank=vblank;output_clock_valid=1;
             unsigned sequence=frames;
             unsigned long long begin=sceKernelGetSystemTimeWide();
-            fs_scale16((void *)(dest|0x40000000U),snapshot,480);
+            if(output_interlaced)fs_scale16_interlaced((void *)(dest|0x40000000U),snapshot,480);
+            else fs_scale16((void *)(dest|0x40000000U),snapshot,480);
             unsigned elapsed=(unsigned)(sceKernelGetSystemTimeWide()-begin);
             scaled_frames++;scale_total_us+=elapsed;if(elapsed>scale_max_us)scale_max_us=elapsed;
             if(frames!=sequence)changed_during_scale++;
@@ -780,7 +807,14 @@ static int work(SceSize size,void *args)
 }
 int module_start(SceSize size,void *args)
 {
-    (void)size;(void)args;
+    if(args&&size) {
+        char path[192];unsigned n=size<sizeof(path)?size:sizeof(path)-1;
+        memcpy(path,args,n);path[n]=0;
+        if(!strncmp(path,"ms0:/",5)||!strncmp(path,"ef0:/",5)) {
+            char *slash=strrchr(path,'/');
+            if(slash){slash[1]=0;snprintf(plugin_directory,sizeof(plugin_directory),"%s",path);}
+        }
+    }
     running=1;worker=sceKernelCreateThread("fullscreen scaler",work,0x38,8192,PSP_THREAD_ATTR_VFPU,NULL);
     if(worker<0)return worker;
     int rc=sceKernelStartThread(worker,0,NULL);

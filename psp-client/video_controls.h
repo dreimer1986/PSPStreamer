@@ -9,17 +9,18 @@ static void video_controls_background(int save) {
     int tv=video_controls.tv,w=tv?660:440,h=tv?48:32,x=tv?30:20,y=tv?24:16;
     if(selected_audio_output)h+=tv?16:12;
     int row,stride=tv?TVOUT_STRIDE:VIDEO_STRIDE;
-    u32 *vram=(u32 *)0x44000000;
+    u32 *vram=tv?tv_linear_pixels():(u32 *)0x44000000;
     for(row=0;row<h;row++) {
         u32 *screen=vram+(y+row)*stride+x,*copy=video_controls.underlay+row*w;
         if(save) memcpy(copy,screen,w*4); else memcpy(screen,copy,w*4);
     }
     video_controls.saved=save;
+    if(!save&&tv&&tv_interlaced)tv_copy_rect(x,y,w,h);
 }
 static void video_controls_draw(int paused) {
     int tv=video_controls.tv,i,w=tv?660:440,h=tv?48:32,x=tv?30:20,y=tv?24:16;
     int stride=tv?TVOUT_STRIDE:VIDEO_STRIDE;
-    u32 *vram=(u32 *)0x44000000;
+    u32 *vram=tv?tv_linear_pixels():(u32 *)0x44000000;
     TvCanvas canvas={vram};
     const char *labels[]={"|<","-30s","-10s",tr(paused?TXT_TRANSPORT_RESUME:TXT_TRANSPORT_PAUSE),"+10s","+30s",">|"};
     spectrum_fullscreen_rect(vram,stride,x,y,w,h,0x00141B22);
@@ -45,6 +46,7 @@ static void video_controls_draw(int paused) {
             offset+=tv?12:7;
         }
     }
+    if(tv&&tv_interlaced)tv_copy_rect(x,y,w,h+(selected_audio_output?16:0));
 }
 static void video_controls_hide(void) {
     if(video_controls.visible && video_controls.saved) video_controls_background(0);

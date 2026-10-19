@@ -57,7 +57,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_DOWNLOAD_LCD_FILE] = "File: LCD (480 x 272)",
     [TXT_DOWNLOAD_TV_FILE] = "File: TV (720 x 480)",
     [TXT_DOWNLOAD_LCD_HELP] = "Unplug TV cable or download TV version",
-    [TXT_DOWNLOAD_TV_HELP] = "Connect component TV or download LCD version",
+    [TXT_DOWNLOAD_TV_HELP] = "Connect TV cable or download LCD version",
 
     /* General settings and on-device text entry. */
     [TXT_SETTINGS] = "SETTINGS",
@@ -85,6 +85,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_DOWNLOAD] = "Download/check CPU",
     [TXT_SETTINGS_AUDIO_MATRIX] = "Audio downmix",
     [TXT_SETTINGS_AUDIO_OUTPUT] = "Audio output",
+    [TXT_SETTINGS_TV_SCAN] = "TV scan (0 auto/1 i/2 p)",
     [TXT_SETTINGS_CPU_VIDEO] = "Video CPU (plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD idle",
     [TXT_SETTINGS_RESOLUTION] = "MilkDrop resolution",
@@ -274,7 +275,7 @@ static const char *const lang_en[TXT_COUNT] = {
     [TXT_SCREEN_AUTO] = "Auto: always",
     [TXT_OUTPUT_LCD] = "Switch menu to LCD [X]",
     [TXT_OUTPUT_TV] = "Switch menu to TV [X]",
-    [TXT_OUTPUT_FAILED] = "Check component cable / TV: %08X",
+    [TXT_OUTPUT_FAILED] = "Check TV cable / mode: %08X",
     [TXT_OUTPUT_ON_LCD] = "Menu: LCD; video follows cable",
     [TXT_OUTPUT_ON_TV] = "Menu: TV",
     [TXT_SETTINGS_AUDIO] = "Audio track",

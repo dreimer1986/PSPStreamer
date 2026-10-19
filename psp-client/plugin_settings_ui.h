@@ -19,7 +19,8 @@ static const PluginField plugin_pad[]={
 };
 static const PluginField plugin_fusa[]={
     {"auto_zoom",TXT_PLUGIN_AUTOZOOM,0,1,0},{"auto_zoom_delay_seconds",TXT_PLUGIN_DELAY,1,60,5},
-    {"keep_fullscreen",TXT_PLUGIN_KEEP,0,1,1},{"experimental_speedboost",TXT_PLUGIN_GUARD,0,1,0}
+    {"keep_fullscreen",TXT_PLUGIN_KEEP,0,1,1},{"experimental_speedboost",TXT_PLUGIN_GUARD,0,1,0},
+    {"tv_scan",TXT_SETTINGS_TV_SCAN,0,2,0}
 };
 static const PluginField plugin_health[]={
     {"enabled",TXT_OC_ENABLED,0,1,0},{"address",TXT_HR_ADDRESS,0,0x09ffffff,0},

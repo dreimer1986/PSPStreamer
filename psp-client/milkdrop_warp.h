@@ -42,6 +42,7 @@ int md_profile_report(int index,char *text,int size);
 /* Renderer-only diagnostic callback. persist is limited to initial frames. */
 extern void (*md_trace_hook)(const char *stage,int persist);
 /* 1: rendered/throttled, 0: GU failure, -1: invalid custom formula (see md_runtime_error). */
+void md_output_canvas(void *pixels);
 int md_frame(int tv, int fullscreen, const unsigned char bands[12], int level,
               unsigned long long now, int preset);
 #endif

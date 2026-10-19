@@ -11,13 +11,16 @@ int main(void)
     assert(!fs_redirect_mode(1,0,1,0,480,272)); /* Deliberate Screen key. */
     assert(!fs_redirect_mode(1,1,0,0,480,272)); /* Plugin restore/DVE calls. */
     assert(!fs_redirect_mode(0,0,0,0,480,272));
-    assert(!fs_redirect_mode(1,0,0,0x1d1,480,272));
+    assert(fs_redirect_mode(1,0,0,0x1d1,480,272));
+    assert(fs_game_tv_layout(0x2d1,480,272));
     assert(!fs_redirect_mode(1,0,0,0x1d2,720,480));
     assert(fs_report_game_mode(1,0,0));
     assert(!fs_report_game_mode(0,0,0)); /* Restore/suspend/inactive. */
     assert(!fs_report_game_mode(1,1,0)); /* Worker sees physical output. */
     assert(!fs_report_game_mode(1,0,-1)); /* Pointer/error result preserved. */
     assert(fs_scaled_mode(0x1d2,720,480));
+    assert(fs_scaled_mode(0x1d1,720,503));
+    assert(!fs_scaled_mode(0x1d1,720,480));
     assert(!fs_scaled_mode(0x1d2,480,272));
     assert(!fs_scaled_mode(0x2d2,720,480));
     assert(!fs_scaled_mode(0,720,480));
@@ -46,7 +49,7 @@ int main(void)
     assert(fs_output_due(1,0xffffffffU,1));
     assert(!fs_game_tv_layout(0,480,272)); /* Never force LCD back to TV. */
     assert(!fs_game_tv_layout(0x1d2,720,480)); /* Already scaled, not a source. */
-    assert(!fs_game_tv_layout(0x1d1,480,272)); /* No guessed interlace mode. */
+    assert(fs_game_tv_layout(0x1d1,480,272)); /* Interlaced game source. */
     assert(fs_relocatable(0x27bdffe0)); /* addiu sp,sp,-32 */
     assert(fs_relocatable(0xafbf001c)); /* sw ra,28(sp) */
     assert(fs_relocatable(0x3c028800)); /* lui v0,... */

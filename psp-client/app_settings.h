@@ -1,7 +1,7 @@
 /* Main-menu only: no media/remote workers run while settings are edited. */
 enum {SET_HOST,SET_PORT,SET_PASSWORD,SET_HTTPS,SET_LANGUAGE,SET_TV,SET_AUDIO,
       SET_SUBTITLE,SET_QUALITY,SET_FPS,SET_VOLUME,SET_SHUFFLE,SET_PRESET,
-      SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_STREAMMASTER,SET_TRANSPORT,SET_EPISODE_SECONDS,SET_CPU_DOWNLOAD,SET_AUDIO_MATRIX,SET_AUDIO_OUTPUT,SET_COUNT};
+    SET_AUTO,SET_SECONDS,SET_FADE,SET_DEBUG,SET_CPU_MUSIC,SET_CPU_MILKDROP,SET_CPU_VIDEO,SET_CPU_IDLE,SET_SCREEN,SET_RESOLUTION,SET_ANALYSIS,SET_BANDS,SET_BANDS_TV,SET_SPECTRUM_GAIN,SET_SPECTRUM_STYLE,SET_SPECTRUM_SEGMENTS,SET_SPECTRUM_PEAK,SET_SPECTRUM_LEDS,SET_OC,SET_STREAMMASTER,SET_TRANSPORT,SET_EPISODE_SECONDS,SET_CPU_DOWNLOAD,SET_AUDIO_MATRIX,SET_AUDIO_OUTPUT,SET_TV_SCAN,SET_COUNT};
 typedef struct {int value[SET_COUNT];char host[64],password[129],preset[256];} AppSettings;
 static void settings_capture(AppSettings *s) {
     memset(s,0,sizeof(*s));
@@ -14,6 +14,7 @@ static void settings_capture(AppSettings *s) {
     s->value[SET_CPU_DOWNLOAD]=download_cpu_mhz;
     s->value[SET_AUDIO_MATRIX]=selected_audio_matrix;
     s->value[SET_AUDIO_OUTPUT]=selected_audio_output;
+    s->value[SET_TV_SCAN]=tv_scan_preference;
     s->value[SET_TRANSPORT]=network_transport;
     s->value[SET_EPISODE_SECONDS]=next_episode_seconds;
 }
@@ -24,6 +25,7 @@ static void settings_apply(const AppSettings *s) {
     download_cpu_mhz=s->value[SET_CPU_DOWNLOAD];
     selected_audio_matrix=s->value[SET_AUDIO_MATRIX];
     selected_audio_output=s->value[SET_AUDIO_OUTPUT];
+    tv_scan_preference=s->value[SET_TV_SCAN];
     network_transport=s->value[SET_TRANSPORT];
     next_episode_seconds=s->value[SET_EPISODE_SECONDS];
     stm_server(server_host,server_port,server_https);
@@ -110,7 +112,7 @@ static int app_settings(void) {
     int selected=-2,dirty=1,result=0;
     unsigned int old=PSP_CTRL_SELECT;unsigned long long repeat=0;
     static const int minimum[SET_COUNT]={0,1,0,0,0,0,0,-1,0,0,0,0,0,0,30,0,0,0,0,0,0,0,0,0,12,12,-24,0,0,0,8};
-    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1,1,64,64,24,4,1,1,32,[SET_TRANSPORT]=1,[SET_EPISODE_SECONDS]=30,[SET_CPU_DOWNLOAD]=471,[SET_AUDIO_MATRIX]=2,[SET_AUDIO_OUTPUT]=3};
+    static const int maximum[SET_COUNT]={0,65535,0,1,1,1,7,31,6,1,30,1,0,3,600,5000,1,471,471,471,471,2,1,1,64,64,24,4,1,1,32,[SET_TRANSPORT]=1,[SET_EPISODE_SECONDS]=30,[SET_CPU_DOWNLOAD]=471,[SET_AUDIO_MATRIX]=2,[SET_AUDIO_OUTPUT]=3,[SET_TV_SCAN]=2};
     while(1) {
         keep_awake();SceCtrlData pad;sceCtrlReadBufferPositive(&pad,1);
         unsigned int pressed=pad.Buttons&~old;

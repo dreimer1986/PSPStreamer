@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include "display_output.h"
 #include "tv_canvas.h"
+#include "tv_output_layout.h"
 #include "language.h"
 #include "theme_layout.h"
 static int theme_text_active;
@@ -23,10 +24,15 @@ typedef struct { unsigned int Buttons; } SceCtrlData;
 #define PSP_CTRL_TRIANGLE 16
 #define PSP_CTRL_START 32
 #define PSP_DISPLAY_PIXEL_FORMAT_8888 3
+#define PSP_DISPLAY_PIXEL_FORMAT_565 0
 #define PSP_DISPLAY_SETBUF_NEXTVSYNC 1
 #define SPECTRUM_BANDS 12
 #include "spectrum_ui_stubs.h"
 static TvCanvas tv_canvas;
+static int tv_interlaced;
+static void tv_copy_rect(int x,int y,int w,int h) {
+    tv_pack_rect((void *)0x44000000,tv_canvas.pixels,768,x,y,w,h,tv_interlaced);
+}
 static int tv_ui_auto, tv_ui_active, tvout_video_active, cable = 2;
 static int music_transition;
 static int mode_calls, framebuffer_calls, mode_failure, buffer_failure, hardware_tv;
@@ -46,6 +52,12 @@ static int item_count = 40, audio_track_count = 2, subtitle_track_count = 2;
 static int selected_audio_track, selected_subtitle_track, audio_shuffle;
 static int selected_video_fps;
 static int download_before_play;
+static int selected_audio_output;
+static int playback_option_index(int row,int audio_only) {
+    int quality=audio_only?0:2;
+    int hide=selected_audio_output&&(!download_before_play||audio_only==2);
+    return hide&&row==quality?-1:row-(hide&&row>quality);
+}
 static int audio_running = 1, audio_start = 1;
 static float current_duration_seconds = 1442.0f;
 static char current_media_title[192],current_media_artist[192],current_media_album[192];
@@ -59,7 +71,7 @@ static int fake_mode(int tv) { mode_calls++; if (mode_failure) { mode_failure = 
 static int fake_buffer(int tv) { framebuffer_calls++; assert(hardware_tv == tv); if (buffer_failure) { buffer_failure = 0; return -11; } return 0; }
 static DisplayOutput display_output = {0, fake_mode, fake_buffer};
 static int tvout_load_manager(void) { return load_failure ? -1 : 0; }
-static int pspDveMgrCheckVideoOut(void) { return cable; }
+static int tvout_available(void) { return tv_cable_supported(cable); }
 static void pspDebugScreenInit(void) { assert(!hardware_tv); debug_calls++; }
 static void subtitle_load_font(void) { subtitle_font = font; }
 static int subtitle_utf8_char(const char **text) {
@@ -73,7 +85,7 @@ static unsigned long long sceKernelGetSystemTimeWide(void) { return clock_tick; 
 static void sceCtrlPeekBufferPositive(SceCtrlData *pad, int count) { assert(count == 1); pad->Buttons = test_buttons; }
 static void sceDisplayWaitVblankStart(void) {}
 static int sceDisplaySetFrameBuf(void *address, int stride, int format, int sync) {
-    assert(address == (void *)0x04000000 && stride == 768 && format == 3 && sync == 1);
+    assert(address == (void *)0x04000000 && stride == 768 && format == (tv_interlaced?0:3) && sync == 1);
     assert(hardware_tv && !tvout_video_active); framebuffer_calls++; return 0;
 }
 static const char *audio_quality_name(void) { return "160k"; }
@@ -123,7 +135,7 @@ int main(int argc, char **argv) {
     i = music_ui_lower_priority(); assert(i == 0x20 && ui_priority == 0x40);
     music_ui_restore_priority(i); assert(ui_priority == 0x20);
     tv_ui_auto = 1; cable = 0; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
-    cable = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
+    cable = -1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     cable = 2; load_failure = 1; tv_ui_start(); assert(!tv_ui_active && !tv_canvas.pixels);
     load_failure = 0; tv_ui_start(); assert(tv_ui_active && display_output.tv && mode_calls == 1);
     menu_art_select("plex.42.abc");clock_tick+=600000;
@@ -293,6 +305,16 @@ int main(int argc, char **argv) {
         assert(tv_menu_select(1)==0&&tv_ui_active);
     }
     assert(tv_canvas.pixels==retained&&tv_ui_auto==startup_preference);
+    assert(tv_menu_select(0)==0);cable=1;
+    assert(tv_menu_select(1)==0&&tv_ui_active); /* Composite no longer rejected. */
+    tv_interlaced=1;
+    tv_draw_view(TV_VIEW_LIBRARY,0,0,0,NULL,0);
+    for(int y=0;y<480;y++)for(int x=0;x<720;x++)
+        assert(((uint16_t *)0x44000000)[tv_scan_row(y,1)*768+x]==tv_pixel_565(tv_canvas.pixels[y*768+x]));
+    tv_music_reset();tv_draw_music("Interlaced",0);clock_tick+=100000;
+    playback_volume=12;tv_draw_music("Interlaced",0);
+    for(int y=0;y<480;y++)for(int x=0;x<720;x++)
+        assert(((uint16_t *)0x44000000)[tv_scan_row(y,1)*768+x]==tv_pixel_565(tv_canvas.pixels[y*768+x]));
     free(tv_canvas.pixels); munmap((void *)0x44000000, TV_GUI_BYTES);
     return 0;
 }

@@ -10,13 +10,10 @@ static void music_preset_notice(const MdFileError *error, int fullscreen) {
     if (error->line) snprintf(detail, sizeof(detail), "L%d: %.27s", error->line, error->key);
     else snprintf(detail,sizeof(detail),"%.47s",music_preset_file);
     if (tv_ui_active) {
-        u32 *vram = (u32 *)0x44000000;
-        int y;
         tv_rect(&tv_canvas, 34, 98, 504, 32, 0x000C0C0A);
         tv_text(34, 98, 38, 1, TV_AMBER, "%s", tr(id));
         tv_text(34, 114, 38, 1, TV_WHITE, "%s", detail);
-        for (y = 98; y < 130; y++)
-            memcpy(vram + y*TV_GUI_STRIDE + 34, tv_canvas.pixels + y*TV_GUI_STRIDE + 34, 504*4);
+        tv_copy_rect(34,98,504,32);
     } else {
         int y = fullscreen ? 32 : 160;
         gui_rect((u32 *)0x44000000, 38, y, 400, 16, 0x00080E14);

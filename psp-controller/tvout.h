@@ -2,6 +2,7 @@
  * Ask Sony's shell/impose handler to perform its normal display-button
  * transition. Do not impose PSPStreamer's 720px framebuffer on a game.
  * 0 off, 1 connected controller, 2 application start (also VSH/POPS). */
+#include "../psp-client/tv_output_layout.h"
 static int controller_tvout;
 static unsigned long long controller_tv_hold_until;
 static int (*controller_check_cable)(int *);
@@ -27,7 +28,7 @@ static unsigned controller_tv_button(unsigned long long now,int connected,int st
     }
     if(attempted || now<ready_at || now<next_check || (controller_tvout==1 && !connected))return 0;
     next_check=now+1000000;
-    if(sceKernelGetModel()==0){attempted=1;controller_log("TV unavailable on PSP-1000",0);return 0;}
+    if(!tv_model_has_output(sceKernelGetModel())){attempted=1;controller_log("TV unavailable on this PSP model",0);return 0;}
     if(!controller_check_cable)controller_check_cable=(void *)sctrlHENFindFunction("sceImpose_Driver","sceImpose_driver",0x116CFF64);
     if(!controller_check_cable)return 0;
     int cable=0;if(controller_check_cable(&cable)<0)return 0;

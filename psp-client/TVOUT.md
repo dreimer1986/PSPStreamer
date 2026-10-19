@@ -1,4 +1,32 @@
-# Component TV output
+# LCD and TV output
+
+## Interlaced cable support (hardware validation pending)
+
+PSP-2000/3000/Go can select composite/S-video (cable class 1) or component /
+D-terminal (class 2). PSP-1000 and Street have no native TV output and retain
+LCD mode. Go needs its own cable; there is no official Go S-video cable.
+These are supported code paths, not a claim that every model/cable was tested.
+
+`tv_scan=auto` selects interlaced for class 1, and preserves an already active
+interlaced mode for class 2; otherwise component uses the established 480p path.
+Use `tv_scan=interlaced` for a component CRT. `progressive` only applies to
+component: composite/S-video always stay interlaced. The setting is also in
+the app (0 auto, 1 interlaced, 2 progressive). Save, then switch to LCD and back
+to TV, or restart, to apply a changed scan preference. `tv_ui` remains separate.
+
+Both paths render a 720x480 picture. Interlaced uses PPA's mode `0x1d1`,
+720x503 timing/storage geometry, with even picture rows at scanout row 262
+and odd rows at row 0. The gap is cleared; 503 is not a visible resolution.
+The final interlaced surface is RGB565 in real EDRAM (772608 bytes), leaving
+the existing visualization texture region untouched. The linear 32-bit RAM
+canvas is 8192-byte aligned for GU rendering; its CPU/GPU cache ownership is
+explicit. Video, subtitles, HUD, dirty menu rectangles, spectrum, MilkDrop and
+Monkey are converted only at presentation. Progressive stays 32-bit ABGR.
+Container PTS, audio clocks and decoder dimensions are unchanged.
+
+This is a 480i path, not a new PAL 576i/50-Hz implementation. A CRT must accept
+the signal; a passive SCART adapter does not turn composite into RGB.
+See [the reporter checklist](../docs/TV_CABLE_TEST.md).
 
 The established video output is 720×480, 32-bit ABGR, stride 768 pixels,
 using the real EDRAM address `0x04000000` (uncached alias `0x44000000`).
@@ -13,7 +41,7 @@ In `ms0:/PSP/SYSTEM/PSPStreamer.cfg`:
 tv_ui=auto
 ```
 
-Default `off` preserves LCD menus and TV video. `auto` checks for a component
+Default `off` preserves LCD menus and TV video. `auto` checks for a supported TV
 cable at startup, allocates a separate RAM menu canvas, and enters TV mode.
 Hold L while starting to bypass TV menus for that session. Missing/unsupported
 cables or startup failure fall back to LCD menus. Cable presence does not
@@ -65,7 +93,7 @@ end-of-stream decay. Padding and TV/video ownership guards are checked too.
 
 ## Calibration and first hardware test
 
-Select+L+R enters the existing component test card; repeat to return to the
+Select+L+R enters the cable-appropriate test card; repeat to return to the
 originating menu output. `dvemgr.prx` exposes PMPlayer Advance's historical
 `pspDveManager` interface and remains unchanged. It is distributed under
 PMPlayer Advance's GPL-2.0-or-later licensing, as before.

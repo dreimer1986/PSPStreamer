@@ -362,12 +362,18 @@ selector, just as it hides video-track/subtitle selectors.
 `language` selects the PSP interface language: `en` (default) or `de`. The PSP's bundled Latin-1 font supports direct German `ä`, `ö`, `ü`, and `ß` characters.
 
 `tv_ui=off` (default) preserves LCD menus with TV video playback. Set `tv_ui=auto`
-to use the separate native 720×480 TV interface when a supported component
+to use the separate native 720×480 TV interface when a supported TV
 cable is connected at app startup. This includes the library, loading screen,
 file information, playback options and music receiver/spectrum. Without that
 cable, or if TV initialization fails, menus remain on the LCD. Hold **L while
 starting the app** to bypass automatic TV menus for that session without
 changing the saved setting. Restart the app after changing `tv_ui`.
+
+`tv_scan=auto` selects interlaced for composite/S-video, or preserves the
+active component scan type (otherwise 480p). For a component CRT select
+`tv_scan=interlaced`; `progressive` never forces composite to 480p. The app
+setting uses 0/1/2 respectively. Save and switch LCD then TV, or restart.
+New interlaced paths need hardware validation; see [TV cable test](TV_CABLE_TEST.md).
 
 You can also switch the menu and music display **after startup**: stop playback,
 open **SELECT → Switch menu to TV/LCD** (one Down press, then **X**).

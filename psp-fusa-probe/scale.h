@@ -2,10 +2,12 @@
 #ifndef FUSA_TEST_SCALE_H
 #define FUSA_TEST_SCALE_H
 #include <stdint.h>
+#include "../psp-client/tv_output_layout.h"
 /* Keep the proven lower-2MiB source / upper-2MiB output layout.
  * Impose's observed 0x04154000 RGB32 buffer also fits below this boundary. */
 #define FS_OUTPUT_BASE 0x04200000U
 #define FS_OUTPUT_BYTES (768U*480U*2U)
+#define FS_FIELD_OUTPUT_BYTES (768U*TV_FIELD_ROWS*2U)
 typedef uint32_t FsWord __attribute__((may_alias));
 static int fs_ram_source_valid(uintptr_t address,int stride,int format,unsigned start,unsigned end)
 {
@@ -88,6 +90,20 @@ static void fs_scale16(uint16_t *out,const uint16_t *in,int stride)
             }
         }
         y=end;
+    }
+}
+/* Same nearest-neighbour scale, but write each row directly to its field.
+ * No extra framebuffer or a second full-frame conversion is needed. */
+static void fs_scale16_interlaced(uint16_t *out,const uint16_t *in,int stride)
+{
+    for(unsigned y=0;y<480;y++) {
+        const FsWord *src=(const FsWord *)(in+(y*272/480)*stride);
+        volatile FsWord *dst=(volatile FsWord *)(out+tv_scan_row(y,1)*768);
+        for(unsigned x=0;x<120;x++) {
+            uint32_t ab=src[x*2],cd=src[x*2+1];
+            dst[x*3]=(ab&0xffffU)|((ab&0xffffU)<<16);
+            dst[x*3+1]=(ab>>16)|(cd<<16);dst[x*3+2]=cd;
+        }
     }
 }
 #endif

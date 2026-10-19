@@ -320,8 +320,8 @@ static const HelpText help_de[HELP_PAGE_COUNT]={
         .step1_text="Aus: LCD-Menü, Video folgt Kabel.",
         .step2_title="L beim Start halten: LCD-Menü",
         .step2_text="Später ohne App-Neustart wechseln.",
-        .step3_title="Lokales Video: LCD/TV muss passen",
-        .step3_text="Erst stoppen, dann Ausgang wechseln."
+        .step3_title="TV-Signal: 0 auto, 1 i, 2 p",
+        .step3_text="CRT: 1. Speichern, LCD dann TV."
     },
     [HELP_PAGE_REMOTE]={
         .title="Browser: PSP-Steuerung",

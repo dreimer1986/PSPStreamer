@@ -10,6 +10,7 @@ PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 main.o: clock_math.h power_callback_slot.h config_parse.h report_io.h overlay_pixels.h overlay_vblank.h control_api.h ratio_transition.h clock_transition.h
 main.o: overlay_hook.h
+main.o: ../psp-client/tv_output_layout.h
 main.o: fullscreen_osd.h
 main.o: overlay_lifetime.h
 main.o: sony_startup.h

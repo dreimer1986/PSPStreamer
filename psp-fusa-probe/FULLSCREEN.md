@@ -1,4 +1,23 @@
-# FuSa Fullscreen 0.27
+# FuSa Fullscreen 0.28
+
+Optional `tv_scan=0` follows Sony, `1` forces interlaced for component CRTs,
+`2` requests progressive on component. Composite/S-video always remain
+interlaced. This setting is also editable in PSPStreamer's FuSa plugin menu;
+restart the game/plugin after saving. Explicit interlace permits activation
+from a 480x272 LCD source, including PSP-2000 games on component CRTs.
+
+New, hardware-unverified: composite/S-video interlaced output and component
+interlaced output. Cable class 1 selects the composite encoder; class 2 keeps
+Sony's active scan type. Both scale to a visible 720x480 picture. Interlaced
+uses separate fields in 720x503 storage, not a 503-line picture. The progressive
+scaler, its buffer spacing and cadence remain unchanged. Both overlay plugins
+can publish into the final output in either mode.
+
+PSP-2000 composite games can start zoom directly from their 480x272 LCD mode
+(manual NOTE+R or `auto_zoom=1`), bypassing Sony's progressive-only game-output
+restriction. PSP-1000/Street cannot output TV and are rejected before hardware
+setup. Go resolves config, helper and log relative to the plugin path, including
+`ef0:`. All newly added hardware combinations need reporter validation.
 
 Persistent framebuffers (including GTA VCS movies) are refreshed at the existing
 VBlank-paced output cadence, not the former 100 ms fallback. Unchanged buffer
@@ -10,7 +29,7 @@ Standalone full-screen 720×480 progressive TV output for PSP games on the
 tested PSP-3000 / ARK-5 setup. It cooperates with PSP Consolizer and StreamerOC
 but does not require either plugin. It scales the game's image; it does not
 make games render internally at 720×480. Other models/titles are not universally
-validated. Component TV output is required by the current implementation.
+validated. See [the cable test checklist](../docs/TV_CABLE_TEST.md).
 
 ## Install or update
 
@@ -39,7 +58,9 @@ PSPStreamer exposes these four settings under **Settings → Plugins →
 FuSaFullscreen**. Start saves a backup-protected INI; restart the game to apply.
 This does not register the plugin in ARK or alter an active display session.
 
-First enable normal component TV output, manually or through Consolizer.
+First enable normal TV output, manually or through Consolizer. Component CRTs
+must use Sony's Interlace setting. PSP-2000 composite games are the exception
+described above: the scaler can enter TV directly from the LCD game mode.
 **NOTE + R** toggles fullscreen. The PSP Screen button retains LCD/TV switching.
 There is no session-duration limit.
 

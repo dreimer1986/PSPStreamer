@@ -58,7 +58,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_DOWNLOAD_LCD_FILE] = "Datei: LCD (480 x 272)",
     [TXT_DOWNLOAD_TV_FILE] = "Datei: TV (720 x 480)",
     [TXT_DOWNLOAD_LCD_HELP] = "TV-Kabel abziehen oder TV-Version laden",
-    [TXT_DOWNLOAD_TV_HELP] = "Component-TV verbinden oder LCD-Version laden",
+    [TXT_DOWNLOAD_TV_HELP] = "TV-Kabel verbinden oder LCD-Version laden",
 
     /* Allgemeine Einstellungen und Texteingabe. */
     [TXT_SETTINGS] = "EINSTELLUNGEN",
@@ -86,6 +86,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SETTINGS_CPU_DOWNLOAD] = "Download/Prüfung-CPU",
     [TXT_SETTINGS_AUDIO_MATRIX] = "Audio-Downmix",
     [TXT_SETTINGS_AUDIO_OUTPUT] = "Audioausgang",
+    [TXT_SETTINGS_TV_SCAN] = "TV-Signal (0 auto/1 i/2 p)",
     [TXT_SETTINGS_CPU_VIDEO] = "Video-CPU (Plugin)",
     [TXT_SETTINGS_SCREEN] = "LCD-Ruhemodus",
     [TXT_SETTINGS_RESOLUTION] = "MilkDrop-Auflösung",
@@ -275,7 +276,7 @@ static const char *const lang_de[TXT_COUNT] = {
     [TXT_SCREEN_AUTO] = "Auto: immer",
     [TXT_OUTPUT_LCD] = "Menü auf LCD wechseln [X]",
     [TXT_OUTPUT_TV] = "Menü auf TV wechseln [X]",
-    [TXT_OUTPUT_FAILED] = "Komponentenkabel / TV prüfen: %08X",
+    [TXT_OUTPUT_FAILED] = "TV-Kabel / Modus prüfen: %08X",
     [TXT_OUTPUT_ON_LCD] = "Menü: LCD; Video folgt Kabel",
     [TXT_OUTPUT_ON_TV] = "Menü: TV",
     [TXT_SETTINGS_AUDIO] = "Tonspur",

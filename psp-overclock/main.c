@@ -161,7 +161,7 @@ static void overlay_update(int toggle) {
         overlay->valid=0;return;
     }
     if(!oc_output_external && !oc_hook_installed) {
-        if(overlay->valid && (overlay->stride!=stride || overlay->format!=format))overlay->valid=0;
+        if(overlay->valid && (overlay->stride!=stride || overlay->format!=format || overlay->interlaced!=(tv_mode_interlaced(mode)&&height==TV_FIELD_ROWS)))overlay->valid=0;
         oc_osd_restore(overlay);
     }
     if(!overlay_until)return;
@@ -180,7 +180,7 @@ static void overlay_update(int toggle) {
     snprintf(lines[2],40,"%s ENFORCE %s CB %s",enabled?"ACTIVE":"MONITOR",enforce?"ON":"OFF",power_slot>=0?"OK":"FAIL");
     if(oc_output_external)fs_osd_publish(0,lines,1);
     else if(oc_hook_installed){oc_hook_publish(lines,1);oc_hook_idle_refresh(0);}
-    else oc_osd_draw(overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines);
+    else oc_osd_draw_layout(overlay,(void *)(((uintptr_t)base&0x1fffffffU)|0x40000000U),stride,format,lines,tv_mode_interlaced(mode)&&height==TV_FIELD_ROWS);
     overlay_next_draw=sceKernelGetSystemTimeWide()+33333ULL;
 }
 

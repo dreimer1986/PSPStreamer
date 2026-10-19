@@ -36,6 +36,7 @@ EBOOT.PBP: $(PSP_EBOOT_ICON) $(PSP_EBOOT_ICON1) $(PSP_EBOOT_PIC1) $(PSP_EBOOT_SN
 $(OBJS): Makefile
 
 main.o: streammaster_redirect.h streammaster_transport.h
+main.o milkdrop_gu.o: tv_output_layout.h
 streammaster_transport.o: streammaster_transport.h ../streammaster/protocol.h
 
 # mpeg_extra must remain at its historical position between libmpeg and

@@ -11,4 +11,5 @@ PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
 fullscreen.o: scale.h snapshot.h auto_zoom.h ../psp-overclock/power_callback_slot.h
 fullscreen.o: display_policy.h
+fullscreen.o: ../psp-client/tv_output_layout.h
 fullscreen.o: ../psp-overclock/fullscreen_osd.h ../psp-overclock/overlay_pixels.h

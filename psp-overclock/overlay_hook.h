@@ -23,7 +23,7 @@ static OcOverlay *oc_hook_buffers;
 static int oc_hook_buffer_count;
 #define OC_HOOK_BUFFER_COUNT oc_hook_buffer_count
 #endif
-static int oc_hook_width,oc_hook_height;
+static int oc_hook_width,oc_hook_height,oc_hook_mode;
 static int oc_output_external;
 #ifdef OC_EXTERNAL_OSD
 static int (*oc_external_osd)(const void *,int,int);
@@ -58,9 +58,9 @@ static int oc_hook_render(const void *base,int stride,int format) {
         for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
         return 0;
     }
-    if(width!=oc_hook_width || height!=oc_hook_height) {
+    if(width!=oc_hook_width || height!=oc_hook_height || mode!=oc_hook_mode) {
         for(int i=0;i<OC_HOOK_BUFFER_COUNT;i++)oc_hook_buffers[i].valid=0;
-        oc_hook_width=width;oc_hook_height=height;
+        oc_hook_width=width;oc_hook_height=height;oc_hook_mode=mode;
     }
 #ifdef OC_OSD_POSITION
     OC_OSD_POSITION(width);
@@ -72,7 +72,7 @@ static int oc_hook_render(const void *base,int stride,int format) {
     if(!slot){slot=&oc_hook_buffers[0];slot->valid=0;}
     if(slot->stride!=stride || slot->format!=format)slot->valid=0;
     oc_osd_restore(slot);
-    if(oc_hook_visible)oc_osd_draw(slot,uncached,stride,format,oc_hook_lines);
+    if(oc_hook_visible)oc_osd_draw_layout(slot,uncached,stride,format,oc_hook_lines,tv_mode_interlaced(mode)&&height==TV_FIELD_ROWS);
     return 1;
 }
 static void oc_hook_idle_refresh(int immediate) {

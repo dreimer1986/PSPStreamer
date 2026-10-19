@@ -16,6 +16,7 @@
 #include "preset_fpu.h"
 #include "cave_visual.h"
 #include "theme_layout.h"
+#include "tv_output_layout.h"
 
 /* Even native TV scanout ends before these textures. Real 2 MiB EDRAM only. */
 #define MD_WIDTH 512
@@ -59,6 +60,10 @@ static void md_thick_wave(int primitive,const MdVertex *vertices,int count,int s
 }
 static unsigned int *md_list;
 static int md_front;
+/* Interlaced TV keeps the logical canvas in main RAM: never let the GU
+ * overwrite the two scanout fields. Progressive/LCD retain offset zero. */
+static void *md_output_pixels;
+void md_output_canvas(void *pixels) {md_output_pixels=pixels;}
 static int md_last_tv, md_last_fullscreen;
 static int md_last_top;
 static unsigned long long md_origin, md_next;
@@ -234,7 +239,8 @@ static void md_target(int offset, int stride, int width, int height) {
      * takes the last (often transparent) edge vertex for the whole triangle.
      * Restore explicitly, including after GU list restarts and UI switches. */
     sceGuShadeModel(GU_SMOOTH);
-    sceGuDrawBufferList(offset ? md_pixel_format : GU_PSM_8888, (void *)(uintptr_t)offset, stride);
+    sceGuDrawBufferList(offset ? md_pixel_format : GU_PSM_8888,
+        !offset&&md_output_pixels?md_output_pixels:(void *)(uintptr_t)offset, stride);
     sceGuOffset(2048-width/2, 2048-height/2);
     sceGuViewport(2048, 2048, width, height);
     sceGuScissor(0, 0, width, height);
@@ -633,6 +639,7 @@ static int md_frame_inner(int tv, int fullscreen, const unsigned char bands[12],
         }
     }
 present_scene:
+    if(md_output_pixels)sceKernelDcacheWritebackInvalidateRange(md_output_pixels,768*480*4);
     sceGuTexSync();
     sceGuDisable(GU_DEPTH_TEST);sceGuDisable(GU_FOG);sceGuDepthMask(1);
     md_target(0, tv ? 768 : 512, tv ? 720 : 480, tv ? 480 : 272);
@@ -649,6 +656,10 @@ present_scene:
     md_profile_mark(5);
     md_trace("MilkDrop GPU wait");
     sceGuSync(GU_SYNC_FINISH, GU_SYNC_WHAT_DONE);
+    if(md_output_pixels) {
+        sceKernelDcacheInvalidateRange(md_output_pixels,768*480*4);
+        tv_pack_rect((void *)0x44000000,md_output_pixels,768,0,0,720,480,1);
+    }
     md_trace("MilkDrop frame complete");
     if(md_trace_frames<2)md_trace_frames++;
     md_profile_mark(6);

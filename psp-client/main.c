@@ -37,6 +37,7 @@ static int theme_text_active;
 #include "language.h"
 #include "display_output.h"
 #include "tv_canvas.h"
+#include "tv_output_layout.h"
 #include "help_pages.h"
 #include "power_policy.h"
 #include "exit_policy.h"
@@ -150,6 +151,8 @@ extern int pspDveMgrSetVideoOut(int unknown, int mode, int width, int height,
 static int tvout_module_id = -1;
 static int tvout_video_active;
 static int tv_ui_auto;
+static int tv_scan_preference;
+static int tv_interlaced;
 static int tv_ui_active;
 static TvCanvas tv_canvas;
 static void tv_ui_start(void);
@@ -165,19 +168,42 @@ static void music_transition_end(void);
 #define TVOUT_STRIDE 768
 
 static int output_mode(int tv) {
-    return pspDveMgrSetVideoOut(0, tv ? 0x1d2 : 0, tv ? 720 : 480,
-                              tv ? 480 : 272, 1, 15, 0);
+    int cable=0,mode=0,w=0,h=0,interlaced=0;
+    if(tv) {
+        cable=pspDveMgrCheckVideoOut();
+        if(!tv_cable_supported(cable))return -1;
+        sceDisplayGetMode(&mode,&w,&h);
+        interlaced=tv_choose_interlaced(cable,tv_scan_preference,mode);
+        /* Also used as the GPU's final linear canvas in interlaced mode. */
+        if(interlaced && !tv_canvas.pixels)tv_canvas.pixels=memalign(8192,TV_GUI_BYTES);
+        if(interlaced && !tv_canvas.pixels)return -2;
+    }
+    int rc=pspDveMgrSetVideoOut(tv&&cable==1?2:0,
+        tv?(interlaced?0x1d1:0x1d2):0,tv?720:480,tv?(interlaced?503:480):272,1,15,0);
+    if(rc>=0) {
+        tv_interlaced=tv&&interlaced;
+        md_output_canvas(tv_interlaced?tv_canvas.pixels:NULL);
+        if(tv_interlaced)memset((void *)0x44000000,0,768*TV_FIELD_ROWS*2);
+    }
+    return rc;
 }
 static int output_framebuffer(int tv) {
     sceDisplayWaitVblankStart();
     return sceDisplaySetFrameBuf((void *)0x04000000, tv ? TVOUT_STRIDE : VIDEO_STRIDE,
-                                PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+                                tv&&tv_interlaced?PSP_DISPLAY_PIXEL_FORMAT_565:PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
 }
 static DisplayOutput display_output = {0, output_mode, output_framebuffer};
+static u32 *tv_linear_pixels(void) {return tv_interlaced?tv_canvas.pixels:(u32 *)0x44000000;}
+static void tv_copy_rect(int x,int y,int w,int h) {
+    if(tv_interlaced)tv_pack_rect((void *)0x44000000,tv_canvas.pixels,768,x,y,w,h,1);
+    else for(int row=y;row<y+h;row++)memcpy((u32 *)0x44000000+row*768+x,tv_canvas.pixels+row*768+x,w*4);
+}
+static int tvout_available(void) {return tv_cable_supported(pspDveMgrCheckVideoOut());}
 
 static int tvout_load_manager(void) {
     char path[256], cwd[192];
     int status;
+    if(!tv_model_has_output(kuKernelGetModel()))return -1;
     if (tvout_module_id >= 0) return 0;
     if (!getcwd(cwd, sizeof(cwd))) strncpy(cwd, PSP_STREAMER_INSTALL_DIR, sizeof(cwd) - 1);
     cwd[sizeof(cwd) - 1] = '\0';
@@ -200,17 +226,18 @@ static int tvout_component_test(void) {
     result = tvout_load_manager();
     if (result < 0) return result;
     cable = pspDveMgrCheckVideoOut();
-    if (cable != 2) return cable ? -2 : -1;
+    if (!tv_cable_supported(cable)) return cable ? -2 : -1;
     result = display_output_select(&display_output, 1);
     if (result < 0) return result;
-    vram = (u32 *)0x44000000;
+    vram = tv_linear_pixels();
     for (y = 0; y < 480; y++) for (x = 0; x < 720; x++) {
         u32 color = x < 180 ? 0x000000ff : x < 360 ? 0x0000ff00 : x < 540 ? 0x00ff0000 : 0x00ffffff;
         if ((y / 24) & 1) color >>= 1;
         vram[y * TVOUT_STRIDE + x] = color;
     }
     sceDisplayWaitVblankStart();
-    sceDisplaySetFrameBuf(vram, TVOUT_STRIDE, PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_NEXTVSYNC);
+    if(tv_interlaced)tv_copy_rect(0,0,720,480);
+    output_framebuffer(1);
     while (1) {
         keep_awake();
         sceCtrlReadBufferPositive(&pad, 1);
@@ -231,7 +258,7 @@ static int tvout_component_test(void) {
 static int tvout_begin_video(void) {
     int result;
     result = tvout_load_manager();
-    if (result < 0 || pspDveMgrCheckVideoOut() != 2) {
+    if (result < 0 || !tvout_available()) {
         /* A removed cable must not leave LCD video in a TV-stride scanout. */
         tv_ui_active = 0;
         if (display_output.tv) display_output_select(&display_output, 0);
@@ -529,6 +556,7 @@ static void load_playback_settings(void) {
             else if (!strncmp(line, "shuffle=", 8)) audio_shuffle = atoi(line + 8) != 0;
             else if (!strncmp(line, "language=", 9)) language_set_code(line + 9);
             else if (!strncmp(line, "tv_ui=", 6)) tv_ui_auto = !strcmp(line + 6, "auto");
+            else if (!strncmp(line, "tv_scan=", 8)) tv_scan_preference = !strcmp(line+8,"interlaced")?TV_SCAN_INTERLACED:!strcmp(line+8,"progressive")?TV_SCAN_PROGRESSIVE:TV_SCAN_AUTO;
             else if (!strncmp(line,"music_cpu_mhz=",14))music_cpu_mhz=atoi(line+14);
             else if (!strncmp(line,"milkdrop_cpu_mhz=",17))milkdrop_cpu_mhz=atoi(line+17);
             else if (!strncmp(line,"idle_cpu_mhz=",13))idle_cpu_mhz=atoi(line+13);
@@ -562,6 +590,7 @@ static int save_playback_settings(void) {
     int length = snprintf(data, sizeof(data), "server=%s\nport=%d\nserver_password=%s\naudio=%d\nsubtitle=%d\nquality=%d\nvolume=%d\nshuffle=%d\nlanguage=%s\ntv_ui=%s\n",
                           server_host, server_port, server_password, selected_audio_track, selected_subtitle_track, queue_quality_scope.active?queue_quality_scope.quality:selected_audio_quality, playback_volume, audio_shuffle, language_code(), tv_ui_auto ? "auto" : "off");
     length += snprintf(data + length, sizeof(data) - length, "video_fps=%s\n", (queue_quality_scope.active?queue_quality_scope.fps:selected_video_fps) ? "24000/1001" : "20");
+    length += snprintf(data+length,sizeof(data)-length,"tv_scan=%s\n",tv_scan_preference==TV_SCAN_INTERLACED?"interlaced":tv_scan_preference==TV_SCAN_PROGRESSIVE?"progressive":"auto");
     length += snprintf(data+length,sizeof(data)-length,"audio_matrix=%s\n",audio_matrix_keys[selected_audio_matrix]);
     length += snprintf(data+length,sizeof(data)-length,"audio_output=%s\n",audio_output_keys[selected_audio_output]);
     length += snprintf(data+length,sizeof(data)-length,"next_episode_seconds=%d\n",next_episode_seconds);
@@ -1801,8 +1830,9 @@ static void draw_fullscreen_spectrum(void) {
     if(spectrum_fullscreen.valid && now<spectrum_fullscreen.next_tick) return;
     for(i=0;i<spectrum_bar_count();i++) bands[i]=spectrum_bar_level(i,spectrum_levels[i%12]);
     sceDisplayWaitVblankStart();
-    spectrum_fullscreen_render((u32 *)0x44000000,tv?720:480,tv?480:272,
+    spectrum_fullscreen_render(tv?tv_linear_pixels():(u32 *)0x44000000,tv?720:480,tv?480:272,
         tv?TV_GUI_STRIDE:VIDEO_STRIDE,bands,audio_running && audio_start);
+    if(tv&&tv_interlaced)tv_copy_rect(0,0,720,480);
     spectrum_fullscreen.next_tick=sceKernelGetSystemTimeWide()+MUSIC_UI_INTERVAL_US;
     if(tv) tv_music.next_tick=spectrum_fullscreen.next_tick;
     else lcd_music.next_tick=spectrum_fullscreen.next_tick;
@@ -2371,7 +2401,7 @@ static int play_h264(const char *media_id) {
     sync_trace_reset();
     /* Preparation is still a menu operation, not a video framebuffer. Keep
      * native LCD/TV UI visible and cancellable until its HTTP worker exits. */
-    int subtitle_tv_profile=tvout_load_manager()>=0 && pspDveMgrCheckVideoOut()==2;
+    int subtitle_tv_profile=tvout_load_manager()>=0 && tvout_available();
     if(!subtitle_tv_profile && display_output.tv) {
         result=tv_menu_select(0);
         if(result<0) {video_step="Video output switch";return result;}
@@ -2545,11 +2575,11 @@ static int play_h264(const char *media_id) {
             paused = !paused;
             playback_paused = paused;
             audio_start = paused ? 0 : buffered;
-            if (tvout_video_active) tvout_playback_hud(hardware_decoder_frames, paused);
+            if (tvout_video_active) {playback_draw_target=tv_linear_pixels();tvout_playback_hud(hardware_decoder_frames, paused);if(tv_interlaced)tv_copy_rect(0,0,720,480);}
             else playback_hud(hardware_decoder_frames, paused);
             sceDisplaySetFrameBuf((void *)0x04000000,
                                   tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
-                                  PSP_DISPLAY_PIXEL_FORMAT_8888,
+                                  tvout_video_active&&tv_interlaced?PSP_DISPLAY_PIXEL_FORMAT_565:PSP_DISPLAY_PIXEL_FORMAT_8888,
                                   PSP_DISPLAY_SETBUF_NEXTVSYNC);
         }
         if ((pad.Buttons & PSP_CTRL_TRIANGLE) && !(previous_buttons & PSP_CTRL_TRIANGLE)) {
@@ -2718,11 +2748,12 @@ static int play_h264(const char *media_id) {
                         result=tvout_begin_video();
                         if(result<0) {video_step="Video output switch";break;}
                     }
-                    memcpy((void *)0x44000000, video_staging, video_staging_bytes);
+                    memcpy(tvout_video_active?tv_linear_pixels():(u32 *)0x44000000, video_staging, video_staging_bytes);
                     video_controls_present(paused);
+                    if(tvout_video_active&&tv_interlaced)tv_copy_rect(0,0,720,480);
                     result = sceDisplaySetFrameBuf((void *)0x04000000,
                         tvout_video_active ? TVOUT_STRIDE : VIDEO_STRIDE,
-                        PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
+                        tvout_video_active&&tv_interlaced?PSP_DISPLAY_PIXEL_FORMAT_565:PSP_DISPLAY_PIXEL_FORMAT_8888, PSP_DISPLAY_SETBUF_IMMEDIATE);
                     if(debug_enabled) copy_us = (unsigned int)(sceKernelGetSystemTimeWide() - copy_start);
                     if (result < 0) { video_step = "Video display"; break; }
                     if (!video_first_presented) {

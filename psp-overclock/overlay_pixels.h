@@ -3,6 +3,7 @@
 #ifndef STREAMER_OC_OVERLAY_PIXELS_H
 #define STREAMER_OC_OVERLAY_PIXELS_H
 #include <stdint.h>
+#include "../psp-client/tv_output_layout.h"
 #ifndef OC_OSD_W
 #define OC_OSD_W 236
 #endif
@@ -12,7 +13,7 @@
 #define OC_OSD_H 30
 typedef struct {
     volatile void *base;
-    int stride, format, valid;
+    int stride, format, valid, interlaced, left;
     uint32_t before[OC_OSD_W*OC_OSD_H];
     /* The overlay writes exactly two colors. Preserve the application's
      * original pixels losslessly, but remember our own pixels as one bit. */
@@ -59,7 +60,7 @@ static void oc_osd_set(volatile void *base,int index,int format,uint32_t value) 
 static inline void oc_osd_restore(OcOverlay *o) {
     if(!o->valid)return;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
-        int i=y*OC_OSD_W+x,offset=(y+8)*o->stride+x+OC_OSD_X;
+        int i=y*OC_OSD_W+x,offset=tv_scan_row(y+8,o->interlaced)*o->stride+x+o->left;
         /* Do not overwrite pixels the application has since redrawn. */
         int foreground=(o->painted[i>>3]>>(i&7))&1;
         if(oc_osd_get(o->base,offset,o->format)==oc_osd_color(o->format,foreground))
@@ -67,13 +68,13 @@ static inline void oc_osd_restore(OcOverlay *o) {
     }
     o->valid=0;
 }
-static inline void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,const char lines[3][40]) {
-    o->base=base;o->stride=stride;o->format=format;
+static inline void oc_osd_draw_layout(OcOverlay *o,volatile void *base,int stride,int format,const char lines[3][40],int interlaced) {
+    o->base=base;o->stride=stride;o->format=format;o->interlaced=interlaced;o->left=OC_OSD_X;
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<OC_OSD_W;x++) {
         int row=(y-3)/8,col=(x-3)/6;
         int bit=y>=3 && y<27 && x>=3 && x<OC_OSD_W-5 && row<3 && col<38 &&
             oc_osd_bit(lines[row][col],(x-3)%6,(y-3)%8);
-        int i=y*OC_OSD_W+x,offset=(y+8)*stride+x+OC_OSD_X;
+        int i=y*OC_OSD_W+x,offset=tv_scan_row(y+8,interlaced)*stride+x+o->left;
         o->before[i]=oc_osd_get(base,offset,format);
         unsigned mask=1U<<(i&7);
         if(bit)o->painted[i>>3]|=mask;
@@ -82,9 +83,12 @@ static inline void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int f
     }
     o->valid=1;
 }
+static inline void oc_osd_draw(OcOverlay *o,volatile void *base,int stride,int format,const char lines[3][40]) {
+    oc_osd_draw_layout(o,base,stride,format,lines,0);
+}
 static inline int oc_osd_layout(uintptr_t address,unsigned int vram,int width,int height,int stride,int format) {
     if(format<0||format>3||width<OC_OSD_W+8||height<OC_OSD_H+8||
-       width>720||height>480||stride<width||stride>1024||stride%16)return 0;
+       width>720||(height>480&&height!=TV_FIELD_ROWS)||stride<width||stride>1024||stride%16)return 0;
     if(address&15)return 0;
     uintptr_t physical=address&0x1fffffffU;
     if(physical<0x04000000U||physical>=0x04000000U+vram)return 0;
@@ -92,12 +96,15 @@ static inline int oc_osd_layout(uintptr_t address,unsigned int vram,int width,in
     return bytes<=vram-(physical-0x04000000U);
 }
 /* Fresh scaler backbuffer: no backups/restoration required. */
-static inline void oc_osd_draw_fresh(volatile void *base,int stride,int format,int left,int width,const char lines[3][40]) {
+static inline void oc_osd_draw_fresh_layout(volatile void *base,int stride,int format,int left,int width,const char lines[3][40],int interlaced) {
     for(int y=0;y<OC_OSD_H;y++)for(int x=0;x<width;x++) {
         int row=(y-3)/8,col=(x-3)/6;
         int bit=y>=3&&y<27&&x>=3&&x<width-5&&row<3&&col<38&&
             oc_osd_bit(lines[row][col],(x-3)%6,(y-3)%8);
-        oc_osd_set(base,(y+8)*stride+left+x,format,oc_osd_color(format,bit));
+        oc_osd_set(base,tv_scan_row(y+8,interlaced)*stride+left+x,format,oc_osd_color(format,bit));
     }
+}
+static inline void oc_osd_draw_fresh(volatile void *base,int stride,int format,int left,int width,const char lines[3][40]) {
+    oc_osd_draw_fresh_layout(base,stride,format,left,width,lines,0);
 }
 #endif
