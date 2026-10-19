@@ -9,4 +9,4 @@ LIBS = -lpspsysmem_kernel_660 -lpspkernel
 PRX_EXPORTS = exports.exp
 PSPSDK := $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build.mak
-main.o: path.h size_text.h ../streammaster/protocol.h ../streammaster/tcp_server.h
+main.o: path.h size_text.h startup.h ../streammaster/protocol.h ../streammaster/tcp_server.h

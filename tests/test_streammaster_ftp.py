@@ -31,7 +31,8 @@ class FTPTests(unittest.TestCase):
         (cfg/'PSPStreamFTP.ini').write_text(f'enabled=1\nuser=test\npassword=secret\nport={self.port}\nidle_seconds=30\n')
         self.process=subprocess.Popen([str(self.exe),self.root.name],stderr=subprocess.PIPE)
         self.ftp=ftplib.FTP();self.ftp.encoding='utf-8'
-        for _ in range(100):
+        # Worker now requires five real seconds of stable shell readiness.
+        for _ in range(300):
             try:self.ftp.connect('127.0.0.1',self.port,timeout=4);break
             except OSError:time.sleep(.03)
         else:self.fail('FTP server did not start')

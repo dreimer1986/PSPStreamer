@@ -2,6 +2,11 @@
 
 ## Additional unreleased changes
 
+- FTP 0.5 startup-hardening candidate: wait for stable, ready VSH/PAF before
+  allocating buffers or issuing USB RPCs; reject an unavailable buffer address.
+  User isolated a cold-boot shutdown to FTP-enabled configurations. Hardware
+  confirmation of the cause/fix is still pending; no transport changes.
+
 - TV cable test candidate: add field-packed 480i presentation for composite /
   S-video and component interlaced in PSPStreamer and FuSa Fullscreen 0.28.
   Add app scan selection, field-aware polling/presentation overlays in

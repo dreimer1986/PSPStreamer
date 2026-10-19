@@ -6,6 +6,7 @@
 #else
 #include <pspkernel.h>
 #include <pspinit.h>
+#include <psploadcore.h>
 #include <pspsysmem_kernel.h>
 #include <pspiofilemgr.h>
 #endif
@@ -16,7 +17,8 @@
 #include "../streammaster/tcp_server.h"
 #include "path.h"
 #include "size_text.h"
-PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,4);
+#include "startup.h"
+PSP_MODULE_INFO("PSPStreamFTP",PSP_MODULE_KERNEL,0,5);
 #define BASE "ms0:/SEPLUGINS/PSPStreamFTP/"
 #define CONTROL 0x46545002U
 #define LISTENER 0x46545001U
@@ -298,14 +300,23 @@ static int worker(SceSize size,void *arg){
     /* Never perform filesystem I/O on the module manager's startup thread.
      * Let XMB and the resident USB loader settle before allocating or polling. */
     for(unsigned i=0;i<200 && running;i++)sceKernelDelayThread(100000);
+    FtpStartup startup={0};
+    while(running) {
+        int ready=sceKernelGetSystemStatus()==0x20000 &&
+            sceKernelFindModuleByName("vsh_module") && sceKernelFindModuleByName("scePaf_Module");
+        if(ftp_startup_ready(&startup,clock_us(),ready))break;
+        sceKernelDelayThread(100000);
+    }
     if(!running)return 0;
-    status("FTP 0.4: delayed worker started; allocating user buffers",0);
+    status("FTP 0.5: XMB ready and stable; allocating user buffers",0);
     memory=sceKernelAllocPartitionMemory(2,"FTP user buffers",PSP_SMEM_High,sizeof(Session),NULL);
     if(memory<0){status("User buffer allocation failed",memory);running=0;return 0;}
-    s=sceKernelGetBlockHeadAddr(memory);memset(s,0,sizeof(*s));s->serial=(unsigned)clock_us();
-    status("FTP 0.4: reading INI",0);
+    s=sceKernelGetBlockHeadAddr(memory);
+    if(!s){sceKernelFreePartitionMemory(memory);memory=-1;running=0;status("User buffer address unavailable",-1);return 0;}
+    memset(s,0,sizeof(*s));s->serial=(unsigned)clock_us();
+    status("FTP 0.5: reading INI",0);
     if(config()<0 || !enabled){status("Disabled or missing valid INI credentials",0);goto cleanup;}
-    status("FTP 0.4: waiting for resident USB bridge",0);
+    status("FTP 0.5: waiting for resident USB bridge",0);
     unsigned long long next_connect=0;
     while(running){
         if(sceIoDevctl("stm:",SM_DEV_RESIDENT,NULL,0,NULL,0)!=SM_RESIDENT_MAGIC || sceIoDevctl("stm:",SM_DEV_STATUS,NULL,0,NULL,0)<=0){sceKernelDelayThread(500000);continue;}

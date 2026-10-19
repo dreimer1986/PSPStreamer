@@ -1,4 +1,10 @@
-# PSPStreamFTP 0.4
+# PSPStreamFTP 0.5 — startup hardening candidate
+
+The cold-boot shutdown reported with FTP enabled is **not yet confirmed fixed**.
+This candidate requires a ready VSH system state and loaded VSH/PAF modules,
+stable for five seconds after the existing 20-second minimum delay, before
+allocating session buffers or accessing USB. A missing buffer address now
+disables the worker safely. No firmware or Consolizer update is required.
 
 Transfer files between a PC and the PSP Memory Stick over StreamMaster Wi-Fi.
 This optional **VSH-only** plugin requires PSPConsolizer's resident USB bridge.
@@ -21,7 +27,7 @@ been confirmed by the user; generic S3/S2 firmware remains hardware-UNTESTED.
    does not require reflashing. Follow your board's README/flash_args. Split
    images preserve NVS Wi-Fi profiles and Bluetooth bonds; factory images
    overwrite the NVS gap.
-5. Restart PSP and wait 20–30 seconds in VSH. The service uses saved ESP Wi-Fi
+5. Restart PSP and wait at least 25 seconds in VSH (longer if boot is slow). The service uses saved ESP Wi-Fi
    profiles. IP/readiness is recorded in this folder's `status.txt`.
 6. Connect to the ESP's WLAN IP using **plain FTP, passive mode, port 2121**,
    your configured credentials and **one connection**.
